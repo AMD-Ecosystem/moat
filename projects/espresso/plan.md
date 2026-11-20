@@ -199,3 +199,31 @@ them as regressions.
    nvcc>=12 gate, but confirm the core compiles as -x hip at C++20).
 4. Future scope (NOT this port): waLBerla GPU LB/EK. That is a much larger, separate effort
    (port or upstream-coordinate waLBerla's own GPU backend); flag for a follow-up project.
+
+## Scope extension 2026-11-20: waLBerla LB/EK GPU (`src/walberla_bridge`)
+
+Requested by jeffdaily on 2026-11-20 after he ruled the deferral `espresso-walberla-lb-ek-gpu` "now" (rulings in notes.md). The upstream PR is held and sent complete: the validated core commit bc8d73dd9 first, then the waLBerla bridge work as separate commits on top. The fork's `moat-port` stays private until then: new commits on top, plain pushes, bc8d73dd9 never rewritten.
+
+How this plan was recorded: the stage was `review-passed`, and the state machine has no way back to `planning` from there (`STAGE_TRANSITIONS["review-passed"] = {"porting", "reviewing"}`; planning is only reachable from `screened`). So this section is the plan update, written without a planning stage, and the project went `review-passed -> porting` (linux-gfx942 holds the lock). No state was hand-edited.
+
+The starting point was the waLBerla intake's analysis (`origin/port/walberla:projects/walberla/notes.md`, Q1, Probe A, Q3a/3b, Q5). Each fact used here was re-checked in the espresso fork at bc8d73dd9 and against waLBerla at the pin.
+
+### Decisions
+
+1. **waLBerla version and its HIP build.** ESPResSo fetches `https://github.com/lssfau/walberla.git` at `623a60c1` ("v7.2 with patches", `git describe` = v7.2-72-g623a60c1). That commit already has `WALBERLA_BUILD_WITH_HIP` and calls a plain `find_package(hip REQUIRED)` (CMakeLists.txt:634-643). The HIP minimum-version check that rejects HIP 7.x (`25bcdd25` "Require minimum versions for MPI, OpenMP, CUDA and HIP", 2026-11-02) is **not** an ancestor of the pin (`git merge-base --is-ancestor 25bcdd25 623a60c1` is false). Built inside ESPResSo with ROCm 10.1 (HIP 7.16), the pin configures and compiles **as is**. So waLBerla needs no fix, patch step, version bump or fork for this work. Caveat for a future pin bump: any waLBerla after 2026-11-02 needs that version check fixed upstream first (the intake's draft report #1). waLBerla's `src/gpu/ShiftedPeriodicity.cu` is silently left out of a HIP build (open waLBerla issue #314); ESPResSo does not use it.
+2. **Generated kernels: edit the templates and the generated files consistently by hand, verified against the generator; no regeneration.** A full regeneration with ESPResSo's scripts and the exact pinned versions (pystencils `e851f4e3` from the contributor fork on gitos, lbmpy `e9efe343`, sympy 1.12.1, waLBerla python at `007e77e0`, the commit the headers name) is **not reproducible**. Starting from unmodified templates, it rewrites 148 files: sympy term order, renamed temporaries and the recorded waLBerla commit (the checked-in files name both `3247aa73` and `007e77e0`). Upstream's Readme says the same thing: "The code generation is not deterministic ... If you only adapted a few lines in a specific template file, then you only need to commit the corresponding output files." Committing a regeneration would bury a ~30-line fix in thousands of noise lines. Instead, a script applies identical edits to the 4 templates, the 28 affected generated files and the vendored `philox_rand.h` (2 copies). Then two regenerations are compared, one with unmodified and one with fixed templates. Once pure reorderings are cancelled, the generator's net delta equals the hand edit's net delta in every one of the 241 generated files. The residual is run-to-run noise, never an edited construct.
+3. **Guards in the hand-written bridge**: `defined(__CUDACC__)` becomes `(defined(__CUDACC__) or defined(__HIPCC__))`, and `WALBERLA_BUILD_WITH_CUDA` becomes `WALBERLA_BUILD_WITH_GPU_SUPPORT`, which waLBerla >= 7.2 (the `find_package` minimum and the pin) defines for either backend. This is the same pattern as the core commit's `|| defined(__HIPCC__)`. No `__CUDACC__` is defined for HIP, because rocThrust and HIP headers key on it.
+4. **Kokkos does not matter.** The Kokkos CUDA backend is enabled only for clang-CUDA without waLBerla, the bridge links Kokkos only under `Kokkos_ENABLE_CUDA`, and all Kokkos code runs in host space. No Kokkos change is needed.
+5. **EK FFT**: the bridge's cuFFT use is data types only (`cufftReal/Complex` and the double variants). Under HIP these are aliased to the hipFFT types in `greens_function.hpp`. The FFT itself is heFFTe's: `heffte::backend::cufft` becomes `heffte::backend::rocfft`, and heFFTe v2.4.1 (FetchContent) is built with `Heffte_ENABLE_ROCM` (rocFFT + `hip::host`).
+6. **CUDA path**: every CMake change is behind `ESPRESSO_BUILD_WITH_HIP` or keyed on `WALBERLA_BUILD_WITH_HIP`. Preprocessor changes only add macros that nvcc and clang-CUDA never define. The few source edits visible to CUDA (`uint3` copies via `block_index()/thread_index()`, the `dim3` return, the `gpu*` wrapper in two tests) name the same values and functions. The nvcc compile (upstream's `cuda12-maxset` recipe on the mi355 host) is owed before jeff gets the PR.
+
+### Rounds (porter)
+
+- (a) decoupling: HIP core with waLBerla's CPU solvers. Configure stop removed, `WALBERLA_BUILD_WITH_CUDA` only for a CUDA build, `OpenMP::OpenMP_CUDA` via `ESPRESSO_OPENMP_CUDA`, and the four `.cu` init files get a language in a HIP build. Gate: the whole C++ unit-test suite.
+- (b) `WALBERLA_BUILD_WITH_HIP` from ESPResSo's CMake. The 56 generated kernels and the bridge compile as HIP (the three intake fixes plus a fourth template, `ReactionKernelSelector.tmpl.h`), the guards change, and the two bridge GPU unit tests build as HIP. Gate: unit tests and `ctest -L gpu`.
+- (c) EK FFT Poisson solver: hipFFT types, heFFTe rocFFT backend.
+- (d) Python suite: GPU classes run, not skip, and never hit "compiled without CUDA support". Gate: LB and EK Python files and `ctest -L gpu`. A statistical-test miss is investigated, never covered by a looser tolerance.
+
+### Owed after porting
+
+Review of the three new commits; nvcc compile; validation on linux-gfx950 (wave64) and a wave32 Radeon (linux-gfx1201); Windows waived for this project.

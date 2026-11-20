@@ -860,3 +860,55 @@ Counts are passed / skipped / failed (skipped is ctest's exit-5 mapping).
 - Jargon: `python3 utils/jargon.py --port espresso` clean. Docs: "AMD GPU acceleration" at doc/sphinx/installation.rst:300, `ESPRESSO_BUILD_WITH_HIP` in its configure example (:312) and the options list (:919).
 - Nothing was edited in the fork and nothing was pushed to it.
 - Gates: wave64 was already satisfied at 4861f4839 by gfx950; this is additional wave64 evidence. wave32 (gfx1201) is still at 01090739c and owes a revalidation or binary-equivalence carry-forward at this head; windows is waived.
+
+## Rulings (jeffdaily, 2026-11-20)
+
+- The deferral `espresso-walberla-lb-ek-gpu` is ruled "now" (recorded in deferred.json): ESPResSo's lattice-Boltzmann and electrokinetics solvers are to run on AMD GPUs.
+- The upstream pull request is held and will be sent complete: the core GPU commit already validated (fork head bc8d73dd9) plus the waLBerla bridge work as separate commits on top, so the core stays reviewable on its own. No upstream PR is open; a review page on our fork exists and will be refreshed later. The fork's `moat-port` is private until then: new commits go on top with plain pushes, and bc8d73dd9 is never rewritten.
+
+## Porter 2026-11-20 (waLBerla LB/EK GPU, linux-gfx942)
+
+Plan update: "Scope extension 2026-11-20" in plan.md. The state machine has no `review-passed -> planning` edge, so that section was written without a planning stage. The project then went `review-passed -> porting` with `set-state espresso linux-gfx942 porting` (this host holds the lock). Nothing was hand-edited.
+
+Host: AMD Instinct MI300X (gfx942), `HIP_VISIBLE_DEVICES=0`, `ulimit -c 0`, pip ROCm SDK 10.1.0 (HIP 7.16.26385, AMD clang 24.0.0, `rocm-sdk path --root`, no /opt/rocm), system OpenMPI 4.1.6, Boost 1.83, FFTW 3.3.10, GCC 13.3.0, CMake 3.31.6. Python 3.12 venv by `uv` inside `$FLEET_VENV/py312` (numpy 2.5.5, scipy 1.18.1, Cython 3.3.1, tqdm, matplotlib, pint). The fleet guard refuses `uv pip install` into a venv outside `$FLEET_VENV`; put every venv under it. Formatters: `$FLEET_VENV/fmt` (cmakelang 0.6.13, clang-format 22.1.8, autopep8 2.3.2 + pycodestyle 2.14.0, pre-commit), used as `PATH=$FLEET_VENV/fmt/bin:$PATH pre-commit run --files <files>`.
+
+Configure, used for every round (`agent_space/cfg.sh <build-dir>`):
+
+```
+cmake -S <src> -B <build> -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_COMPILER=/usr/bin/gcc -DCMAKE_CXX_COMPILER=/usr/bin/g++ \
+  -DESPRESSO_BUILD_WITH_CUDA=ON -DESPRESSO_BUILD_WITH_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 \
+  -DCMAKE_HIP_COMPILER=$ROCM_SDK/llvm/bin/clang++ -DCMAKE_PREFIX_PATH="$ROCM_SDK" \
+  -DPython_EXECUTABLE=$FLEET_VENV/py312/bin/python \
+  -DESPRESSO_BUILD_WITH_WALBERLA=ON -DESPRESSO_BUILD_WITH_HDF5=OFF \
+  -DESPRESSO_BUILD_WITH_SCAFACOS=OFF -DESPRESSO_BUILD_WITH_STOKESIAN_DYNAMICS=OFF \
+  -DESPRESSO_BUILD_WITH_GSL=OFF -DESPRESSO_BUILD_WITH_NLOPT=OFF \
+  -DESPRESSO_BUILD_WITH_CALIPER=OFF -DESPRESSO_BUILD_WITH_FFTW=ON \
+  -DESPRESSO_BUILD_WITH_PYTHON=ON -DESPRESSO_BUILD_TESTS=ON
+cmake --build <build> -j $MAX_JOBS -- -k 0
+cmake --build <build> -j $MAX_JOBS --target python_test_data cuda_test local_samples local_benchmarks
+cmake --build <build> -j $MAX_JOBS --target check_unit_tests
+ctest --test-dir <build> -L gpu --timeout 1200 -j 8
+```
+
+### Round (a): decoupling -- fork e8fa4dfa5 "[ROCm] Keep waLBerla in a HIP build with its CPU solvers"
+
+The intake's probe, made CUDA-neutral. The configure stop is gone. `WALBERLA_BUILD_WITH_CUDA` is set only when `ESPRESSO_BUILD_WITH_CUDA AND NOT ESPRESSO_BUILD_WITH_HIP`. `OpenMP::OpenMP_CUDA` reaches the bridge targets and tests through `ESPRESSO_OPENMP_CUDA` (set for a CUDA build only, as `src/core` does). The new `espresso_set_walberla_gpu_source_language()` gives the four `*_init*.cu` files LANGUAGE CXX in a HIP build; it does nothing when HIP is off. The intake probe keyed the language on `NOT WALBERLA_BUILD_WITH_CUDA`, which would also have changed an nvcc build with a preinstalled CPU waLBerla. The installation guide drops "waLBerla must be disabled".
+
+- Cache: `WALBERLA_BUILD_WITH_CUDA=OFF`, `WALBERLA_BUILD_WITH_HIP=OFF`. Build: 0 FAILED, 21 warnings (20 known `nodiscard hipError_t`, 1 `-Wunused-macros` `HAS_HEFFTE`).
+- `check_unit_tests`: **150/150 passed**, including every waLBerla LB/EK suite.
+- cmake-format passes; jargon and prose clean.
+
+### Round (b): LB/EK GPU with HIP -- fork 3862a5040 "[ROCm] Run the waLBerla LB and EK GPU solvers with HIP"
+
+- CMake: `WALBERLA_BUILD_WITH_HIP on` for a HIP build (else CUDA as before). `walberla::gpu` is linked for either backend. The language helper picks HIP when waLBerla has HIP, and `espresso_set_walberla_codegen_kernel_source_properties()` applies it to the generated `.cu` files. The generated GPU kernel lists use `WALBERLA_BUILD_WITH_CUDA OR WALBERLA_BUILD_WITH_HIP`. The two bridge GPU tests get LANGUAGE HIP and link `hip::host` (`ESPRESSO_WALBERLA_GPU_TEST_RUNTIME`).
+- Guards: 17 hand-written files (see plan decision 3).
+- Generated kernels, four fault classes. Three are the intake's: `RESTRICT` was undefined under clang-HIP in `preprocessor.tmpl.cuh` and the FieldAccessors templates' own prelude; philox `QUALIFIERS`; `uint3` from HIP built-ins. The fourth is new: `ReactionKernelSelector.tmpl.h` guards `KernelTraitGPU`/`get_kernel_gpu` on `__CUDACC__ and WALBERLA_BUILD_WITH_CUDA`, which made `EKReactionImplBulk/Indexed.hpp` fail. The intake probe compiled kernels only, never the selector headers.
+  - philox gets clang-HIP == clang-CUDA in all three places that test `__clang__ && __CUDA__` (qualifiers, `mulhilo32` host branch, SSE block), not only the qualifier.
+  - `uint3`: HIP accepts only explicit construction from `.x/.y/.z` (probe: `set(blockIdx, threadIdx)`, `uint3(blockIdx)` and a `uint3` returned as `dim3` all fail; `make_uint3(blockIdx.x, ...)` and `uint3{...}` compile). The templates gain `block_index()`/`thread_index()`. `getLinearIndex()` reads the built-ins itself; all 21 call sites passed exactly `(blockIdx, threadIdx, gridDim, blockDim, n)`. `calculate_dim_grid()` returns `dim3(...)`. A helper taking the built-in by value or reference was avoided: clang-CUDA deletes the built-ins' copy constructor, and nvcc was not available to check binding by reference.
+  - Hand-written `greens_function.hpp` has the same `uint3` issue in its 4 kernels and needs hipFFT data types (`cufftReal/...` aliased to `hipfft*` under `__HIPCC__` only).
+- Regeneration check (plan decision 2). Script `agent_space/fix_gen.py`, run with `agent_space/regen.sh` over a scratch worktree, with a codegen venv `$FLEET_VENV/codegen` built from the Readme recipe: `uv pip install -c requirements.txt numpy cython sympy islpy jinja2 setuptools packaging`, then lbmpy@e9efe343 and pystencils@e851f4e3 from gitos. Versions print as `1.4+1.ge851f4e 1.4+1.ge9efe34 1.12.1`, matching the file headers. The waLBerla python comes from a plain clone at 007e77e0; a worktree fails because the generator reads `.git/HEAD` as a file. One regeneration takes 5 min. Unmodified templates touch 148 files (noise). With the fixed templates, after cancelling verbatim reorderings: 241 generated files, net delta identical in 228. The other 13 are the three `generated_kernels/CMakeLists.txt` (not generated; my CMake edits) and 10 files with sympy term order or random-hash temporaries, with no residual line on an edited construct.
+- Build: 0 FAILED. Warnings: only the 20 known `nodiscard hipError_t` and 1 `-Wunused-macros`. `llvm-objdump --offloading espresso_walberla.so`: 56 `gfx942` code objects.
+- `check_unit_tests`: **152/152 passed**, including `LBWalberlaImpl_field_accessors_tests_cuda` (macroscopic_accessors<float/double> ran on the GPU, 0.5 s) and `PoissonSolver_test_cuda`. Its FFT GPU case is compiled out until round (c).
+- `ctest -L gpu` (74 tests, 447 s): **67 passed, 7 failed**: `ek_eof`, `ek_interface`, `ek_potential`, `ek_potential_periodic`, `lattice_vtk`, `save_/test_checkpoint__therm_lb__p3m_gpu__lj__lb_walberla_gpu_binary`. Every one stops at `RuntimeError: waLBerla was compiled without CUDA support` from `new_ek_poisson_fft_cuda`. In round (b) that factory keeps its CUDA-only guard and is compiled as C++ in a HIP build, so the intermediate commit builds and fails loudly rather than silently.
+- Formatters pass (clang-format on hand-written sources and the two philox headers; generated `.cu` reformatted with the Readme's `-style "{Language: Cpp, ColumnLimit: 0}"`, which changed only edited lines). Jargon and prose clean.
