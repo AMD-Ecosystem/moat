@@ -7,8 +7,8 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T04:43:45Z",
-  "updated_at": "2026-11-20T01:29:48Z",
-  "head_sha": "3862a504049ecec3ed2177a2e5c829ce44dbcd2a",
+  "updated_at": "2026-11-20T02:30:58Z",
+  "head_sha": "917d6f70715158d1b8be1a961595073dcc3c597c",
   "depends_on": [],
   "waivers": {
     "windows": {

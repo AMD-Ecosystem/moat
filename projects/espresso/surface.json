@@ -1,0 +1,541 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "3862a504049e",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [
+      "libs/Random123-1.09/include/Random123/features/compilerfeatures.h",
+      "libs/Random123-1.09/include/Random123/features/nvccfeatures.h",
+      "maintainer/walberla_kernels/templates/EK_FieldAccessors.tmpl.cu",
+      "maintainer/walberla_kernels/templates/EK_FieldAccessors.tmpl.cuh",
+      "maintainer/walberla_kernels/templates/FieldAccessors.tmpl.cu",
+      "maintainer/walberla_kernels/templates/FieldAccessors.tmpl.cuh",
+      "maintainer/walberla_kernels/templates/preprocessor.tmpl.cuh",
+      "src/core/cuda/CudaHostAllocator.cu",
+      "src/core/cuda/common_cuda.cu",
+      "src/core/cuda/cuda_to_hip.h",
+      "src/core/cuda/init_cuda.cu",
+      "src/core/cuda/utils.cuh",
+      "src/core/electrostatics/p3m_gpu_cuda.cu",
+      "src/core/electrostatics/p3m_gpu_cuda.cuh",
+      "src/core/electrostatics/p3m_gpu_error_cuda.cu",
+      "src/core/magnetostatics/dipolar_direct_sum_gpu_cuda.cu",
+      "src/core/magnetostatics/dipolar_direct_sum_gpu_cuda.cuh",
+      "src/core/p3m/P3MFFT.hpp",
+      "src/core/system/GpuParticleData_cuda.cu",
+      "src/core/system/ResourceCleanup.hpp",
+      "src/core/unit_tests/cuda_test.cu",
+      "src/script_interface/walberla/EKFFT.hpp",
+      "src/utils/include/utils/device_qualifier.hpp",
+      "src/walberla_bridge/src/BoundaryHandling.hpp",
+      "src/walberla_bridge/src/electrokinetics/PoissonSolverFFT.hpp",
+      "src/walberla_bridge/src/electrokinetics/ek_kernels.cuh",
+      "src/walberla_bridge/src/electrokinetics/ek_poisson_fft_init_cuda.cu",
+      "src/walberla_bridge/src/electrokinetics/ek_poisson_none_init_cuda.cu",
+      "src/walberla_bridge/src/electrokinetics/ek_walberla_init.cu",
+      "src/walberla_bridge/src/electrokinetics/generated_kernels/AdvectiveFluxKernel_double_precision_CUDA.cu",
+      "src/walberla_bridge/src/electrokinetics/generated_kernels/AdvectiveFluxKernel_single_precision_CUDA.cu",
+      "src/walberla_bridge/src/electrokinetics/generated_kernels/ContinuityKernel_double_precision_CUDA.cu",
+      "src/walberla_bridge/src/electrokinetics/generated_kernels/ContinuityKernel_single_precision_CUDA.cu",
+      "src/walberla_bridge/src/electrokinetics/generated_kernels/DiffusiveFluxKernelThermalized_double_precision_CUDA.cu",
+      "src/walberla_bridge/src/electrokinetics/generated_kernels/DiffusiveFluxKernelThermalized_single_precision_CUDA.cu",
+      "src/walberla_bridge/src/electrokinetics/generated_kernels/DiffusiveFluxKernelWithElectrostaticThermalized_double_precision_CUDA.cu",
+      "src/walberla_bridge/src/electrokinetics/generated_kernels/DiffusiveFluxKernelWithElectrostaticThermalized_single_precision_CUDA.cu",
+      "src/walberla_bridge/src/electrokinetics/generated_kernels/DiffusiveFluxKernelWithElectrostatic_double_precision_CUDA.cu",
+      "src/walberla_bridge/src/electrokinetics/generated_kernels/DiffusiveFluxKernelWithElectrostatic_single_precision_CUDA.cu",
+      "src/walberla_bridge/src/electrokinetics/generated_kernels/DiffusiveFluxKernel_double_precision_CUDA.cu",
+      "src/walberla_bridge/src/electrokinetics/generated_kernels/DiffusiveFluxKernel_single_precision_CUDA.cu",
+      "src/walberla_bridge/src/electrokinetics/generated_kernels/Dirichlet_double_precision_CUDA.cu",
+      "src/walberla_bridge/src/electrokinetics/generated_kernels/Dirichlet_single_precision_CUDA.cu",
+      "src/walberla_bridge/src/electrokinetics/generated_kernels/EK_FieldAccessors_double_precision_CUDA.cu",
+      "src/walberla_bridge/src/electrokinetics/generated_kernels/EK_FieldAccessors_double_precision_CUDA.cuh",
+      "src/walberla_bridge/src/electrokinetics/generated_kernels/EK_FieldAccessors_single_precision_CUDA.cu",
+      "src/walberla_bridge/src/electrokinetics/generated_kernels/EK_FieldAccessors_single_precision_CUDA.cuh",
+      "src/walberla_bridge/src/electrokinetics/generated_kernels/FixedFlux_double_precision_CUDA.cu",
+      "src/walberla_bridge/src/electrokinetics/generated_kernels/FixedFlux_single_precision_CUDA.cu",
+      "src/walberla_bridge/src/electrokinetics/generated_kernels/FrictionCouplingKernel_double_precision_CUDA.cu",
+      "src/walberla_bridge/src/electrokinetics/generated_kernels/FrictionCouplingKernel_single_precision_CUDA.cu",
+      "src/walberla_bridge/src/electrokinetics/generated_kernels/philox_rand.h",
+      "src/walberla_bridge/src/electrokinetics/greens_function.hpp",
+      "src/walberla_bridge/src/electrokinetics/reactions/generated_kernels/ReactionKernelBulk_1_double_precision_CUDA.cu",
+      "src/walberla_bridge/src/electrokinetics/reactions/generated_kernels/ReactionKernelBulk_1_single_precision_CUDA.cu",
+      "src/walberla_bridge/src/electrokinetics/reactions/generated_kernels/ReactionKernelBulk_2_double_precision_CUDA.cu",
+      "src/walberla_bridge/src/electrokinetics/reactions/generated_kernels/ReactionKernelBulk_2_single_precision_CUDA.cu",
+      "src/walberla_bridge/src/electrokinetics/reactions/generated_kernels/ReactionKernelBulk_3_double_precision_CUDA.cu",
+      "src/walberla_bridge/src/electrokinetics/reactions/generated_kernels/ReactionKernelBulk_3_single_precision_CUDA.cu",
+      "src/walberla_bridge/src/electrokinetics/reactions/generated_kernels/ReactionKernelBulk_4_double_precision_CUDA.cu",
+      "src/walberla_bridge/src/electrokinetics/reactions/generated_kernels/ReactionKernelBulk_4_single_precision_CUDA.cu",
+      "src/walberla_bridge/src/electrokinetics/reactions/generated_kernels/ReactionKernelBulk_5_double_precision_CUDA.cu",
+      "src/walberla_bridge/src/electrokinetics/reactions/generated_kernels/ReactionKernelBulk_5_single_precision_CUDA.cu",
+      "src/walberla_bridge/src/electrokinetics/reactions/generated_kernels/ReactionKernelIndexed_1_double_precision_CUDA.cu",
+      "src/walberla_bridge/src/electrokinetics/reactions/generated_kernels/ReactionKernelIndexed_1_single_precision_CUDA.cu",
+      "src/walberla_bridge/src/electrokinetics/reactions/generated_kernels/ReactionKernelIndexed_2_double_precision_CUDA.cu",
+      "src/walberla_bridge/src/electrokinetics/reactions/generated_kernels/ReactionKernelIndexed_2_single_precision_CUDA.cu",
+      "src/walberla_bridge/src/electrokinetics/reactions/generated_kernels/ReactionKernelIndexed_3_double_precision_CUDA.cu",
+      "src/walberla_bridge/src/electrokinetics/reactions/generated_kernels/ReactionKernelIndexed_3_single_precision_CUDA.cu",
+      "src/walberla_bridge/src/electrokinetics/reactions/generated_kernels/ReactionKernelIndexed_4_double_precision_CUDA.cu",
+      "src/walberla_bridge/src/electrokinetics/reactions/generated_kernels/ReactionKernelIndexed_4_single_precision_CUDA.cu",
+      "src/walberla_bridge/src/electrokinetics/reactions/generated_kernels/ReactionKernelIndexed_5_double_precision_CUDA.cu",
+      "src/walberla_bridge/src/electrokinetics/reactions/generated_kernels/ReactionKernelIndexed_5_single_precision_CUDA.cu",
+      "src/walberla_bridge/src/lattice_boltzmann/generated_kernels/DynamicUBBDoublePrecisionCUDA.cu",
+      "src/walberla_bridge/src/lattice_boltzmann/generated_kernels/DynamicUBBSinglePrecisionCUDA.cu",
+      "src/walberla_bridge/src/lattice_boltzmann/generated_kernels/FieldAccessorsDoublePrecisionCUDA.cu",
+      "src/walberla_bridge/src/lattice_boltzmann/generated_kernels/FieldAccessorsDoublePrecisionCUDA.cuh",
+      "src/walberla_bridge/src/lattice_boltzmann/generated_kernels/FieldAccessorsSinglePrecisionCUDA.cu",
+      "src/walberla_bridge/src/lattice_boltzmann/generated_kernels/FieldAccessorsSinglePrecisionCUDA.cuh",
+      "src/walberla_bridge/src/lattice_boltzmann/generated_kernels/InitialPDFsSetterDoublePrecisionCUDA.cu",
+      "src/walberla_bridge/src/lattice_boltzmann/generated_kernels/InitialPDFsSetterSinglePrecisionCUDA.cu",
+      "src/walberla_bridge/src/lattice_boltzmann/generated_kernels/PackInfoPdfDoublePrecisionCUDA.cu",
+      "src/walberla_bridge/src/lattice_boltzmann/generated_kernels/PackInfoPdfSinglePrecisionCUDA.cu",
+      "src/walberla_bridge/src/lattice_boltzmann/generated_kernels/PackInfoVecDoublePrecisionCUDA.cu",
+      "src/walberla_bridge/src/lattice_boltzmann/generated_kernels/PackInfoVecSinglePrecisionCUDA.cu",
+      "src/walberla_bridge/src/lattice_boltzmann/generated_kernels/StreamCollideSweepLeesEdwardsDoublePrecisionCUDA.cu",
+      "src/walberla_bridge/src/lattice_boltzmann/generated_kernels/StreamCollideSweepLeesEdwardsSinglePrecisionCUDA.cu",
+      "src/walberla_bridge/src/lattice_boltzmann/generated_kernels/StreamCollideSweepThermalizedDoublePrecisionCUDA.cu",
+      "src/walberla_bridge/src/lattice_boltzmann/generated_kernels/StreamCollideSweepThermalizedSinglePrecisionCUDA.cu",
+      "src/walberla_bridge/src/lattice_boltzmann/generated_kernels/UpdateVelFromPDFDoublePrecisionCUDA.cu",
+      "src/walberla_bridge/src/lattice_boltzmann/generated_kernels/UpdateVelFromPDFSinglePrecisionCUDA.cu",
+      "src/walberla_bridge/src/lattice_boltzmann/generated_kernels/philox_rand.h",
+      "src/walberla_bridge/src/lattice_boltzmann/lb_fields.cuh",
+      "src/walberla_bridge/src/lattice_boltzmann/lb_kernels.cuh",
+      "src/walberla_bridge/src/lattice_boltzmann/lb_walberla_init.cu",
+      "src/walberla_bridge/tests/LBWalberlaImpl_field_accessors_tests_cuda.cu",
+      "src/walberla_bridge/tests/PoissonSolver_test_cuda.cu"
+    ],
+    "markers": {
+      "launch": 187,
+      "kernel": 167,
+      "device_code": 47
+    },
+    "libraries": {
+      "cufft": 36,
+      "thrust": 408
+    }
+  },
+  "components": [
+    {
+      "id": "library:espresso_core",
+      "kind": "library",
+      "where": "src/core/CMakeLists.txt"
+    },
+    {
+      "id": "library:espresso_shapes",
+      "kind": "library",
+      "where": "src/shapes/CMakeLists.txt"
+    },
+    {
+      "id": "option:ESPRESSO_ADD_OMPI_SINGLETON_WARNING",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "ON",
+      "doc": "Add a runtime warning in the pypresso script for NUMA architectures that aren't "
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_BENCHMARKS",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Enable benchmarks"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_TESTS",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "ON",
+      "doc": "Enable tests"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_ASAN",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build with address sanitizer"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_CALIPER",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build with Caliper instrumentation"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_CCACHE",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Use ccache compiler invocation."
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_CLANG_TIDY",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Run Clang-Tidy during compilation"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_COVERAGE",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Generate code coverage report for C++ code"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_COVERAGE_PYTHON",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Generate code coverage report for Python code"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_CPPCHECK",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Run Cppcheck during compilation"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_CUDA",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build with GPU support"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_FFTW",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "ON",
+      "doc": "Build with FFTW support"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_FPE",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build with floating-point exceptions instrumentation"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_GSL",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build with GSL support"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_HDF5",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build with HDF5 support"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_HIP",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Compile the GPU code as HIP for AMD GPUs (ROCm)"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_KOKKOS_FFT",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "ON",
+      "doc": "Use kokkos-fft for the single-rank P3M reciprocal-space FFT"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_MSAN",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build with memory sanitizer (experimental; requires a memory-sanitized Python in"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_NLOPT",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build with NLopt support"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_PYTHON",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "ON",
+      "doc": "Build with Python bindings"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_SCAFACOS",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build with ScaFaCoS support"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_STOKESIAN_DYNAMICS",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build with Stokesian Dynamics"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_UBSAN",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build with undefined behavior sanitizer"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_VALGRIND",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Build with Valgrind instrumentation"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_WALBERLA",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "ON",
+      "doc": "Build with waLBerla support"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_WALBERLA_AVX",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "unset",
+      "doc": "Build waLBerla kernels with AVX2 vectorization"
+    },
+    {
+      "id": "option:ESPRESSO_INSIDE_DOCKER",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Set this to ON when running inside Docker."
+    },
+    {
+      "id": "option:ESPRESSO_INSTALL_PYPRESSO",
+      "kind": "option",
+      "where": "src/python/CMakeLists.txt",
+      "default": "ON",
+      "doc": "Install pypresso script, not needed when ESPResSo is installed in /usr"
+    },
+    {
+      "id": "option:ESPRESSO_WARNINGS_ARE_ERRORS",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Treat warnings as errors during compilation"
+    },
+    {
+      "id": "test:SRC",
+      "kind": "test",
+      "where": "src/walberla_bridge/tests/CMakeLists.txt"
+    },
+    {
+      "id": "library:espresso_walberla",
+      "kind": "library",
+      "where": "src/walberla_bridge/CMakeLists.txt"
+    },
+    {
+      "id": "codegen:walberla_bridge generated GPU kernels (56 .cu, 2 selector headers)",
+      "kind": "generated",
+      "where": "src/walberla_bridge/src/*/generated_kernels"
+    },
+    {
+      "id": "codegen:maintainer/walberla_kernels templates",
+      "kind": "generator",
+      "where": "maintainer/walberla_kernels/templates"
+    },
+    {
+      "id": "dependency:waLBerla GPU backend (walberla::gpu, WALBERLA_BUILD_WITH_HIP)",
+      "kind": "dependency",
+      "where": "CMakeLists.txt (FetchContent walberla 623a60c1)"
+    },
+    {
+      "id": "dependency:heFFTe GPU backend (rocFFT)",
+      "kind": "dependency",
+      "where": "CMakeLists.txt (FetchContent heffte v2.4.1)"
+    },
+    {
+      "id": "test:walberla_bridge GPU unit tests (LBWalberlaImpl_field_accessors_tests_cuda, PoissonSolver_test_cuda)",
+      "kind": "test",
+      "where": "src/walberla_bridge/tests/CMakeLists.txt"
+    },
+    {
+      "id": "test:python LB/EK GPU classes (37 files)",
+      "kind": "test",
+      "where": "testsuite/python"
+    },
+    {
+      "id": "build:CUDA no-regression compile of the bridge commits (nvcc)",
+      "kind": "build",
+      "where": "upstream cuda12-maxset recipe"
+    }
+  ],
+  "covered": [
+    {
+      "id": "library:espresso_core",
+      "evidence": "core GPU commit bc8d73dd9, validated on linux-gfx950, linux-gfx942 and linux-gfx1201"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_CUDA",
+      "evidence": "core GPU commit bc8d73dd9, validated on linux-gfx950, linux-gfx942 and linux-gfx1201; required together with ESPRESSO_BUILD_WITH_HIP"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_HIP",
+      "evidence": "core GPU commit bc8d73dd9, validated on linux-gfx950, linux-gfx942 and linux-gfx1201; waLBerla bridge commits e8fa4dfa5 (decoupling), 3862a5040 (LB/EK GPU), 17094fdf3 (EK FFT); linux-gfx942 porter runs 2026-11-20 (notes.md)"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_WALBERLA",
+      "evidence": "waLBerla bridge commits e8fa4dfa5 (decoupling), 3862a5040 (LB/EK GPU), 17094fdf3 (EK FFT); linux-gfx942 porter runs 2026-11-20 (notes.md)"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_FFTW",
+      "evidence": "heFFTe/FFTW CPU path and heFFTe rocFFT GPU path; waLBerla bridge commits e8fa4dfa5 (decoupling), 3862a5040 (LB/EK GPU), 17094fdf3 (EK FFT); linux-gfx942 porter runs 2026-11-20 (notes.md)"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_PYTHON",
+      "evidence": "Python GPU suites in every validation; waLBerla bridge commits e8fa4dfa5 (decoupling), 3862a5040 (LB/EK GPU), 17094fdf3 (EK FFT); linux-gfx942 porter runs 2026-11-20 (notes.md)"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_TESTS",
+      "evidence": "check_unit_tests and ctest in every round"
+    },
+    {
+      "id": "test:SRC",
+      "evidence": "C++ unit tests (check_unit_tests) 152/152 at 17094fdf3 on linux-gfx942"
+    },
+    {
+      "id": "library:espresso_walberla",
+      "evidence": "waLBerla bridge commits e8fa4dfa5 (decoupling), 3862a5040 (LB/EK GPU), 17094fdf3 (EK FFT); linux-gfx942 porter runs 2026-11-20 (notes.md)"
+    },
+    {
+      "id": "codegen:walberla_bridge generated GPU kernels (56 .cu, 2 selector headers)",
+      "evidence": "3862a5040; hand edits verified against a regeneration with the pinned generators (notes.md)"
+    },
+    {
+      "id": "codegen:maintainer/walberla_kernels templates",
+      "evidence": "3862a5040 (4 templates)"
+    },
+    {
+      "id": "dependency:waLBerla GPU backend (walberla::gpu, WALBERLA_BUILD_WITH_HIP)",
+      "evidence": "3862a5040; waLBerla pin builds unmodified with ROCm 10.1"
+    },
+    {
+      "id": "dependency:heFFTe GPU backend (rocFFT)",
+      "evidence": "17094fdf3 (Heffte_ENABLE_ROCM)"
+    },
+    {
+      "id": "test:walberla_bridge GPU unit tests (LBWalberlaImpl_field_accessors_tests_cuda, PoissonSolver_test_cuda)",
+      "evidence": "3862a5040/17094fdf3; both run on the GPU and pass on linux-gfx942"
+    },
+    {
+      "id": "test:python LB/EK GPU classes (37 files)",
+      "evidence": "e8fa4dfa5..17094fdf3 on linux-gfx942: ctest -L gpu 74/74 (default and maxset); verbose LB/EK subset 52/52 with 127 GPU-class cases ok (default) and 138 (maxset); GPU-class skips only test-internal filters; lattice_vtk GPU classes run once the vtk module is installed; no 'compiled without CUDA support'"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_CALIPER",
+      "evidence": "917d6f707: NVTX/CUPTI off in a HIP build; HIP build with Caliper 384/384, caliper test passes on linux-gfx942"
+    },
+    {
+      "id": "build:CUDA no-regression compile of the bridge commits (nvcc)",
+      "evidence": "17094fdf3: nvcc 12.8.93, upstream cuda12-maxset recipe (warnings as errors, waLBerla ON), every compile/link edge passes with 0 warnings; CUDA build graph identical to bc8d73dd9 (1842 flag lines, 2313 edges); 917d6f707 changes only the Caliper block, which that recipe leaves OFF"
+    }
+  ],
+  "scoped_out": [
+    {
+      "id": "library:espresso_shapes",
+      "reason": "host-only C++ library, no GPU code; built and tested unchanged"
+    },
+    {
+      "id": "option:ESPRESSO_ADD_OMPI_SINGLETON_WARNING",
+      "reason": "MPI runtime message option, no GPU code"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_BENCHMARKS",
+      "reason": "benchmark scripts are host Python; the GPU benchmarks run in ctest -L gpu"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_ASAN",
+      "reason": "sanitizer build mode, toolchain-only, not part of the port"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_MSAN",
+      "reason": "sanitizer build mode, toolchain-only, not part of the port"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_UBSAN",
+      "reason": "sanitizer build mode, toolchain-only, not part of the port"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_VALGRIND",
+      "reason": "debugging mode, toolchain-only, not part of the port"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_CCACHE",
+      "reason": "build cache, toolchain-only"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_CLANG_TIDY",
+      "reason": "static analysis, toolchain-only"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_CPPCHECK",
+      "reason": "static analysis, toolchain-only"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_COVERAGE",
+      "reason": "coverage instrumentation, toolchain-only"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_COVERAGE_PYTHON",
+      "reason": "coverage instrumentation, toolchain-only"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_FPE",
+      "reason": "host floating-point exception trapping, no GPU code"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_GSL",
+      "reason": "host library (GSL), no GPU code"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_HDF5",
+      "reason": "host I/O library (H5MD), no GPU code"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_KOKKOS_FFT",
+      "reason": "kokkos-fft runs in the Kokkos host execution space (its cuFFT backend is read only under Kokkos_ENABLE_CUDA, never set for HIP or nvcc)"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_NLOPT",
+      "reason": "host optimization library, no GPU code"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_SCAFACOS",
+      "reason": "external host library, no GPU code in ESPResSo"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_STOKESIAN_DYNAMICS",
+      "reason": "host-only since upstream removed its GPU path; no CUDA source"
+    },
+    {
+      "id": "option:ESPRESSO_BUILD_WITH_WALBERLA_AVX",
+      "reason": "CPU vectorization of the waLBerla CPU kernels, unrelated to the GPU"
+    },
+    {
+      "id": "option:ESPRESSO_INSIDE_DOCKER",
+      "reason": "CI environment switch, no GPU code"
+    },
+    {
+      "id": "option:ESPRESSO_INSTALL_PYPRESSO",
+      "reason": "install layout option, no GPU code"
+    },
+    {
+      "id": "option:ESPRESSO_WARNINGS_ARE_ERRORS",
+      "reason": "warning policy; the HIP build has only the known ROCm nodiscard hipError_t warnings in existing upstream lines, so it is not usable with this switch on ROCm 10.1 headers; the CUDA build is checked with it on"
+    }
+  ],
+  "owed": [],
+  "removed_from_floor": []
+}

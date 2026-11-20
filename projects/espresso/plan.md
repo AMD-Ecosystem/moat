@@ -226,4 +226,4 @@ The starting point was the waLBerla intake's analysis (`origin/port/walberla:pro
 
 ### Owed after porting
 
-Review of the three new commits; nvcc compile; validation on linux-gfx950 (wave64) and a wave32 Radeon (linux-gfx1201); Windows waived for this project.
+Review of the new commits; validation on linux-gfx950 (wave64), a wave32 Radeon (linux-gfx1201) and this platform's own validator record (linux-gfx942); Windows waived for this project. Update 2026-11-20, end of the porter rounds: the work came to four commits (a Caliper fix was added, 917d6f707), and the nvcc compile was done on this host, whose image now carries CUDA 12.8 (notes.md, "CUDA no-regression compile 2026-11-20").
