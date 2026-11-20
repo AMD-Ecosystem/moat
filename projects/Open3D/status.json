@@ -7,7 +7,7 @@
   "priority": 7.305,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:03Z",
-  "updated_at": "2026-11-20T22:16:27Z",
+  "updated_at": "2026-11-20T23:05:06Z",
   "head_sha": "11c1d702e859245f4de56cae12ba1c7a403b63ea",
   "pr_url": "https://github.com/isl-org/Open3D/pull/7509",
   "pr_state": "open",
@@ -52,10 +52,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "50bb2505b",
+      "validated_sha": "11c1d702e859245f4de56cae12ba1c7a403b63ea",
       "started_at": "2026-05-31T08:26:00Z",
-      "completed_at": "2026-07-02T19:20:01Z",
-      "updated_at": "2026-07-02T19:20:01Z",
+      "completed_at": "2026-11-20T23:05:06Z",
+      "updated_at": "2026-11-20T23:05:06Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -71,11 +71,17 @@
       },
       "last_agent": "validator",
       "carry_forward": {
-        "to": "50bb2505b",
+        "from": "50bb2505b",
+        "to": "11c1d702e859245f4de56cae12ba1c7a403b63ea",
         "method": "binary-equiv",
-        "detail": "Rebase onto upstream/main: upstream io/viz/pybind churn, no HIP kernel changed; device ISA + exports identical on gfx1100 (29 code objects)",
-        "at": "2026-07-02T19:20:01Z"
-      }
+        "class": "mixed",
+        "detail": "Built 50bb2505b and 11c1d702e at one source path (ROCm 10.2.0a20261022 wheels): bin/tests device ISA + 29 exports identical; host: delta is WIN32-AND-NOT-MSVC CMake + docs, ninja commands identical, h",
+        "at": "2026-11-20T23:05:06Z",
+        "host_checked": true
+      },
+      "validated_prior": [
+        "50bb2505b"
+      ]
     },
     "windows-gfx1101": {
       "blocked": true,

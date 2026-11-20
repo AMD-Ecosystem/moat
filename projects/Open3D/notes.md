@@ -1270,3 +1270,55 @@ cmake --build build-head -j 32 -- -k 0      # MAX_JOBS=32
 - Coverage: 27 CUDA objects compiled by nvcc, which is every `.cu` under `cpp/` outside `cpp/open3d/ml/` (26) plus the one CUDA test source. The 45 `.cu` files under `ml/` are the PyTorch/TensorFlow ops (BUILD_*_OPS=OFF); the port changes no file under `ml/`. The port-touched host sources NPPImage.cpp, CUDAUtils.cpp and CPUInfo.cpp were compiled in this CUDA configuration. `cuobjdump --list-elf bin/tests` lists 2885 sm_80 cubins; libOpen3D.a and bin/tests (863 MB) linked.
 
 This covers the CUDA side of every fork commit through 11c1d702e (the port as a whole against fe3af4bb1), not only the fix-round delta.
+
+## Validation 2026-11-20 (linux-gfx1100 revalidate at 11c1d702e, binary-equiv carry-forward)
+
+Follows the refused source-class attempt above. Host: AMD Radeon Pro W7800 48GB (gfx1100, wave32), HIP_VISIBLE_DEVICES=0 as pinned by the dispatcher. No GPU run was needed and none was made; nothing was pushed to the fork.
+
+Toolchain: TheRock ROCm 10.2.0a20261022 wheels (the newest 10.2 build; no ROCm 10.2.0 release wheel is published yet: repo.amd.com/rocm/whl stops at 7.13/7.14.1, whl-next has 10.2.0a nightlies up to 20261022 and then 10.3.0a), installed into a job-local venv, not a system ROCm. hipconfig 7.17.26422, HIP compiler Clang 24.0.0, CMake 3.31.6 and Ninja from the job venv, MAX_JOBS=16.
+
+```
+python -m venv <job>/rocm102
+<job>/rocm102/bin/python -m pip install --index-url https://nightly.repo.amd.com/rocm/whl-next/ \
+  --extra-index-url https://pypi.org/simple "rocm[libraries,devel]==10.2.0a20261022" "rocm-sdk-device-gfx1100==10.2.0a20261022"
+R=$(<job>/rocm102/bin/python -m rocm_sdk path --root)
+```
+
+Build recipe (agent_space/o3d_build.sh, the gfx1100 recipe from "Validation 2026-05-31 (gfx1100)" with the pip SDK and Ninja), run once per commit in the SAME source tree projects/Open3D/src, each into its own fresh build directory:
+
+```
+export PATH=$R/bin:$PATH ROCM_PATH=$R HIP_PATH=$R
+cmake -S projects/Open3D/src -B <builddir> -G Ninja \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R \
+  -DBUILD_PYTORCH_OPS=OFF -DBUILD_TENSORFLOW_OPS=OFF \
+  -DBUILD_GUI=OFF -DBUILD_WEBRTC=OFF -DBUILD_EXAMPLES=OFF \
+  -DBUILD_BENCHMARKS=OFF -DBUILD_PYTHON_MODULE=OFF \
+  -DBUILD_UNIT_TESTS=ON -DBUILD_ISPC_MODULE=OFF -DWITH_IPP=OFF \
+  -DCMAKE_BUILD_TYPE=Release -DDEVELOPER_BUILD=ON
+cmake --build <builddir> -j16 --target tests
+```
+
+- 50bb2505be991392f7cdfd040802db7bbf6ef2a8 -> build-old: 813/813, rc=0, 251 s.
+- 11c1d702e859245f4de56cae12ba1c7a403b63ea -> build-new: 813/813, rc=0, 246 s. `git status --porcelain` empty at head.
+
+Device comparison:
+
+```
+ROCM_PATH=$R python3 utils/codeobj_diff.py build-old/bin/tests build-new/bin/tests
+verdict=identical
+  tests vs tests: identical (exported symbols + device ISA identical (29 exports))
+```
+
+`codeobj_diff.py build-old build-new` (whole trees) answers `verdict=indeterminate` only because of two `premake5.exe` files (PE/COFF) unpacked from the tinygltf and tinyobjloader source archives (`tools/windows/`), which are not built or run; every ELF in the trees compares identical.
+
+Host side (codeobj_diff does not read host code), checked before passing `--host-checked`:
+- Delta read: c8713e747 only adds a PATCH_COMMAND entry under `if(WIN32 AND NOT MSVC)` in 3rdparty/assimp/assimp.cmake, an `else()` of `if(MSVC)` inside `if(WIN32)` in cmake/Open3DSetGlobalProperties.cmake, and the patch file; 11c1d702e is docs/compilation.rst. Nothing reaches a Linux configure.
+- `ninja -t commands` over the whole build, with the build directory name normalized: identical md5 for both trees (b47e05cf...), also for the `tests` target alone. `0004-fix-draco` appears in no build.ninja or .cmake file of build-new (0003 does), so the patch step does not run on Linux.
+- bin/tests: every ELF section has the same size except `.strtab` (4 bytes, the path-hashed `__hip_cuid_*` / `__hip_gpubin_handle_*` names). `objdump -d` with addresses, displacements and symbol comments stripped: the host instruction streams are identical (0 differing lines). The raw `.text` bytes differ only in RIP-relative displacements into `.rodata`, whose string pool order shifts with the embedded build path (only the `build-old`/`build-new` path strings and per-TU cuid names differ in `strings`).
+
+Recorded: `python3 utils/moatlib.py carry-forward Open3D linux-gfx1100 11c1d702e859245f4de56cae12ba1c7a403b63ea binary-equiv --host-checked "<reason>"`.
+
+CUDA gate: not owed here; recorded at this head in "CUDA compile check (nvcc) at 11c1d702e" (PASS).
+
+Jargon (`python3 utils/jargon.py --port Open3D`, after fetching `main` and `moat-fix-7509` into the fork clone): 2 hits, both 'fault-class' in the already-published commit 73a209622 (body lines 25 and 29), none in this round; the same finding the 2026-11-20 review left for a person. Not sent back with `--gate jargon`: the fix needs a rewritten published commit message, which no porter round can make on the frozen branch. For jeff: decide whether to reword it at squash time.
