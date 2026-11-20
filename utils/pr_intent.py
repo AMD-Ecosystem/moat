@@ -36,13 +36,17 @@ legitimate exception -- it costs one click to fix -- so this part fails.
     python3 utils/pr_intent.py --base <ref> --title "colmap: ..." --branch port/colmap
 """
 
+import os
 import argparse
 import pathlib
 import re
 import subprocess
 import sys
 
-REPO = pathlib.Path(__file__).resolve().parents[1]
+# The checkout this acts on. MOAT_REPO is set when the trunk's copy of the tools runs
+# against another checkout (see trunk.py); config and schema come from TOOLS_ROOT.
+TOOLS_ROOT = pathlib.Path(__file__).resolve().parents[1]
+REPO = pathlib.Path(os.environ["MOAT_REPO"]).resolve() if os.environ.get("MOAT_REPO") else TOOLS_ROOT
 
 PROJECT = re.compile(r"^projects/([^/]+)/(.*)$")
 # Written by a person about one port. Everything else under a project folder is
@@ -93,7 +97,7 @@ def _known_projects():
     the tree if moatlib cannot be imported, since this also runs in CI."""
     try:
         import sys
-        sys.path.insert(0, str(REPO / "utils"))
+        sys.path.insert(0, str(TOOLS_ROOT / "utils"))
         import moatlib
         return set(moatlib.all_projects())
     except Exception:
@@ -224,4 +228,6 @@ def main():
 
 
 if __name__ == "__main__":
+    import trunk  # noqa: E402 - run the trunk's copy of this tool, see trunk.py
+    trunk.reexec(__file__)
     sys.exit(main())
