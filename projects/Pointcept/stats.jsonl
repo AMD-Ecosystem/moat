@@ -121,3 +121,4 @@
 {"kind":"phase","ts":"2026-11-20T00:55:39Z","phase":"compile","seconds":107.242,"exit":0,"cmd":"bash agent_space/build_libs.sh"}
 {"kind":"phase","ts":"2026-11-20T00:57:24Z","phase":"compile","seconds":820.492,"exit":0,"cmd":"bash agent_space/build_deps.sh"}
 {"kind":"phase","ts":"2026-11-20T01:32:48Z","phase":"test","seconds":1254.942,"exit":0,"cmd":"agent_space/e2e.sh --steps 20"}
+{"kind":"session","ts":"2026-11-20T01:33:43Z","epoch":1795138423.246507,"event":"start","platform":"linux-gfx942"}
