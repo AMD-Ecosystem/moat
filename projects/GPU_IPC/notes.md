@@ -1665,5 +1665,5 @@ misnames the projection ("bending") and misstates the `WARP_MASK_FROM_COUNT`
 reason; the body above carries the corrected wording (see "## Review 2026-11-20").
 The Windows sentence rests on the 2026-08-19 compile at f9604bb (before the
 upstream merge); re-check that a Windows compile at the final head exists
-before sending, or drop the sentence. Run `python3 utils/prose.py` and
-after filling the placeholder.
+before sending, or drop the sentence. Body checked 2026-11-20: `utils/prose.py`
+clean, `utils/jargon.py -` clean; re-run both after filling the placeholder.
