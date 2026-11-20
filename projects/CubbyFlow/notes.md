@@ -1368,3 +1368,64 @@ the probe, since a bare `__global__` fails the host pass ("Can't find
 declaration for hipLaunchKernel") and makes the shim look ineffective. In a
 target mixing HIP and C++ sources, appending the shim's `-I` to
 `CMAKE_HIP_FLAGS` scopes it to HIP translation units only. (CubbyFlow)
+
+## Review 2026-11-20 (windows-gfx1151, reviewer): re-review at aeb9540d
+
+review-passed at `aeb9540d6be87d4fcde76a00ded5f972b4615c35` (moat-fix-145). Scope:
+the whole staged delta 62f4604c..aeb9540d is stamped; 62f4604c..29bac0b9 carries
+from the 2026-08-20 re-review, cc41a805 from the review above, and this review
+read `git diff 29bac0b9..aeb9540d` (net: new `Builds/CMake/HipCxx23Shim.cmake`,
+`CMakeLists.txt:87-94`; `CompileOptions.cmake` byte-identical to 29bac0b9) and both
+commit bodies in full. No findings against the fork.
+
+Earlier findings: both resolved. Finding 1: `CMakeLists.txt:87-88` and
+`HipCxx23Shim.cmake:4-9` state the real cause (C++23 constexpr `<cmath>`, implicit
+host+device, wrapper declares device-only overloads after `<cmath>`) and the drop
+condition (ROCm carrying llvm/llvm-project#201563); aeb9540d's body opens by
+retracting cc41a805's explanation. Finding 2: the pin is gone; HIP and CXX TUs are
+both at C++23, so the ODR question no longer arises.
+
+Shim vs `assets/HipCxx23Shim.cmake`, checked against the installed TheRock 7.14
+wrapper (`#include <cmath>` line 114, forward-declares line 147, one occurrence of
+each, both inside `!__HIPCC_RTC__` branches) and the generated copy in
+`build_gfx1151_b/HipCxx23Shim/` (differs only by the moved line; licence header
+intact): faithful where it matters -- acts only on the exact diagnostic, refuses a
+wrapper already in fixed order or missing either include, re-probes and discards on
+failure. Probe evidence in `build_gfx1151_b/CMakeFiles/CMakeConfigureLog.yaml`: the
+first probe fails at `-std=gnu++23` with the diagnostic, the second passes with the
+`-I`. Robustness: `NO_CACHE` re-probes every configure, and `CMAKE_HIP_FLAGS` is a
+normal variable recomputed from the cache value, so a re-configure probes the bare
+toolchain (a stale generated header is never on the path after a ROCm upgrade that
+fixes the bug, and is overwritten otherwise); `STATIC_LIBRARY` avoids linking
+(cross-compile safe); Ninja Multi-Config is irrelevant to a header path; a compiler
+with different diagnostic text gets no shim and fails as before, which is the
+correct outcome. `CMAKE_TRY_COMPILE_TARGET_TYPE` is function-scoped; nothing runs
+outside `if (USE_HIP)`; nothing generated is installed (`Sources/Core/CMakeLists.txt:82-84`
+installs only the library and source headers). Licence: the LLVM header is copied
+into the build tree at configure time, never committed or installed, with its
+Apache-2.0 WITH LLVM-exception header kept; no maintainer concern I can see.
+Deviations from the asset that are not defects: no RESULT check on
+`-print-resource-dir` and `file(READ)` would be fatal if the path were wrong, but
+that branch is reached only after clang itself emitted the diagnostic; the probe
+inherits try_compile's Debug config and `gnu++23` rather than the project's
+Release/`c++23`, which does not change `_HAS_CXX23` and was shown not to matter.
+Linux HIP: not configured at this head; the validators will see the first probe
+pass (Linux HIP built at C++23 on 2026-08-20).
+
+Commits: titles 65 and 46 chars with `[ROCm]`, ASCII, prose AI disclosure, fenced
+Test Plans with placeholders, no trailer; `python utils/jargon.py --port CubbyFlow`:
+clean. Fork worktree has no modified tracked files.
+
+For the person approving the fix round (not a defect): the staged history adds the
+C++20 pin in cc41a805 and removes it in aeb9540d. Fix branches are never rebased,
+and aeb9540d's body explicitly corrects cc41a805, so the history is honest and
+acceptable as is; the net diff a maintainer sees for this round is only the shim
+(67 lines). If the maintainer squash-merges, the wrong explanation in cc41a805 is
+not carried.
+
+For the session promoting the lesson below: "reuse the project's HIP compiler
+settings" is slightly overstated. try_compile reuses the compiler, `CMAKE_HIP_FLAGS`
+and architectures, but not the build configuration (it compiled Debug, `-O0`,
+msvcrtd here) or `CXX_EXTENSIONS OFF` (probe at `gnu++23`). Say which settings
+carry, and note that the inherited `CMAKE_HIP_FLAGS` includes any project
+force-includes.

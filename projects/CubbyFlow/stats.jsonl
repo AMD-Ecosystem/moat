@@ -103,3 +103,5 @@
 {"kind":"phase","ts":"2026-11-20T21:48:04Z","phase":"test","seconds":1.292,"exit":0,"cmd":"/d/Develop/moat/agent_space/wt-CubbyFlow/projects/CubbyFlow/src/build_gfx1151_b/bin/CUDATests.exe"}
 {"kind":"phase","ts":"2026-11-20T21:48:20Z","phase":"test","seconds":8.974,"exit":0,"cmd":"/d/Develop/moat/agent_space/wt-CubbyFlow/projects/CubbyFlow/src/build_gfx1151_b/bin/CUDASPHSim.exe -f 5"}
 {"kind":"phase","ts":"2026-11-20T21:48:58Z","phase":"test","seconds":9.639,"exit":0,"cmd":"/d/Develop/moat/agent_space/wt-CubbyFlow/projects/CubbyFlow/src/build_gfx1151_b/bin/UnitTests.exe"}
+{"kind":"session","ts":"2026-11-20T21:55:39Z","epoch":1795211739.318727,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-11-20T21:58:46Z","epoch":1795211926.650593,"event":"end","platform":"windows-gfx1151"}
