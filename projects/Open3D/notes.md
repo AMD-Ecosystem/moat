@@ -1427,3 +1427,31 @@ Other checks at this head:
 - Docs: the ROCm build is documented in docs/compilation.rst.
 - CUDA gate: already recorded at this head ("CUDA compile check (nvcc) at 11c1d702e", PASS), so it was not repeated.
 - Jargon: `python3 utils/jargon.py --port Open3D` finds 2 hits, both 'fault-class' in the body of the already-published 73a209622 (lines 25 and 29) and none in this round. The 2026-11-20 review already left these for a person, because fixing them means rewriting a published commit message (for example at squash). This platform's 50bb2505b completion stood with the same two hits, so no `--gate jargon` failure was recorded.
+
+## Validation 2026-11-20 (windows-gfx1151, head 11c1d702e859245f4de56cae12ba1c7a403b63ea)
+
+Host: Windows 11, AMD Radeon(TM) 8060S Graphics, gfx1151 (wave32, 20 CUs), hipInfo run from TheRock 7.14 SDK. Validated on the fix staging branch `moat-fix-7509` (PR isl-org/Open3D#7509 open; nothing pushed to the fork). `git rev-parse HEAD` = head_sha, tracked tree clean.
+
+Build tree REUSED: `agent_space/b` of the worktree (the porter's tree, configured and built from this same head) -- D: has no room for a second Open3D tree. CMakeCache checked: CMAKE_HOME_DIRECTORY = this worktree's `projects/Open3D/src`, Release, USE_HIP=ON, CMAKE_HIP_ARCHITECTURES=gfx1151, clang++ GNU driver for CXX/HIP, STATIC_WINDOWS_RUNTIME=OFF, USE_SYSTEM_{TBB,JPEG,OPENSSL,CURL,EMBREE,ZEROMQ}=ON, BUILD_UNIT_TESTS=ON, BUILD_EXAMPLES=ON (as the porter built), BUILD_GUI/PYTHON/WEBRTC/ISPC/BENCHMARKS=OFF, WITH_IPP=OFF, DEVELOPER_BUILD=ON. Re-ran the build myself: `utils/timeit.sh Open3D compile -- bash -c 'cd agent_space/b && ninja -j 10 -d explain'` (env from agent_space/o3d_env.sh; log agent_space/val_build.log). 69 steps, 0 failed: the ExternalProject stamps (zlib, fmt, libpng, assimp; their nested builds were no-ops), 11 visualization shader objects (ImageShader ... TextureSimpleShader; `older than Shader.h`, an mtime touch from the porter's later GUI experiments, no source change), and relinks of Open3D.lib, tests.exe and the examples. No compile of any GPU (HIP) translation unit, no large rebuild. Free space on D: stayed above 24 GB.
+
+DLLs next to tests.exe are TheRock's (sha256 of amdhip64_7.dll and amd_comgr.dll identical to `_rocm_sdk_devel/bin`; System32 copies not used). GPU runs via agent_space/run_tests.bat (ROCm bin + vcpkg bin on PATH, ROCBLAS_TENSILE_LIBPATH, OPEN3D_DATA_ROOT under D:), each filter run once under `ulimit -c 0`, wrapped in `utils/timeit.sh Open3D test`; logs in agent_space/val/. CUDA-device cases ran (parametrized `/1` = CUDA:0 cases executed, e.g. 170 `/1` OK lines in the Tensor group; the only skip is the SYCL one).
+
+| filter | result |
+|---|---|
+| `*MemoryManager*` | 21/21 pass |
+| `*Tensor*:*Reduction*` | 400 pass, 1 skip (TensorPermuteDevicesWithSYCL.TakeOwnership/1, SYCL absent) |
+| `*NearestNeighbor*:*KnnIndex*:*FixedRadiusIndex*:*Knn*:*Hybrid*:*Registration*:*Feature*` | 43 pass, 2 fail (below) |
+| `*HashMap*:*VoxelBlockGrid*` | 34/34 pass |
+| `Dataset.DemoFeatureMatchingPointClouds` (re-run alone, see below) | pass |
+
+Total 499 pass (498 + the Dataset test), equal to the gfx1100 baseline and the porter's count.
+
+Failure 1, Odometry/OdometryPermuteDevices.RGBDOdometryMultiScaleHybrid/1 (CUDA:0): throws `NppUnsupportedOnHIP` ("GPU image filtering (NPP) is not supported on ROCm/HIP; use the CPU device") from NPPImage.cpp:30 in the image pyramid. This is the recorded NPP scope-out (notes "Scoped OUT" item 6 and the EXPECTED scoped-out failures list, which names Odometry.RGBDOdometryMultiScaleHybrid); the same test on CPU (/0) passes. The failure is the intentional stub, not a fault.
+
+Failure 2, Dataset.DemoFeatureMatchingPointClouds: a harness artifact, not seen by the porter. The test compares `dataset.GetDownloadDir()` with `GetHomeDirectory() + "/open3d_data/..."`, which the host rule's `OPEN3D_DATA_ROOT` redirect to D: defeats (both EXPECT_EQ lines show the D: path versus `C:\Users\jdaily/open3d_data`). Re-ran that single test with OPEN3D_DATA_ROOT unset and USERPROFILE pointed at agent_space/fakehome (a junction fakehome/open3d_data -> the existing D: data; nothing written under C:): pass (agent_space/run_tests_home.bat, log val/dataset.log).
+
+Differences from the porter's run: none in counts; this run's first pass shows the Dataset path assertion only because of the data-root redirect. No hang, no GPU timeout, no 127/0xc0000135/719.
+
+CUDA no-regression gate: recorded passing at this head by the Linux validation (nvcc compile); not repeated here (no CUDA toolkit use on Windows).
+
+Content gates: docs/compilation.rst carries the Windows HIP section. `python utils/jargon.py --port Open3D`: the same 2 'fault-class' hits in the already-published commit 73a209622 as at 2026-11-20 review and porter rounds; none in this round's commits. Not failed with `--gate jargon` (fix means rewriting a published commit message of an open PR, a person's call, e.g. at squash).

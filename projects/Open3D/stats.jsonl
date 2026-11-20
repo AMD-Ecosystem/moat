@@ -57,3 +57,8 @@
 {"kind":"phase","ts":"2026-11-20T22:56:25Z","phase":"compile","seconds":273.586,"exit":0,"cmd":"bash agent_space/build.sh"}
 {"kind":"phase","ts":"2026-11-20T23:40:03Z","phase":"compile","seconds":1390.395,"exit":0,"cmd":"bash agent_space/build.sh"}
 {"kind":"session","ts":"2026-11-20T23:41:53Z","epoch":1795218113.984602,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-11-20T23:44:32Z","epoch":1795218272.21533,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-11-20T23:44:52Z","phase":"compile","seconds":7.148,"exit":0,"cmd":"bash -c cd agent_space/b && ninja -j 10 -d explain 2>&1 | tee ../val_build.log | grep -vE \"^ninja explain\" | tail -30"}
+{"kind":"phase","ts":"2026-11-20T23:45:56Z","phase":"test","seconds":30.778,"exit":0,"cmd":"bash -c \ncmd.exe //c 'D:\\Develop\\moat\\agent_space\\wt-Open3D\\agent_space\\run_tests.bat --gtest_filter=*MemoryManager*' > agent_space/val/mm.log 2>&1; echo mm rc=$?\ncmd.exe //c 'D:\\Develop\\moat\\agent_space\\wt-Open3D\\agent_space\\run_tests.bat --gtest_filter=*Tensor*:*Reduction*' > agent_space/val/tensor.log 2>&1; echo tensor rc=$?\n"}
+{"kind":"phase","ts":"2026-11-20T23:46:46Z","phase":"test","seconds":43.311,"exit":0,"cmd":"bash -c \ncmd.exe //c 'D:\\Develop\\moat\\agent_space\\wt-Open3D\\agent_space\\run_tests.bat --gtest_filter=*NearestNeighbor*:*KnnIndex*:*FixedRadiusIndex*:*Knn*:*Hybrid*:*Registration*:*Feature*' > agent_space/val/nns.log 2>&1; echo nns rc=$?\ncmd.exe //c 'D:\\Develop\\moat\\agent_space\\wt-Open3D\\agent_space\\run_tests.bat --gtest_filter=*HashMap*:*VoxelBlockGrid*' > agent_space/val/hash.log 2>&1; echo hash rc=$?\n"}
+{"kind":"session","ts":"2026-11-20T23:47:56Z","epoch":1795218476.529541,"event":"end","platform":"windows-gfx1151"}

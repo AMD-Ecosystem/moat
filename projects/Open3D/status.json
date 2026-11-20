@@ -7,7 +7,7 @@
   "priority": 7.305,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:03Z",
-  "updated_at": "2026-11-20T23:41:18Z",
+  "updated_at": "2026-11-20T23:47:57Z",
   "head_sha": "11c1d702e859245f4de56cae12ba1c7a403b63ea",
   "pr_url": "https://github.com/isl-org/Open3D/pull/7509",
   "pr_state": "open",
@@ -91,11 +91,11 @@
     "windows-gfx1151": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": null,
+      "validated_sha": "11c1d702e859245f4de56cae12ba1c7a403b63ea",
       "failed_sha": "50bb2505b",
       "started_at": "2026-11-20T21:33:01Z",
-      "completed_at": null,
-      "updated_at": "2026-11-20T22:16:27Z",
+      "completed_at": "2026-11-20T23:47:57Z",
+      "updated_at": "2026-11-20T23:47:57Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -109,7 +109,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "state": "validation-failed",
+      "state": "completed",
       "last_agent": "reviewer"
     },
     "windows-gfx1201": {
