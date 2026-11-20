@@ -1,0 +1,498 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "be6ad97fdb51",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [
+      "runtime/gpu/tensorrt/LayerNormPlugin/LayerNormPlugin.cu",
+      "runtime/gpu/tensorrt/LayerNormPlugin/LayerNormPlugin.h"
+    ],
+    "markers": {
+      "kernel": 3,
+      "device_code": 8,
+      "launch": 2
+    },
+    "libraries": {
+      "cub": 2
+    }
+  },
+  "components": [
+    {
+      "id": "executable:api_main",
+      "kind": "executable",
+      "where": "runtime/core/bin/CMakeLists.txt"
+    },
+    {
+      "id": "executable:arpa2fst",
+      "kind": "executable",
+      "where": "runtime/core/kaldi/CMakeLists.txt"
+    },
+    {
+      "id": "executable:decoder_main",
+      "kind": "executable",
+      "where": "runtime/core/bin/CMakeLists.txt"
+    },
+    {
+      "id": "executable:fstspecial-bin",
+      "kind": "executable",
+      "where": "runtime/core/patch/openfst/src/extensions/special/CMakeLists.txt"
+    },
+    {
+      "id": "executable:grpc_client_main",
+      "kind": "executable",
+      "where": "runtime/core/bin/CMakeLists.txt"
+    },
+    {
+      "id": "executable:grpc_server_main",
+      "kind": "executable",
+      "where": "runtime/core/bin/CMakeLists.txt"
+    },
+    {
+      "id": "executable:http_client_main",
+      "kind": "executable",
+      "where": "runtime/core/bin/CMakeLists.txt"
+    },
+    {
+      "id": "executable:http_server_main",
+      "kind": "executable",
+      "where": "runtime/core/bin/CMakeLists.txt"
+    },
+    {
+      "id": "executable:label_checker_main",
+      "kind": "executable",
+      "where": "runtime/core/bin/CMakeLists.txt"
+    },
+    {
+      "id": "executable:websocket_client_main",
+      "kind": "executable",
+      "where": "runtime/core/bin/CMakeLists.txt"
+    },
+    {
+      "id": "executable:websocket_server_main",
+      "kind": "executable",
+      "where": "runtime/core/bin/CMakeLists.txt"
+    },
+    {
+      "id": "library:bpu_asr_model",
+      "kind": "library",
+      "where": "runtime/horizonbpu/bpu/CMakeLists.txt"
+    },
+    {
+      "id": "library:decoder",
+      "kind": "library",
+      "where": "runtime/core/decoder/CMakeLists.txt"
+    },
+    {
+      "id": "library:frontend",
+      "kind": "library",
+      "where": "runtime/core/frontend/CMakeLists.txt"
+    },
+    {
+      "id": "library:fstspecial",
+      "kind": "library",
+      "where": "runtime/core/patch/openfst/src/extensions/special/CMakeLists.txt"
+    },
+    {
+      "id": "library:http",
+      "kind": "library",
+      "where": "runtime/core/http/CMakeLists.txt"
+    },
+    {
+      "id": "library:kaldi-decoder",
+      "kind": "library",
+      "where": "runtime/core/kaldi/CMakeLists.txt"
+    },
+    {
+      "id": "library:kaldi-util",
+      "kind": "library",
+      "where": "runtime/core/kaldi/CMakeLists.txt"
+    },
+    {
+      "id": "library:ov_asr_model",
+      "kind": "library",
+      "where": "runtime/openvino/ov/CMakeLists.txt"
+    },
+    {
+      "id": "library:post_processor",
+      "kind": "library",
+      "where": "runtime/core/post_processor/CMakeLists.txt"
+    },
+    {
+      "id": "library:utils",
+      "kind": "library",
+      "where": "runtime/core/utils/CMakeLists.txt"
+    },
+    {
+      "id": "library:websocket",
+      "kind": "library",
+      "where": "runtime/core/websocket/CMakeLists.txt"
+    },
+    {
+      "id": "library:wenet_api",
+      "kind": "library",
+      "where": "runtime/core/api/CMakeLists.txt"
+    },
+    {
+      "id": "library:wenet_grpc",
+      "kind": "library",
+      "where": "runtime/core/grpc/CMakeLists.txt"
+    },
+    {
+      "id": "library:xpu_conformer",
+      "kind": "library",
+      "where": "runtime/kunlun/xpu/CMakeLists.txt"
+    },
+    {
+      "id": "option:BPU",
+      "kind": "option",
+      "where": "runtime/horizonbpu/CMakeLists.txt",
+      "default": "ON",
+      "doc": "whether to build with BPU"
+    },
+    {
+      "id": "option:BUILD_TESTING",
+      "kind": "option",
+      "where": "runtime/ios/CMakeLists.txt",
+      "default": "ON",
+      "doc": "whether to build unit test"
+    },
+    {
+      "id": "option:CXX11_ABI",
+      "kind": "option",
+      "where": "runtime/ios/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "whether to use CXX11_ABI libtorch"
+    },
+    {
+      "id": "option:GPU",
+      "kind": "option",
+      "where": "runtime/ios/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "whether to build with GPU"
+    },
+    {
+      "id": "option:GRAPH_TOOLS",
+      "kind": "option",
+      "where": "runtime/ios/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "whether to build TLG graph tools"
+    },
+    {
+      "id": "option:GRPC",
+      "kind": "option",
+      "where": "runtime/ios/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "whether to build with gRPC"
+    },
+    {
+      "id": "option:HTTP",
+      "kind": "option",
+      "where": "runtime/raspberrypi/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "whether to build with http"
+    },
+    {
+      "id": "option:IPEX",
+      "kind": "option",
+      "where": "runtime/ipex/CMakeLists.txt",
+      "default": "ON",
+      "doc": "whether to build with Torch+IPEX"
+    },
+    {
+      "id": "option:ITN",
+      "kind": "option",
+      "where": "runtime/android/app/src/main/cpp/CMakeLists.txt",
+      "default": "ON",
+      "doc": "whether to use WeTextProcessing"
+    },
+    {
+      "id": "option:ONNX",
+      "kind": "option",
+      "where": "runtime/ios/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "whether to build with ONNX"
+    },
+    {
+      "id": "option:OPENVINO",
+      "kind": "option",
+      "where": "runtime/openvino/CMakeLists.txt",
+      "default": "ON",
+      "doc": "whether to build with OpenVINO"
+    },
+    {
+      "id": "option:TORCH",
+      "kind": "option",
+      "where": "runtime/ios/CMakeLists.txt",
+      "default": "ON",
+      "doc": "whether to build with Torch"
+    },
+    {
+      "id": "option:WEBSOCKET",
+      "kind": "option",
+      "where": "runtime/ios/CMakeLists.txt",
+      "default": "ON",
+      "doc": "whether to build with websocket"
+    },
+    {
+      "id": "option:XPU",
+      "kind": "option",
+      "where": "runtime/kunlun/CMakeLists.txt",
+      "default": "ON",
+      "doc": "whether to build with XPU"
+    },
+    {
+      "id": "test:CTC_PREFIX_BEAM_SEARCH_TEST",
+      "kind": "test",
+      "where": "runtime/core/test/CMakeLists.txt"
+    },
+    {
+      "id": "test:FEATURE_PIPELINE_TEST",
+      "kind": "test",
+      "where": "runtime/core/test/CMakeLists.txt"
+    },
+    {
+      "id": "test:POST_PROCESSOR_TEST",
+      "kind": "test",
+      "where": "runtime/core/test/CMakeLists.txt"
+    },
+    {
+      "id": "test:UTILS_TEST",
+      "kind": "test",
+      "where": "runtime/core/test/CMakeLists.txt"
+    },
+    {
+      "id": "test:algo_test_lexicographic",
+      "kind": "test",
+      "where": "runtime/core/patch/openfst/src/test/CMakeLists.txt"
+    },
+    {
+      "id": "test:algo_test_lexicographic-test",
+      "kind": "test",
+      "where": "runtime/core/patch/openfst/src/test/CMakeLists.txt"
+    },
+    {
+      "id": "test:algo_test_log",
+      "kind": "test",
+      "where": "runtime/core/patch/openfst/src/test/CMakeLists.txt"
+    },
+    {
+      "id": "test:algo_test_log-test",
+      "kind": "test",
+      "where": "runtime/core/patch/openfst/src/test/CMakeLists.txt"
+    },
+    {
+      "id": "test:algo_test_minmax",
+      "kind": "test",
+      "where": "runtime/core/patch/openfst/src/test/CMakeLists.txt"
+    },
+    {
+      "id": "test:algo_test_minmax-test",
+      "kind": "test",
+      "where": "runtime/core/patch/openfst/src/test/CMakeLists.txt"
+    },
+    {
+      "id": "test:algo_test_power",
+      "kind": "test",
+      "where": "runtime/core/patch/openfst/src/test/CMakeLists.txt"
+    },
+    {
+      "id": "test:algo_test_power-test",
+      "kind": "test",
+      "where": "runtime/core/patch/openfst/src/test/CMakeLists.txt"
+    },
+    {
+      "id": "test:algo_test_tropical",
+      "kind": "test",
+      "where": "runtime/core/patch/openfst/src/test/CMakeLists.txt"
+    },
+    {
+      "id": "test:algo_test_tropical-test",
+      "kind": "test",
+      "where": "runtime/core/patch/openfst/src/test/CMakeLists.txt"
+    },
+    {
+      "id": "test:ctc_prefix_beam_search_test",
+      "kind": "test",
+      "where": "runtime/core/test/CMakeLists.txt"
+    },
+    {
+      "id": "test:feature_pipeline_test",
+      "kind": "test",
+      "where": "runtime/core/test/CMakeLists.txt"
+    },
+    {
+      "id": "test:fst_test",
+      "kind": "test",
+      "where": "runtime/core/patch/openfst/src/test/CMakeLists.txt"
+    },
+    {
+      "id": "test:fst_test-test",
+      "kind": "test",
+      "where": "runtime/core/patch/openfst/src/test/CMakeLists.txt"
+    },
+    {
+      "id": "test:post_processor_test",
+      "kind": "test",
+      "where": "runtime/core/test/CMakeLists.txt"
+    },
+    {
+      "id": "test:utils_test",
+      "kind": "test",
+      "where": "runtime/core/test/CMakeLists.txt"
+    },
+    {
+      "id": "test:weight_test",
+      "kind": "test",
+      "where": "runtime/core/patch/openfst/src/test/CMakeLists.txt"
+    },
+    {
+      "id": "test:weight_test-test",
+      "kind": "test",
+      "where": "runtime/core/patch/openfst/src/test/CMakeLists.txt"
+    },
+    {
+      "id": "test:xpu_conformer_test",
+      "kind": "test",
+      "where": "runtime/kunlun/xpu/CMakeLists.txt"
+    },
+    {
+      "id": "python:wenet-train",
+      "kind": "feature",
+      "where": "wenet/bin/train.py, wenet/utils/train_utils.py, wenet/utils/executor.py",
+      "added_by": "planner",
+      "note": "torch_ddp (nccl->RCCL) training on --device cuda; AMP GradScaler/autocast fp16+bf16; invisible to the scan: pure PyTorch"
+    },
+    {
+      "id": "python:wenet-train-fsdp",
+      "kind": "feature",
+      "where": "wenet/utils/fsdp_utils.py, train_utils.py --train_engine torch_fsdp",
+      "added_by": "planner",
+      "note": "FSDP sharding strategies, mixed precision, activation checkpointing"
+    },
+    {
+      "id": "python:wenet-train-deepspeed",
+      "kind": "feature",
+      "where": "train_utils.py --train_engine deepspeed, examples/*/whisper/conf/ds_stage*.json",
+      "added_by": "planner",
+      "note": "DeepSpeed ZeRO engine; upstream DeepSpeed supports ROCm, may JIT-build ops"
+    },
+    {
+      "id": "python:wenet-recognize",
+      "kind": "feature",
+      "where": "wenet/bin/recognize.py, wenet/bin/alignment.py",
+      "added_by": "planner",
+      "note": "GPU decoding: ctc_greedy/ctc_prefix_beam/attention/attention_rescoring, autocast"
+    },
+    {
+      "id": "python:wenet-cli",
+      "kind": "feature",
+      "where": "wenet/cli/transcribe.py, wenet/cli/model.py, wenet/cli/punc_model.py",
+      "added_by": "planner",
+      "note": "wenet CLI / load_model(device='cuda') inference on pretrained models"
+    },
+    {
+      "id": "python:model-families",
+      "kind": "feature",
+      "where": "wenet/models/* (transformer, conformer, squeezeformer, efficient_conformer, branchformer, e_branchformer, paraformer, whisper, firered, ctl_model, transducer, ssl, finetune/lora)",
+      "added_by": "planner",
+      "note": "forward+backward on GPU per family; sdpa paths (use_sdpa) use F.scaled_dot_product_attention"
+    },
+    {
+      "id": "python:transducer-torchaudio-rnnt",
+      "kind": "feature",
+      "where": "wenet/models/transducer/transducer.py:180,495",
+      "added_by": "planner",
+      "note": "torchaudio.functional.rnnt_loss on GPU (default transducer loss); the ROCm torchaudio wheel's GPU kernel"
+    },
+    {
+      "id": "python:k2-optional",
+      "kind": "feature",
+      "where": "wenet/models/k2/model.py, wenet/models/transducer/transducer.py:503 (enable_k2)",
+      "added_by": "planner",
+      "note": "optional k2 (LF-MMI, HLG decode, pruned RNNT) against the merged k2 ROCm support"
+    },
+    {
+      "id": "python:lora-finetune",
+      "kind": "feature",
+      "where": "wenet/models/finetune/lora/utils.py",
+      "added_by": "planner",
+      "note": "hard-coded .cuda()/torch.cuda.empty_cache(); svd_lowrank on GPU"
+    },
+    {
+      "id": "python:onnx-gpu-export",
+      "kind": "feature",
+      "where": "wenet/bin/export_onnx_gpu.py:813,966,1089; wenet/bin/recognize_onnx_gpu.py",
+      "added_by": "planner",
+      "note": "hard-codes onnxruntime CUDAExecutionProvider; the AMD onnxruntime provider is MIGraphX (decision Q1)"
+    },
+    {
+      "id": "test:pytest-suite",
+      "kind": "test",
+      "where": "test/ (17 files), .github/workflows/unit_test.yml",
+      "added_by": "planner",
+      "note": "upstream's CPU pytest suite; non-GPU regression set, must stay green on the ROCm torch build"
+    },
+    {
+      "id": "cuda:tensorrt-layernorm-plugin",
+      "kind": "cuda",
+      "where": "runtime/gpu/tensorrt/LayerNormPlugin/LayerNormPlugin.{cu,h}",
+      "added_by": "planner",
+      "note": "TensorRT nvinfer1 IPluginV2 plugin (3 kernels, cub BlockReduce); no ROCm TensorRT API (decision Q1)"
+    },
+    {
+      "id": "deploy:triton-gpu-runtime",
+      "kind": "deploy",
+      "where": "runtime/gpu/ (model_repo*, tensorrt*, tensorrt_fastertransformer, cuda_decoders, Dockerfile, client)",
+      "added_by": "planner",
+      "note": "Triton Inference Server deployment: TensorRT, FasterTransformer, riva-asrlib-decoder (NVIDIA Riva CUDA WFST), onnxruntime-gpu (decision Q1)"
+    },
+    {
+      "id": "docs:rocm-install",
+      "kind": "docs",
+      "where": "README.md (Install), docs/python_package.md, runtime/libtorch/README.md",
+      "added_by": "planner",
+      "note": "ROCm install path beside the CUDA and NPU sections; mark NVIDIA-only deploy paths"
+    }
+  ],
+  "covered": [],
+  "scoped_out": [
+    {
+      "id": "library:bpu_asr_model",
+      "reason": "Horizon BPU runtime: another vendor's or a mobile backend, no CUDA and no GPU path a ROCm port touches; built and tested by upstream as is"
+    },
+    {
+      "id": "library:ov_asr_model",
+      "reason": "Intel OpenVINO runtime: another vendor's or a mobile backend, no CUDA and no GPU path a ROCm port touches; built and tested by upstream as is"
+    },
+    {
+      "id": "library:xpu_conformer",
+      "reason": "Kunlun XPU runtime: another vendor's or a mobile backend, no CUDA and no GPU path a ROCm port touches; built and tested by upstream as is"
+    },
+    {
+      "id": "option:BPU",
+      "reason": "Horizon BPU runtime: another vendor's or a mobile backend, no CUDA and no GPU path a ROCm port touches; built and tested by upstream as is"
+    },
+    {
+      "id": "option:IPEX",
+      "reason": "Intel IPEX runtime: another vendor's or a mobile backend, no CUDA and no GPU path a ROCm port touches; built and tested by upstream as is"
+    },
+    {
+      "id": "option:ITN",
+      "reason": "Android runtime: another vendor's or a mobile backend, no CUDA and no GPU path a ROCm port touches; built and tested by upstream as is"
+    },
+    {
+      "id": "option:OPENVINO",
+      "reason": "Intel OpenVINO runtime: another vendor's or a mobile backend, no CUDA and no GPU path a ROCm port touches; built and tested by upstream as is"
+    },
+    {
+      "id": "option:XPU",
+      "reason": "Kunlun XPU runtime: another vendor's or a mobile backend, no CUDA and no GPU path a ROCm port touches; built and tested by upstream as is"
+    },
+    {
+      "id": "test:xpu_conformer_test",
+      "reason": "Kunlun XPU runtime: another vendor's or a mobile backend, no CUDA and no GPU path a ROCm port touches; built and tested by upstream as is"
+    }
+  ],
+  "owed": [],
+  "removed_from_floor": []
+}

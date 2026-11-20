@@ -5,17 +5,13 @@
   "fork_url": "https://github.com/AMD-Ecosystem/wenet",
   "fork_default_branch": "main",
   "priority": 0.0,
-  "ext_type": "unknown",
-  "stage": "planning",
+  "ext_type": "python-torch",
+  "stage": "planned",
   "adopted_at": "2026-11-06T03:22:49Z",
-  "updated_at": "2026-11-20T22:06:47Z",
+  "updated_at": "2026-11-20T22:11:38Z",
   "head_sha": null,
   "depends_on": [],
-  "porting": {
-    "arch": "linux-gfx942",
-    "since": "2026-11-20T22:06:47Z",
-    "holder": "0f3e81ab719f"
-  },
+  "porting": null,
   "waivers": {},
   "platforms": {
     "windows-gfx1151": {
@@ -48,7 +44,7 @@
       "failed_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-11-20T22:06:47Z",
+      "updated_at": "2026-11-20T22:11:38Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -81,5 +77,10 @@
     "viable": true,
     "summary": "Pure-PyTorch ASR toolkit; only .cu is a TensorRT plugin (NVIDIA-only deploy path, out of scope); optional k2 (MOAT, ROCm merged); validate on ROCm torch, maybe ROCm libtorch runtime option, docs PR",
     "at": "2026-11-06T03:26:33Z"
+  },
+  "porting_released": {
+    "arch": "linux-gfx942",
+    "since": "2026-11-20T22:06:47Z",
+    "at": "2026-11-20T22:11:38Z"
   }
 }

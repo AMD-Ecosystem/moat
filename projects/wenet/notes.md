@@ -24,3 +24,22 @@ Source of lead: third-party "AMD AI Software Gap Matrix" seed (verdict: unknown,
 
 ### Recommendation: fork (validate lane, small)
 Work: run wenet training/recognition and its GPU tests on ROCm PyTorch (torchaudio RNNT default, k2 options against the merged k2 ROCm support, deepspeed engine), add a ROCm libtorch option to `runtime/libtorch` if the C++ is device-agnostic, and send a docs change naming the ROCm path and marking the TensorRT/Triton/Riva/onnxruntime-gpu paths NVIDIA-only. No CUDA kernel to port. If a person judges the value too low for a pure-PyTorch toolkit with no kernel work, the decline reason would be `not-a-target`.
+
+## Planning (2026-11-20, linux-gfx942 fleet job, planner; no GPU used, nothing built)
+
+**Decisions needed from jeff before a porter starts** (full options and reasoning in `plan.md`, Open questions):
+
+- **Q1 -- scope out the NVIDIA-only deployment layer?** `runtime/gpu/` (Triton, TensorRT incl. the only `.cu` `LayerNormPlugin.cu`, FasterTransformer, Riva CUDA WFST decoder) and the onnxruntime-gpu scripts `wenet/bin/export_onnx_gpu.py` / `recognize_onnx_gpu.py`. (a) recommended: scope all out, docs mark them NVIDIA-only; (b) (a) plus make the two onnx scripts select `MIGraphXExecutionProvider` on AMD (onnxruntime removed its ROCm provider); (c) port the Triton deployment to an onnxruntime/MIGraphX stack (large, not recommended).
+- **Q2 -- add a ROCm build of the LibTorch C++ runtime's `GPU` option?** (a) recommended: yes, Linux only like upstream, by letting `runtime/core/cmake/libtorch.cmake` use a local LibTorch (e.g. from the ROCm torch wheel) instead of fetching the pinned cu118 2.2.0 zip; (b) no, docs for the Python package only; (c) (a) plus Windows GPU runtime (not recommended).
+- **Q3 -- send an upstream PR when the Python package needs no source change?** (a) recommended: yes, ROCm install docs (+ the Q2 CMake option) backed by three-platform GPU validation, same shape as upstream's NPU support; (b) validate, ship only if a run-time fix is needed; (c) decline as `not-a-target` (a person's call).
+
+Nothing in `surface.json` that depends on Q1/Q2 has been marked covered or scoped out; the porter records those once the rulings exist.
+
+### Findings
+- Upstream read at `be6ad97fdb51` (main, 2026-10-26), shallow clone in `projects/wenet/src`. `ext_type` set to `python-torch`.
+- Python package: `setup.py` has no extensions; all GPU use is `torch.cuda.*`, `--device cuda`, `nccl`, `torch.cuda.amp`, FSDP, DeepSpeed, `F.scaled_dot_product_attention` -- all served by ROCm PyTorch unchanged. No Python source change expected.
+- LibTorch runtime: `runtime/core/decoder/torch_asr_model.cc` uses only `torch::cuda::is_available()` / `at::kCUDA` under `USE_GPU`; the gap is purely `libtorch.cmake` downloading CUDA LibTorch 2.2.0 (`cu118`) and refusing `GPU` off Linux.
+- Upstream tests: 17 CPU pytest files under `test/` (CI: `unit_test.yml`, `pytest -q`), runtime ctest targets; no GPU test exists, so GPU evidence comes from a validator harness (plan.md Test plan items 1-7) on `test/resources/dataset`.
+- Environment risk, not ROCm: torchaudio 2.9+ (maintenance mode) removed APIs deprecated in 2.8 and routes `load`/`save` through TorchCodec; RNNT loss and `forced_align` were on the keep-or-drop list. wenet uses `torchaudio.info`, `sox_effects`, `rnnt_loss`, `forced_align`. The newest ROCm wheels are torch/torchaudio 2.11 (`rocm7.1`). The fleet host's shared torch is a 2.16 dev build with no torchaudio, so validation needs its own venv. Plan rule: check the APIs first; fall back to the newest ROCm pair that still has them and register the break as a deferral rather than fixing it in the ROCm PR.
+- k2 ROCm support is merged upstream (k2-fsa/k2#1353, 2026-07-02); optional for wenet, so no `depends_on`.
+- Sources checked: torchaudio 2.9 notes (https://newreleases.io/project/github/pytorch/audio/release/v2.9.0, https://github.com/pytorch/audio/issues/3902); onnxruntime ROCm provider removal and MIGraphX provider (https://onnxruntime.ai/docs/execution-providers/MIGraphX-ExecutionProvider.html, https://rocm.docs.amd.com/projects/ai-ecosystem/en/latest/inference/onnxruntime.html).
