@@ -1,5 +1,195 @@
 [
  {
+  "full_name": "tensorflow/tensorflow",
+  "url": "https://github.com/tensorflow/tensorflow",
+  "default_branch": "master",
+  "stars": 201319,
+  "forks": 78241,
+  "pushed_at": "2026-11-05T20:23:49Z",
+  "days_since_push": 0.0,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "C++",
+  "description": "An Open Source Machine Learning Framework for Everyone",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 9.251,
+  "score_parts": {
+   "stars_term": 5.304,
+   "forks_term": 2.447,
+   "recency_term": 1.5
+  },
+  "repo_id": 45717250,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "TensorFlow (ROCm)",
+   "readiness": "ready",
+   "path": "amd-fork"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "huggingface/transformers",
+  "url": "https://github.com/huggingface/transformers",
+  "default_branch": "main",
+  "stars": 168573,
+  "forks": 35123,
+  "pushed_at": "2026-11-05T19:13:08Z",
+  "days_since_push": 0.1,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "\ud83e\udd17 Transformers: the model-definition framework for state-of-the-art machine learning models in text, vision, audio, and multimodal models, for both inference and training.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 8.999,
+  "score_parts": {
+   "stars_term": 5.227,
+   "forks_term": 2.273,
+   "recency_term": 1.5
+  },
+  "repo_id": 155220641,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Hugging Face Transformers",
+   "readiness": "ready",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "ollama/ollama",
+  "url": "https://github.com/ollama/ollama",
+  "default_branch": "main",
+  "stars": 186022,
+  "forks": 18909,
+  "pushed_at": "2026-11-05T20:17:03Z",
+  "days_since_push": 0.0,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Go",
+  "description": "Get up and running with Kimi, GLM, MiniMax, DeepSeek, gpt-oss, Qwen, Gemma and other models.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 8.908,
+  "score_parts": {
+   "stars_term": 5.27,
+   "forks_term": 2.138,
+   "recency_term": 1.5
+  },
+  "repo_id": 658928958,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Ollama",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "ggml-org/llama.cpp",
+  "url": "https://github.com/ggml-org/llama.cpp",
+  "default_branch": "master",
+  "stars": 133474,
+  "forks": 25180,
+  "pushed_at": "2026-11-05T20:10:36Z",
+  "days_since_push": 0.0,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "C++",
+  "description": "LLM inference in C/C++",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 2241198,
+  "cuda_dominant": false,
+  "priority": 8.826,
+  "score_parts": {
+   "stars_term": 5.125,
+   "forks_term": 2.201,
+   "recency_term": 1.5
+  },
+  "repo_id": 612354784,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "llama.cpp",
+   "readiness": "ready",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "Comfy-Org/ComfyUI",
+  "url": "https://github.com/Comfy-Org/ComfyUI",
+  "default_branch": "master",
+  "stars": 145213,
+  "forks": 17284,
+  "pushed_at": "2026-11-05T20:02:09Z",
+  "days_since_push": 0.0,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "The most powerful and modular diffusion model GUI, api and backend with a graph/nodes interface. The fastest local inference engine in the world.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 8.781,
+  "score_parts": {
+   "stars_term": 5.162,
+   "forks_term": 2.119,
+   "recency_term": 1.5
+  },
+  "repo_id": 589831718,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "ComfyUI (core)",
+   "readiness": "ready",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
   "full_name": "vllm-project/vllm",
   "url": "https://github.com/vllm-project/vllm",
   "default_branch": "main",
@@ -25,6 +215,120 @@
    "forks_term": 2.154,
    "recency_term": 1.5
   }
+ },
+ {
+  "full_name": "hacksider/Deep-Live-Cam",
+  "url": "https://github.com/hacksider/Deep-Live-Cam",
+  "default_branch": "main",
+  "stars": 97632,
+  "forks": 14240,
+  "pushed_at": "2026-10-27T06:43:25Z",
+  "days_since_push": 9.6,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "real time face swap and one-click video deepfake with only a single image",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 8.512,
+  "score_parts": {
+   "stars_term": 4.99,
+   "forks_term": 2.077,
+   "recency_term": 1.446
+  },
+  "repo_id": 695864515,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Real-time face-swap tools (Deep-Live-Cam, FaceFusion)",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "keras-team/keras",
+  "url": "https://github.com/keras-team/keras",
+  "default_branch": "master",
+  "stars": 64416,
+  "forks": 19816,
+  "pushed_at": "2026-11-05T20:08:20Z",
+  "days_since_push": 0.0,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Deep Learning for humans",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 8.457,
+  "score_parts": {
+   "stars_term": 4.809,
+   "forks_term": 2.149,
+   "recency_term": 1.5
+  },
+  "repo_id": 33015583,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Keras 3",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "hiyouga/LlamaFactory",
+  "url": "https://github.com/hiyouga/LlamaFactory",
+  "default_branch": "main",
+  "stars": 75901,
+  "forks": 9346,
+  "pushed_at": "2026-11-04T14:02:39Z",
+  "days_since_push": 1.3,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Unified Efficient Fine-Tuning of 100+ LLMs & VLMs (ACL 2024)",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 8.358,
+  "score_parts": {
+   "stars_term": 4.88,
+   "forks_term": 1.985,
+   "recency_term": 1.493
+  },
+  "repo_id": 646410686,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "LLaMA-Factory",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
  },
  {
   "full_name": "FFmpeg/FFmpeg",
@@ -53,6 +357,386 @@
   "last_seen": "2026-06-01"
  },
  {
+  "full_name": "unslothai/unsloth",
+  "url": "https://github.com/unslothai/unsloth",
+  "default_branch": "main",
+  "stars": 79080,
+  "forks": 7359,
+  "pushed_at": "2026-11-05T20:06:12Z",
+  "days_since_push": 0.0,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Local UI to run and train LLMs and diffusion models. Supports GGUF, MLX, Qwen3.8, DeepSeek-V4.1, MiniMax-H3, Gemma 4, FLUX and more.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 8.331,
+  "score_parts": {
+   "stars_term": 4.898,
+   "forks_term": 1.933,
+   "recency_term": 1.5
+  },
+  "repo_id": 725205304,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Unsloth",
+   "readiness": "ready",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "openai/whisper",
+  "url": "https://github.com/openai/whisper",
+  "default_branch": "main",
+  "stars": 112029,
+  "forks": 13570,
+  "pushed_at": "2026-08-31T17:19:19Z",
+  "days_since_push": 66.1,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Robust Speech Recognition via Large-Scale Weak Supervision",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 8.278,
+  "score_parts": {
+   "stars_term": 5.049,
+   "forks_term": 2.066,
+   "recency_term": 1.163
+  },
+  "repo_id": 537603333,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "OpenAI Whisper",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "RVC-Boss/GPT-SoVITS",
+  "url": "https://github.com/RVC-Boss/GPT-SoVITS",
+  "default_branch": "main",
+  "stars": 64941,
+  "forks": 6781,
+  "pushed_at": "2026-10-31T15:56:56Z",
+  "days_since_push": 5.2,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "1 min voice data can also be used to train a good TTS model! (few shot voice cloning)",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 8.199,
+  "score_parts": {
+   "stars_term": 4.813,
+   "forks_term": 1.916,
+   "recency_term": 1.47
+  },
+  "repo_id": 743230067,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "GPT-SoVITS",
+   "readiness": "unknown",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "ggml-org/whisper.cpp",
+  "url": "https://github.com/ggml-org/whisper.cpp",
+  "default_branch": "master",
+  "stars": 54953,
+  "forks": 6275,
+  "pushed_at": "2026-11-05T14:38:50Z",
+  "days_since_push": 0.2,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "C++",
+  "description": "Port of OpenAI's Whisper model in C/C++",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 2236202,
+  "cuda_dominant": false,
+  "priority": 8.137,
+  "score_parts": {
+   "stars_term": 4.74,
+   "forks_term": 1.899,
+   "recency_term": 1.499
+  },
+  "repo_id": 541269386,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "whisper.cpp",
+   "readiness": "ready",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "ray-project/ray",
+  "url": "https://github.com/ray-project/ray",
+  "default_branch": "master",
+  "stars": 44213,
+  "forks": 8249,
+  "pushed_at": "2026-11-05T20:38:12Z",
+  "days_since_push": 0.0,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Ray is an AI compute engine. Ray consists of a core distributed runtime and a set of AI Libraries for accelerating ML workloads.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 8.104,
+  "score_parts": {
+   "stars_term": 4.646,
+   "forks_term": 1.958,
+   "recency_term": 1.5
+  },
+  "repo_id": 71932349,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Ray",
+   "readiness": "partial",
+   "path": "amd-fork"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "mudler/LocalAI",
+  "url": "https://github.com/mudler/LocalAI",
+  "default_branch": "master",
+  "stars": 50214,
+  "forks": 4579,
+  "pushed_at": "2026-11-05T19:57:31Z",
+  "days_since_push": 0.0,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Go",
+  "description": "LocalAI is the open-source AI engine. Run any model - LLMs, vision, voice, image, video - on any hardware. No GPU required.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 8.031,
+  "score_parts": {
+   "stars_term": 4.701,
+   "forks_term": 1.83,
+   "recency_term": 1.5
+  },
+  "repo_id": 615869301,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "LocalAI",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "deepspeedai/DeepSpeed",
+  "url": "https://github.com/deepspeedai/DeepSpeed",
+  "default_branch": "master",
+  "stars": 43298,
+  "forks": 5064,
+  "pushed_at": "2026-11-05T20:01:41Z",
+  "days_since_push": 0.0,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "DeepSpeed is a deep learning optimization library that makes distributed training and inference easy, efficient, and effective.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 652595,
+  "cuda_dominant": false,
+  "priority": 7.989,
+  "score_parts": {
+   "stars_term": 4.636,
+   "forks_term": 1.852,
+   "recency_term": 1.5
+  },
+  "repo_id": 235860204,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "DeepSpeed",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "milvus-io/milvus",
+  "url": "https://github.com/milvus-io/milvus",
+  "default_branch": "master",
+  "stars": 46604,
+  "forks": 4329,
+  "pushed_at": "2026-11-05T14:26:00Z",
+  "days_since_push": 0.3,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Go",
+  "description": "Milvus is a high-performance, cloud-native vector database built for scalable vector ANN search",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 7.985,
+  "score_parts": {
+   "stars_term": 4.668,
+   "forks_term": 1.818,
+   "recency_term": 1.499
+  },
+  "repo_id": 208728772,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Milvus GPU indexes (Knowhere)",
+   "readiness": "partial",
+   "path": "none"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "huggingface/diffusers",
+  "url": "https://github.com/huggingface/diffusers",
+  "default_branch": "main",
+  "stars": 34869,
+  "forks": 7458,
+  "pushed_at": "2026-11-05T18:11:46Z",
+  "days_since_push": 0.1,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "\ud83e\udd17 Diffusers: State-of-the-art diffusion models for image, video, and audio generation in PyTorch.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 7.978,
+  "score_parts": {
+   "stars_term": 4.542,
+   "forks_term": 1.936,
+   "recency_term": 1.499
+  },
+  "repo_id": 498011141,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Hugging Face Diffusers",
+   "readiness": "ready",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "hpcaitech/ColossalAI",
+  "url": "https://github.com/hpcaitech/ColossalAI",
+  "default_branch": "main",
+  "stars": 41430,
+  "forks": 4486,
+  "pushed_at": "2026-11-05T13:53:02Z",
+  "days_since_push": 0.3,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Making large AI models cheaper, faster and more accessible",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 261454,
+  "cuda_dominant": false,
+  "priority": 7.942,
+  "score_parts": {
+   "stars_term": 4.617,
+   "forks_term": 1.826,
+   "recency_term": 1.498
+  },
+  "repo_id": 422274596,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "ColossalAI",
+   "readiness": "not-yet",
+   "path": "none"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
   "full_name": "sgl-project/sglang",
   "url": "https://github.com/sgl-project/sglang",
   "default_branch": "main",
@@ -78,6 +762,1222 @@
    "forks_term": 1.943,
    "recency_term": 1.5
   }
+ },
+ {
+  "full_name": "dmlc/xgboost",
+  "url": "https://github.com/dmlc/xgboost",
+  "default_branch": "master",
+  "stars": 28945,
+  "forks": 8965,
+  "pushed_at": "2026-11-05T12:55:48Z",
+  "days_since_push": 0.3,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "C++",
+  "description": "Scalable, Portable and Distributed Gradient Boosting (GBDT, GBRT or GBM) Library,  for Python, R, Java, Scala, C and more. Runs on single machine, Hadoop, Spark, Dask, Flink and DataFlow",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 1326610,
+  "cuda_dominant": false,
+  "priority": 7.936,
+  "score_parts": {
+   "stars_term": 4.462,
+   "forks_term": 1.976,
+   "recency_term": 1.498
+  },
+  "repo_id": 16587283,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "XGBoost GPU",
+   "readiness": "partial",
+   "path": "amd-fork"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "janhq/jan",
+  "url": "https://github.com/janhq/jan",
+  "default_branch": "main",
+  "stars": 45491,
+  "forks": 3153,
+  "pushed_at": "2026-11-05T13:13:52Z",
+  "days_since_push": 0.3,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Rust",
+  "description": "Jan is an open source alternative to ChatGPT that runs 100% offline on your computer.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 7.906,
+  "score_parts": {
+   "stars_term": 4.658,
+   "forks_term": 1.749,
+   "recency_term": 1.498
+  },
+  "repo_id": 679506386,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Jan",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "jax-ml/jax",
+  "url": "https://github.com/jax-ml/jax",
+  "default_branch": "main",
+  "stars": 36581,
+  "forks": 3988,
+  "pushed_at": "2026-11-05T20:25:23Z",
+  "days_since_push": 0.0,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Composable transformations of Python+NumPy programs: differentiate, vectorize, JIT to GPU/TPU, and more",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 7.864,
+  "score_parts": {
+   "stars_term": 4.563,
+   "forks_term": 1.8,
+   "recency_term": 1.5
+  },
+  "repo_id": 154739597,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "JAX (ROCm plugin)",
+   "readiness": "ready",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "pola-rs/polars",
+  "url": "https://github.com/pola-rs/polars",
+  "default_branch": "main",
+  "stars": 40265,
+  "forks": 3221,
+  "pushed_at": "2026-11-05T19:23:53Z",
+  "days_since_push": 0.1,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Rust",
+  "description": "Extremely fast Query Engine for DataFrames, written in Rust",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 7.859,
+  "score_parts": {
+   "stars_term": 4.605,
+   "forks_term": 1.754,
+   "recency_term": 1.5
+  },
+  "repo_id": 263727855,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Polars GPU engine (cudf-polars)",
+   "readiness": "not-yet",
+   "path": "none"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "tinygrad/tinygrad",
+  "url": "https://github.com/tinygrad/tinygrad",
+  "default_branch": "master",
+  "stars": 33837,
+  "forks": 4396,
+  "pushed_at": "2026-11-05T20:02:46Z",
+  "days_since_push": 0.0,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "You like pytorch? You like micrograd? You love tinygrad! \u2764\ufe0f",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 2153025,
+  "cuda_dominant": false,
+  "priority": 7.851,
+  "score_parts": {
+   "stars_term": 4.529,
+   "forks_term": 1.822,
+   "recency_term": 1.5
+  },
+  "repo_id": 305144746,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "tinygrad",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "huggingface/lerobot",
+  "url": "https://github.com/huggingface/lerobot",
+  "default_branch": "main",
+  "stars": 28707,
+  "forks": 6024,
+  "pushed_at": "2026-11-05T17:36:18Z",
+  "days_since_push": 0.1,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "\ud83e\udd17 LeRobot: Making AI for Robotics more accessible with end-to-end learning",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 7.847,
+  "score_parts": {
+   "stars_term": 4.458,
+   "forks_term": 1.89,
+   "recency_term": 1.499
+  },
+  "repo_id": 748713144,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Hugging Face LeRobot",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "qdrant/qdrant",
+  "url": "https://github.com/qdrant/qdrant",
+  "default_branch": "master",
+  "stars": 35441,
+  "forks": 2799,
+  "pushed_at": "2026-11-05T19:06:52Z",
+  "days_since_push": 0.1,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Rust",
+  "description": "Qdrant - High-performance, massive-scale Vector Database and Vector Search Engine for the next generation of AI. Also available in the cloud https://cloud.qdrant.io/",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 7.773,
+  "score_parts": {
+   "stars_term": 4.55,
+   "forks_term": 1.724,
+   "recency_term": 1.5
+  },
+  "repo_id": 268163609,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Qdrant GPU indexing",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "Lightning-AI/pytorch-lightning",
+  "url": "https://github.com/Lightning-AI/pytorch-lightning",
+  "default_branch": "master",
+  "stars": 31444,
+  "forks": 3847,
+  "pushed_at": "2026-10-30T08:08:36Z",
+  "days_since_push": 6.5,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Pretrain, finetune ANY AI model of ANY size on 1 or 10,000+ GPUs with zero code changes.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 7.753,
+  "score_parts": {
+   "stars_term": 4.498,
+   "forks_term": 1.793,
+   "recency_term": 1.463
+  },
+  "repo_id": 178626720,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "PyTorch Lightning / Lightning Fabric",
+   "readiness": "unknown",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "fishaudio/fish-speech",
+  "url": "https://github.com/fishaudio/fish-speech",
+  "default_branch": "main",
+  "stars": 33597,
+  "forks": 2921,
+  "pushed_at": "2026-11-02T20:02:21Z",
+  "days_since_push": 3.0,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "SOTA Open Source TTS",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 7.742,
+  "score_parts": {
+   "stars_term": 4.526,
+   "forks_term": 1.733,
+   "recency_term": 1.483
+  },
+  "repo_id": 702796244,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Fish Speech",
+   "readiness": "unknown",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "modular/modular",
+  "url": "https://github.com/modular/modular",
+  "default_branch": "main",
+  "stars": 30108,
+  "forks": 3236,
+  "pushed_at": "2026-11-05T07:59:11Z",
+  "days_since_push": 0.5,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Mojo",
+  "description": "The Modular Platform (includes MAX & Mojo)",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 7792,
+  "cuda_dominant": false,
+  "priority": 7.731,
+  "score_parts": {
+   "stars_term": 4.479,
+   "forks_term": 1.755,
+   "recency_term": 1.497
+  },
+  "repo_id": 634043200,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Modular MAX / Mojo",
+   "readiness": "ready",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "verl-project/verl",
+  "url": "https://github.com/verl-project/verl",
+  "default_branch": "main",
+  "stars": 24149,
+  "forks": 4871,
+  "pushed_at": "2026-11-05T14:16:24Z",
+  "days_since_push": 0.3,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "verl/HybridFlow: A Flexible and Efficient RL Post-Training Framework",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 7.725,
+  "score_parts": {
+   "stars_term": 4.383,
+   "forks_term": 1.844,
+   "recency_term": 1.499
+  },
+  "repo_id": 881221486,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "verl",
+   "readiness": "ready",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "resemble-ai/chatterbox",
+  "url": "https://github.com/resemble-ai/chatterbox",
+  "default_branch": "master",
+  "stars": 27588,
+  "forks": 3711,
+  "pushed_at": "2026-11-04T18:48:12Z",
+  "days_since_push": 1.1,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "SoTA open-source TTS",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 7.719,
+  "score_parts": {
+   "stars_term": 4.441,
+   "forks_term": 1.785,
+   "recency_term": 1.494
+  },
+  "repo_id": 971241545,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Chatterbox TTS",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "Genesis-Embodied-AI/genesis-world",
+  "url": "https://github.com/Genesis-Embodied-AI/genesis-world",
+  "default_branch": "main",
+  "stars": 30182,
+  "forks": 2910,
+  "pushed_at": "2026-11-05T13:02:16Z",
+  "days_since_push": 0.3,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Simulation platform for general-purpose robotics & embodied AI learning.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 7.71,
+  "score_parts": {
+   "stars_term": 4.48,
+   "forks_term": 1.732,
+   "recency_term": 1.498
+  },
+  "repo_id": 712225112,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Genesis",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "invoke-ai/InvokeAI",
+  "url": "https://github.com/invoke-ai/InvokeAI",
+  "default_branch": "main",
+  "stars": 28999,
+  "forks": 3094,
+  "pushed_at": "2026-11-05T18:09:41Z",
+  "days_since_push": 0.1,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "TypeScript",
+  "description": "Invoke is a leading creative engine for Stable Diffusion models, empowering professionals, artists, and enthusiasts to generate and create visual media using the latest AI-driven technologies. The solution offers an industry leading WebUI, and serves as the foundation for multiple commercial products.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 7.707,
+  "score_parts": {
+   "stars_term": 4.462,
+   "forks_term": 1.745,
+   "recency_term": 1.499
+  },
+  "repo_id": 525592995,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "InvokeAI",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "oobabooga/textgen",
+  "url": "https://github.com/oobabooga/textgen",
+  "default_branch": "main",
+  "stars": 47736,
+  "forks": 5979,
+  "pushed_at": "2026-08-17T17:38:16Z",
+  "days_since_push": 80.1,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Open-source desktop app for local LLMs. Text, vision, tool-calling, OpenAI/Anthropic-compatible API. 100% private.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 7.669,
+  "score_parts": {
+   "stars_term": 4.679,
+   "forks_term": 1.888,
+   "recency_term": 1.102
+  },
+  "repo_id": 580642043,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "TextGen (text-generation-webui)",
+   "readiness": "ready",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "Dao-AILab/flash-attention",
+  "url": "https://github.com/Dao-AILab/flash-attention",
+  "default_branch": "main",
+  "stars": 25250,
+  "forks": 3209,
+  "pushed_at": "2026-11-05T17:54:21Z",
+  "days_since_push": 0.1,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Fast and memory-efficient exact attention",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 481815,
+  "cuda_dominant": false,
+  "priority": 7.655,
+  "score_parts": {
+   "stars_term": 4.402,
+   "forks_term": 1.753,
+   "recency_term": 1.499
+  },
+  "repo_id": 494232964,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "FlashAttention-3 / FlashAttention-4",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "NVIDIA/Megatron-LM",
+  "url": "https://github.com/NVIDIA/Megatron-LM",
+  "default_branch": "main",
+  "stars": 18335,
+  "forks": 4705,
+  "pushed_at": "2026-11-05T20:12:04Z",
+  "days_since_push": 0.0,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Ongoing research training transformer models at scale",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 4420,
+  "cuda_dominant": false,
+  "priority": 7.6,
+  "score_parts": {
+   "stars_term": 4.263,
+   "forks_term": 1.836,
+   "recency_term": 1.5
+  },
+  "repo_id": 176982014,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": true,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Megatron-Core / Megatron-LM",
+   "readiness": "ready",
+   "path": "amd-fork"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "Unity-Technologies/ml-agents",
+  "url": "https://github.com/Unity-Technologies/ml-agents",
+  "default_branch": "develop",
+  "stars": 19822,
+  "forks": 4517,
+  "pushed_at": "2026-10-30T02:19:45Z",
+  "days_since_push": 6.8,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "C#",
+  "description": "The Unity Machine Learning Agents Toolkit (ML-Agents) is an open-source project that enables games and simulations to serve as environments for training intelligent agents using deep reinforcement learning and imitation learning.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 7.586,
+  "score_parts": {
+   "stars_term": 4.297,
+   "forks_term": 1.827,
+   "recency_term": 1.461
+  },
+  "repo_id": 102904613,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Unity ML-Agents Toolkit",
+   "readiness": "unknown",
+   "path": "unknown"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "triton-lang/triton",
+  "url": "https://github.com/triton-lang/triton",
+  "default_branch": "main",
+  "stars": 20526,
+  "forks": 3376,
+  "pushed_at": "2026-11-05T19:18:03Z",
+  "days_since_push": 0.0,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "MLIR",
+  "description": "Development repository for the Triton language and compiler",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 72283,
+  "cuda_dominant": false,
+  "priority": 7.576,
+  "score_parts": {
+   "stars_term": 4.312,
+   "forks_term": 1.764,
+   "recency_term": 1.5
+  },
+  "repo_id": 23496542,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Triton (OpenAI Triton compiler)",
+   "readiness": "ready",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "lightgbm-org/LightGBM",
+  "url": "https://github.com/lightgbm-org/LightGBM",
+  "default_branch": "main",
+  "stars": 18953,
+  "forks": 4101,
+  "pushed_at": "2026-11-02T19:27:12Z",
+  "days_since_push": 3.0,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "C++",
+  "description": "A fast, distributed, high performance gradient boosting (GBT, GBDT, GBRT, GBM or MART) framework based on decision tree algorithms, used for ranking, classification and many other machine learning tasks.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 383562,
+  "cuda_dominant": false,
+  "priority": 7.567,
+  "score_parts": {
+   "stars_term": 4.278,
+   "forks_term": 1.806,
+   "recency_term": 1.482
+  },
+  "repo_id": 64991887,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "LightGBM GPU",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "huggingface/peft",
+  "url": "https://github.com/huggingface/peft",
+  "default_branch": "main",
+  "stars": 21873,
+  "forks": 2648,
+  "pushed_at": "2026-11-05T07:54:11Z",
+  "days_since_push": 0.5,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "\ud83e\udd17 PEFT: State-of-the-art Parameter-Efficient Fine-Tuning.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 3076,
+  "cuda_dominant": false,
+  "priority": 7.548,
+  "score_parts": {
+   "stars_term": 4.34,
+   "forks_term": 1.712,
+   "recency_term": 1.497
+  },
+  "repo_id": 570384908,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Hugging Face PEFT",
+   "readiness": "ready",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "huggingface/trl",
+  "url": "https://github.com/huggingface/trl",
+  "default_branch": "main",
+  "stars": 19675,
+  "forks": 3119,
+  "pushed_at": "2026-11-05T17:50:31Z",
+  "days_since_push": 0.1,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Train transformer language models with reinforcement learning.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 7.54,
+  "score_parts": {
+   "stars_term": 4.294,
+   "forks_term": 1.747,
+   "recency_term": 1.499
+  },
+  "repo_id": 250510075,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Hugging Face TRL",
+   "readiness": "ready",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "mozilla-ai/llamafile",
+  "url": "https://github.com/mozilla-ai/llamafile",
+  "default_branch": "main",
+  "stars": 26570,
+  "forks": 1673,
+  "pushed_at": "2026-11-05T17:31:17Z",
+  "days_since_push": 0.1,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "C++",
+  "description": "Distribute and run LLMs with a single file.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 7.536,
+  "score_parts": {
+   "stars_term": 4.424,
+   "forks_term": 1.612,
+   "recency_term": 1.499
+  },
+  "repo_id": 689773665,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "llamafile",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "m-bain/whisperX",
+  "url": "https://github.com/m-bain/whisperX",
+  "default_branch": "main",
+  "stars": 25106,
+  "forks": 2533,
+  "pushed_at": "2026-10-22T14:53:44Z",
+  "days_since_push": 14.2,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "WhisperX:  Automatic Speech Recognition with Word-level Timestamps (& Diarization)",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 7.522,
+  "score_parts": {
+   "stars_term": 4.4,
+   "forks_term": 1.702,
+   "recency_term": 1.42
+  },
+  "repo_id": 576103395,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "WhisperX (batched Whisper + alignment + diarization)",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "RVC-Project/Retrieval-based-Voice-Conversion-WebUI",
+  "url": "https://github.com/RVC-Project/Retrieval-based-Voice-Conversion-WebUI",
+  "default_branch": "main",
+  "stars": 39060,
+  "forks": 5349,
+  "pushed_at": "2026-08-04T07:47:32Z",
+  "days_since_push": 93.5,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Easily train a good VC model with voice data <= 10 mins!",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 7.502,
+  "score_parts": {
+   "stars_term": 4.592,
+   "forks_term": 1.864,
+   "recency_term": 1.046
+  },
+  "repo_id": 619521008,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "RVC voice conversion (RVC WebUI, Applio)",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "mlc-ai/mlc-llm",
+  "url": "https://github.com/mlc-ai/mlc-llm",
+  "default_branch": "main",
+  "stars": 23307,
+  "forks": 2166,
+  "pushed_at": "2026-10-30T09:07:12Z",
+  "days_since_push": 6.5,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Universal LLM Deployment Engine with ML Compilation",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 7.498,
+  "score_parts": {
+   "stars_term": 4.368,
+   "forks_term": 1.668,
+   "recency_term": 1.463
+  },
+  "repo_id": 634081686,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "MLC-LLM",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "modelscope/FunASR",
+  "url": "https://github.com/modelscope/FunASR",
+  "default_branch": "main",
+  "stars": 20949,
+  "forks": 2111,
+  "pushed_at": "2026-11-05T17:04:57Z",
+  "days_since_push": 0.1,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Open-source speech recognition toolkit for training, inference, streaming ASR, VAD, punctuation, speaker diarization pipelines, and OpenAI-compatible/MCP serving.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 9364,
+  "cuda_dominant": false,
+  "priority": 7.483,
+  "score_parts": {
+   "stars_term": 4.321,
+   "forks_term": 1.662,
+   "recency_term": 1.499
+  },
+  "repo_id": 569959091,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "FunASR",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "huggingface/candle",
+  "url": "https://github.com/huggingface/candle",
+  "default_branch": "main",
+  "stars": 21277,
+  "forks": 1850,
+  "pushed_at": "2026-11-02T12:05:47Z",
+  "days_since_push": 3.4,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Rust",
+  "description": "Minimalist ML framework for Rust",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 917119,
+  "cuda_dominant": false,
+  "priority": 7.442,
+  "score_parts": {
+   "stars_term": 4.328,
+   "forks_term": 1.634,
+   "recency_term": 1.481
+  },
+  "repo_id": 655797848,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Candle",
+   "readiness": "partial",
+   "path": "community-fork"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "apache/tvm",
+  "url": "https://github.com/apache/tvm",
+  "default_branch": "main",
+  "stars": 13890,
+  "forks": 4038,
+  "pushed_at": "2026-11-03T08:03:13Z",
+  "days_since_push": 2.5,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Open Machine Learning Compiler Framework",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 209835,
+  "cuda_dominant": false,
+  "priority": 7.431,
+  "score_parts": {
+   "stars_term": 4.143,
+   "forks_term": 1.803,
+   "recency_term": 1.486
+  },
+  "repo_id": 70746484,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Apache TVM",
+   "readiness": "unknown",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "SWivid/F5-TTS",
+  "url": "https://github.com/SWivid/F5-TTS",
+  "default_branch": "main",
+  "stars": 15519,
+  "forks": 2264,
+  "pushed_at": "2026-11-03T15:05:10Z",
+  "days_since_push": 2.2,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Official code for \"F5-TTS: A Fairytaler that Fakes Fluent and Faithful Speech with Flow Matching\"",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 7.356,
+  "score_parts": {
+   "stars_term": 4.191,
+   "forks_term": 1.678,
+   "recency_term": 1.487
+  },
+  "repo_id": 869549554,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "F5-TTS",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "google-deepmind/mujoco",
+  "url": "https://github.com/google-deepmind/mujoco",
+  "default_branch": "main",
+  "stars": 16073,
+  "forks": 1926,
+  "pushed_at": "2026-11-05T20:06:44Z",
+  "days_since_push": 0.0,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "C++",
+  "description": "Multi-Joint dynamics with Contact. A general purpose physics simulator.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 7.348,
+  "score_parts": {
+   "stars_term": 4.206,
+   "forks_term": 1.642,
+   "recency_term": 1.5
+  },
+  "repo_id": 400501136,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "MuJoCo MJX / Brax (JAX)",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "kvcache-ai/ktransformers",
+  "url": "https://github.com/kvcache-ai/ktransformers",
+  "default_branch": "main",
+  "stars": 19660,
+  "forks": 1603,
+  "pushed_at": "2026-10-28T06:08:08Z",
+  "days_since_push": 8.6,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "A Flexible Framework for Experiencing Heterogeneous LLM Inference/Fine-tune Optimizations",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 585751,
+  "cuda_dominant": false,
+  "priority": 7.347,
+  "score_parts": {
+   "stars_term": 4.294,
+   "forks_term": 1.603,
+   "recency_term": 1.451
+  },
+  "repo_id": 833984877,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "KTransformers",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
  },
  {
   "full_name": "isl-org/Open3D",
@@ -108,6 +2008,310 @@
   }
  },
  {
+  "full_name": "k2-fsa/sherpa-onnx",
+  "url": "https://github.com/k2-fsa/sherpa-onnx",
+  "default_branch": "master",
+  "stars": 15763,
+  "forks": 1848,
+  "pushed_at": "2026-11-05T09:31:22Z",
+  "days_since_push": 0.5,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "C++",
+  "description": "Speech-to-text, text-to-speech, speaker diarization, speech enhancement, source separation, and VAD using next-gen Kaldi with onnxruntime without Internet connection. Support embedded systems, Android, iOS, HarmonyOS, Raspberry Pi, RISC-V, RK NPU, Axera NPU, Ascend NPU, x86_64 servers, websocket server/client, support 12 programming languages",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 7.328,
+  "score_parts": {
+   "stars_term": 4.198,
+   "forks_term": 1.633,
+   "recency_term": 1.497
+  },
+  "repo_id": 531380835,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "sherpa-onnx",
+   "readiness": "unknown",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "tracel-ai/burn",
+  "url": "https://github.com/tracel-ai/burn",
+  "default_branch": "main",
+  "stars": 16239,
+  "forks": 1118,
+  "pushed_at": "2026-11-05T20:28:49Z",
+  "days_since_push": 0.0,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Rust",
+  "description": "Burn is a next generation tensor library and Deep Learning Framework that doesn't compromise on flexibility, efficiency and portability.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 7.235,
+  "score_parts": {
+   "stars_term": 4.211,
+   "forks_term": 1.524,
+   "recency_term": 1.5
+  },
+  "repo_id": 515368123,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Burn",
+   "readiness": "unknown",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "isaac-sim/IsaacLab",
+  "url": "https://github.com/isaac-sim/IsaacLab",
+  "default_branch": "main",
+  "stars": 8575,
+  "forks": 4004,
+  "pushed_at": "2026-11-05T19:29:20Z",
+  "days_since_push": 0.0,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Unified framework for robot learning with multi-physics/renderer support",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 7.234,
+  "score_parts": {
+   "stars_term": 3.933,
+   "forks_term": 1.801,
+   "recency_term": 1.5
+  },
+  "repo_id": 567038244,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "NVIDIA Isaac Lab",
+   "readiness": "not-yet",
+   "path": "none"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "Wan-Video/Wan2.2",
+  "url": "https://github.com/Wan-Video/Wan2.2",
+  "default_branch": "main",
+  "stars": 18391,
+  "forks": 2423,
+  "pushed_at": "2026-09-21T06:16:22Z",
+  "days_since_push": 45.6,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Wan: Open and Advanced Large-Scale Video Generative Models",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 7.215,
+  "score_parts": {
+   "stars_term": 4.265,
+   "forks_term": 1.692,
+   "recency_term": 1.258
+  },
+  "repo_id": 1027579552,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Open video-generation stacks (Wan 2.x, HunyuanVideo, LTX-Video; Wan2GP)",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "Lightning-AI/litgpt",
+  "url": "https://github.com/Lightning-AI/litgpt",
+  "default_branch": "main",
+  "stars": 13750,
+  "forks": 1545,
+  "pushed_at": "2026-11-01T10:26:54Z",
+  "days_since_push": 4.4,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "20+ high-performance LLMs with recipes to pretrain, finetune and deploy at scale.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 7.208,
+  "score_parts": {
+   "stars_term": 4.138,
+   "forks_term": 1.595,
+   "recency_term": 1.475
+  },
+  "repo_id": 636372163,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "LitGPT",
+   "readiness": "unknown",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "espnet/espnet",
+  "url": "https://github.com/espnet/espnet",
+  "default_branch": "master",
+  "stars": 10005,
+  "forks": 2445,
+  "pushed_at": "2026-11-04T21:10:36Z",
+  "days_since_push": 1.0,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "End-to-End Speech Processing Toolkit",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 4682,
+  "cuda_dominant": false,
+  "priority": 7.189,
+  "score_parts": {
+   "stars_term": 4.0,
+   "forks_term": 1.694,
+   "recency_term": 1.494
+  },
+  "repo_id": 114054873,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "ESPnet",
+   "readiness": "unknown",
+   "path": "unknown"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "axolotl-ai-cloud/axolotl",
+  "url": "https://github.com/axolotl-ai-cloud/axolotl",
+  "default_branch": "main",
+  "stars": 12669,
+  "forks": 1469,
+  "pushed_at": "2026-11-05T19:31:22Z",
+  "days_since_push": 0.0,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Go ahead and axolotl questions",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 44623,
+  "cuda_dominant": false,
+  "priority": 7.186,
+  "score_parts": {
+   "stars_term": 4.103,
+   "forks_term": 1.584,
+   "recency_term": 1.5
+  },
+  "repo_id": 627727693,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Axolotl",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "triton-inference-server/server",
+  "url": "https://github.com/triton-inference-server/server",
+  "default_branch": "main",
+  "stars": 11127,
+  "forks": 1868,
+  "pushed_at": "2026-11-05T16:38:00Z",
+  "days_since_push": 0.2,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "The Triton Inference Server provides an optimized cloud and edge inferencing solution.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 7.181,
+  "score_parts": {
+   "stars_term": 4.046,
+   "forks_term": 1.636,
+   "recency_term": 1.499
+  },
+  "repo_id": 151636194,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Triton Inference Server",
+   "readiness": "partial",
+   "path": "amd-fork"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
   "full_name": "LMCache/LMCache",
   "url": "https://github.com/LMCache/LMCache",
   "default_branch": "dev",
@@ -133,6 +2337,82 @@
    "forks_term": 1.611,
    "recency_term": 1.498
   }
+ },
+ {
+  "full_name": "deepseek-ai/FlashMLA",
+  "url": "https://github.com/deepseek-ai/FlashMLA",
+  "default_branch": "main",
+  "stars": 13251,
+  "forks": 1264,
+  "pushed_at": "2026-10-27T02:50:40Z",
+  "days_since_push": 9.7,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "C++",
+  "description": "FlashMLA: Efficient Multi-head Latent Attention Kernels",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 332616,
+  "cuda_dominant": false,
+  "priority": 7.118,
+  "score_parts": {
+   "stars_term": 4.122,
+   "forks_term": 1.551,
+   "recency_term": 1.445
+  },
+  "repo_id": 936473202,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "FlashMLA",
+   "readiness": "partial",
+   "path": "amd-alternative"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "ApolloAuto/apollo",
+  "url": "https://github.com/ApolloAuto/apollo",
+  "default_branch": "master",
+  "stars": 26891,
+  "forks": 9959,
+  "pushed_at": "2026-04-16T12:24:54Z",
+  "days_since_push": 203.3,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "C++",
+  "description": "An open autonomous driving platform",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 428028,
+  "cuda_dominant": false,
+  "priority": 7.114,
+  "score_parts": {
+   "stars_term": 4.43,
+   "forks_term": 1.999,
+   "recency_term": 0.686
+  },
+  "repo_id": 96246170,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Baidu Apollo (autonomous driving stack)",
+   "readiness": "unknown",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
  },
  {
   "full_name": "xlite-dev/LeetCUDA",
@@ -190,6 +2470,44 @@
   }
  },
  {
+  "full_name": "skypilot-org/skypilot",
+  "url": "https://github.com/skypilot-org/skypilot",
+  "default_branch": "master",
+  "stars": 10798,
+  "forks": 1331,
+  "pushed_at": "2026-11-05T20:22:16Z",
+  "days_since_push": 0.0,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "The AI Compute Platform for frontier teams. SkyPilot turns fragmented AI compute into one AI supercomputer, so frontier AI teams build custom intelligence faster.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 7.096,
+  "score_parts": {
+   "stars_term": 4.033,
+   "forks_term": 1.562,
+   "recency_term": 1.5
+  },
+  "repo_id": 395140743,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "SkyPilot",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
   "full_name": "numba/numba",
   "url": "https://github.com/numba/numba",
   "default_branch": "main",
@@ -217,6 +2535,120 @@
   }
  },
  {
+  "full_name": "huggingface/accelerate",
+  "url": "https://github.com/huggingface/accelerate",
+  "default_branch": "main",
+  "stars": 9935,
+  "forks": 1591,
+  "pushed_at": "2026-11-02T15:20:44Z",
+  "days_since_push": 3.2,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "\ud83d\ude80 A simple way to launch, train, and use PyTorch models on almost any device and distributed configuration, automatic mixed precision (including fp8), and easy-to-configure FSDP and DeepSpeed support",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 7.08,
+  "score_parts": {
+   "stars_term": 3.997,
+   "forks_term": 1.601,
+   "recency_term": 1.482
+  },
+  "repo_id": 308638334,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Hugging Face Accelerate",
+   "readiness": "ready",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "speechbrain/speechbrain",
+  "url": "https://github.com/speechbrain/speechbrain",
+  "default_branch": "develop",
+  "stars": 11924,
+  "forks": 1754,
+  "pushed_at": "2026-10-14T23:12:55Z",
+  "days_since_push": 21.9,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "A PyTorch-based Speech Toolkit",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 7.077,
+  "score_parts": {
+   "stars_term": 4.076,
+   "forks_term": 1.622,
+   "recency_term": 1.379
+  },
+  "repo_id": 259710503,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "SpeechBrain",
+   "readiness": "unknown",
+   "path": "unknown"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "Project-MONAI/MONAI",
+  "url": "https://github.com/Project-MONAI/MONAI",
+  "default_branch": "dev",
+  "stars": 8828,
+  "forks": 1701,
+  "pushed_at": "2026-11-05T17:44:28Z",
+  "days_since_push": 0.1,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "AI Toolkit for Healthcare Imaging",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 212796,
+  "cuda_dominant": false,
+  "priority": 7.061,
+  "score_parts": {
+   "stars_term": 3.946,
+   "forks_term": 1.615,
+   "recency_term": 1.499
+  },
+  "repo_id": 214485001,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "NVIDIA Clara / MONAI (vs MONAI on ROCm)",
+   "readiness": "partial",
+   "path": "amd-fork"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
   "full_name": "deepseek-ai/DeepEP",
   "url": "https://github.com/deepseek-ai/DeepEP",
   "default_branch": "main",
@@ -241,6 +2673,82 @@
    "forks_term": 1.567,
    "recency_term": 1.492
   }
+ },
+ {
+  "full_name": "pyannote/pyannote-audio",
+  "url": "https://github.com/pyannote/pyannote-audio",
+  "default_branch": "main",
+  "stars": 10759,
+  "forks": 1133,
+  "pushed_at": "2026-11-03T10:10:51Z",
+  "days_since_push": 2.4,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Jupyter Notebook",
+  "description": "Neural building blocks for speaker diarization: speech activity detection, speaker change detection, overlapped speech detection, speaker embedding",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 7.045,
+  "score_parts": {
+   "stars_term": 4.032,
+   "forks_term": 1.527,
+   "recency_term": 1.486
+  },
+  "repo_id": 53344691,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "pyannote.audio",
+   "readiness": "unknown",
+   "path": "community-fork"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "LostRuins/koboldcpp",
+  "url": "https://github.com/LostRuins/koboldcpp",
+  "default_branch": "concedo",
+  "stars": 12158,
+  "forks": 808,
+  "pushed_at": "2026-11-05T14:25:44Z",
+  "days_since_push": 0.3,
+  "is_fork": true,
+  "fork_exception": false,
+  "language": "C++",
+  "description": "KoboldCpp - Run GGUF AI models locally with a KoboldAI UI. One File. Zero Install.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 2680910,
+  "cuda_dominant": false,
+  "priority": 7.037,
+  "score_parts": {
+   "stars_term": 4.085,
+   "forks_term": 1.454,
+   "recency_term": 1.499
+  },
+  "repo_id": 614637892,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "KoboldCpp",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
  },
  {
   "full_name": "catboost/catboost",
@@ -271,6 +2779,82 @@
   }
  },
  {
+  "full_name": "THUDM/slime",
+  "url": "https://github.com/THUDM/slime",
+  "default_branch": "main",
+  "stars": 8796,
+  "forks": 1347,
+  "pushed_at": "2026-11-05T12:25:36Z",
+  "days_since_push": 0.3,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "slime is an LLM training framework for RL Scaling.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 18136,
+  "cuda_dominant": false,
+  "priority": 7.007,
+  "score_parts": {
+   "stars_term": 3.944,
+   "forks_term": 1.565,
+   "recency_term": 1.498
+  },
+  "repo_id": 1004140701,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "slime",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "NVIDIA/Isaac-GR00T",
+  "url": "https://github.com/NVIDIA/Isaac-GR00T",
+  "default_branch": "main",
+  "stars": 8321,
+  "forks": 1520,
+  "pushed_at": "2026-11-04T23:11:51Z",
+  "days_since_push": 0.9,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "NVIDIA Isaac GR00T N1.7 -  A Foundation Model for Generalist Robots.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 7.006,
+  "score_parts": {
+   "stars_term": 3.92,
+   "forks_term": 1.591,
+   "recency_term": 1.495
+  },
+  "repo_id": 946829547,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": true,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "NVIDIA Isaac GR00T (N1.x robot foundation model)",
+   "readiness": "unknown",
+   "path": "none"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
   "full_name": "rapidsai/cudf",
   "url": "https://github.com/rapidsai/cudf",
   "default_branch": "main",
@@ -297,6 +2881,500 @@
    "forks_term": 1.519,
    "recency_term": 1.5
   }
+ },
+ {
+  "full_name": "Physical-Intelligence/openpi",
+  "url": "https://github.com/Physical-Intelligence/openpi",
+  "default_branch": "main",
+  "stars": 14551,
+  "forks": 2627,
+  "pushed_at": "2026-08-24T16:27:13Z",
+  "days_since_push": 73.2,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 7.004,
+  "score_parts": {
+   "stars_term": 4.163,
+   "forks_term": 1.71,
+   "recency_term": 1.132
+  },
+  "repo_id": 876210014,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "OpenPI",
+   "readiness": "partial",
+   "path": "community-fork"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "OpenRLHF/OpenRLHF",
+  "url": "https://github.com/OpenRLHF/OpenRLHF",
+  "default_branch": "main",
+  "stars": 10142,
+  "forks": 1056,
+  "pushed_at": "2026-11-03T03:17:19Z",
+  "days_since_push": 2.7,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "An Easy-to-use, Scalable and High-performance Agentic RL Framework based on Ray (PPO & DAPO & REINFORCE++ &  VLM & TIS & vLLM & Ray & Async  RL)",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 7.003,
+  "score_parts": {
+   "stars_term": 4.006,
+   "forks_term": 1.512,
+   "recency_term": 1.484
+  },
+  "repo_id": 672415139,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "OpenRLHF",
+   "readiness": "unknown",
+   "path": "unknown"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "optiscaler/OptiScaler",
+  "url": "https://github.com/optiscaler/OptiScaler",
+  "default_branch": "master",
+  "stars": 12385,
+  "forks": 595,
+  "pushed_at": "2026-11-05T11:15:32Z",
+  "days_since_push": 0.4,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "C++",
+  "description": "OptiScaler bridges upscaling/frame gen across GPUs. Supports DLSS2+/XeSS/FSR2+ inputs, replaces native upscalers, enables FSR-FG/XeFG on non-FG titles. Supports Nukem mod for DLSSG-to-FSR3 FG.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 6.978,
+  "score_parts": {
+   "stars_term": 4.093,
+   "forks_term": 1.388,
+   "recency_term": 1.498
+  },
+  "repo_id": 728625849,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "OptiScaler",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "bentoml/BentoML",
+  "url": "https://github.com/bentoml/BentoML",
+  "default_branch": "main",
+  "stars": 8935,
+  "forks": 1058,
+  "pushed_at": "2026-11-02T17:14:27Z",
+  "days_since_push": 3.1,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "The easiest way to serve AI apps and models - Build Model Inference APIs, Job queues, LLM apps, Multi-model pipelines, and more!",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 6.946,
+  "score_parts": {
+   "stars_term": 3.951,
+   "forks_term": 1.512,
+   "recency_term": 1.482
+  },
+  "repo_id": 178976529,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "BentoML",
+   "readiness": "unknown",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "tile-ai/tilelang",
+  "url": "https://github.com/tile-ai/tilelang",
+  "default_branch": "main",
+  "stars": 8913,
+  "forks": 958,
+  "pushed_at": "2026-11-05T15:38:58Z",
+  "days_since_push": 0.2,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Domain-specific language designed to streamline the development of high-performance GPU/CPU/Accelerators kernels",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 23476,
+  "cuda_dominant": false,
+  "priority": 6.94,
+  "score_parts": {
+   "stars_term": 3.95,
+   "forks_term": 1.491,
+   "recency_term": 1.499
+  },
+  "repo_id": 867004514,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "TileLang",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "facebookresearch/xformers",
+  "url": "https://github.com/facebookresearch/xformers",
+  "default_branch": "main",
+  "stars": 10576,
+  "forks": 797,
+  "pushed_at": "2026-10-29T12:19:57Z",
+  "days_since_push": 7.3,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Hackable and optimized Transformers building blocks, supporting a composable construction.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 1408,
+  "cuda_dominant": false,
+  "priority": 6.934,
+  "score_parts": {
+   "stars_term": 4.024,
+   "forks_term": 1.451,
+   "recency_term": 1.458
+  },
+  "repo_id": 416849738,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "xFormers",
+   "readiness": "partial",
+   "path": "amd-fork"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "kvcache-ai/Mooncake",
+  "url": "https://github.com/kvcache-ai/Mooncake",
+  "default_branch": "main",
+  "stars": 6986,
+  "forks": 1441,
+  "pushed_at": "2026-11-05T14:32:05Z",
+  "days_since_push": 0.2,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "C++",
+  "description": "Mooncake is the serving platform for Kimi, a leading LLM service provided by Moonshot AI.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 658500,
+  "cuda_dominant": false,
+  "priority": 6.922,
+  "score_parts": {
+   "stars_term": 3.844,
+   "forks_term": 1.579,
+   "recency_term": 1.499
+  },
+  "repo_id": 819733173,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Mooncake",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "kserve/kserve",
+  "url": "https://github.com/kserve/kserve",
+  "default_branch": "master",
+  "stars": 6191,
+  "forks": 1779,
+  "pushed_at": "2026-11-04T20:11:36Z",
+  "days_since_push": 1.0,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Go",
+  "description": "Standardized Distributed Generative and Predictive AI Inference Platform for Scalable, Multi-Framework Deployment on Kubernetes",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 6.911,
+  "score_parts": {
+   "stars_term": 3.792,
+   "forks_term": 1.625,
+   "recency_term": 1.494
+  },
+  "repo_id": 178075572,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "KServe",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "QwenAudio/CosyVoice",
+  "url": "https://github.com/QwenAudio/CosyVoice",
+  "default_branch": "main",
+  "stars": 24303,
+  "forks": 2777,
+  "pushed_at": "2026-05-25T18:15:40Z",
+  "days_since_push": 164.1,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Multi-lingual large voice generation model, providing inference, training and deployment full-stack ability.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 6.905,
+  "score_parts": {
+   "stars_term": 4.386,
+   "forks_term": 1.722,
+   "recency_term": 0.797
+  },
+  "repo_id": 823430322,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "CosyVoice",
+   "readiness": "unknown",
+   "path": "community-fork"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "bitsandbytes-foundation/bitsandbytes",
+  "url": "https://github.com/bitsandbytes-foundation/bitsandbytes",
+  "default_branch": "main",
+  "stars": 8537,
+  "forks": 943,
+  "pushed_at": "2026-11-02T14:36:37Z",
+  "days_since_push": 3.2,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Accessible large language models via k-bit quantization for PyTorch.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 222767,
+  "cuda_dominant": false,
+  "priority": 6.9,
+  "score_parts": {
+   "stars_term": 3.931,
+   "forks_term": 1.487,
+   "recency_term": 1.481
+  },
+  "repo_id": 373674258,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "bitsandbytes",
+   "readiness": "ready",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "kohya-ss/sd-scripts",
+  "url": "https://github.com/kohya-ss/sd-scripts",
+  "default_branch": "main",
+  "stars": 7257,
+  "forks": 1228,
+  "pushed_at": "2026-11-03T00:58:55Z",
+  "days_since_push": 2.8,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 6.889,
+  "score_parts": {
+   "stars_term": 3.861,
+   "forks_term": 1.545,
+   "recency_term": 1.484
+  },
+  "repo_id": 579557127,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Kohya sd-scripts / kohya_ss GUI",
+   "readiness": "unknown",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "leejet/stable-diffusion.cpp",
+  "url": "https://github.com/leejet/stable-diffusion.cpp",
+  "default_branch": "master",
+  "stars": 7907,
+  "forks": 935,
+  "pushed_at": "2026-11-05T19:04:03Z",
+  "days_since_push": 0.1,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "C++",
+  "description": "Diffusion model(SD,Flux,Wan,Qwen Image,Z-Image,...) inference in pure C/C++",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 480492,
+  "cuda_dominant": false,
+  "priority": 6.883,
+  "score_parts": {
+   "stars_term": 3.898,
+   "forks_term": 1.486,
+   "recency_term": 1.5
+  },
+  "repo_id": 677953180,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "stable-diffusion.cpp",
+   "readiness": "ready",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "InternLM/lmdeploy",
+  "url": "https://github.com/InternLM/lmdeploy",
+  "default_branch": "main",
+  "stars": 8134,
+  "forks": 774,
+  "pushed_at": "2026-11-05T14:03:55Z",
+  "days_since_push": 0.3,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "LMDeploy is a toolkit for compressing, deploying, and serving LLMs.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 1398300,
+  "cuda_dominant": false,
+  "priority": 6.853,
+  "score_parts": {
+   "stars_term": 3.91,
+   "forks_term": 1.445,
+   "recency_term": 1.498
+  },
+  "repo_id": 654122609,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "LMDeploy (TurboMind)",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
  },
  {
   "full_name": "flashinfer-ai/flashinfer",
@@ -327,6 +3405,44 @@
   }
  },
  {
+  "full_name": "EricLBuehler/mistral.rs",
+  "url": "https://github.com/EricLBuehler/mistral.rs",
+  "default_branch": "master",
+  "stars": 7812,
+  "forks": 760,
+  "pushed_at": "2026-11-03T04:35:12Z",
+  "days_since_push": 2.7,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Rust",
+  "description": "Fast, flexible LLM inference",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 2508765,
+  "cuda_dominant": false,
+  "priority": 6.818,
+  "score_parts": {
+   "stars_term": 3.893,
+   "forks_term": 1.441,
+   "recency_term": 1.485
+  },
+  "repo_id": 763774926,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "mistral.rs",
+   "readiness": "unknown",
+   "path": "unknown"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
   "full_name": "deepseek-ai/DeepGEMM",
   "url": "https://github.com/deepseek-ai/DeepGEMM",
   "default_branch": "main",
@@ -353,6 +3469,576 @@
   }
  },
  {
+  "full_name": "NVIDIA/nccl",
+  "url": "https://github.com/NVIDIA/nccl",
+  "default_branch": "master",
+  "stars": 5213,
+  "forks": 1473,
+  "pushed_at": "2026-11-03T20:31:33Z",
+  "days_since_push": 2.0,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "C++",
+  "description": "Optimized primitives for collective multi-GPU communication",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 2304098,
+  "cuda_dominant": false,
+  "priority": 6.79,
+  "score_parts": {
+   "stars_term": 3.717,
+   "forks_term": 1.584,
+   "recency_term": 1.489
+  },
+  "repo_id": 46153892,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": true,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "NCCL advanced features (NVLink SHARP, symmetric memory, Device API)",
+   "readiness": "partial",
+   "path": "amd-fork"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "pytorch/torchtitan",
+  "url": "https://github.com/pytorch/torchtitan",
+  "default_branch": "main",
+  "stars": 5882,
+  "forks": 1076,
+  "pushed_at": "2026-11-05T20:14:52Z",
+  "days_since_push": 0.0,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "A PyTorch native platform for training generative AI models",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 6.786,
+  "score_parts": {
+   "stars_term": 3.77,
+   "forks_term": 1.516,
+   "recency_term": 1.5
+  },
+  "repo_id": 730932260,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "torchtitan",
+   "readiness": "ready",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "NVIDIA/warp",
+  "url": "https://github.com/NVIDIA/warp",
+  "default_branch": "main",
+  "stars": 7274,
+  "forks": 683,
+  "pushed_at": "2026-11-05T18:57:09Z",
+  "days_since_push": 0.1,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "A Python framework for GPU-accelerated simulation, robotics, and machine learning.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 625999,
+  "cuda_dominant": false,
+  "priority": 6.779,
+  "score_parts": {
+   "stars_term": 3.862,
+   "forks_term": 1.418,
+   "recency_term": 1.5
+  },
+  "repo_id": 471527576,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": true,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "NVIDIA Warp",
+   "readiness": "partial",
+   "path": "amd-fork"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "Acly/krita-ai-diffusion",
+  "url": "https://github.com/Acly/krita-ai-diffusion",
+  "default_branch": "main",
+  "stars": 10841,
+  "forks": 657,
+  "pushed_at": "2026-10-03T10:54:01Z",
+  "days_since_push": 33.4,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Streamlined interface for generating images with AI in Krita. Inpaint and outpaint with optional text prompt, no tweaking required.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 6.763,
+  "score_parts": {
+   "stars_term": 4.035,
+   "forks_term": 1.409,
+   "recency_term": 1.319
+  },
+  "repo_id": 686161611,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Krita AI Diffusion",
+   "readiness": "unknown",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "KlingAIResearch/LivePortrait",
+  "url": "https://github.com/KlingAIResearch/LivePortrait",
+  "default_branch": "main",
+  "stars": 19402,
+  "forks": 2018,
+  "pushed_at": "2026-06-01T17:25:09Z",
+  "days_since_push": 157.1,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Bring portraits to life!",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 62015,
+  "cuda_dominant": false,
+  "priority": 6.759,
+  "score_parts": {
+   "stars_term": 4.288,
+   "forks_term": 1.653,
+   "recency_term": 0.819
+  },
+  "repo_id": 823745702,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "LivePortrait and talking-head / lip-sync stacks (FasterLivePortrait, MuseTalk, Wav2Lip)",
+   "readiness": "unknown",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "vladmandic/sdnext",
+  "url": "https://github.com/vladmandic/sdnext",
+  "default_branch": "master",
+  "stars": 7368,
+  "forks": 580,
+  "pushed_at": "2026-11-05T07:34:27Z",
+  "days_since_push": 0.5,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "SD.Next: All-in-one WebUI for AI generative image and video creation, captioning and processing",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 6.746,
+  "score_parts": {
+   "stars_term": 3.867,
+   "forks_term": 1.382,
+   "recency_term": 1.497
+  },
+  "repo_id": 581913613,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "SD.Next",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "fla-org/flash-linear-attention",
+  "url": "https://github.com/fla-org/flash-linear-attention",
+  "default_branch": "main",
+  "stars": 6023,
+  "forks": 800,
+  "pushed_at": "2026-11-04T10:36:02Z",
+  "days_since_push": 1.4,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "\ud83d\ude80 Efficient implementations for emerging model architectures",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 6.724,
+  "score_parts": {
+   "stars_term": 3.78,
+   "forks_term": 1.452,
+   "recency_term": 1.492
+  },
+  "repo_id": 733802106,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Flash Linear Attention",
+   "readiness": "unknown",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "linkedin/Liger-Kernel",
+  "url": "https://github.com/linkedin/Liger-Kernel",
+  "default_branch": "main",
+  "stars": 6685,
+  "forks": 646,
+  "pushed_at": "2026-11-02T04:32:07Z",
+  "days_since_push": 3.7,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Efficient Triton Kernels for LLM Training",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 3120328,
+  "cuda_dominant": false,
+  "priority": 6.71,
+  "score_parts": {
+   "stars_term": 3.825,
+   "forks_term": 1.405,
+   "recency_term": 1.479
+  },
+  "repo_id": 838970603,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Liger Kernel",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "newton-physics/newton",
+  "url": "https://github.com/newton-physics/newton",
+  "default_branch": "main",
+  "stars": 5893,
+  "forks": 758,
+  "pushed_at": "2026-11-05T19:27:34Z",
+  "days_since_push": 0.0,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "An open-source, GPU-accelerated physics simulation engine built upon NVIDIA Warp, specifically targeting roboticists and simulation researchers.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 6.71,
+  "score_parts": {
+   "stars_term": 3.77,
+   "forks_term": 1.44,
+   "recency_term": 1.5
+  },
+  "repo_id": 970467647,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Newton",
+   "readiness": "partial",
+   "path": "amd-fork"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "gpustack/gpustack",
+  "url": "https://github.com/gpustack/gpustack",
+  "default_branch": "main",
+  "stars": 5978,
+  "forks": 721,
+  "pushed_at": "2026-11-05T16:10:12Z",
+  "days_since_push": 0.2,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "A GPU cluster manager for high-performance AI model serving (vLLM, SGLang) and on-demand SSH-accessible GPU instances.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 6.705,
+  "score_parts": {
+   "stars_term": 3.777,
+   "forks_term": 1.429,
+   "recency_term": 1.499
+  },
+  "repo_id": 799049436,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "GPUStack",
+   "readiness": "unknown",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "wenet-e2e/wenet",
+  "url": "https://github.com/wenet-e2e/wenet",
+  "default_branch": "main",
+  "stars": 5255,
+  "forks": 1194,
+  "pushed_at": "2026-10-26T12:07:11Z",
+  "days_since_push": 10.4,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Production First and Production Ready End-to-End Speech Recognition Toolkit",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 4443,
+  "cuda_dominant": false,
+  "priority": 6.701,
+  "score_parts": {
+   "stars_term": 3.721,
+   "forks_term": 1.539,
+   "recency_term": 1.441
+  },
+  "repo_id": 313501668,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "WeNet",
+   "readiness": "unknown",
+   "path": "unknown"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "NVIDIA/Model-Optimizer",
+  "url": "https://github.com/NVIDIA/Model-Optimizer",
+  "default_branch": "main",
+  "stars": 5537,
+  "forks": 800,
+  "pushed_at": "2026-11-05T20:21:34Z",
+  "days_since_push": 0.0,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "A unified library of SOTA model optimization techniques like quantization, distillation, pruning, neural architecture search, speculative decoding, etc. It compresses deep learning models for downstream deployment frameworks like TensorRT-LLM, TensorRT, vLLM, etc. to optimize inference speed.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 131127,
+  "cuda_dominant": false,
+  "priority": 6.695,
+  "score_parts": {
+   "stars_term": 3.743,
+   "forks_term": 1.452,
+   "recency_term": 1.5
+  },
+  "repo_id": 790916393,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": true,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "NVIDIA Model Optimizer (formerly TensorRT Model Optimizer)",
+   "readiness": "partial",
+   "path": "amd-alternative"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "llm-d/llm-d",
+  "url": "https://github.com/llm-d/llm-d",
+  "default_branch": "main",
+  "stars": 5152,
+  "forks": 914,
+  "pushed_at": "2026-11-05T19:33:08Z",
+  "days_since_push": 0.0,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "State of the art inference performance with modern accelerators on Kubernetes",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 6.693,
+  "score_parts": {
+   "stars_term": 3.712,
+   "forks_term": 1.481,
+   "recency_term": 1.5
+  },
+  "repo_id": 975070903,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "llm-d",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "NVIDIA/DALI",
+  "url": "https://github.com/NVIDIA/DALI",
+  "default_branch": "main",
+  "stars": 5791,
+  "forks": 691,
+  "pushed_at": "2026-11-05T15:44:00Z",
+  "days_since_push": 0.2,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "C++",
+  "description": "A GPU-accelerated library containing highly optimized building blocks and an execution engine for data processing to accelerate deep learning training and inference applications.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 1541729,
+  "cuda_dominant": false,
+  "priority": 6.682,
+  "score_parts": {
+   "stars_term": 3.763,
+   "forks_term": 1.42,
+   "recency_term": 1.499
+  },
+  "repo_id": 135768037,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": true,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "NVIDIA DALI (vs AMD rocAL)",
+   "readiness": "ready",
+   "path": "amd-alternative"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "areal-project/AReaL",
+  "url": "https://github.com/areal-project/AReaL",
+  "default_branch": "main",
+  "stars": 5901,
+  "forks": 647,
+  "pushed_at": "2026-11-05T09:13:41Z",
+  "days_since_push": 0.5,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "The RL Bridge for LLM-based Agent Applications. Made Simple & Flexible.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 6.674,
+  "score_parts": {
+   "stars_term": 3.771,
+   "forks_term": 1.406,
+   "recency_term": 1.497
+  },
+  "repo_id": 937952934,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "AReaL",
+   "readiness": "unknown",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
   "full_name": "karpathy/llm.c",
   "url": "https://github.com/karpathy/llm.c",
   "default_branch": "master",
@@ -377,6 +4063,44 @@
   },
   "first_seen": "2026-06-01",
   "last_seen": "2026-06-01"
+ },
+ {
+  "full_name": "lemonade-sdk/lemonade",
+  "url": "https://github.com/lemonade-sdk/lemonade",
+  "default_branch": "main",
+  "stars": 6121,
+  "forks": 555,
+  "pushed_at": "2026-11-05T20:28:02Z",
+  "days_since_push": 0.0,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "C++",
+  "description": "Lemonade helps users discover and run local AI apps by serving optimized LLMs right from their own GPUs and NPUs. Join our discord: https://discord.gg/5xXzkMu8Zk",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 6.659,
+  "score_parts": {
+   "stars_term": 3.787,
+   "forks_term": 1.373,
+   "recency_term": 1.5
+  },
+  "repo_id": 984341155,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Local LLM desktop apps: LM Studio and Lemonade",
+   "readiness": "ready",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
  },
  {
   "full_name": "nerfstudio-project/gsplat",
@@ -433,6 +4157,82 @@
   }
  },
  {
+  "full_name": "cdcseacave/openMVS",
+  "url": "https://github.com/cdcseacave/openMVS",
+  "default_branch": "develop",
+  "stars": 4186,
+  "forks": 992,
+  "pushed_at": "2026-11-05T19:37:47Z",
+  "days_since_push": 0.0,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "C++",
+  "description": "open Structure-fom-Motion and Multi-View Stereo reconstruction library",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 168989,
+  "cuda_dominant": false,
+  "priority": 6.62,
+  "score_parts": {
+   "stars_term": 3.622,
+   "forks_term": 1.498,
+   "recency_term": 1.5
+  },
+  "repo_id": 35825593,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "OpenMVS",
+   "readiness": "unknown",
+   "path": "none"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "iree-org/iree",
+  "url": "https://github.com/iree-org/iree",
+  "default_branch": "main",
+  "stars": 4003,
+  "forks": 1056,
+  "pushed_at": "2026-11-05T16:57:32Z",
+  "days_since_push": 0.1,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "C++",
+  "description": "A retargetable MLIR-based machine learning compiler and runtime toolkit.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 6.614,
+  "score_parts": {
+   "stars_term": 3.602,
+   "forks_term": 1.512,
+   "recency_term": 1.499
+  },
+  "repo_id": 208145128,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "IREE",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
   "full_name": "lammps/lammps",
   "url": "https://github.com/lammps/lammps",
   "default_branch": "develop",
@@ -457,6 +4257,44 @@
   },
   "first_seen": "2026-06-01",
   "last_seen": "2026-06-01"
+ },
+ {
+  "full_name": "k4yt3x/video2x",
+  "url": "https://github.com/k4yt3x/video2x",
+  "default_branch": "master",
+  "stars": 22614,
+  "forks": 1975,
+  "pushed_at": "2026-03-07T15:39:42Z",
+  "days_since_push": 243.2,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "C++",
+  "description": "A machine learning-based video super resolution and frame interpolation framework. Est. Hack the Valley II, 2018.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 6.59,
+  "score_parts": {
+   "stars_term": 4.354,
+   "forks_term": 1.648,
+   "recency_term": 0.588
+  },
+  "repo_id": 122758193,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Video2X",
+   "readiness": "unknown",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
  },
  {
   "full_name": "shader-slang/slang",
@@ -486,6 +4324,234 @@
   }
  },
  {
+  "full_name": "NVIDIA-Omniverse/PhysX",
+  "url": "https://github.com/NVIDIA-Omniverse/PhysX",
+  "default_branch": "main",
+  "stars": 4832,
+  "forks": 684,
+  "pushed_at": "2026-10-31T18:33:59Z",
+  "days_since_push": 5.1,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "C++",
+  "description": "NVIDIA PhysX SDK",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 3478130,
+  "cuda_dominant": false,
+  "priority": 6.573,
+  "score_parts": {
+   "stars_term": 3.684,
+   "forks_term": 1.418,
+   "recency_term": 1.471
+  },
+  "repo_id": 545381143,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": true,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "PhysX 5 GPU simulation",
+   "readiness": "partial",
+   "path": "amd-fork"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "chaiNNer-org/chaiNNer",
+  "url": "https://github.com/chaiNNer-org/chaiNNer",
+  "default_branch": "main",
+  "stars": 6140,
+  "forks": 381,
+  "pushed_at": "2026-11-02T21:16:42Z",
+  "days_since_push": 3.0,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "A node-based image processing GUI aimed at making chaining image processing tasks easy and customizable. Born as an AI upscaling application, chaiNNer has grown into an extremely flexible and powerful programmatic image processing application.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 6.562,
+  "score_parts": {
+   "stars_term": 3.788,
+   "forks_term": 1.291,
+   "recency_term": 1.483
+  },
+  "repo_id": 404144554,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "chaiNNer",
+   "readiness": "unknown",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "NVIDIAGameWorks/kaolin",
+  "url": "https://github.com/NVIDIAGameWorks/kaolin",
+  "default_branch": "master",
+  "stars": 5191,
+  "forks": 628,
+  "pushed_at": "2026-10-25T23:21:28Z",
+  "days_since_push": 10.9,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "A PyTorch Library for Accelerating 3D Deep Learning Research",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 339513,
+  "cuda_dominant": false,
+  "priority": 6.553,
+  "score_parts": {
+   "stars_term": 3.715,
+   "forks_term": 1.399,
+   "recency_term": 1.438
+  },
+  "repo_id": 221787282,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": true,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "NVIDIA Kaolin",
+   "readiness": "partial",
+   "path": "amd-fork"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "hao-ai-lab/FastVideo",
+  "url": "https://github.com/hao-ai-lab/FastVideo",
+  "default_branch": "main",
+  "stars": 4782,
+  "forks": 519,
+  "pushed_at": "2026-11-05T18:14:54Z",
+  "days_since_push": 0.1,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "A unified inference and post-training framework for accelerated video generation.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 395990,
+  "cuda_dominant": false,
+  "priority": 6.537,
+  "score_parts": {
+   "stars_term": 3.68,
+   "forks_term": 1.358,
+   "recency_term": 1.499
+  },
+  "repo_id": 877649153,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "FastVideo (sliding-tile and video sparse attention kernels)",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "NVIDIA/TransformerEngine",
+  "url": "https://github.com/NVIDIA/TransformerEngine",
+  "default_branch": "main",
+  "stars": 3600,
+  "forks": 888,
+  "pushed_at": "2026-11-05T19:18:13Z",
+  "days_since_push": 0.0,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "A library for accelerating Transformer models on NVIDIA GPUs, including using 8-bit and 4-bit floating point (FP8 and FP4) precision on Hopper, Ada and Blackwell GPUs, to provide better performance with lower memory utilization in both training and inference.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 4362636,
+  "cuda_dominant": false,
+  "priority": 6.531,
+  "score_parts": {
+   "stars_term": 3.556,
+   "forks_term": 1.474,
+   "recency_term": 1.5
+  },
+  "repo_id": 539057023,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": true,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Transformer Engine",
+   "readiness": "partial",
+   "path": "amd-fork"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "collabora/WhisperLive",
+  "url": "https://github.com/collabora/WhisperLive",
+  "default_branch": "main",
+  "stars": 4350,
+  "forks": 609,
+  "pushed_at": "2026-11-02T18:59:02Z",
+  "days_since_push": 3.1,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "A nearly-live implementation of OpenAI's Whisper.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 6.514,
+  "score_parts": {
+   "stars_term": 3.639,
+   "forks_term": 1.393,
+   "recency_term": 1.482
+  },
+  "repo_id": 636344889,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "WhisperLive (real-time transcription / live captioning server)",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
   "full_name": "OpenNMT/CTranslate2",
   "url": "https://github.com/OpenNMT/CTranslate2",
   "default_branch": "master",
@@ -513,6 +4579,44 @@
   }
  },
  {
+  "full_name": "NVIDIA/physicsnemo",
+  "url": "https://github.com/NVIDIA/physicsnemo",
+  "default_branch": "main",
+  "stars": 3418,
+  "forks": 832,
+  "pushed_at": "2026-11-05T20:26:48Z",
+  "days_since_push": 0.0,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Open-source deep-learning framework for building, training, and fine-tuning deep learning models using state-of-the-art Physics-ML methods",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 6.494,
+  "score_parts": {
+   "stars_term": 3.534,
+   "forks_term": 1.46,
+   "recency_term": 1.5
+  },
+  "repo_id": 593782352,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": true,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "NVIDIA PhysicsNeMo (formerly Modulus)",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
   "full_name": "kaldi-asr/kaldi",
   "url": "https://github.com/kaldi-asr/kaldi",
   "default_branch": "master",
@@ -537,6 +4641,44 @@
    "forks_term": 1.864,
    "recency_term": 0.44
   }
+ },
+ {
+  "full_name": "pytorch/rl",
+  "url": "https://github.com/pytorch/rl",
+  "default_branch": "main",
+  "stars": 3625,
+  "forks": 528,
+  "pushed_at": "2026-11-05T18:07:21Z",
+  "days_since_push": 0.1,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "A modular, primitive-first, python-first PyTorch library for Reinforcement Learning.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 9048,
+  "cuda_dominant": false,
+  "priority": 6.421,
+  "score_parts": {
+   "stars_term": 3.559,
+   "forks_term": 1.362,
+   "recency_term": 1.499
+  },
+  "repo_id": 454479855,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "TorchRL",
+   "readiness": "unknown",
+   "path": "unknown"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
  },
  {
   "full_name": "chrxh/alien",
@@ -566,6 +4708,82 @@
   }
  },
  {
+  "full_name": "kubeflow/trainer",
+  "url": "https://github.com/kubeflow/trainer",
+  "default_branch": "master",
+  "stars": 2273,
+  "forks": 1106,
+  "pushed_at": "2026-11-05T06:32:25Z",
+  "days_since_push": 0.6,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Go",
+  "description": "Distributed AI Model Training and LLM Fine-Tuning on Kubernetes",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 6.376,
+  "score_parts": {
+   "stars_term": 3.357,
+   "forks_term": 1.522,
+   "recency_term": 1.497
+  },
+  "repo_id": 95700338,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Kubeflow Trainer",
+   "readiness": "unknown",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "leggedrobotics/rsl_rl",
+  "url": "https://github.com/leggedrobotics/rsl_rl",
+  "default_branch": "main",
+  "stars": 3121,
+  "forks": 715,
+  "pushed_at": "2026-10-28T16:18:03Z",
+  "days_since_push": 8.2,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "A fast and simple implementation of learning algorithms for robotics.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 6.375,
+  "score_parts": {
+   "stars_term": 3.494,
+   "forks_term": 1.427,
+   "recency_term": 1.454
+  },
+  "repo_id": 418503284,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "RSL-RL",
+   "readiness": "unknown",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
   "full_name": "MrNeRF/LichtFeld-Studio",
   "url": "https://github.com/MrNeRF/LichtFeld-Studio",
   "default_branch": "master",
@@ -591,6 +4809,44 @@
    "forks_term": 1.311,
    "recency_term": 1.5
   }
+ },
+ {
+  "full_name": "meta-pytorch/torchrec",
+  "url": "https://github.com/meta-pytorch/torchrec",
+  "default_branch": "main",
+  "stars": 2624,
+  "forks": 731,
+  "pushed_at": "2026-11-05T18:07:48Z",
+  "days_since_push": 0.1,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Pytorch domain library for recommendation systems",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 6.351,
+  "score_parts": {
+   "stars_term": 3.419,
+   "forks_term": 1.432,
+   "recency_term": 1.499
+  },
+  "repo_id": 385408663,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "TorchRec",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
  },
  {
   "full_name": "pytorch/ao",
@@ -644,6 +4900,44 @@
    "forks_term": 1.295,
    "recency_term": 1.373
   }
+ },
+ {
+  "full_name": "NVlabs/tiny-cuda-nn",
+  "url": "https://github.com/NVlabs/tiny-cuda-nn",
+  "default_branch": "master",
+  "stars": 4547,
+  "forks": 583,
+  "pushed_at": "2026-09-29T16:39:58Z",
+  "days_since_push": 37.2,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "C++",
+  "description": "Lightning fast C++/CUDA neural network framework",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 313332,
+  "cuda_dominant": false,
+  "priority": 6.341,
+  "score_parts": {
+   "stars_term": 3.658,
+   "forks_term": 1.383,
+   "recency_term": 1.3
+  },
+  "repo_id": 358678977,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": true,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "tiny-cuda-nn / Instant-NGP",
+   "readiness": "partial",
+   "path": "community-fork"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
  },
  {
   "full_name": "apache/mahout",
@@ -700,6 +4994,82 @@
   }
  },
  {
+  "full_name": "Nerogar/OneTrainer",
+  "url": "https://github.com/Nerogar/OneTrainer",
+  "default_branch": "master",
+  "stars": 3261,
+  "forks": 337,
+  "pushed_at": "2026-11-05T12:54:35Z",
+  "days_since_push": 0.3,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "OneTrainer is a one-stop solution for all your Diffusion training needs.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 6.276,
+  "score_parts": {
+   "stars_term": 3.513,
+   "forks_term": 1.264,
+   "recency_term": 1.498
+  },
+  "repo_id": 626790707,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "OneTrainer",
+   "readiness": "unknown",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "autowarefoundation/autoware_universe",
+  "url": "https://github.com/autowarefoundation/autoware_universe",
+  "default_branch": "main",
+  "stars": 1807,
+  "forks": 980,
+  "pushed_at": "2026-11-05T14:00:11Z",
+  "days_since_push": 0.3,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "C++",
+  "description": "",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 777565,
+  "cuda_dominant": false,
+  "priority": 6.251,
+  "score_parts": {
+   "stars_term": 3.257,
+   "forks_term": 1.496,
+   "recency_term": 1.498
+  },
+  "repo_id": 429651616,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Autoware perception (TensorRT-based nodes)",
+   "readiness": "not-yet",
+   "path": "none"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
   "full_name": "BBuf/how-to-optim-algorithm-in-cuda",
   "url": "https://github.com/BBuf/how-to-optim-algorithm-in-cuda",
   "default_branch": "master",
@@ -725,6 +5095,82 @@
    "forks_term": 1.231,
    "recency_term": 1.491
   }
+ },
+ {
+  "full_name": "mitsuba-renderer/mitsuba3",
+  "url": "https://github.com/mitsuba-renderer/mitsuba3",
+  "default_branch": "master",
+  "stars": 2973,
+  "forks": 374,
+  "pushed_at": "2026-10-30T10:39:44Z",
+  "days_since_push": 6.4,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "C++",
+  "description": "Mitsuba 3: A Retargetable Forward and Inverse Renderer",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 6.224,
+  "score_parts": {
+   "stars_term": 3.473,
+   "forks_term": 1.287,
+   "recency_term": 1.463
+  },
+  "repo_id": 362484572,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Mitsuba 3 / Dr.Jit",
+   "readiness": "not-yet",
+   "path": "none"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "xdit-project/xDiT",
+  "url": "https://github.com/xdit-project/xDiT",
+  "default_branch": "main",
+  "stars": 2750,
+  "forks": 356,
+  "pushed_at": "2026-11-05T14:13:51Z",
+  "days_since_push": 0.3,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "xDiT: A Scalable Inference Engine for Diffusion Transformers (DiTs) with Massive Parallelism",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 6.214,
+  "score_parts": {
+   "stars_term": 3.439,
+   "forks_term": 1.276,
+   "recency_term": 1.499
+  },
+  "repo_id": 774210161,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "xDiT / xfuser (parallel diffusion inference)",
+   "readiness": "ready",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
  },
  {
   "full_name": "deepmodeling/deepmd-kit",
@@ -754,6 +5200,44 @@
   }
  },
  {
+  "full_name": "NVlabs/ProtoMotions",
+  "url": "https://github.com/NVlabs/ProtoMotions",
+  "default_branch": "main",
+  "stars": 2468,
+  "forks": 401,
+  "pushed_at": "2026-11-03T21:47:36Z",
+  "days_since_push": 1.9,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "ProtoMotions is a GPU-accelerated simulation and learning framework for training physically simulated digital humans and humanoid robots.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 11240,
+  "cuda_dominant": false,
+  "priority": 6.183,
+  "score_parts": {
+   "stars_term": 3.393,
+   "forks_term": 1.302,
+   "recency_term": 1.489
+  },
+  "repo_id": 862223185,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": true,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "ProtoMotions",
+   "readiness": "unknown",
+   "path": "unknown"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
   "full_name": "patriciogonzalezvivo/lygia",
   "url": "https://github.com/patriciogonzalezvivo/lygia",
   "default_branch": "main",
@@ -778,6 +5262,44 @@
    "forks_term": 1.174,
    "recency_term": 1.476
   }
+ },
+ {
+  "full_name": "NVIDIAGameWorks/Falcor",
+  "url": "https://github.com/NVIDIAGameWorks/Falcor",
+  "default_branch": "master",
+  "stars": 3270,
+  "forks": 629,
+  "pushed_at": "2026-09-21T15:12:00Z",
+  "days_since_push": 45.2,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "C++",
+  "description": "Real-Time Rendering Framework",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 2764,
+  "cuda_dominant": false,
+  "priority": 6.175,
+  "score_parts": {
+   "stars_term": 3.515,
+   "forks_term": 1.4,
+   "recency_term": 1.26
+  },
+  "repo_id": 98350667,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": true,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Falcor",
+   "readiness": "unknown",
+   "path": "unknown"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
  },
  {
   "full_name": "HazyResearch/ThunderKittens",
@@ -830,6 +5352,82 @@
   },
   "first_seen": "2026-06-01",
   "last_seen": "2026-06-01"
+ },
+ {
+  "full_name": "pytorch/FBGEMM",
+  "url": "https://github.com/pytorch/FBGEMM",
+  "default_branch": "main",
+  "stars": 1597,
+  "forks": 820,
+  "pushed_at": "2026-11-05T19:01:40Z",
+  "days_since_push": 0.1,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "C++",
+  "description": "FB (Facebook) + GEMM (General Matrix-Matrix Multiplication) - https://code.fb.com/ml-applications/fbgemm/",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 3591890,
+  "cuda_dominant": false,
+  "priority": 6.16,
+  "score_parts": {
+   "stars_term": 3.204,
+   "forks_term": 1.457,
+   "recency_term": 1.5
+  },
+  "repo_id": 150154628,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "FBGEMM_GPU / MSLK (FBGEMM GenAI)",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "SkyworkAI/Matrix-Game",
+  "url": "https://github.com/SkyworkAI/Matrix-Game",
+  "default_branch": "main",
+  "stars": 2843,
+  "forks": 302,
+  "pushed_at": "2026-10-29T02:26:29Z",
+  "days_since_push": 7.8,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Matrix-Game 4.0: Streaming Neural Rendering for Playable Games",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 6.151,
+  "score_parts": {
+   "stars_term": 3.454,
+   "forks_term": 1.241,
+   "recency_term": 1.456
+  },
+  "repo_id": 978649191,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Matrix-Game (Skywork AI interactive world models)",
+   "readiness": "unknown",
+   "path": "community-fork"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
  },
  {
   "full_name": "Luce-Org/lucebox",
@@ -915,6 +5513,82 @@
   }
  },
  {
+  "full_name": "ByteDance-Seed/VeOmni",
+  "url": "https://github.com/ByteDance-Seed/VeOmni",
+  "default_branch": "main",
+  "stars": 2286,
+  "forks": 316,
+  "pushed_at": "2026-11-05T03:38:45Z",
+  "days_since_push": 0.7,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "VeOmni: Scaling Any Modality Model Training with Model-Centric Distributed Recipe Zoo",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 6.106,
+  "score_parts": {
+   "stars_term": 3.359,
+   "forks_term": 1.251,
+   "recency_term": 1.496
+  },
+  "repo_id": 956315778,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "VeOmni",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "NVIDIA-AI-Blueprints/video-search-and-summarization",
+  "url": "https://github.com/NVIDIA-AI-Blueprints/video-search-and-summarization",
+  "default_branch": "develop",
+  "stars": 1967,
+  "forks": 420,
+  "pushed_at": "2026-11-05T18:49:41Z",
+  "days_since_push": 0.1,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "NVIDIA AI Blueprint for video search and summarization (VSS) is a GPU-accelerated reference architecture for building video analytics agents with real-time verified alerts, visual Q&A, and automated reporting. The VSS Blueprint uses vision language models (VLMs) such as NVIDIA Cosmos, LLMs such as NVIDIA Nemotron, RAG, and NVIDIA NIMs.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 6.106,
+  "score_parts": {
+   "stars_term": 3.294,
+   "forks_term": 1.312,
+   "recency_term": 1.5
+  },
+  "repo_id": 876545970,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": true,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "NVIDIA AI Blueprint: Video Search and Summarization (Metropolis VSS)",
+   "readiness": "ready",
+   "path": "amd-alternative"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
   "full_name": "diku-dk/futhark",
   "url": "https://github.com/diku-dk/futhark",
   "default_branch": "master",
@@ -966,6 +5640,82 @@
    "forks_term": 1.26,
    "recency_term": 1.493
   }
+ },
+ {
+  "full_name": "NVlabs/curobo",
+  "url": "https://github.com/NVlabs/curobo",
+  "default_branch": "main",
+  "stars": 1958,
+  "forks": 383,
+  "pushed_at": "2026-11-05T04:55:19Z",
+  "days_since_push": 0.6,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "CUDA Accelerated Robot Library",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 636791,
+  "cuda_dominant": false,
+  "priority": 6.08,
+  "score_parts": {
+   "stars_term": 3.292,
+   "forks_term": 1.292,
+   "recency_term": 1.496
+  },
+  "repo_id": 704667494,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": true,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "cuRobo",
+   "readiness": "not-yet",
+   "path": "none"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "scverse/scvi-tools",
+  "url": "https://github.com/scverse/scvi-tools",
+  "default_branch": "main",
+  "stars": 1720,
+  "forks": 483,
+  "pushed_at": "2026-11-05T17:30:08Z",
+  "days_since_push": 0.1,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Deep probabilistic analysis of single-cell and spatial omics data",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 6.077,
+  "score_parts": {
+   "stars_term": 3.236,
+   "forks_term": 1.342,
+   "recency_term": 1.499
+  },
+  "repo_id": 102567256,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "scvi-tools",
+   "readiness": "unknown",
+   "path": "unknown"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
  },
  {
   "full_name": "mirage-project/mirage",
@@ -1047,6 +5797,82 @@
   "last_seen": "2026-06-01"
  },
  {
+  "full_name": "NVIDIA-NeMo/Curator",
+  "url": "https://github.com/NVIDIA-NeMo/Curator",
+  "default_branch": "main",
+  "stars": 1852,
+  "forks": 368,
+  "pushed_at": "2026-11-05T11:39:08Z",
+  "days_since_push": 0.4,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Scalable data pre processing and curation toolkit for LLMs",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 6.049,
+  "score_parts": {
+   "stars_term": 3.268,
+   "forks_term": 1.284,
+   "recency_term": 1.498
+  },
+  "repo_id": 772255271,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": true,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "NVIDIA NeMo Curator",
+   "readiness": "not-yet",
+   "path": "none"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "idiap/coqui-ai-TTS",
+  "url": "https://github.com/idiap/coqui-ai-TTS",
+  "default_branch": "dev",
+  "stars": 2349,
+  "forks": 298,
+  "pushed_at": "2026-10-24T20:22:41Z",
+  "days_since_push": 12.0,
+  "is_fork": true,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "\ud83d\udc38\ud83d\udcac - a deep learning toolkit for Text-to-Speech, battle-tested in research and production",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 6.041,
+  "score_parts": {
+   "stars_term": 3.371,
+   "forks_term": 1.238,
+   "recency_term": 1.432
+  },
+  "repo_id": 712370652,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Coqui TTS (maintained Idiap fork)",
+   "readiness": "unknown",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
   "full_name": "Luce-Org/lucebox-hub",
   "url": "https://github.com/Luce-Org/lucebox-hub",
   "default_branch": "main",
@@ -1101,6 +5927,44 @@
   }
  },
  {
+  "full_name": "nunchux-ai/nunchaku",
+  "url": "https://github.com/nunchux-ai/nunchaku",
+  "default_branch": "main",
+  "stars": 3965,
+  "forks": 288,
+  "pushed_at": "2026-09-06T23:07:26Z",
+  "days_since_push": 59.9,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "[ICLR2025 Spotlight] SVDQuant: Absorbing Outliers by Low-Rank Components for 4-Bit Diffusion Models",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 461610,
+  "cuda_dominant": false,
+  "priority": 6.02,
+  "score_parts": {
+   "stars_term": 3.598,
+   "forks_term": 1.23,
+   "recency_term": 1.191
+  },
+  "repo_id": 884123664,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "nunchaku (SVDQuant 4-bit diffusion engine)",
+   "readiness": "not-yet",
+   "path": "none"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
   "full_name": "soedinglab/MMseqs2",
   "url": "https://github.com/soedinglab/MMseqs2",
   "default_branch": "master",
@@ -1151,6 +6015,158 @@
   },
   "first_seen": "2026-06-01",
   "last_seen": "2026-06-01"
+ },
+ {
+  "full_name": "turboderp-org/exllamav3",
+  "url": "https://github.com/turboderp-org/exllamav3",
+  "default_branch": "master",
+  "stars": 1794,
+  "forks": 286,
+  "pushed_at": "2026-11-04T11:36:06Z",
+  "days_since_push": 1.4,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "An optimized quantization and inference library for running LLMs locally on modern consumer-class GPUs",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 1820730,
+  "cuda_dominant": false,
+  "priority": 5.975,
+  "score_parts": {
+   "stars_term": 3.254,
+   "forks_term": 1.229,
+   "recency_term": 1.492
+  },
+  "repo_id": 961394714,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "ExLlamaV3",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "mani-skill/ManiSkill",
+  "url": "https://github.com/mani-skill/ManiSkill",
+  "default_branch": "main",
+  "stars": 3488,
+  "forks": 561,
+  "pushed_at": "2026-08-04T16:38:18Z",
+  "days_since_push": 93.2,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Manipulation Skill Framework, an open source GPU parallelized robotics simulator and benchmark",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 5.965,
+  "score_parts": {
+   "stars_term": 3.543,
+   "forks_term": 1.375,
+   "recency_term": 1.048
+  },
+  "repo_id": 520357130,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "ManiSkill 3 / SAPIEN",
+   "readiness": "not-yet",
+   "path": "none"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "StanfordVL/BEHAVIOR-1K",
+  "url": "https://github.com/StanfordVL/BEHAVIOR-1K",
+  "default_branch": "main",
+  "stars": 1794,
+  "forks": 262,
+  "pushed_at": "2026-11-05T05:58:02Z",
+  "days_since_push": 0.6,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "BEHAVIOR-1K: a platform for accelerating Embodied AI research. Join our Discord for support: https://discord.gg/bccR5vGFEx",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 5.961,
+  "score_parts": {
+   "stars_term": 3.254,
+   "forks_term": 1.21,
+   "recency_term": 1.497
+  },
+  "repo_id": 439439857,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "OmniGibson / BEHAVIOR-1K",
+   "readiness": "not-yet",
+   "path": "none"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "facebookresearch/habitat-sim",
+  "url": "https://github.com/facebookresearch/habitat-sim",
+  "default_branch": "main",
+  "stars": 3852,
+  "forks": 556,
+  "pushed_at": "2026-07-21T10:16:05Z",
+  "days_since_push": 107.4,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "C++",
+  "description": "A flexible, high-performance 3D simulator for Embodied AI research.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 8004,
+  "cuda_dominant": false,
+  "priority": 5.951,
+  "score_parts": {
+   "stars_term": 3.586,
+   "forks_term": 1.373,
+   "recency_term": 0.992
+  },
+  "repo_id": 169164539,
+  "is_archived": true,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Habitat-sim",
+   "readiness": "unknown",
+   "path": "none"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
  },
  {
   "full_name": "oneapi-src/oneAPI-samples",
@@ -1262,6 +6278,44 @@
    "forks_term": 1.06,
    "recency_term": 1.497
   }
+ },
+ {
+  "full_name": "google-deepmind/mujoco_warp",
+  "url": "https://github.com/google-deepmind/mujoco_warp",
+  "default_branch": "main",
+  "stars": 1605,
+  "forks": 271,
+  "pushed_at": "2026-11-05T17:58:01Z",
+  "days_since_push": 0.1,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "GPU-optimized version of the MuJoCo physics simulator, designed for NVIDIA hardware.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 5.922,
+  "score_parts": {
+   "stars_term": 3.206,
+   "forks_term": 1.217,
+   "recency_term": 1.499
+  },
+  "repo_id": 950268214,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "MuJoCo Warp (and mjlab)",
+   "readiness": "partial",
+   "path": "amd-fork"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
  },
  {
   "full_name": "dphnAI/sonar",
@@ -1398,6 +6452,44 @@
   }
  },
  {
+  "full_name": "ARISE-Initiative/robosuite",
+  "url": "https://github.com/ARISE-Initiative/robosuite",
+  "default_branch": "master",
+  "stars": 2704,
+  "forks": 795,
+  "pushed_at": "2026-07-11T23:47:48Z",
+  "days_since_push": 116.9,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "robosuite: A Modular Simulation Framework and Benchmark for Robot Learning",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 5.839,
+  "score_parts": {
+   "stars_term": 3.432,
+   "forks_term": 1.45,
+   "recency_term": 0.956
+  },
+  "repo_id": 154626012,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "robosuite",
+   "readiness": "unknown",
+   "path": "unknown"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
   "full_name": "wilicc/gpu-burn",
   "url": "https://github.com/wilicc/gpu-burn",
   "default_branch": "master",
@@ -1422,6 +6514,44 @@
    "forks_term": 1.309,
    "recency_term": 1.156
   }
+ },
+ {
+  "full_name": "NVIDIA/earth2studio",
+  "url": "https://github.com/NVIDIA/earth2studio",
+  "default_branch": "main",
+  "stars": 1230,
+  "forks": 290,
+  "pushed_at": "2026-11-05T15:31:19Z",
+  "days_since_push": 0.2,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Open-source deep-learning framework for exploring, building and deploying AI weather/climate workflows.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 5.821,
+  "score_parts": {
+   "stars_term": 3.09,
+   "forks_term": 1.232,
+   "recency_term": 1.499
+  },
+  "repo_id": 782634112,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": true,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "NVIDIA Earth-2 (earth2studio: CorrDiff, StormCast, cBottle)",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
  },
  {
   "full_name": "alibaba/rtp-llm",
@@ -1450,6 +6580,44 @@
   }
  },
  {
+  "full_name": "RenderKit/oidn",
+  "url": "https://github.com/RenderKit/oidn",
+  "default_branch": "master",
+  "stars": 2118,
+  "forks": 199,
+  "pushed_at": "2026-10-05T15:47:56Z",
+  "days_since_push": 31.2,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "C++",
+  "description": "Intel\u00ae Open Image Denoise library",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 11703,
+  "cuda_dominant": false,
+  "priority": 5.807,
+  "score_parts": {
+   "stars_term": 3.326,
+   "forks_term": 1.151,
+   "recency_term": 1.33
+  },
+  "repo_id": 168025831,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Intel Open Image Denoise",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
   "full_name": "symforce-org/symforce",
   "url": "https://github.com/symforce-org/symforce",
   "default_branch": "main",
@@ -1474,6 +6642,120 @@
   },
   "first_seen": "2026-06-01",
   "last_seen": "2026-06-01"
+ },
+ {
+  "full_name": "Denys88/rl_games",
+  "url": "https://github.com/Denys88/rl_games",
+  "default_branch": "master",
+  "stars": 1410,
+  "forks": 223,
+  "pushed_at": "2026-11-02T03:04:38Z",
+  "days_since_push": 3.7,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Jupyter Notebook",
+  "description": "RL implementations",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 5.803,
+  "score_parts": {
+   "stars_term": 3.15,
+   "forks_term": 1.175,
+   "recency_term": 1.479
+  },
+  "repo_id": 165469880,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "RL Games",
+   "readiness": "unknown",
+   "path": "unknown"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "mosaicml/composer",
+  "url": "https://github.com/mosaicml/composer",
+  "default_branch": "main",
+  "stars": 5507,
+  "forks": 478,
+  "pushed_at": "2026-04-29T18:58:33Z",
+  "days_since_push": 190.1,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Supercharge Your Model Training",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 5.803,
+  "score_parts": {
+   "stars_term": 3.741,
+   "forks_term": 1.34,
+   "recency_term": 0.722
+  },
+  "repo_id": 416157128,
+  "is_archived": true,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Composer (MosaicML / Databricks)",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "nomadkaraoke/python-audio-separator",
+  "url": "https://github.com/nomadkaraoke/python-audio-separator",
+  "default_branch": "main",
+  "stars": 1471,
+  "forks": 209,
+  "pushed_at": "2026-10-29T17:22:08Z",
+  "days_since_push": 7.1,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Easy to use stem (e.g. instrumental/vocals) separation from CLI or as a python package, using a variety of amazing pre-trained models (primarily from UVR)",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 5.788,
+  "score_parts": {
+   "stars_term": 3.168,
+   "forks_term": 1.161,
+   "recency_term": 1.459
+  },
+  "repo_id": 660487718,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Audio Separator",
+   "readiness": "unknown",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
  },
  {
   "full_name": "CVCUDA/CV-CUDA",
@@ -1560,6 +6842,82 @@
   }
  },
  {
+  "full_name": "NVIDIA/cudnn-frontend",
+  "url": "https://github.com/NVIDIA/cudnn-frontend",
+  "default_branch": "develop",
+  "stars": 990,
+  "forks": 333,
+  "pushed_at": "2026-11-05T17:57:08Z",
+  "days_since_push": 0.1,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "cuDNN Frontend is NVIDIA's modern, open-source entry point to the cuDNN library and a growing collection of high-performance open-source kernels.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 987231,
+  "cuda_dominant": false,
+  "priority": 5.757,
+  "score_parts": {
+   "stars_term": 2.996,
+   "forks_term": 1.262,
+   "recency_term": 1.499
+  },
+  "repo_id": 331998392,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": true,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "cuDNN frontend (cuDNN graph API)",
+   "readiness": "partial",
+   "path": "amd-alternative"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "NVIDIA/cudf-spark",
+  "url": "https://github.com/NVIDIA/cudf-spark",
+  "default_branch": "main",
+  "stars": 1011,
+  "forks": 316,
+  "pushed_at": "2026-11-05T17:02:36Z",
+  "days_since_push": 0.1,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Scala",
+  "description": "NVIDIA cuDF for Apache Spark plugin - accelerate Apache Spark with GPUs",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 7165,
+  "cuda_dominant": false,
+  "priority": 5.755,
+  "score_parts": {
+   "stars_term": 3.005,
+   "forks_term": 1.251,
+   "recency_term": 1.499
+  },
+  "repo_id": 264043501,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": true,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "RAPIDS Accelerator for Apache Spark (cudf-spark)",
+   "readiness": "not-yet",
+   "path": "none"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
   "full_name": "dphnAI/aphrodite-engine",
   "url": "https://github.com/dphnAI/aphrodite-engine",
   "default_branch": "main",
@@ -1585,6 +6943,44 @@
   },
   "first_seen": "2026-06-01",
   "last_seen": "2026-06-01"
+ },
+ {
+  "full_name": "NVIDIA/cuopt",
+  "url": "https://github.com/NVIDIA/cuopt",
+  "default_branch": "main",
+  "stars": 1098,
+  "forks": 255,
+  "pushed_at": "2026-11-05T20:18:03Z",
+  "days_since_push": 0.0,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Cuda",
+  "description": "GPU accelerated decision optimization",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 6338035,
+  "cuda_dominant": true,
+  "priority": 5.745,
+  "score_parts": {
+   "stars_term": 3.041,
+   "forks_term": 1.204,
+   "recency_term": 1.5
+  },
+  "repo_id": 962899804,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": true,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "cuOpt",
+   "readiness": "not-yet",
+   "path": "none"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
  },
  {
   "full_name": "beehive-lab/TornadoVM",
@@ -1774,6 +7170,158 @@
   }
  },
  {
+  "full_name": "nvidia-isaac/nvblox",
+  "url": "https://github.com/nvidia-isaac/nvblox",
+  "default_branch": "public",
+  "stars": 1339,
+  "forks": 171,
+  "pushed_at": "2026-10-23T18:52:46Z",
+  "days_since_push": 13.1,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "C++",
+  "description": "A GPU-accelerated TSDF and ESDF library for robots equipped with RGB-D cameras.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 1010817,
+  "cuda_dominant": false,
+  "priority": 5.671,
+  "score_parts": {
+   "stars_term": 3.127,
+   "forks_term": 1.118,
+   "recency_term": 1.426
+  },
+  "repo_id": 468713635,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": true,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "nvblox",
+   "readiness": "unknown",
+   "path": "unknown"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "NVIDIAGameWorks/rtx-remix",
+  "url": "https://github.com/NVIDIAGameWorks/rtx-remix",
+  "default_branch": "main",
+  "stars": 1722,
+  "forks": 100,
+  "pushed_at": "2026-10-21T23:05:59Z",
+  "days_since_push": 14.9,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": null,
+  "description": "Combined repo for the RTX-Remix runtime and toolkit",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 5.655,
+  "score_parts": {
+   "stars_term": 3.236,
+   "forks_term": 1.002,
+   "recency_term": 1.416
+  },
+  "repo_id": 615397988,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": true,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "RTX Remix (Toolkit and AI Tools)",
+   "readiness": "not-yet",
+   "path": "none"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "meta-pytorch/torchcodec",
+  "url": "https://github.com/meta-pytorch/torchcodec",
+  "default_branch": "main",
+  "stars": 1197,
+  "forks": 136,
+  "pushed_at": "2026-11-05T17:47:38Z",
+  "days_since_push": 0.1,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Media decoding and encoding for PyTorch: videos, images, and audio, on CPU and GPU.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 12453,
+  "cuda_dominant": false,
+  "priority": 5.646,
+  "score_parts": {
+   "stars_term": 3.078,
+   "forks_term": 1.068,
+   "recency_term": 1.499
+  },
+  "repo_id": 807642214,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "TorchCodec GPU decoding (PyTorch's media I/O, NVDEC-only)",
+   "readiness": "not-yet",
+   "path": "none"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "Toni-SM/skrl",
+  "url": "https://github.com/Toni-SM/skrl",
+  "default_branch": "develop",
+  "stars": 1103,
+  "forks": 164,
+  "pushed_at": "2026-11-04T10:10:02Z",
+  "days_since_push": 1.4,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Modular Reinforcement Learning (RL) library (implemented in PyTorch, JAX, and NVIDIA Warp) with support for Gymnasium/Gym, NVIDIA Isaac Lab, MuJoCo Playground and other environments",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 5.643,
+  "score_parts": {
+   "stars_term": 3.043,
+   "forks_term": 1.109,
+   "recency_term": 1.492
+  },
+  "repo_id": 418399149,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "skrl",
+   "readiness": "unknown",
+   "path": "unknown"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
   "full_name": "CERN/TIGRE",
   "url": "https://github.com/CERN/TIGRE",
   "default_branch": "master",
@@ -1798,6 +7346,44 @@
    "forks_term": 1.205,
    "recency_term": 1.492
   }
+ },
+ {
+  "full_name": "NVIDIA-BioNeMo/bionemo-recipes",
+  "url": "https://github.com/NVIDIA-BioNeMo/bionemo-recipes",
+  "default_branch": "main",
+  "stars": 878,
+  "forks": 188,
+  "pushed_at": "2026-11-05T09:55:18Z",
+  "days_since_push": 0.4,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "BioNeMo Recipes: For building and adapting AI models in drug discovery at scale",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 5.58,
+  "score_parts": {
+   "stars_term": 2.944,
+   "forks_term": 1.138,
+   "recency_term": 1.497
+  },
+  "repo_id": 705428944,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": true,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "NVIDIA BioNeMo (framework / recipes)",
+   "readiness": "not-yet",
+   "path": "none"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
  },
  {
   "full_name": "thu-ml/SageAttention",
@@ -1962,6 +7548,44 @@
   "last_seen": "2026-06-01"
  },
  {
+  "full_name": "microsoft/Tutel",
+  "url": "https://github.com/microsoft/Tutel",
+  "default_branch": "main",
+  "stars": 1029,
+  "forks": 111,
+  "pushed_at": "2026-11-04T19:21:14Z",
+  "days_since_push": 1.0,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "C",
+  "description": "Tutel MoE: Optimized Mixture-of-Experts Library, Support GLM/Kimi/Gpt/DeepSeek/Qwen using FP8/NVFP4/MXFP4",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 5.531,
+  "score_parts": {
+   "stars_term": 3.013,
+   "forks_term": 1.025,
+   "recency_term": 1.494
+  },
+  "repo_id": 393227808,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Tutel",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
   "full_name": "LuisaGroup/LuisaCompute",
   "url": "https://github.com/LuisaGroup/LuisaCompute",
   "default_branch": "stable",
@@ -1988,6 +7612,82 @@
    "forks_term": 1.015,
    "recency_term": 1.498
   }
+ },
+ {
+  "full_name": "turboderp-org/exllamav2",
+  "url": "https://github.com/turboderp-org/exllamav2",
+  "default_branch": "master",
+  "stars": 4651,
+  "forks": 349,
+  "pushed_at": "2026-03-04T13:12:20Z",
+  "days_since_push": 246.3,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "A fast inference library for running LLMs locally on modern consumer-class GPUs",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 265281,
+  "cuda_dominant": false,
+  "priority": 5.521,
+  "score_parts": {
+   "stars_term": 3.668,
+   "forks_term": 1.272,
+   "recency_term": 0.581
+  },
+  "repo_id": 684980325,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "ExLlamaV2",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
+  "full_name": "alex-petrenko/sample-factory",
+  "url": "https://github.com/alex-petrenko/sample-factory",
+  "default_branch": "master",
+  "stars": 1030,
+  "forks": 157,
+  "pushed_at": "2026-10-19T05:47:41Z",
+  "days_since_push": 17.6,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "High throughput synchronous and asynchronous reinforcement learning",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 5.514,
+  "score_parts": {
+   "stars_term": 3.013,
+   "forks_term": 1.099,
+   "recency_term": 1.402
+  },
+  "repo_id": 192824415,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Sample Factory",
+   "readiness": "unknown",
+   "path": "unknown"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
  },
  {
   "full_name": "ddemidov/amgcl",
@@ -2256,6 +7956,44 @@
   }
  },
  {
+  "full_name": "NVIDIA/DCGM",
+  "url": "https://github.com/NVIDIA/DCGM",
+  "default_branch": "master",
+  "stars": 813,
+  "forks": 115,
+  "pushed_at": "2026-10-27T01:47:22Z",
+  "days_since_push": 9.8,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "C++",
+  "description": "NVIDIA Data Center GPU Manager (DCGM) is a project for gathering telemetry and measuring the health of NVIDIA GPUs",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 38886,
+  "cuda_dominant": false,
+  "priority": 5.387,
+  "score_parts": {
+   "stars_term": 2.911,
+   "forks_term": 1.032,
+   "recency_term": 1.445
+  },
+  "repo_id": 321811880,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": true,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "DCGM + NVIDIA GPU Operator (GPU fleet management for AI clusters)",
+   "readiness": "ready",
+   "path": "amd-alternative"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
   "full_name": "BytedTsinghua-SIA/CUDA-Agent",
   "url": "https://github.com/BytedTsinghua-SIA/CUDA-Agent",
   "default_branch": "main",
@@ -2389,6 +8127,44 @@
    "forks_term": 1.048,
    "recency_term": 1.5
   }
+ },
+ {
+  "full_name": "MrForExample/ComfyUI-3D-Pack",
+  "url": "https://github.com/MrForExample/ComfyUI-3D-Pack",
+  "default_branch": "main",
+  "stars": 3901,
+  "forks": 378,
+  "pushed_at": "2025-12-29T08:06:02Z",
+  "days_since_push": 311.5,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "An extensive node suite that enables ComfyUI to process 3D inputs (Mesh & UV Texture, etc) using cutting edge algorithms (3DGS, NeRF, etc.)",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 108037,
+  "cuda_dominant": false,
+  "priority": 5.333,
+  "score_parts": {
+   "stars_term": 3.591,
+   "forks_term": 1.289,
+   "recency_term": 0.452
+  },
+  "repo_id": 739562545,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "ComfyUI-3D-Pack",
+   "readiness": "not-yet",
+   "path": "none"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
  },
  {
   "full_name": "insight-platform/Savant",
@@ -2658,6 +8434,44 @@
   }
  },
  {
+  "full_name": "NVIDIA-Merlin/HugeCTR",
+  "url": "https://github.com/NVIDIA-Merlin/HugeCTR",
+  "default_branch": "main",
+  "stars": 1073,
+  "forks": 207,
+  "pushed_at": "2026-08-03T01:12:02Z",
+  "days_since_push": 94.8,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "C++",
+  "description": "HugeCTR is a high efficiency GPU framework designed for Click-Through-Rate (CTR) estimating training",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 2448052,
+  "cuda_dominant": false,
+  "priority": 5.231,
+  "score_parts": {
+   "stars_term": 3.031,
+   "forks_term": 1.159,
+   "recency_term": 1.041
+  },
+  "repo_id": 208313010,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": true,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "NVIDIA Merlin (NVTabular, HugeCTR)",
+   "readiness": "not-yet",
+   "path": "none"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
   "full_name": "brucefan1983/CUDA-Programming",
   "url": "https://github.com/brucefan1983/CUDA-Programming",
   "default_branch": "master",
@@ -2708,6 +8522,44 @@
    "forks_term": 0.97,
    "recency_term": 1.449
   }
+ },
+ {
+  "full_name": "NVIDIA-RTX/RTXNTC",
+  "url": "https://github.com/NVIDIA-RTX/RTXNTC",
+  "default_branch": "main",
+  "stars": 696,
+  "forks": 53,
+  "pushed_at": "2026-11-04T01:57:44Z",
+  "days_since_push": 1.8,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "C++",
+  "description": "NVIDIA Neural Texture Compression SDK",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 2677,
+  "cuda_dominant": false,
+  "priority": 5.199,
+  "score_parts": {
+   "stars_term": 2.843,
+   "forks_term": 0.866,
+   "recency_term": 1.49
+  },
+  "repo_id": 920294381,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": true,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "RTX Neural Texture Compression (RTXNTC)",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
  },
  {
   "full_name": "QMCPACK/qmcpack",
@@ -2816,6 +8668,44 @@
   }
  },
  {
+  "full_name": "Tencent-Hunyuan/HY-WorldPlay",
+  "url": "https://github.com/Tencent-Hunyuan/HY-WorldPlay",
+  "default_branch": "main",
+  "stars": 1626,
+  "forks": 147,
+  "pushed_at": "2026-06-10T07:10:23Z",
+  "days_since_push": 148.6,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "HY-World 1.5: A Systematic Framework for Interactive World Modeling with Real-Time Latency and Geometric Consistency",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 5.143,
+  "score_parts": {
+   "stars_term": 3.211,
+   "forks_term": 1.085,
+   "recency_term": 0.847
+  },
+  "repo_id": 1113569067,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "HY-World 1.5 (WorldPlay)",
+   "readiness": "not-yet",
+   "path": "none"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
   "full_name": "mp3guy/ElasticFusion",
   "url": "https://github.com/mp3guy/ElasticFusion",
   "default_branch": "master",
@@ -2842,6 +8732,44 @@
   },
   "first_seen": "2026-06-01",
   "last_seen": "2026-06-01"
+ },
+ {
+  "full_name": "nvidia-cosmos/cosmos-predict2.5",
+  "url": "https://github.com/nvidia-cosmos/cosmos-predict2.5",
+  "default_branch": "main",
+  "stars": 1394,
+  "forks": 199,
+  "pushed_at": "2026-06-08T02:14:37Z",
+  "days_since_push": 150.8,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Cosmos-Predict2.5, the latest version of the Cosmos World Foundation Models (WFMs) family, specialized for simulating and predicting the future state of the world in the form of video.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 5.134,
+  "score_parts": {
+   "stars_term": 3.145,
+   "forks_term": 1.151,
+   "recency_term": 0.839
+  },
+  "repo_id": 1064218929,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": true,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "NVIDIA Cosmos (world foundation models and tokenizers)",
+   "readiness": "not-yet",
+   "path": "none"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
  },
  {
   "full_name": "rapidsai/cucim",
@@ -2896,6 +8824,44 @@
    "forks_term": 1.141,
    "recency_term": 1.48
   }
+ },
+ {
+  "full_name": "undreamai/LLMUnity",
+  "url": "https://github.com/undreamai/LLMUnity",
+  "default_branch": "main",
+  "stars": 1737,
+  "forks": 195,
+  "pushed_at": "2026-04-29T09:23:09Z",
+  "days_since_push": 190.5,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "C#",
+  "description": "Create characters in Unity with LLMs!",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 5.107,
+  "score_parts": {
+   "stars_term": 3.24,
+   "forks_term": 1.146,
+   "recency_term": 0.72
+  },
+  "repo_id": 736173948,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "LLM for Unity (LLMUnity) and LlamaLib",
+   "readiness": "unknown",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
  },
  {
   "full_name": "h2oai/h2o4gpu",
@@ -3252,6 +9218,44 @@
   }
  },
  {
+  "full_name": "rapidsai/dask-cuda",
+  "url": "https://github.com/rapidsai/dask-cuda",
+  "default_branch": "main",
+  "stars": 324,
+  "forks": 112,
+  "pushed_at": "2026-11-04T02:14:17Z",
+  "days_since_push": 1.8,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Utilities for Dask and CUDA interactions",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 5.028,
+  "score_parts": {
+   "stars_term": 2.512,
+   "forks_term": 1.027,
+   "recency_term": 1.49
+  },
+  "repo_id": 165926977,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Dask-CUDA",
+   "readiness": "partial",
+   "path": "amd-fork"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
   "full_name": "koide3/gtsam_points",
   "url": "https://github.com/koide3/gtsam_points",
   "default_branch": "master",
@@ -3333,6 +9337,44 @@
    "forks_term": 1.038,
    "recency_term": 1.495
   }
+ },
+ {
+  "full_name": "getkeops/keops",
+  "url": "https://github.com/getkeops/keops",
+  "default_branch": "main",
+  "stars": 1195,
+  "forks": 78,
+  "pushed_at": "2026-07-17T15:05:52Z",
+  "days_since_push": 111.2,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "KErnel OPerationS, on CPUs and GPUs, with autodiff and without memory overflows",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 5.004,
+  "score_parts": {
+   "stars_term": 3.078,
+   "forks_term": 0.949,
+   "recency_term": 0.977
+  },
+  "repo_id": 182054091,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "PyKeOps / KeOps",
+   "readiness": "unknown",
+   "path": "unknown"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
  },
  {
   "full_name": "ModelEngine-Group/unified-cache-management",
@@ -3441,6 +9483,44 @@
    "forks_term": 0.989,
    "recency_term": 1.084
   }
+ },
+ {
+  "full_name": "AmusementClub/vs-mlrt",
+  "url": "https://github.com/AmusementClub/vs-mlrt",
+  "default_branch": "master",
+  "stars": 494,
+  "forks": 37,
+  "pushed_at": "2026-10-30T00:29:48Z",
+  "days_since_push": 6.8,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "C++",
+  "description": "Efficient CPU/GPU ML Runtimes for VapourSynth (with built-in support for waifu2x, DPIR, RealESRGANv2/v3, Real-CUGAN, RIFE, SCUNet, ArtCNN and more!)",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 4.946,
+  "score_parts": {
+   "stars_term": 2.695,
+   "forks_term": 0.79,
+   "recency_term": 1.461
+  },
+  "repo_id": 434098140,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "vs-mlrt (VapourSynth ML runtimes: TensorRT vs MIGraphX)",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
  },
  {
   "full_name": "Inception3D/TTT3R",
@@ -3899,6 +9979,44 @@
   }
  },
  {
+  "full_name": "NVIDIA/numba-cuda",
+  "url": "https://github.com/NVIDIA/numba-cuda",
+  "default_branch": "main",
+  "stars": 300,
+  "forks": 83,
+  "pushed_at": "2026-10-07T15:00:59Z",
+  "days_since_push": 29.2,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "The CUDA target for Numba",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 21592,
+  "cuda_dominant": false,
+  "priority": 4.781,
+  "score_parts": {
+   "stars_term": 2.479,
+   "forks_term": 0.962,
+   "recency_term": 1.34
+  },
+  "repo_id": 803332719,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": true,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Numba CUDA (vs Numba HIP)",
+   "readiness": "partial",
+   "path": "amd-fork"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
   "full_name": "zhongkaifu/TensorSharp",
   "url": "https://github.com/zhongkaifu/TensorSharp",
   "default_branch": "main",
@@ -4002,6 +10120,44 @@
    "forks_term": 0.975,
    "recency_term": 1.221
   }
+ },
+ {
+  "full_name": "Fannovel16/ComfyUI-Frame-Interpolation",
+  "url": "https://github.com/Fannovel16/ComfyUI-Frame-Interpolation",
+  "default_branch": "main",
+  "stars": 1093,
+  "forks": 141,
+  "pushed_at": "2026-03-29T02:54:30Z",
+  "days_since_push": 221.7,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "A custom node set for Video Frame Interpolation in ComfyUI.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 4.754,
+  "score_parts": {
+   "stars_term": 3.039,
+   "forks_term": 1.076,
+   "recency_term": 0.639
+  },
+  "repo_id": 672966633,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "ComfyUI video enhancement nodes (Frame-Interpolation CuPy ops, TensorRT upscaler/RIFE)",
+   "readiness": "partial",
+   "path": "upstream"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
  },
  {
   "full_name": "avifenesh/memra",
@@ -4294,6 +10450,44 @@
    "forks_term": 0.989,
    "recency_term": 1.417
   }
+ },
+ {
+  "full_name": "triton-lang/triton-windows",
+  "url": "https://github.com/triton-lang/triton-windows",
+  "default_branch": "readme",
+  "stars": 288,
+  "forks": 28,
+  "pushed_at": "2026-11-02T02:05:19Z",
+  "days_since_push": 3.8,
+  "is_fork": true,
+  "fork_exception": false,
+  "language": "MLIR",
+  "description": "Triton with Windows support",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 72283,
+  "cuda_dominant": false,
+  "priority": 4.67,
+  "score_parts": {
+   "stars_term": 2.461,
+   "forks_term": 0.731,
+   "recency_term": 1.478
+  },
+  "repo_id": 1150749251,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Triton on Windows (triton-windows)",
+   "readiness": "ready",
+   "path": "amd-fork"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
  },
  {
   "full_name": "siboehm/SGEMM_CUDA",
@@ -4639,6 +10833,44 @@
    "forks_term": 0.796,
    "recency_term": 1.5
   }
+ },
+ {
+  "full_name": "NVIDIA-RTX/RTXNS",
+  "url": "https://github.com/NVIDIA-RTX/RTXNS",
+  "default_branch": "main",
+  "stars": 337,
+  "forks": 37,
+  "pushed_at": "2026-09-17T15:50:07Z",
+  "days_since_push": 49.2,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "C++",
+  "description": "NVIDIA Neural Shading SDK",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 4.56,
+  "score_parts": {
+   "stars_term": 2.529,
+   "forks_term": 0.79,
+   "recency_term": 1.241
+  },
+  "repo_id": 920294782,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": true,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "RTX Neural Shaders SDK (RTXNS) and RTX Neural Materials",
+   "readiness": "not-yet",
+   "path": "none"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
  },
  {
   "full_name": "bytedance/flux",
@@ -5411,6 +11643,44 @@
   }
  },
  {
+  "full_name": "NVIDIA/nvImageCodec",
+  "url": "https://github.com/NVIDIA/nvImageCodec",
+  "default_branch": "main",
+  "stars": 164,
+  "forks": 26,
+  "pushed_at": "2026-11-04T07:37:46Z",
+  "days_since_push": 1.5,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Jupyter Notebook",
+  "description": "A nvImageCodec library of GPU- and CPU- accelerated codecs featuring a unified interface",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 45323,
+  "cuda_dominant": false,
+  "priority": 4.424,
+  "score_parts": {
+   "stars_term": 2.217,
+   "forks_term": 0.716,
+   "recency_term": 1.491
+  },
+  "repo_id": 700454162,
+  "is_archived": false,
+  "lane": "port",
+  "excluded_owner": true,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "nvImageCodec / nvJPEG (vs rocJPEG)",
+   "readiness": "partial",
+   "path": "amd-alternative"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
+ },
+ {
   "full_name": "WingEdge777/vitamin-cuda",
   "url": "https://github.com/WingEdge777/vitamin-cuda",
   "default_branch": "main",
@@ -5998,6 +12268,44 @@
    "forks_term": 0.661,
    "recency_term": 1.173
   }
+ },
+ {
+  "full_name": "Overworldai/world_engine",
+  "url": "https://github.com/Overworldai/world_engine",
+  "default_branch": "main",
+  "stars": 191,
+  "forks": 28,
+  "pushed_at": "2026-09-30T09:18:30Z",
+  "days_since_push": 36.5,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "World Model Inference Engine",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 4.318,
+  "score_parts": {
+   "stars_term": 2.283,
+   "forks_term": 0.731,
+   "recency_term": 1.303
+  },
+  "repo_id": 1100875802,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Overworld World Engine and Biome (Waypoint world models)",
+   "readiness": "unknown",
+   "path": "unknown"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
  },
  {
   "full_name": "MooreThreads/LiteGS",
@@ -8131,6 +14439,44 @@
    "forks_term": 0.573,
    "recency_term": 1.316
   }
+ },
+ {
+  "full_name": "chaiNNer-org/spandrel",
+  "url": "https://github.com/chaiNNer-org/spandrel",
+  "default_branch": "main",
+  "stars": 317,
+  "forks": 30,
+  "pushed_at": "2026-04-12T22:36:10Z",
+  "days_since_push": 206.9,
+  "is_fork": false,
+  "fork_exception": false,
+  "language": "Python",
+  "description": "Spandrel gives your project support for various PyTorch architectures meant for AI Super-Resolution, restoration, and inpainting. Based on the model support implemented in chaiNNer.",
+  "matched_queries": [
+   "seed:amd-gap-matrix"
+  ],
+  "license_key": null,
+  "license_name": null,
+  "cuda_bytes": 0,
+  "cuda_dominant": false,
+  "priority": 3.924,
+  "score_parts": {
+   "stars_term": 2.502,
+   "forks_term": 0.746,
+   "recency_term": 0.676
+  },
+  "repo_id": 719823629,
+  "is_archived": false,
+  "lane": "validate",
+  "excluded_owner": false,
+  "seed": {
+   "source": "amd-gap-matrix",
+   "label": "Spandrel",
+   "readiness": "unknown",
+   "path": "unknown"
+  },
+  "first_seen": "2026-11-05",
+  "last_seen": "2026-11-05"
  },
  {
   "full_name": "vitalight/Velvet",

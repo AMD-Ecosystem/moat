@@ -7,15 +7,15 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T01:19:43Z",
-  "updated_at": "2026-08-12T22:11:02Z",
-  "head_sha": "70577b578b7faa661611e905c0b9ec1a1d85bf33",
+  "updated_at": "2026-11-18T16:47:55Z",
+  "head_sha": "f708ce6999ff53713a28821ff1750af57be84721",
   "depends_on": [],
   "pr_url": "https://github.com/IBM/aihwkit/pull/770",
   "pr_number": 770,
   "pr_opened_at": "2026-06-08T22:00:49Z",
   "porting": null,
   "waivers": {},
-  "pr_state": "open",
+  "pr_state": "closed",
   "license_spdx": "MIT",
   "upstream_repo_id": 296369718,
   "stage": "review-passed",
@@ -24,10 +24,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "70577b578b7faa661611e905c0b9ec1a1d85bf33",
+      "validated_sha": "f708ce6999ff53713a28821ff1750af57be84721",
       "started_at": "2026-06-04T01:28:01Z",
-      "completed_at": "2026-08-09T01:02:52Z",
-      "updated_at": "2026-08-09T01:02:52Z",
+      "completed_at": "2026-11-05T00:53:58Z",
+      "updated_at": "2026-11-09T16:27:18Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -43,10 +43,12 @@
       },
       "last_agent": "validator",
       "carry_forward": {
-        "to": "70577b578b7faa661611e905c0b9ec1a1d85bf33",
-        "method": "binary-equiv",
-        "detail": "CMakeLists.txt drops the gfx90a HIP_ARCHITECTURES default pin, letting enable_language(HIP) auto-detect when unset; our recipe always passes -DCMAKE_HIP_ARCHITECTURES=gfx90a explicitly so codegen is u",
-        "at": "2026-08-09T01:02:52Z"
+        "from": "ea1185efa2caa08024bc12c4da242e14becb9f3c",
+        "to": "f708ce6999ff53713a28821ff1750af57be84721",
+        "method": "source-class",
+        "class": "doc-only",
+        "detail": "no changes",
+        "at": "2026-11-09T16:26:54Z"
       }
     },
     "windows-gfx1201": {
@@ -110,10 +112,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "70577b578b7faa661611e905c0b9ec1a1d85bf33",
+      "validated_sha": "f708ce6999ff53713a28821ff1750af57be84721",
       "started_at": null,
-      "completed_at": "2026-06-23T22:08:02Z",
-      "updated_at": "2026-06-24T17:03:22Z",
+      "completed_at": "2026-11-05T02:26:40Z",
+      "updated_at": "2026-11-09T16:27:03Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -129,12 +131,83 @@
       },
       "last_agent": "validator",
       "carry_forward": {
-        "to": "f415b1d4e58bf6352c90ec8993abeb821486971f",
+        "from": "ea1185efa2caa08024bc12c4da242e14becb9f3c",
+        "to": "f708ce6999ff53713a28821ff1750af57be84721",
         "method": "source-class",
-        "detail": "CMake default-path change; explicit -D builds byte-identical",
-        "at": "2026-06-23T22:08:02Z"
+        "class": "doc-only",
+        "detail": "no changes",
+        "at": "2026-11-09T16:27:03Z"
       }
+    },
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "f708ce6999ff53713a28821ff1750af57be84721",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-11-05T02:58:01Z",
+      "updated_at": "2026-11-09T16:27:03Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "carry_forward": {
+        "from": "ea1185efa2caa08024bc12c4da242e14becb9f3c",
+        "to": "f708ce6999ff53713a28821ff1750af57be84721",
+        "method": "source-class",
+        "class": "doc-only",
+        "detail": "no changes",
+        "at": "2026-11-09T16:27:03Z"
+      }
+    },
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-09T18:04:13Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "reviewer"
     }
   },
-  "published_sha": "70577b578b7faa661611e905c0b9ec1a1d85bf33"
+  "published_sha": "f708ce6999ff53713a28821ff1750af57be84721",
+  "pr_closed_at": "2026-09-08T08:29:29Z",
+  "pr_closed_note": "IBM cannot maintain AMD support themselves; they closed #770 and adopted the fork by reference (PR #770 discussion, 2026-09-08)",
+  "maintained": {
+    "evidence": "https://github.com/IBM/aihwkit/pull/789 -- upstream README section 'Running on AMD GPUs (ROCm/HIP)' points users at the fork's moat-port branch",
+    "by": "jeffdaily",
+    "at": "2026-09-08T17:28:29Z",
+    "note": "IBM cannot maintain AMD support themselves; they closed #770 and adopted the fork by reference (PR #770 discussion, 2026-09-08)"
+  },
+  "fix": null,
+  "porting_released": {
+    "arch": "linux-gfx942",
+    "since": "2026-11-09T18:03:04Z",
+    "at": "2026-11-09T18:04:13Z"
+  },
+  "fix_merged_at": "2026-11-18T16:47:55Z"
 }

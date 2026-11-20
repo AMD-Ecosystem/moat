@@ -1,0 +1,34 @@
+{
+  "schema_version": 3,
+  "name": "triton-windows",
+  "upstream_url": "https://github.com/triton-lang/triton-windows",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-06T02:40:46Z",
+  "updated_at": "2026-11-06T11:47:32Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {},
+  "intake": {
+    "verdict": "decline",
+    "reason": "already-supported",
+    "duplicate_effort": "this repo already supports AMD on Windows (RDNA2-4 incl. gfx1151, TheRock ROCm); community-maintained by woct0rdho in the triton-lang org",
+    "viable": true,
+    "summary": "triton-windows: Windows fork of Triton that already ships AMD support (RDNA2-RDNA4, Strix Halo) with TheRock ROCm in monthly releases; nothing to port",
+    "at": "2026-11-06T02:42:48Z"
+  },
+  "license_spdx": "MIT",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "MIT",
+      "evidence": "https://github.com/triton-lang/triton-windows/blob/readme/LICENSE",
+      "at": "2026-11-06T11:47:32Z"
+    }
+  ]
+}
