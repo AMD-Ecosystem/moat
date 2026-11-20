@@ -828,6 +828,8 @@ been evidenced on gfx90a (numeric pass) and gfx1100 (compiles, no numeric pass w
 window); windows platforms cannot exercise it at all pending a Windows Triton build,
 independent of this port.
 
+Correction (2026-11-20, porter, linux-gfx942): "PyPI ships no Windows wheel for Triton" and "no workaround short of building Triton from source" are wrong. Only the package named `triton` has no Windows wheel; the third-party `triton-windows` package on PyPI (3.9.0.post30, `cp312-abi3-win_amd64`, github.com/triton-lang/triton-windows) installs the `triton` module with an AMD backend that handles Windows. The 2026-11-19 windows-gfx1151 validation below imported spconv-triton through it, built and ran a non-sparse model, and ran one sparse layer forward (its backward did not finish in 600 s). The text above is left as written.
+
 ### CUDA no-regression gate
 Already recorded at this head_sha (87bc3e2) by linux-gfx90a
 (`cuda-not-validated: environmental wall`); skipped here (no CUDA toolkit on this
@@ -857,6 +859,8 @@ spconv-triton surface cannot be exercised on any Windows platform because Triton
 no Windows wheel -- an environmental gap in a third-party dependency, unrelated to
 this port's own code, already evidenced end-to-end on gfx90a and compile-verified on
 gfx1100.
+
+Correction (2026-11-20): "Triton ships no Windows wheel" is wrong; see the correction under "Round 2 (spconv-triton) surface" above (`triton-windows` on PyPI).
 
 ### CUDA no-regression gate
 Already recorded at this head_sha (87bc3e2) in the linux-gfx90a validation above
@@ -1089,3 +1093,41 @@ Not run here (no CUDA gate on the Windows hosts). The gfx942 section above alrea
 
 ### Result
 windows-gfx1151 -> completed at f33fdb6. Scope of the claim: the project's own GPU extensions build and pass on real gfx1151 with the same counts and numbers as August (7/8 in-tree, 4/4 driver); a non-sparse model (Point Transformer V1) builds through `pointcept.models` and runs forward+backward on the GPU at head once spconv-triton and triton-windows are present; the documented install paths import exactly as far as upstream's do. Not claimed: sparse-convolution models on Windows (one layer's forward ran through triton-windows, its backward never finished inside the cap, no numeric check), and the undocumented spconv-cu124-plus-CUDA-runtime arrangement, which imports on upstream main and no longer does.
+
+## 2026-11-20 porter round (linux-gfx942): spconv fallback in the selector, Windows Triton note
+
+Why: the 2026-11-19 windows-gfx1151 validation found (row 4 of its import table) that a ROCm PyTorch with a working plain `spconv` imported `pointcept.models` on upstream main and no longer did at f33fdb6, because the selector asked only for `spconv_triton` on ROCm; and that Triton is available on Windows as `triton-windows`, which the README did not say. jeff asked for both in one small round, selection staying automatic (his ruling of 2026-11-19).
+
+Branch: `pr-state` -> `merged` (#604); `fix-branch` refuses ("no open upstream PR ... the port branch is still private"), so the round goes on `moat-port` itself, as the 2026-11-19 sync round did. No staging branch.
+
+### The change (fork commit 180f803, on f33fdb6)
+`pointcept/models/utils/spconv.py`: on a non-ROCm PyTorch the `import spconv.pytorch as spconv` line is unchanged. On ROCm: `try: import spconv_triton.pytorch` / `except ImportError` -> `import spconv.pytorch`; if that also raises ImportError, raise one ImportError naming both packages and both underlying messages, chained from the spconv error (the spconv_triton error is its `__context__`, so the full traceback shows all three). When the fallback succeeds and the spconv_triton error was not simply "spconv_triton absent" (`ImportError.name != "spconv_triton"`, e.g. the nested `No module named 'triton'` the Windows run hit), a `UserWarning` names the error, so a broken spconv-triton install is not silently replaced. Exception types: only ImportError (ModuleNotFoundError is a subclass) is caught. Anything else spconv-triton raises at import (a RuntimeError from a broken Triton backend, say) propagates unchanged; it is a real error, and falling back past it would hide it. A plain spconv that fails with something other than ImportError (cumm's `RuntimeError: Can't find cuda libraries` on a machine without the CUDA runtime, Windows row 3) also propagates, as it does on upstream main.
+`README.md`: one comment line after `pip install spconv-triton`: spconv-triton uses the Triton that comes with PyTorch; on Windows install the `triton-windows` package for it; sparse convolution models are not yet validated on Windows.
+`git diff upstream/main...moat-port`: 12 files, +51/-10 (was +30/-10).
+
+### Proof on gfx942 (MI300X, HIP_VISIBLE_DEVICES=2)
+Environment rebuilt in the job venv (every install `--no-deps`): torch 2.16.0a0+git6c3af02 / HIP 7.16.26385 (the host's wheel), triton 3.9.0+gitfc8d31a5, spconv-triton 1.0.0, torchvision 0.30.0a0+4260301 (CPU-only source build), torch_scatter 2.1.2 and torch_cluster 1.6.3 from sdist, timm 0.9.7, torch_geometric 2.6.1, peft 0.15.2, transformers 4.50.3, tokenizers 0.21.1, huggingface_hub 0.30.2, safetensors, accelerate, wandb 0.19.11, pydantic 2.11.7 + pydantic-core 2.33.2 (+ typing_inspection, annotated_types), addict, einops, termcolor, yapf, ftfy, regex, docker-pycreds, sentry-sdk, platformdirs; sparsehash headers built into a job-local prefix. torch_scatter 2.1.2 needed one more patch on ROCm 10.1 than the 64-bit mask: its ROCm branch's `SHFL_UP_SYNC(mask, var, delta) __shfl_up(var, delta)` is ambiguous for `at::Half` (`call to '__shfl_up' is ambiguous`, segment_coo); adding `at::Half` overloads of `__shfl_up`/`__shfl_down` that go through `__half` fixes it. The four `libs/` extensions built (`PYTORCH_ROCM_ARCH=gfx942`, `setup.py install`, unchanged by this round) and import.
+
+Probe: `agent_space/selector_probe.py <mode> [--build]` (host-local), run from `src` with `PYTHONPATH=.`, does `import pointcept.models`, reports the backend module, any spconv warning, the error and its cause, and with `--build` builds `configs/scannet/semseg-spunet-v1m1-0-base.py`. Absent packages are simulated with a `sys.meta_path` hook (spconv-triton is installed in the venv); "spconv-triton without triton" raises `ModuleNotFoundError("No module named 'triton'", name="triton")` while importing `spconv_triton.pytorch._impl.gemm`, exactly the Windows failure (triton itself is already imported by torch/transformers in this process, so blocking `triton` directly does not reach spconv-triton); the spconv stand-in is a temporary package `spconv/pytorch/__init__.py` that re-exports spconv-triton's API, so the fallback is a real working backend. Upstream comparison: `git archive upstream/main` (77f87ab) in scratch.
+
+| arrangement on the ROCm torch | head 180f803 | upstream main 77f87ab |
+|---|---|---|
+| spconv-triton installed (the documented install) | OK, backend `spconv_triton.pytorch` (same as f33fdb6), SpUNet builds (39,157,844 params), no warning | `No module named 'spconv'` |
+| neither package | `ImportError: Sparse convolution on a ROCm PyTorch needs spconv-triton (`pip install spconv-triton`) or spconv, and neither can be imported (spconv_triton: No module named 'spconv_triton'; spconv: No module named 'spconv')` at utils/spconv.py:29 <- structure.py:2 | `No module named 'spconv'` |
+| only the stand-in `spconv` | OK, backend `spconv.pytorch`, no warning, SpUNet builds | `import pointcept.models` OK (the probe's follow-up `from pointcept.models.utils.spconv import spconv` fails only because upstream has no selector module) |
+| spconv-triton without triton, no spconv | same ImportError, naming `spconv_triton: No module named 'triton'`; no warning | `No module named 'spconv'` |
+| spconv-triton without triton, plus stand-in `spconv` | OK, backend `spconv.pytorch`, `UserWarning: spconv-triton is installed but failed to import (No module named 'triton'), using spconv instead`, SpUNet builds | OK (as above) |
+| spconv-triton raises RuntimeError at import, stand-in `spconv` present | `RuntimeError: simulated broken spconv-triton install` propagates; no fallback | n/a |
+| `torch.version.hip` forced to None (CUDA path), stand-in `spconv`, any `spconv_triton` import trapped | OK, backend `spconv.pytorch`; spconv_triton never imported | OK |
+
+What a CUDA user sees: nothing changes. On a non-ROCm PyTorch the selector runs the same single `import spconv.pytorch as spconv` line as before (the `if torch.version.hip is None:` branch is byte-identical to f33fdb6), never touches spconv-triton, and `warnings` is the only new import. The `cudasim` row confirms it at runtime. The real-nvcc compile owed before the pull request is unaffected (no compiled file changed).
+
+Commit message: jargon clean (`jargon.py --port Pointcept`), no in-house vocabulary. Its last Test Plan line names the sparse-conv end-to-end run, which was run before the push (below) so the message is true when it leaves this host.
+
+## Lesson for cuda-to-rocm: on Windows, Triton comes from the `triton-windows` package
+
+Belongs in `references/windows.md` (Toolchain install, beside "A torch wheel needs the matching `[device-<gfx>]` extra"), with a pointer from the Triton-dependency items in `references/strategy-b-torch.md`. The skill does not currently say Triton is unavailable on Windows (checked on the trunk 2026-11-20: no Windows statement about Triton anywhere under `.claude/skills/`), so this is an addition; the wrong "no Windows Triton" statements were only in this project's August notes and are corrected there (dated 2026-11-20). Proposed text:
+
+- `pip install triton` finds nothing on Windows (`from versions: none`), and a Windows ROCm PyTorch wheel does not bring a Triton with it, but that does not mean there is no Triton for Windows. The third-party `triton-windows` package on PyPI (github.com/triton-lang/triton-windows; 3.9.0.post30 seen 2026-11, `cp312-abi3-win_amd64`) installs the `triton` module with an AMD backend that handles Windows: it finds `amdhip64*.dll` and resolves the SDK through `rocm-sdk path --root` or `ROCM_HOME`/`HIP_PATH`/`ROCM_PATH`. A Triton-based dependency that declares no `triton` requirement of its own (it expects the one that comes with PyTorch, as spconv-triton does) fails on Windows with `ModuleNotFoundError: No module named 'triton'` from inside the dependency until `triton-windows` is installed. Seen on gfx1151 with a TheRock torch 2.12 wheel: a non-sparse model then built and trained a step, and one spconv-triton sparse convolution layer compiled and ran forward on the GPU, but its backward pass did not finish in 10 minutes (whether slow cold autotuning or stuck was not determined). So treat `triton-windows` as the way to get Triton on Windows, and validate the Triton kernels you depend on there rather than assuming either that they work or that they cannot run. (Pointcept)
+
+Related, for the same trunk session: `references/strategy-b-torch.md` still opens the cold-compile item with "can cold-compile an order of magnitude slower on RDNA than on CDNA", the framing the correction under the second lesson above withdrew (MI300X, CDNA3, took 1123 s for the same cold first step). Reword it to "large on every AMD architecture, slower on smaller GPUs; set a persistent `TRITON_CACHE_DIR`".

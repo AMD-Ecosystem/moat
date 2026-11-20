@@ -117,3 +117,6 @@
 {"kind":"phase","ts":"2026-11-20T00:19:56Z","phase":"test","seconds":600.823,"exit":124,"cmd":"timeout 600 D:/Develop/moat/agent_space/torch_venv/Scripts/python.exe /d/Develop/moat/agent_space/pointcept_f33/sparse_smoke.py"}
 {"kind":"phase","ts":"2026-11-20T00:30:19Z","phase":"test","seconds":600.648,"exit":124,"cmd":"timeout 600 D:/Develop/moat/agent_space/torch_venv/Scripts/python.exe /d/Develop/moat/agent_space/pointcept_f33/sparse_smoke.py"}
 {"kind":"session","ts":"2026-11-20T00:32:21Z","epoch":1795134741.482886,"event":"end","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-11-20T00:43:13Z","phase":"compile","seconds":200.597,"exit":1,"cmd":"bash agent_space/build_deps.sh"}
+{"kind":"phase","ts":"2026-11-20T00:55:39Z","phase":"compile","seconds":107.242,"exit":0,"cmd":"bash agent_space/build_libs.sh"}
+{"kind":"phase","ts":"2026-11-20T00:57:24Z","phase":"compile","seconds":820.492,"exit":0,"cmd":"bash agent_space/build_deps.sh"}
