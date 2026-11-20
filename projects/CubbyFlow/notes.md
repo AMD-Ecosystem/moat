@@ -1567,3 +1567,27 @@ Commands: `bash utils/timeit.sh CubbyFlow compile -- bash agent_space/build_hip.
 All exit 0.
 
 ### Verdict: PASS -> completed at `aeb9540d6be87d4fcde76a00ded5f972b4615c35`
+
+## Validation 2026-11-20 (windows-gfx1151, validator): fix-round head aeb9540d
+
+PASS at `aeb9540d6be87d4fcde76a00ded5f972b4615c35` (`moat-fix-145`), AMD Radeon 8060S (gfx1151, wave32, 20 CUs), Windows 11, TheRock ROCm SDK 7.14.0a20260612 (AMD clang 23.0.0git), CMake 3.31.10, Ninja, MSVC 14.50.35717 (VS 2022 developer env scrubbed, per the porter's recipe), vcpkg at D:/Develop/vcpkg. Full rebuild in a FRESH directory `build_val/` (not the porter's `build_gfx1151_b/`), `-j 6`, `ulimit -c 0`, single runs. `git rev-parse HEAD` = head_sha; `git status --porcelain` shows only untracked `build_gfx1151_b/` and `build_val/`.
+
+Commands (scripts in the worktree's agent_space/: `val_cfg.sh` is the porter's `build_cf.sh` with `B=build_val` and no build step; `val_build.sh` runs the build in the same scrubbed environment):
+
+```
+utils/timeit.sh CubbyFlow compile -- bash agent_space/val_cfg.sh
+utils/timeit.sh CubbyFlow compile -- bash agent_space/val_build.sh   # --target CubbyFlow CUDATests UnitTests CUDASPHSim -j 6
+```
+
+Evidence:
+- Configure printed `-- Using reordered HIP runtime wrapper for C++23: .../build_val/HipCxx23Shim` (the probe hit the "cannot overload __host__ __device__" diagnostic, the shim re-probe passed).
+- build.ninja: 35 HIP objects (`--offload-arch=gfx1151`), all 35 with `-std=c++23` and `-I".../build_val/HipCxx23Shim"` after the `-include cuda_to_hip.h`; 769 `-std=` occurrences, all `c++23`. Build 633/633, 0 warnings, 0 errors (-Werror).
+- TheRock amdhip64_7.dll, amd_comgr.dll, hiprtc*.dll, rocm_kpack.dll copied into `build_val/bin` (System32 copies are broken on this host).
+- `hipInfo.exe`: AMD Radeon(TM) 8060S Graphics, gcnArchName gfx1151.
+- `CUDATests.exe`: 35/35 test cases, 3170/3170 assertions PASS. A second run with `AMD_LOG_LEVEL=3` logged 2376 `hipLaunchKernel` calls returning hipSuccess (log: agent_space/val_gpuproof.log), so the tests ran on the GPU.
+- `CUDASPHSim.exe -f 5`: 5 frames, 13824 particles, exit 0, 0 non-finite values; mean z 0.20536 at frame 4 (x,y = FLT_MAX for particle 0, the known empty-container non-issue noted earlier).
+- `UnitTests.exe` (CPU): 814/814 PASS (168 suites).
+- `python utils/jargon.py --port CubbyFlow`: clean. Docs: Documents/Install.md already carries the USE_HIP build block.
+- CUDA no-regression gate: not rerun here; Windows host has no nvcc build of this and the nvcc gate already passed at this head on Linux.
+
+Differences from the porter's run: none in counts (35/35, 3170, 814, mean z 0.20536). Configure took 24 s, build was short (vcpkg cache warm, ~633 steps).
