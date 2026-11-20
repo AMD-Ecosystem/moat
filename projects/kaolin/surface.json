@@ -1,0 +1,274 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "393740bc0d14",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [
+      "kaolin/csrc/2d_math.cuh",
+      "kaolin/csrc/3d_math.cuh",
+      "kaolin/csrc/metrics/sided_distance_cuda.cu",
+      "kaolin/csrc/metrics/unbatched_triangle_distance_cuda.cu",
+      "kaolin/csrc/ops/conversions/gs_to_spc/gs_to_spc_cuda.cu",
+      "kaolin/csrc/ops/conversions/mesh_to_spc/mesh_to_spc_cuda.cu",
+      "kaolin/csrc/ops/conversions/unbatched_mcube/helper_math.h",
+      "kaolin/csrc/ops/conversions/unbatched_mcube/unbatched_mcube_cuda.cu",
+      "kaolin/csrc/ops/mesh/mesh_intersection_cuda.cu",
+      "kaolin/csrc/ops/packed_simple_sum_cuda.cu",
+      "kaolin/csrc/ops/spc/bf.cpp",
+      "kaolin/csrc/ops/spc/bf_cuda.cu",
+      "kaolin/csrc/ops/spc/convolution.cuh",
+      "kaolin/csrc/ops/spc/convolution_cuda.cu",
+      "kaolin/csrc/ops/spc/feature_grids_cuda.cu",
+      "kaolin/csrc/ops/spc/generate_points.cu",
+      "kaolin/csrc/ops/spc/minkowski_conv.cu",
+      "kaolin/csrc/ops/spc/point_utils_cuda.cu",
+      "kaolin/csrc/ops/spc/query_cuda.cu",
+      "kaolin/csrc/ops/spc/recon_cuda.cu",
+      "kaolin/csrc/ops/spc/scan_octrees.cu",
+      "kaolin/csrc/ops/spc/spc_cuda.cu",
+      "kaolin/csrc/ops/tile_to_packed_cuda.cu",
+      "kaolin/csrc/packed_base.cuh",
+      "kaolin/csrc/render/mesh/deftet_cuda.cu",
+      "kaolin/csrc/render/mesh/dibr_soft_mask_cuda.cu",
+      "kaolin/csrc/render/mesh/rasterization_cuda.cu",
+      "kaolin/csrc/render/sg/unbatched_reduced_sg_inner_product_cuda.cu",
+      "kaolin/csrc/render/spc/raytrace_cuda.cu",
+      "kaolin/csrc/render/spc/spc_render_utils.cuh",
+      "kaolin/csrc/spc_math.h",
+      "kaolin/csrc/spc_utils.cuh"
+    ],
+    "markers": {
+      "device_code": 422,
+      "kernel": 87,
+      "launch": 69,
+      "warp_intrinsic": 19,
+      "texture": 27
+    },
+    "libraries": {
+      "cub": 17,
+      "cublas": 13
+    }
+  },
+  "components": [
+    {
+      "id": "extension:kaolin._C",
+      "kind": "python_extension",
+      "where": "setup.py get_extensions()",
+      "note": "The one CUDAExtension (all kaolin/csrc/**/*.cpp + *.cu, 87 kernels). surface.py's setup.py scan found no components because CUDAExtension( is followed by a newline. Built through torch build-time hipify on ROCm."
+    },
+    {
+      "id": "package:kaolin",
+      "kind": "python_package",
+      "where": "kaolin/",
+      "note": "The Python API over kaolin._C; import must succeed on ROCm with the documented requirements installed."
+    },
+    {
+      "id": "kernels:metrics",
+      "kind": "cuda_module",
+      "where": "kaolin/csrc/metrics/",
+      "note": "sided_distance, unbatched_triangle_distance. Tests: tests/python/kaolin/metrics."
+    },
+    {
+      "id": "kernels:ops-spc",
+      "kind": "cuda_module",
+      "where": "kaolin/csrc/ops/spc/",
+      "note": "SPC ops: bf (profile-curve texture -> buffer on ROCm), recon, spc, convolution, minkowski_conv (cuBLAS handle), feature_grids, point_utils, query, scan_octrees, generate_points; hipCUB scan/radix sort. Tests: ops/spc, rep/test_rep_spc.py."
+    },
+    {
+      "id": "kernels:ops-conversions",
+      "kind": "cuda_module",
+      "where": "kaolin/csrc/ops/conversions/",
+      "note": "unbatched_mcube (LUT textures -> buffers on ROCm; licence-replaced headers), mesh_to_spc, gs_to_spc, mise (host). Tests: ops/conversions."
+    },
+    {
+      "id": "kernels:ops-mesh-packed",
+      "kind": "cuda_module",
+      "where": "kaolin/csrc/ops/{mesh,packed_simple_sum_cuda.cu,tile_to_packed_cuda.cu}",
+      "note": "mesh_intersection, packed_simple_sum (32-bit shuffle mask: HIP compile fix), tile_to_packed. Tests: ops/mesh, ops/test_reduction.py, ops/test_batch.py."
+    },
+    {
+      "id": "kernels:render-mesh",
+      "kind": "cuda_module",
+      "where": "kaolin/csrc/render/mesh/",
+      "note": "rasterization, dibr_soft_mask, deftet (per-pixel 32-lane ballot: wave64 correctness fix). Tests: render/mesh."
+    },
+    {
+      "id": "kernels:render-sg",
+      "kind": "cuda_module",
+      "where": "kaolin/csrc/render/sg/",
+      "note": "unbatched_reduced_sg_inner_product forward/backward (shuffle mask/width fix only). Tests: render/lighting."
+    },
+    {
+      "id": "kernels:render-spc",
+      "kind": "cuda_module",
+      "where": "kaolin/csrc/render/spc/",
+      "note": "raytrace. Tests: render/spc."
+    },
+    {
+      "id": "licence:replace-nvidia-headers",
+      "kind": "licence_work",
+      "where": "kaolin/csrc/ops/spc/point_utils.h, kaolin/csrc/ops/conversions/unbatched_mcube/{defines.h,helper_math.h,tables.h}",
+      "note": "Ruling 2026-11-11: delete and replace (fresh declarations, rewritten vector math drop-in for CUDA and HIP, tables generated from the marching-cubes case rules). Needs the CUDA compile and run as well as ROCm."
+    },
+    {
+      "id": "licence:remove-non-commercial",
+      "kind": "licence_work",
+      "where": "kaolin/non_commercial/, tests/python/kaolin/non_commercial/, LICENSE.NSCL, COPYRIGHT, docs",
+      "note": "Ruling 2026-11-11: delete the NSCL non-commercial flexicubes package and everything that imports only it."
+    },
+    {
+      "id": "cleanup:remove-gpu-cu-duplicates",
+      "kind": "port_cleanup",
+      "where": "kaolin/csrc/**/*_gpu.cu (20 files)",
+      "note": "Ruling 2026-11-10: remove the AMD commit's _gpu.cu copies, folding the needed changes into the _cuda.cu originals."
+    },
+    {
+      "id": "build:setup-rocm",
+      "kind": "build_path",
+      "where": "setup.py",
+      "note": "IS_ROCM detection, PYTORCH_ROCM_ARCH default (Q2), cudart_static and third_party/cub skips, amd-kaolin distribution name (ruled)."
+    },
+    {
+      "id": "build:setup-windows-rocm",
+      "kind": "build_path",
+      "where": "setup.py (win32 branch)",
+      "note": "Windows ROCm build: no -Xcompiler /Zc:preprocessor on the nvcc key under ROCm; DLL/hipcc traps."
+    },
+    {
+      "id": "build:gitignore-hipify-mirror",
+      "kind": "build_path",
+      "where": ".gitignore",
+      "note": "Ignore torch hipify output (*.hip, *_hip.h, *_hip.cuh, *_hip.cpp); verified by a clean build leaving git status empty."
+    },
+    {
+      "id": "docs:rocm-build",
+      "kind": "docs",
+      "where": "docs/notes/installation.rst, README.md",
+      "note": "Revert AMD whitespace damage; one short ROCm source-build subsection."
+    },
+    {
+      "id": "python:warp-features",
+      "kind": "runtime_compiled",
+      "where": "kaolin/physics/**, kaolin/ops/pointcloud.py (farthest_point_sampling), kaolin/io/usd/physics_materials.py",
+      "note": "NVIDIA Warp kernels compiled at run time; invisible to the CUDA census. Needs a ROCm Warp (MOAT warp-1.14, in porting). Disposition waits on Q1."
+    },
+    {
+      "id": "python:experimental-newton",
+      "kind": "runtime_compiled",
+      "where": "kaolin/experimental/newton/**",
+      "note": "Newton (Warp-based physics engine) coupling; needs a ROCm Warp and Newton. Disposition waits on Q1."
+    },
+    {
+      "id": "backend:nvdiffrast",
+      "kind": "optional_backend",
+      "where": "kaolin/render/mesh/{rasterization,dibr,nvdiffrast_context}.py",
+      "note": "Optional third-party rasterizer; NVlabs/nvdiffrast is licence-blocked in MOAT dispositions. Disposition waits on Q3."
+    },
+    {
+      "id": "backend:gsplat",
+      "kind": "optional_backend",
+      "where": "kaolin/render/camera/gsplats_*.py, kaolin/ops/gaussians/densifier.py",
+      "note": "Optional gsplat dependency; consume the AMD-Ecosystem gsplat port as environment."
+    },
+    {
+      "id": "test:tests/python/kaolin/io",
+      "kind": "test",
+      "where": "tests/python/kaolin/io",
+      "note": "pytest group; run on every gated platform and report pass/fail/skip."
+    },
+    {
+      "id": "test:tests/python/kaolin/math",
+      "kind": "test",
+      "where": "tests/python/kaolin/math",
+      "note": "pytest group; run on every gated platform and report pass/fail/skip."
+    },
+    {
+      "id": "test:tests/python/kaolin/metrics",
+      "kind": "test",
+      "where": "tests/python/kaolin/metrics",
+      "note": "pytest group; run on every gated platform and report pass/fail/skip."
+    },
+    {
+      "id": "test:tests/python/kaolin/ops",
+      "kind": "test",
+      "where": "tests/python/kaolin/ops",
+      "note": "pytest group; run on every gated platform and report pass/fail/skip."
+    },
+    {
+      "id": "test:tests/python/kaolin/physics",
+      "kind": "test",
+      "where": "tests/python/kaolin/physics",
+      "note": "pytest group; run on every gated platform and report pass/fail/skip."
+    },
+    {
+      "id": "test:tests/python/kaolin/render",
+      "kind": "test",
+      "where": "tests/python/kaolin/render",
+      "note": "pytest group; run on every gated platform and report pass/fail/skip."
+    },
+    {
+      "id": "test:tests/python/kaolin/rep",
+      "kind": "test",
+      "where": "tests/python/kaolin/rep",
+      "note": "pytest group; run on every gated platform and report pass/fail/skip."
+    },
+    {
+      "id": "test:tests/python/kaolin/utils",
+      "kind": "test",
+      "where": "tests/python/kaolin/utils",
+      "note": "pytest group; run on every gated platform and report pass/fail/skip."
+    },
+    {
+      "id": "test:tests/python/kaolin/visualize",
+      "kind": "test",
+      "where": "tests/python/kaolin/visualize",
+      "note": "pytest group; run on every gated platform and report pass/fail/skip."
+    },
+    {
+      "id": "test:tests/python/kaolin/experimental",
+      "kind": "test",
+      "where": "tests/python/kaolin/experimental",
+      "note": "pytest group; run on every gated platform and report pass/fail/skip."
+    },
+    {
+      "id": "test:doctests",
+      "kind": "test",
+      "where": "kaolin/ (pytest --doctest-modules --ignore=kaolin/experimental)",
+      "note": "Upstream CI doc examples."
+    },
+    {
+      "id": "examples:tutorials-recipes",
+      "kind": "example",
+      "where": "examples/tutorial, examples/recipes",
+      "note": "Notebooks and scripts upstream CI runs on CUDA; not a gate here, spot-check the SPC recipes and DIB-R/deftet tutorials if time allows."
+    },
+    {
+      "id": "platform:wave64",
+      "kind": "platform",
+      "where": "linux gfx942/gfx950",
+      "note": "Required gate."
+    },
+    {
+      "id": "platform:wave32",
+      "kind": "platform",
+      "where": "linux gfx1100/gfx1201",
+      "note": "Required gate; never run by the AMD fork."
+    },
+    {
+      "id": "platform:windows",
+      "kind": "platform",
+      "where": "windows gfx1151",
+      "note": "Required gate; last, after both Linux gates pass at one head."
+    },
+    {
+      "id": "check:cuda-no-regression",
+      "kind": "validation",
+      "where": "nvcc build with a CUDA torch; V100 run",
+      "note": "Ruling item 3: build (mi355 host) and run (V100 host) the CUDA path; also the baseline for classifying ROCm failures."
+    }
+  ],
+  "covered": [],
+  "scoped_out": [],
+  "owed": [],
+  "removed_from_floor": []
+}

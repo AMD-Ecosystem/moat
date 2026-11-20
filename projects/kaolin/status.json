@@ -5,17 +5,13 @@
   "fork_url": "https://github.com/AMD-Ecosystem/kaolin",
   "fork_default_branch": "master",
   "priority": 0.0,
-  "ext_type": "unknown",
-  "stage": "planning",
+  "ext_type": "torch-extension",
+  "stage": "planned",
   "adopted_at": "2026-11-06T11:00:55Z",
-  "updated_at": "2026-11-20T21:18:48Z",
+  "updated_at": "2026-11-20T21:28:13Z",
   "head_sha": null,
   "depends_on": [],
-  "porting": {
-    "arch": "linux-gfx1100",
-    "since": "2026-11-20T21:18:48Z",
-    "holder": "7a2a75bbf78f"
-  },
+  "porting": null,
   "waivers": {},
   "platforms": {
     "linux-gfx942": {
@@ -47,7 +43,7 @@
       "failed_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-11-20T21:18:48Z",
+      "updated_at": "2026-11-20T21:28:13Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -86,5 +82,10 @@
     "previous": "main",
     "by": "Jeff Daily",
     "at": "2026-11-10T21:16:57Z"
+  },
+  "porting_released": {
+    "arch": "linux-gfx1100",
+    "since": "2026-11-20T21:18:48Z",
+    "at": "2026-11-20T21:28:13Z"
   }
 }

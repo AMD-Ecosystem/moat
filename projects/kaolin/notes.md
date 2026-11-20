@@ -49,3 +49,25 @@ Jeff Daily ruled, on `moat-port`, as separate commits:
 4. Before any delivery, the replacements and `point_utils.h`'s stale proprietary header go to AMD's legal contact (Jeff raises it).
 
 Context: upstream is an NVIDIA-org repo with infrequent releases (latest v0.18.0, 2025-08-08); upstreaming ROCm support is unlikely, so the deliverable is this fork. AMD's fork has produced no release (no tags; `amd-kaolin` is not on public PyPI).
+
+## Planning (2026-11-20, linux-gfx1100 host, planner)
+
+### Decisions needed from Jeff before a porter starts
+
+Full wording and options are in `plan.md` (Open questions). Q1 and Q2 block the porter; Q3 and Q4 have a stated default that applies only if Jeff confirms it.
+
+- **Q1. Warp-dependent features** (`kaolin.physics`, `farthest_point_sampling`, `io.usd.physics_materials`, `experimental.newton`) need a ROCm Warp. MOAT's `warp-1.14` is still in `porting` (Phase 0 done 2026-11-18). Options: (a) port everything else now and record these as `owed`, which blocks `pr_ready` until they validate on the `warp-1.14` build (planner's recommendation); (b) scope them out with a deferral; (c) hold kaolin until `warp-1.14` completes.
+- **Q2. `PYTORCH_ROCM_ARCH` default** in setup.py when unset: (a) keep `gfx942;gfx950`; (b) add `gfx1100;gfx1101;gfx1151;gfx1200;gfx1201`; (c) drop the override and use torch's default (the visible GPUs; needs a fallback for GPU-less builds).
+- **Q3. nvdiffrast backend**: default is to leave it untouched and record it `scoped_out`, because MOAT declined NVlabs/nvdiffrast as licence-blocked. Confirm.
+- **Q4. AMD copyright lines and README/installation text**: default is to remove the "Modifications Copyright ... AMD" lines from upstream files and the AMD README/pip-index prose, and add a short ROCm source-build subsection. Confirm.
+
+### What was done
+- Took the work lock (`set-state kaolin linux-gfx1100 planning`), cloned the fork into `projects/kaolin/src` with an `upstream` remote, read the AMD commit file by file, set `ext_type` = `torch-extension`, generated `surface.json` (32 CUDA files from the census at upstream 393740bc) and added 36 components. Nothing built, no GPU used.
+
+### Findings the porter needs (details in plan.md)
+- There are 20 `*_gpu.cu` copies, not 26 as the take-up ruling said. 11 are byte-identical to their `_cuda.cu` twin apart from an AMD copyright line. 9 carry the real changes: gs_to_spc, mesh_to_spc, unbatched_mcube, packed_simple_sum, bf, recon, spc, deftet, sg_inner_product.
+- Fork `master` as committed looks unbuildable. The `**/*.cu` glob compiles both twins, which define the same strong symbols. The `_cuda.cu` originals also keep nvcc split chevrons (`<< <`), which torch hipify does not rewrite and clang rejects. So the AMD validation numbers cannot come from this commit's tree.
+- Of the three AMD "wave64 parity fixes", only deftet is a real wave64 bug: its per-pixel ballot spans two pixels on a 64-lane wavefront. packed_simple_sum and sg_inner_product are correct 32/16-lane logical reductions on wave64, because each leader lane reads only its own group. They only need the 32-bit `__shfl_down_sync` mask fixed, which HIP rejects at compile time. The sg forward mask `0xfffffff` is a 28-bit upstream bug.
+- The AMD sg_inner_product file also includes an MI300 performance rewrite in unguarded shared code: a grid split, `atomicAdd` into the outputs, `__expf`, `fmaf`, and `empty_like`. The 2026-11-10 minimal-diff ruling drops it.
+- Upstream `master` moved 3 commits past the fork's base (Python and tests only), and the merge is clean.
+- Optional module dependencies, which are not `depends_on`: warp-lang (Q1), Newton (Q1), gsplat (use the AMD-Ecosystem port as environment), and nvdiffrast (Q3). The `_C` extension build itself has no hard MOAT dependency.
