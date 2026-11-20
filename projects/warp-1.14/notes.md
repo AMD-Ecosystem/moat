@@ -8546,3 +8546,14 @@ The load was real: with 8 load processes a run took 3.1-3.2x as long as alone (3
 ## Coordinator note (2026-11-20): lost-writes issue draft finalized, awaiting Jeff
 
 The Evidence session 3 draft was completed with the `lost_writes` rows from gfx950 (2 and 5 per 40,000, controls 0) and gfx90a (0, 0), the MI250 naming corrected, and the title generalized to `[clr] One XCD's kernel writes lost after hipFree and hipMalloc`. Body and filing script are staged for Jeff (labels `bug`, `project: clr`); nothing filed. Deferred item `hip-mi300-xcd-lost-writes-after-free-realloc` still needs Jeff's ruling. Correction carried from the gfx950 job: the "outside process on GPU 1" of sessions 20-22 was a different GPU (amd-smi index differs from the HIP index); the pinned GPU was idle.
+
+## Ruling on `-ffp-contract` (jeff, 2026-11-20)
+
+Jeff: "go with (b) fast-honor-pragmas if you can confirm CUDA behavior first."
+
+CUDA confirmation (coordinator, V100, CUDA 12.9.86, driver 575.57.08; sources in `agent_space/p6ev/fmad/`: `kern.cu`, `drv.cpp`, `inv16.py`):
+- Three kernels: `r = a*b + c`; `t = a*b; r = t + c`; `t = mul(a,b); r = add(t,c)` through inline device functions. NVRTC with no option and with `--fmad=true`: one `fma.rn.f32` in each kernel's PTX, and each returns 5.96e-08 for a = b = 1+2^-12, c = -(1+2^-11) (0 would mean the product was rounded first). `--fmad=false`: no fma, result 0. `nvcc -ptx` gives the same counts.
+- ROCm clang 23 (`-x hip --offload-arch=gfx942 -O2 -emit-llvm`): `-ffp-contract=on` contracts only the one-expression kernel; `fast` and `fast-honor-pragmas` contract all three; `off` none. Warp's generated code is the third shape, so `on` leaves generated kernels with no fusion.
+- fp16 differs: upstream's `warp-lang==1.14.0` CUDA wheel passes `test_inverse_float16_cuda_0` with margin (53 checks, worst difference 0.0312 against tolerance 0.05; identical values with module option `fuse_fp` True and False). CUDA's `float_to_half` is inline asm `cvt.rn.f16.f32`, so a half product is always rounded before the add. On HIP the conversions are `_Float16` casts the optimizer can see through; hypothesis: that lets cross-statement contraction form a half fma, which is the one failure of Evidence 6.
+
+Consequence: the porter was asked (session 22) to switch to `fast-honor-pragmas` and keep fp16 arithmetic unfused on HIP with a guarded pragma instead of changing the test tolerance; the ROCm-gated tolerance bump jeff approved is the fallback only.
