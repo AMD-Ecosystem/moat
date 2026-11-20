@@ -110,3 +110,10 @@
 {"kind":"phase","ts":"2026-11-19T18:22:38Z","phase":"test","seconds":107.804,"exit":0,"cmd":"agent_space/e2e.sh --steps 20 --only ptv3"}
 {"kind":"phase","ts":"2026-11-19T18:23:09Z","phase":"test","seconds":21.802,"exit":0,"cmd":"agent_space/e2e.sh --steps 20 --only ptv3"}
 {"kind":"session","ts":"2026-11-19T18:24:18Z","epoch":1795112658.609337,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-19T23:58:51Z","epoch":1795132731.972805,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-11-20T00:01:49Z","phase":"compile","seconds":124.145,"exit":0,"cmd":"D:/Develop/moat/agent_space/torch_venv/Scripts/python.exe /d/Develop/moat/agent_space/pointcept_f33/build.py"}
+{"kind":"phase","ts":"2026-11-20T00:02:17Z","phase":"test","seconds":21.725,"exit":0,"cmd":"D:/Develop/moat/agent_space/torch_venv/Scripts/python.exe /d/Develop/moat/agent_space/pointcept_f33/test.py"}
+{"kind":"phase","ts":"2026-11-20T00:02:26Z","phase":"test","seconds":2.051,"exit":0,"cmd":"D:/Develop/moat/agent_space/torch_venv/Scripts/python.exe /d/Develop/moat/agent_space/pointcept_f33/op_driver.py"}
+{"kind":"phase","ts":"2026-11-20T00:19:56Z","phase":"test","seconds":600.823,"exit":124,"cmd":"timeout 600 D:/Develop/moat/agent_space/torch_venv/Scripts/python.exe /d/Develop/moat/agent_space/pointcept_f33/sparse_smoke.py"}
+{"kind":"phase","ts":"2026-11-20T00:30:19Z","phase":"test","seconds":600.648,"exit":124,"cmd":"timeout 600 D:/Develop/moat/agent_space/torch_venv/Scripts/python.exe /d/Develop/moat/agent_space/pointcept_f33/sparse_smoke.py"}
+{"kind":"session","ts":"2026-11-20T00:32:21Z","epoch":1795134741.482886,"event":"end","platform":"windows-gfx1151"}

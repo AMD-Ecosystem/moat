@@ -1017,3 +1017,75 @@ Not tested by a run. The fleet guard refuses `pip install` into any venv other t
 
 ### For jeff (decision not taken here)
 Backend selection stays automatic on `torch.version.hip`, as instructed. Data point for the ruling on an explicit switch: on a CUDA torch the module imports `spconv.pytorch` exactly as before; on ROCm there is no other spconv, so a switch would only matter for someone who wants spconv-triton on NVIDIA too.
+
+## Validation 2026-11-19 (validator, windows-gfx1151, at f33fdb6)
+
+Platform: windows-gfx1151, AMD Radeon 8060S (gfx1151, wave32, APU), Windows 11, HIP_VISIBLE_DEVICES=0. Fork `moat-port` @ f33fdb6 (= head_sha = reviewed_sha), fresh clone at `projects/Pointcept/src`; `pr-state` -> `merged` (#604), `protect-fork` installed, nothing pushed. Same environment as the August Windows validation: `agent_space/torch_venv` (Python 3.13.13), torch 2.12.0+rocm7.14.0a20260519, torch.version.hip 7.13.26190, CC/CXX = the SDK's clang-cl, MSVC 14.44.35207 link.exe, DISTUTILS_USE_SDK=1, sparsehash 2.0.4 headers with a hand-written `sparseconfig.h` (re-fetched into scratch; the August copy under the system temp directory was gone), INCLUDE/LIB from `vcvars64.bat`. All scratch under `agent_space/pointcept_f33/`.
+
+Question for this run: at f33fdb6, does everything that worked on Windows before the follow-up still work, and does the follow-up fail cleanly where it must. Short answer: the project's own extensions are unchanged and pass; the documented install paths behave the same before and after; one undocumented arrangement that upstream main tolerates no longer imports (below, for jeff); and the premise that Triton has no Windows build is out of date, so the sparse-convolution path is not closed on Windows.
+
+### Build (timeit compile 124.1s, exit 0)
+`cd libs/<lib> && python setup.py install` for pointops, pointops2, pointgroup_ops, pointrope, one after another (37.6s / 37.3s / 19.6s / 29.4s; August: 36.8 / 39.4 / 23.5 / 37.7). All four build and import; device name `AMD Radeon(TM) 8060S Graphics`.
+
+### pointops2 in-tree tests (timeit test, one pass)
+Same driver as August (blank stdin for the `input()` pauses). 7/8 EXIT 0, 1/8 EXIT 1, the same split as August and as every other platform.
+
+| test | now | August (87bc3e2) |
+|---|---|---|
+| test_attention_op_step1.py | EXIT 0, `<1e-8` True, max 3.64e-12 | EXIT 0, True |
+| test_attention_op_step1_v2.py | EXIT 0, True | EXIT 0, True |
+| test_attention_op_step2.py | EXIT 1, upstream `NameError: name 'x' is not defined` after forward and backward ran | same |
+| test_relative_pos_encoding_op_step1.py | EXIT 0 | EXIT 0 |
+| test_relative_pos_encoding_op_step1_v2.py | EXIT 0, max sq err 2.328e-10 | 2.328e-10 |
+| test_relative_pos_encoding_op_step1_v3.py | EXIT 0, max sq err 2.328e-10 | 2.328e-10 |
+| test_relative_pos_encoding_op_step2.py | EXIT 0 | EXIT 0 |
+| test_relative_pos_encoding_op_step2_v2.py | EXIT 0, forward 9.313e-10, attn_grad 2.594e-21, v_grad 1.601e-21, table_grad 4.250e-17 | 9.313e-10 / 2.594e-21 / 1.601e-21 / 6.267e-17 |
+
+### Op driver (timeit test, same script as August, 4/4 PASS)
+knn_query set-match 1.000000 (August 1.000000); pointrope GPU vs CPU 4.709e-06, round trip 2.384e-07 (identical to August); ballquery_batch_p 16732 pairs, 0 radius violations (identical); bfs_cluster 1 cluster of 1995/2000 (identical).
+
+### Import behaviour, head f33fdb6 against upstream main 77f87ab (the merge base)
+Method: `agent_space/pointcept_f33/probe.py` runs `import pointcept`, `import pointcept.models`, builds `configs/s3dis/semseg-pt-v1-0-base.py` (Point Transformer V1, no sparse convolution, uses `pointops`) with `Config.fromfile` + `build_model`, optionally one forward+backward on 2048 random points, then builds `configs/s3dis/semseg-spunet-v1m1-0-base.py`. Upstream is `git archive upstream/main` unpacked in scratch. Everything extra went into scratch `--target` directories on `PYTHONPATH`, `--no-deps`; the shared venv was not changed apart from reinstalling the four extensions. Harness facts a reader needs: the shared venv already had `spconv-triton` 1.0.0 from August, so "not installed" is simulated by an import hook that raises `ModuleNotFoundError` for it; `torch_cluster` (no Windows ROCm wheel) and `wandb` are empty stand-in modules, neither is called by anything probed; `timm` 0.9.7, `torch_geometric` 2.6.1, `peft` 0.15.2, `transformers` 4.57.1 and the matching `torchvision` 0.27.0+rocm7.14.0a20260519 are real. (transformers 4.50.3 fails on this torch with `No module named 'torch._C._distributed_c10d'`: this Windows torch has no distributed support and that release imports `torch.distributed.tensor` unguarded. Not related to the port.)
+
+Why the result has this shape: `pointcept/models/default.py:9` imports `pointcept/models/utils/structure.py`, whose line 2 imports the sparse-convolution backend unconditionally, in upstream and in the port alike. So `import pointcept.models` needs a working backend even for a model that never uses one. The port did not create that; it changed which package the line asks for.
+
+| installed beside the ROCm torch | upstream main | head f33fdb6 |
+|---|---|---|
+| 1. neither `spconv` nor `spconv_triton` | `import pointcept` OK; `import pointcept.models` fails: `ModuleNotFoundError: No module named 'spconv'` (structure.py:2) | `import pointcept` OK; `import pointcept.models` fails: `ModuleNotFoundError: No module named 'spconv_triton'` (utils/spconv.py:15 <- structure.py:2) |
+| 2. `spconv-triton` 1.0.0, no `triton` | same as row 1 (`No module named 'spconv'`) | `import pointcept.models` fails: `ModuleNotFoundError: No module named 'triton'` (spconv_triton/pytorch/_impl/gemm.py:35) |
+| 3. `spconv-cu124` 2.3.8 (has a cp313 win_amd64 wheel), no NVIDIA runtime | `import spconv.pytorch` fails in cumm: `RuntimeError: Can't find cuda libraries, install cuda first.` (checked directly, not through the probe) | not run; the selector never imports `spconv` on a ROCm torch, so as row 1 or 2 |
+| 4. `spconv-cu124` 2.3.8 + `cumm-cu124` 0.7.x with NVIDIA's CUDA 12.8 runtime DLLs found through `CUDA_PATH` | `import pointcept.models` OK; PT v1 builds (7,767,729 params) and runs forward+backward on the 8060S (loss 2.6399, finite, nonzero grads); SpUNet builds (not run) | `import pointcept.models` fails: `No module named 'spconv_triton'`, or `No module named 'triton'` when spconv-triton is installed |
+| 5. `spconv-triton` 1.0.0 + `triton-windows` 3.9.0.post30 | not run (nothing provides `spconv`, so as row 1) | `import pointcept.models` OK; PT v1 builds and runs forward+backward on the 8060S (loss 2.6358, finite, nonzero grads); SpUNet builds |
+
+In no row does `import pointcept` itself change, and in the rows a README-following user reaches (1 to 3) neither tree gets past `import pointcept.models`, so the non-sparse models could not be built through the package on Windows before the follow-up either. The two losses differ only because the model is initialised before the seed is set.
+
+### For jeff: the one arrangement that got worse (row 4)
+Upstream main on a ROCm torch will import if a user installs `spconv-cu124` and also has NVIDIA's CUDA runtime DLLs on the machine (cumm's own error message tells them to install CUDA). spconv is then only satisfying the import; the point-based models run on the AMD GPU through `pointops`. At f33fdb6 the selector asks for `spconv_triton` on any ROCm torch and never looks at `spconv`, so that arrangement stops importing. It is not Windows-specific (the selector does the same on Linux, where it was reviewed), it is not a documented install, and the port offers the documented replacement in row 5. I did not treat it as a regression of what was validated before, and did not change anything: whether the selector should fall back to `spconv` when `spconv_triton` cannot be imported is a design question, and the ruling of 2026-11-19 is that selection stays automatic. If jeff reads row 4 as a regression, this platform's `completed` should be replaced by `validation-failed`.
+
+### Triton on Windows: the August conclusion is out of date
+`pip install triton` still finds nothing for Windows (`from versions: none`). But PyPI has `triton-windows` 3.9.0.post30 (`cp312-abi3-win_amd64`, home page github.com/triton-lang/triton-windows). It installs the `triton` module, ships `triton/backends/amd`, and that backend's `driver.py` has explicit Windows handling: it looks for `amdhip64*.dll` and resolves the SDK through `rocm-sdk path --root` or `ROCM_HOME`/`HIP_PATH`/`ROCM_PATH`. With it in a scratch target the port's selector module imports and row 5 above passes.
+
+One bounded sparse-convolution smoke through it (`agent_space/pointcept_f33/sparse_smoke.py`: one `SubMConv3d(4, 8, 3)` over 500 voxels of a 16^3 grid, `TRITON_CACHE_DIR` in scratch, `timeout 600`, run twice and no more):
+- cold: forward completed in 211.8 s, output (500, 8), finite, abs-sum 387.6918; the backward pass had not finished when the 600 s cap ended the run (timeit test 600.8s, exit 124). The Triton cache grew throughout, so it was compiling, not idle.
+- warm (same cache): forward 0.4 s, same abs-sum 387.6918; backward again did not finish inside 600 s (timeit test 600.6s, exit 124; cache 130 entries / 156 MB, and not growing after the kill, so nothing was left running).
+
+So on gfx1151 a sparse convolution forward compiles for and runs on the GPU through triton-windows, and a backward pass was not seen to finish. The forward output was not compared with a reference (the dense CPU comparison sits after the backward call in the script and was never reached). Whether the backward is only slow, as the cold compiles recorded on gfx942 and gfx1100 were, or stuck, was not determined; it was not pursued further on this laptop. What is not established: any numeric result for sparse convolution on Windows, a completed backward, any full model.
+
+Consequences that are not a validator's to decide:
+- The README tells an AMD user `pip install spconv-triton`. spconv-triton declares no `triton` requirement and relies on the one that comes with the PyTorch build; the Windows ROCm torch here has none, so a Windows user who follows the README gets `ModuleNotFoundError: No module named 'triton'` from inside spconv-triton, and has to know that `triton-windows` is the package that provides it. One README line would cover it; whether to add it (and so point at a path nobody has validated end to end) is for jeff. I did not send the platform back with `--gate docs`, because the README does document the ROCm build and the missing line is about a third-party package on one operating system.
+- A fuller Windows sparse-convolution run (a 20-step SpUNet as on gfx942) needs a long cold compile; it should not be done on this laptop without jeff saying so.
+
+### What a user sees when they try a sparse-convolution model on Windows
+The failure is at `import pointcept.models`, before any model is built, and it is the same for every model, sparse or not:
+- README followed (`spconv-triton` installed): `ModuleNotFoundError: No module named 'triton'`, raised from `spconv_triton/pytorch/_impl/gemm.py:35` via `pointcept/models/utils/spconv.py:15`. The traceback passes through the selector module, whose docstring says what spconv-triton is; nothing says which package provides `triton` on Windows. Understandable to someone who knows Triton, not otherwise.
+- nothing installed: `ModuleNotFoundError: No module named 'spconv_triton'`; the README line maps directly onto it. Clear.
+Both are plain import errors with no hang, no partial import and no GPU fault. Upstream's equivalent is `No module named 'spconv'`, or cumm's `Can't find cuda libraries, install cuda first.`, which is the more misleading of the two for an AMD user.
+
+### CUDA no-regression gate
+Not run here (no CUDA gate on the Windows hosts). The gfx942 section above already carries the note that the real-nvcc compile is still owed before the pull request.
+
+### Integrity and content gates
+`git -C projects/Pointcept/src status --porcelain`: 62 entries, all untracked hipify artifacts, no modified tracked file; HEAD f33fdb6. `jargon.py --port Pointcept` clean. Host: `Kernel_141` report count 48 after the op tests and 48 at the end (no count was taken before the build); no bugcheck or GPU reset seen.
+
+### Result
+windows-gfx1151 -> completed at f33fdb6. Scope of the claim: the project's own GPU extensions build and pass on real gfx1151 with the same counts and numbers as August (7/8 in-tree, 4/4 driver); a non-sparse model (Point Transformer V1) builds through `pointcept.models` and runs forward+backward on the GPU at head once spconv-triton and triton-windows are present; the documented install paths import exactly as far as upstream's do. Not claimed: sparse-convolution models on Windows (one layer's forward ran through triton-windows, its backward never finished inside the cap, no numeric check), and the undocumented spconv-cu124-plus-CUDA-runtime arrangement, which imports on upstream main and no longer does.
