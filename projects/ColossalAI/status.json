@@ -5,17 +5,13 @@
   "fork_url": "https://github.com/AMD-Ecosystem/ColossalAI",
   "fork_default_branch": "main",
   "priority": 0.0,
-  "ext_type": "unknown",
-  "stage": "planning",
+  "ext_type": "torch-extension",
+  "stage": "planned",
   "adopted_at": "2026-11-05T22:44:55Z",
-  "updated_at": "2026-11-20T21:51:34Z",
+  "updated_at": "2026-11-20T21:59:38Z",
   "head_sha": null,
   "depends_on": [],
-  "porting": {
-    "arch": "linux-gfx942",
-    "since": "2026-11-20T21:51:34Z",
-    "holder": "c2d5cbc18f04"
-  },
+  "porting": null,
   "waivers": {},
   "platforms": {
     "windows-gfx1151": {
@@ -48,7 +44,7 @@
       "failed_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-11-20T21:51:34Z",
+      "updated_at": "2026-11-20T21:59:38Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -81,5 +77,10 @@
     "viable": true,
     "summary": "ColossalAI (Apache-2.0, active, 41k stars): 18 CUDA extension kernels with inline PTX and warp-32 reductions, loader rejects ROCm torch; no AMD path upstream",
     "at": "2026-11-05T23:05:01Z"
+  },
+  "porting_released": {
+    "arch": "linux-gfx942",
+    "since": "2026-11-20T21:51:34Z",
+    "at": "2026-11-20T21:59:38Z"
   }
 }

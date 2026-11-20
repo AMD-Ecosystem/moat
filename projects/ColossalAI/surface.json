@@ -1,0 +1,210 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "14d1c1514756",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [
+      "extensions/csrc/common/micros.h",
+      "extensions/csrc/funcs/reduce_function.h",
+      "extensions/csrc/kernel/cuda/activation_kernel.cu",
+      "extensions/csrc/kernel/cuda/attention/attention_utils.h",
+      "extensions/csrc/kernel/cuda/context_kv_cache_memcpy_kernel.cu",
+      "extensions/csrc/kernel/cuda/convert_fp8_kernel.cu",
+      "extensions/csrc/kernel/cuda/decode_kv_cache_memcpy_kernel.cu",
+      "extensions/csrc/kernel/cuda/flash_decoding_attention_kernel.cu",
+      "extensions/csrc/kernel/cuda/fused_rotary_emb_and_cache_kernel.cu",
+      "extensions/csrc/kernel/cuda/get_cos_and_sin_kernel.cu",
+      "extensions/csrc/kernel/cuda/layer_norm_kernel.cu",
+      "extensions/csrc/kernel/cuda/moe_kernel.cu",
+      "extensions/csrc/kernel/cuda/multi_tensor_adam_kernel.cu",
+      "extensions/csrc/kernel/cuda/multi_tensor_apply.cuh",
+      "extensions/csrc/kernel/cuda/multi_tensor_l2norm_kernel.cu",
+      "extensions/csrc/kernel/cuda/multi_tensor_lamb_kernel.cu",
+      "extensions/csrc/kernel/cuda/multi_tensor_scale_kernel.cu",
+      "extensions/csrc/kernel/cuda/multi_tensor_sgd_kernel.cu",
+      "extensions/csrc/kernel/cuda/rms_layernorm_kernel.cu",
+      "extensions/csrc/kernel/cuda/scaled_masked_softmax_kernel.cu",
+      "extensions/csrc/kernel/cuda/scaled_upper_triang_masked_softmax_kernel.cu",
+      "extensions/csrc/kernel/cuda/utils/micros.h",
+      "extensions/csrc/kernel/cuda/utils/vec_copy.h",
+      "extensions/csrc/kernel/x86/cpu_adam.h"
+    ],
+    "markers": {
+      "device_code": 100,
+      "warp_intrinsic": 8,
+      "kernel": 31,
+      "launch": 94
+    },
+    "libraries": {
+      "cub": 32,
+      "cublas": 1
+    }
+  },
+  "components": [
+    {
+      "id": "extension:cpu_adam_x86",
+      "kind": "python_extension",
+      "where": "extensions/pybind/cpu_adam/cpu_adam_x86.py",
+      "note": "CPUAdam/HybridAdam host kernel (kernel/x86/cpu_adam.cpp). Built as a CUDAExtension and its header includes cublas_v2.h/cuda_fp16.h; needs the ROCm build path even though it runs on the CPU. Used by Gemini/ZeRO CPU offload."
+    },
+    {
+      "id": "extension:fused_optim_cuda",
+      "kind": "python_extension",
+      "where": "extensions/pybind/optimizer/fused_optimizer_cuda.py",
+      "note": "multi_tensor adam/lamb/sgd/scale/l2norm (apex-derived). l2norm block reduce uses tid<32 and 32-bit shuffle masks."
+    },
+    {
+      "id": "extension:layernorm_cuda",
+      "kind": "python_extension",
+      "where": "extensions/pybind/layernorm/layernorm_cuda.py",
+      "note": "apex-style fused LayerNorm; launches threads(32,4) and reduces with srcLane & 31 under default-width WARP_SHFL: wrong on wave64. -maxrregcount is nvcc-only."
+    },
+    {
+      "id": "extension:moe_cuda",
+      "kind": "python_extension",
+      "where": "extensions/pybind/moe/moe_cuda.py",
+      "note": "MoE dispatch/combine/cumsum; cub BlockLoad/BlockStore (hipCUB), 32/64/128-thread blocks."
+    },
+    {
+      "id": "extension:inference_ops_cuda",
+      "kind": "python_extension",
+      "where": "extensions/pybind/inference/inference_ops_cuda.py",
+      "note": "Inference kernels: kv-cache memcpy, fused rotary, silu, rms layernorm, cos/sin, flash decoding attention, fp8 convert. Inline PTX and __nv_cvt_* fp8 intrinsics in funcs/cast_functor.h; WARP_SIZE 32 with uint32_t(-1) masks in attention_utils.h; bf16 functors gated on __CUDA_ARCH__ >= 800."
+    },
+    {
+      "id": "extension:scaled_masked_softmax_cuda",
+      "kind": "python_extension",
+      "where": "extensions/pybind/softmax/scaled_masked_softmax_cuda.py",
+      "note": "Megatron-style softmax; host launcher uses C10_WARP_SIZE as a constexpr, which ROCm torch makes a runtime host value (compile error) -- needs at::cuda::warp_size()."
+    },
+    {
+      "id": "extension:scaled_upper_triangle_masked_softmax_cuda",
+      "kind": "python_extension",
+      "where": "extensions/pybind/softmax/scaled_upper_triangle_masked_softmax_cuda.py",
+      "note": "Same pattern as scaled_masked_softmax."
+    },
+    {
+      "id": "build:extension-loader",
+      "kind": "build_path",
+      "where": "extensions/cuda_extension.py, extensions/utils.py, setup.py",
+      "note": "AOT (BUILD_EXT=1) and JIT (torch cpp_extension.load) paths. Rejects ROCm torch (torch.version.cuda is None), requires CUDA_HOME/nvcc, sets TORCH_CUDA_ARCH_LIST from nvcc version, passes nvcc-only flags. BuildExtension rewrites -DCOLOSSAL_WITH_CUDA to -DCOLOSSAL_WITH_HIP on ROCm."
+    },
+    {
+      "id": "extension:flash_attention_cpu_npu_arm",
+      "kind": "non_cuda",
+      "where": "extensions/pybind/cpu_adam/cpu_adam_arm.py, extensions/pybind/flash_attention/flash_attention_npu.py",
+      "note": "Arm CPU Adam and Ascend NPU flash attention: no CUDA, not a port surface."
+    },
+    {
+      "id": "python:attention-backends",
+      "kind": "python_package",
+      "where": "colossalai/kernel/kernel_loader.py, extensions/pybind/flash_attention/*",
+      "note": "fa2 adapter refuses ROCm explicitly (_flash_attention_support); sdpa works on ROCm already; fa3 is Hopper/SM90-only."
+    },
+    {
+      "id": "python:fp8",
+      "kind": "python_package",
+      "where": "colossalai/quantization/fp8.py",
+      "note": "fp8 casts, collectives and FP8 linear via torch._scaled_mm; hard-codes float8_e4m3fn/e5m2 (gfx942 needs the fnuz types for _scaled_mm) and gates torch.compile on an SM number from get_device_capability."
+    },
+    {
+      "id": "python:triton-kernels",
+      "kind": "python_package",
+      "where": "colossalai/kernel/triton/*",
+      "note": "Triton inference kernels; num_warps up to 32 (2048 threads on wave64, over the 1024 limit)."
+    },
+    {
+      "id": "python:accelerator-and-cli",
+      "kind": "python_package",
+      "where": "colossalai/accelerator/cuda_accelerator.py, colossalai/cli/check/check_installation.py",
+      "note": "get_version returns torch.version.cuda (None on ROCm); `colossalai check -i` reports via CUDA_HOME/nvcc."
+    },
+    {
+      "id": "tests:optimizer-kernels",
+      "kind": "tests",
+      "where": "tests/test_optimizer/test_adam_kernel.py, test_adam_optim.py",
+      "note": "Upstream CI batch 3, 1 GPU: FusedAdam, CPUAdam, HybridAdam."
+    },
+    {
+      "id": "tests:inference-cuda-kernels",
+      "kind": "tests",
+      "where": "tests/test_infer/test_kernels/cuda",
+      "note": "Upstream CI batches 4b and 4e, 1 GPU."
+    },
+    {
+      "id": "tests:inference-triton-kernels",
+      "kind": "tests",
+      "where": "tests/test_infer/test_kernels/triton",
+      "note": "Upstream CI batch 4c, 1 GPU."
+    },
+    {
+      "id": "tests:fp8",
+      "kind": "tests",
+      "where": "tests/test_fp8",
+      "note": "Upstream CI batches 4a (1 GPU) and 7 (4 GPUs)."
+    },
+    {
+      "id": "tests:smoothquant",
+      "kind": "tests",
+      "where": "tests/test_smoothquant",
+      "note": "Upstream CI batch 4d, 1 GPU."
+    },
+    {
+      "id": "tests:single-gpu-core",
+      "kind": "tests",
+      "where": "see run_colossalai_batch.sh batch 2",
+      "note": "Accelerator, FP16, LazyTensor, inference structures."
+    },
+    {
+      "id": "tests:distributed",
+      "kind": "tests",
+      "where": "tests/test_booster, test_checkpoint_io, test_pipeline, test_zero, test_moe, test_shardformer, test_infer, test_lazy, test_cluster, test_device, test_tensor, test_lora, test_numerics",
+      "note": "Upstream CI batches 5 (2 GPUs), 6, 8, 9, 9q (4 GPUs) over RCCL."
+    },
+    {
+      "id": "tests:largedist",
+      "kind": "tests",
+      "where": "pytest -m largedist",
+      "note": "Upstream CI batch 10, 8 GPUs."
+    },
+    {
+      "id": "tests:apex-gemini",
+      "kind": "tests",
+      "where": "run_colossalai_batch.sh batch 11",
+      "note": "Needs apex (ROCm/apex exists); 2 GPUs."
+    },
+    {
+      "id": "tests:fa3-attention",
+      "kind": "tests",
+      "where": "tests/test_shardformer/test_layer/test_attention_backends.py (batch 4f)",
+      "note": "Strict FA3 forward/backward; FA3 is Hopper-only."
+    },
+    {
+      "id": "tests:new-kernel-tests",
+      "kind": "tests",
+      "where": "(to be added)",
+      "note": "layernorm_cuda, both softmax extensions and moe_cuda have no upstream tests; the port adds small GPU tests against a torch reference."
+    },
+    {
+      "id": "docs:rocm-install",
+      "kind": "docs",
+      "where": "README.md, docs/",
+      "note": "ROCm build and install section (BUILD_EXT=1 with ROCm torch, PYTORCH_ROCM_ARCH, flash_attn/bitsandbytes on ROCm)."
+    },
+    {
+      "id": "platform:windows",
+      "kind": "platform",
+      "where": "setup.py",
+      "note": "setup.py raises on win32 ('Windows is not supported yet'); the project is Linux-only upstream."
+    }
+  ],
+  "covered": [],
+  "scoped_out": [
+    {
+      "id": "extension:flash_attention_cpu_npu_arm",
+      "reason": "Arm CPU Adam and the Ascend NPU flash attention contain no CUDA; nothing to port. Listed so the extension inventory is complete."
+    }
+  ],
+  "owed": [],
+  "removed_from_floor": []
+}
