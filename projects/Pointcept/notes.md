@@ -1367,3 +1367,187 @@ So with spconv absent the error is upstream's original one: same type (`ModuleNo
 - `README.md`: docs only; the CUDA instructions (`pip install spconv-cu124`, `TORCH_CUDA_ARCH_LIST` builds) are unchanged.
 
 Fix to propose: none.
+
+## spconv-triton autotune cost on gfx1100 (2026-11-20, linux-gfx1100 measurement job, no state changed)
+
+jeff's question, after the linux-gfx1100 validation above: "Is there any way to improve the 3.5 hour delay for the first SparseUNet? Can we tune the autotuner defaults?" This was a measurement job on the W7800 (gfx1100, wave32), HIP_VISIBLE_DEVICES=1 (pinned by the dispatcher). It changed no stage, lock, platform record or fork. All GPU work ran under `ulimit -c 0`. Environment: the linux-gfx1100 validation job's venv site-packages copied into this job's venv (torch 2.16.0a0+git6c3af02, triton 3.9.0+gitfc8d31a5, spconv-triton 1.0.0, the same Pointcept extension eggs), and Pointcept at 35af626 cloned from that job's `src`. The driver is that job's `pointcept_sparse_conv_e2e.py`, copied byte for byte, so its losses can be compared directly with the validation tables above. spconv-triton 1.0.0 was not edited in the venv; every pruned run swaps candidates at runtime (below).
+
+### 1. What the full autotune chose (validation job's caches, read-only)
+`agent_space/analyze_autotune.py <cache>...` reads every `*.autotune.json` (each holds every candidate's median/p20/p80 time), dedupes by (kernel, key), and reports winners, failures (time `inf` = `OutOfResources`) and the best subset. It covers 51 GEMM keys from the two caches (`triton-cache` = SpUNet + PointGroup + OACNNs, `triton-cache-oacnns` = OACNNs alone).
+
+`_dweight_masked_kernel` (21 candidates; 19 keys, 8 of them OACNNs): one candidate won every key, `BLOCK_P 64 / BLOCK_K 32 / BLOCK_C 32, num_warps 4, num_stages 6`. Its lead over the runner-up is 1.02x to 3.2x (median about 2x). The runner-up is `64/32/32 w2 s5` or `128/32/16 w4 s3`, and every other candidate is 2x to 280x slower. Three candidates fail on every key (LDS above gfx1100's 64 KB): `256/64/64 w8 s3`, `128/32/32 w4 s6` and `256/16/16 w2 s6`. Every other candidate never won. So dropping num_stages 6/7 would be the wrong prune: the winner is a num_stages 6 candidate, and the best candidate with num_stages <= 5 is 1.02x to 3.2x slower per key.
+
+`_gather_gemm_kernel` (37 candidates; 32 keys, 14 of them OACNNs): 14 different winners. `64/16/16 G8 w2 s4` won 11 keys, `256/16/16 G8 w4 s3` won 6, and 12 others won 1 or 2 each. Margins are small: the top 3 to 5 candidates are usually within 1.0x to 1.2x. 17 candidates never won and fail with `OutOfResources` on 16 to 28 of the 32 keys (the 256-wide, 128x128 R64/R128 tiles and the 128x128 R32 w4 s4 tile). Kernel time of the best subset, summed over the 32 keys, against full tuning:
+
+| gather-GEMM list | geomean slowdown per key | worst key | summed best time |
+|---|---|---|---|
+| full (37) | 1.000 | 1.00x | 20.11 ms |
+| fixed `64/16/16 w2 s4` | 1.165 | 2.10x | 27.25 ms |
+| short 4: `256/16/16 G8 w4 s3`, `128/128/32 G1 w8 s3`, `64/16/16 G8 w2 s4`, `64/64/32 G8 w4 s2` (greedy) | 1.025 | 1.21x | 20.50 ms |
+
+The other autotuned kernels (`_candidates`, `_mask_pack`, `_lower_bound_rows`, `_scatter_igemm`, `_subm_membership`, 8 to 10 candidates each) cost under 30 s together and were left alone. Conclusion for step 1: the weight-gradient winners are as concentrated as they can be (one candidate), and a list of 4 for the gather-GEMM loses about 2% in kernel time.
+
+### 2. Why one compile costs 25 s: the target, not the CPU
+`agent_space/compile_bench.py` compiles single `_dweight_masked_kernel` candidates through `kernel.fn.warmup(...)` (compile only, no launch) for key kv=27, K=C=64, fp32 IEEE. It takes per-stage times from `triton.knobs.compilation.listener` (`CompileTimes.lowering_stages`). Each run used a fresh `TRITON_CACHE_DIR`. For the cross-compile it replaces `driver.active.get_current_target` with `GPUTarget("hip", "gfx942", 64)`, so the same CPU builds the same candidate for MI300X:
+```
+TRITON_CACHE_DIR=$(mktemp -d) python compile_bench.py                 # gfx1100 (native)
+TRITON_CACHE_DIR=$(mktemp -d) python compile_bench.py --arch gfx942   # same host, MI300X target
+LLVM_ENABLE_TIMING=1 TRITON_CACHE_DIR=$(mktemp -d) python compile_bench.py --only 0
+```
+
+| candidate (P/K/C warps stages) | gfx1100 total | of which `make_amdgcn` | `make_llir` | gfx942 total, same CPU | gfx1100 VGPRs / scratch bytes / asm lines |
+|---|---|---|---|---|---|
+| 64/64/64 w4 s3 | 21.7 s | 19.4 s | 1.3 s | 0.9 s | 256 / 4300 / 25125 |
+| 128/64/64 w4 s3 | 65.7 s | 61.9 s | 3.5 s | 0.8 s | 256 / 8492 / 53632 |
+| 256/64/64 w8 s3 (fails, LDS) | 64.3 s | 60.0 s | 3.9 s | 1.0 s | 256 / 8416 / 65320 |
+| 64/128/128 w8 s3 | 71.6 s | 67.5 s | 3.8 s | 0.6 s | 256 / 8192 / 79435 |
+| 128/128/64 w8 s3 | 83.4 s | 78.9 s | 4.0 s | 0.7 s | 256 / 8592 / 93452 |
+| 128/64/128 w8 s3 | 89.1 s | 84.9 s | 3.9 s | 0.7 s | 256 / 8768 / 60191 |
+| 64/32/64 w4 s4 | 25.0 s | 23.9 s | 0.9 s | 0.5 s | 256 / 3016 / 20123 |
+| 64/64/64 w4 s2 | 14.1 s | 12.9 s | 1.1 s | 0.3 s | 256 / 3676 / 16614 |
+| 64/32/32 w2 s5 | 2.6 s | 1.3 s | 1.1 s | 0.9 s | 256 / 120 / 20623 |
+| 64/32/32 w2 s6 | 3.2 s | 1.4 s | 1.5 s | 1.7 s | 256 / 196 / 26362 |
+| 64/32/32 w2 s7 | 3.8 s | 1.4 s | 2.0 s | 3.2 s | 256 / 172 / 31280 |
+| 64/32/32 w4 s6 (the winner) | 1.2 s | 0.3 s | 0.6 s | 1.5 s | 256 / 8 / 4483 |
+| 128/32/32 w4 s6 (fails, LDS) | 2.2 s | 0.8 s | 1.2 s | 2.8 s | 256 / 364 / 9246 |
+| all 21 | 512 s | | | 22 s | |
+
+- The time is in LLVM's AMDGPU backend (`make_amdgcn`), and in it the register allocator: `LLVM_ENABLE_TIMING` on 64/64/64 w4 s3 gives 80.3% "Greedy Register Allocator", 12.5% PostRA scheduler and 4.5% machine scheduler of 19.7 s. The Triton MLIR passes (ttir, ttgir) take 0.1 s and `make_llir` 0.3 to 4 s.
+- The cause is the candidate's shape on this ISA. gfx1100 has no fp32 matrix instruction, so an fp32 IEEE `tl.dot` becomes an unrolled block of scalar FMAs (thousands per thread). Every candidate hits the 256-VGPR limit and spills, and the bigger the tile, the longer the allocator works on the spills. gfx942 lowers the same dot to MFMA: 2,000 to 4,000 asm lines, 125 to 186 VGPRs, no scratch, under 3 s each on this CPU. Deep pipelining is cheap: num_stages 6/7 on the 64/32/32 tile compiles in 1 to 4 s. The expensive candidates are the 8-warp 128-wide tiles and the 64x64 and 128x64 tiles with stages 2 to 4. It is not this host's CPU (Threadripper PRO 5975WX): the gfx942 build of all 21 candidates takes 22 s here, against 512 s for gfx1100. The earlier cache's mtime gaps agree: w8 s3 tiles averaged 62 to 91 s, the s6/s7 64/32/32 tiles 1 to 6 s.
+- The only Triton setting that changes it is `DISABLE_LLVM_OPT=1`: 64/64/64 w4 s3 13.0 s, 128/64/128 w8 s3 46.2 s (1.7 to 1.9x faster), but scratch grows to 25 to 70 KB and the winner's scratch grows from 8 bytes to 9.3 KB, so it is no remedy.
+
+What the installed Triton (3.9.0+gitfc8d31a5, `triton/runtime/autotuner.py`, `triton/knobs.py`) offers, read from the source:
+- `triton.autotune(configs, key, prune_configs_by=None, reset_to_zero, restore_value, pre_hook, post_hook, warmup, rep, use_cuda_graph, do_bench, cache_results)`. `prune_configs_by` takes `early_config_prune(configs, named_args, **kwargs)`, plus `perf_model` and `top_k`. Only the kernel author can set it; spconv-triton sets none.
+- No environment variable or knob makes the autotuner take the first config or skip benchmarking. `Autotuner.run` skips benchmarking only when `len(self.configs) == 1`, or when `prune_configs` returns a single config. The `knobs.autotuning` knobs are `cache` (`TRITON_CACHE_AUTOTUNING`, same as `cache_results=True`, which spconv-triton already passes), `print` (`TRITON_PRINT_AUTOTUNING`) and a `listener` callback.
+- Autotune result caching: `check_disk_cache` writes `<kernel>.autotune.json` keyed on the Triton key, backend, kernel source, cache-invalidating env vars, the tuning key and the string of every config. A different candidate list therefore starts a new autotune record, though compiled binaries are shared by hash.
+- Parallel compilation: the Autotuner compiles and benchmarks candidates one at a time (`timings = {config: self._bench(...) for config in pruned_configs}`). The runtime does have `triton.AsyncCompileMode(executor)` (`runtime/_async_compile.py`): inside it, `JITFunction` compiles are submitted to the executor. With a `ThreadPoolExecutor` they really run in parallel: 4 dW candidates totalling 80.3 s of compile finished in 25.7 s wall with 4 threads (`compile_bench.py --only 0,3,4,11 --threads 4`). The Autotuner does not use it. `triton/_compile_warmup*.py` is a private pytest helper, not an autotune feature.
+
+### 3. Pruned candidate lists on OACNNs (empty cache each run)
+`agent_space/prune_run.py` imports `spconv_triton.pytorch._impl.gemm` and assigns `_dweight_masked_kernel.configs` and `_gather_gemm_kernel.configs` on the Autotuner objects before the first call. That works because `Autotuner.run` and `prune_configs` read `self.configs` at call time. Monkeypatching `_dweight_configs`/`_gemm_configs` would not work: the decorators evaluated them at import. Swapping the attribute also leaves `_DW_MAX_BLOCK_K/C` (the split estimate) at 128, so `_dweight_splits` is unchanged. The script then runs the driver through `runpy`, and counts compiles and compile seconds per kernel with `knobs.compilation.listener` and tuning time with `knobs.autotuning.listener`. `--parallel N` wraps `Autotuner.run` so that, on a new key, `self.warmup(...)` first compiles every candidate inside `AsyncCompileMode(ThreadPoolExecutor(N), ignore_errors=True)`; Triton then benchmarks the precompiled candidates as usual. The core:
+```python
+from spconv_triton.pytorch._impl import gemm
+gemm._dweight_masked_kernel.configs = [triton.Config({"BLOCK_P": 64, "BLOCK_K": 32, "BLOCK_C": 32}, num_warps=4, num_stages=6), ...]
+gemm._gather_gemm_kernel.configs = [triton.Config({"BLOCK_M": 64, "BLOCK_N": 16, "BLOCK_R": 16, "GROUP_SIZE_M": 8}, num_warps=2, num_stages=4), ...]
+runpy.run_path("pointcept_sparse_conv_e2e.py", run_name="__main__")
+```
+Run from `src` (each in the background through a wrapper with a 6000 s `timeout`, under `ulimit -c 0`):
+```
+PYTHONPATH=. TRITON_CACHE_DIR=<job dir>/tc-<mode> python prune_run.py --mode <full|fixed|short|lean> [--parallel 16] pointcept_sparse_conv_e2e.py -- --steps 20 --only oacnns
+```
+Lists: (a) `fixed` = dW `64/32/32 w4 s6`, gather `64/16/16 G8 w2 s4` (the most frequent winners). (b) `short` = dW `64/32/32 w4 s6`, `64/32/32 w2 s5`, `128/32/16 w4 s3`; gather = the greedy 4 in the table above. (c) `lean` = full minus every candidate that never won and is expensive: 10 dW candidates with `make_amdgcn` over 10 s (all with w8, or 64-128 wide tiles at stages 2-4), leaving 11, and the 17 gather candidates that never won and overflow LDS on most keys, leaving 20. (d) `par16` = the full lists, compiled 16 at a time.
+
+| OACNNs | dW / gather candidates | cold first step | compiles (compile CPU s) | warm steady, 2 new processes | loss step 0 -> 19 (cold run) |
+|---|---|---|---|---|---|
+| full, validation job | 21 / 37 | 5843 s | 804 cache entries | 0.430 s | 3.0757 -> 0.6257 |
+| full, warm on a copy of that cache, this job | 21 / 37 | -- | 0 | 0.428, 0.432, 0.432 s | 3.0757 -> 0.6435 / 0.6476 / 0.6335 |
+| (d) par16 | 21 / 37 | 1071 s | 774 (6321 s) | 0.433, 0.434 s | 3.0757 -> 0.6318 |
+| (c) lean | 11 / 20 | 572 s | 456 (521 s) | 0.433, 0.436 s | 3.0757 -> 0.6356 |
+| (b) short | 3 / 4 | 112 s | 168 (93 s) | 0.434, 0.434 s | 3.0757 -> 0.6129 |
+| (a) fixed | 1 / 1 | 37.7 s | 110 (27.6 s) | 0.431, 0.435 s | 3.0757 -> 0.6520 |
+
+- On OACNNs every list gives the same steady step within run-to-run noise (0.428 to 0.436 s). The OACNNs step is not dominated by the sparse GEMMs.
+- OACNNs losses agree at step 0 (3.0757) in every run. From step 1 they drift at the 3rd to 4th decimal even between warm runs on one cache: step 19 was 0.6188 to 0.6608 across all 13 runs, and 0.6335 to 0.6476 for the same fully tuned cache. That is the OACNNs-only nondeterminism recorded in the validation, so OACNNs cannot show a tuning effect on results. SpUNet, which is bit-stable, can (below).
+- par16 chose the same winner as the serial full tune on all 8 dW keys and 12 of 14 gather keys. The 2 that differ were within 1% of the serial winner in the serial timings. The 5 small kernels' changes are near-ties of the same kind.
+
+### 4. SparseUNet with the chosen settings
+Same command with `--only spunet`. Full-tuned warm baseline: a copy of the validation job's full cache (15045 files), 2 new processes.
+
+| SpUNet | cold first step | compiles (compile CPU s) | warm steady | loss step 0 -> 19 |
+|---|---|---|---|---|
+| full, validation job | about 12600 s (150 min cut + 60 min resumed in PointGroup) | -- | 0.122 s | 3.0338 -> 0.8903 |
+| full, warm, this job | -- | 0 | 0.124, 0.124 s | 3.0338 -> 0.8903 |
+| par16 (full lists, parallel compile) | 2398 s | 1529 (14174 s) | 0.122 s (warm rerun 0.122 s) | 3.0338 -> 0.8903 |
+| short | 222.5 s | 266 (190.8 s) | 0.126 s | 3.0338 -> 0.8903 |
+| fixed | 58.1 s | 145 (47.3 s) | 0.139 s | 3.0338 -> 0.8903 |
+| spconv-triton patched with the draft diff below, `SPCONV_TRITON_AUTOTUNE=fast` | 222.2 s | 266 (190.5 s) | 0.126 s | 3.0338 -> 0.8903 |
+
+All 20 SpUNet losses (4 decimals, as the driver prints them) are identical between full tuning, short, fixed and the patched package: 3.0338 2.9378 2.8533 2.7713 2.6767 2.5897 2.4776 2.3672 2.2550 2.1342 2.0012 1.8685 1.7333 1.6029 1.4669 1.3361 1.2054 1.0795 0.9670 0.8903. So the candidate choice did not change results at that precision.
+
+One trap, found by testing the first draft of the diff: if the fast list is returned from `_dweight_configs()` itself, `_DW_MAX_BLOCK_K/C` (derived from that function) drops from 128 to 32. `_dweight_splits` then picks a different split-P factor, and the fp32 partial sums are added in a different order. SpUNet ran 222 s and 0.129 s, but its losses diverged from step 2 (step 19 0.8686 instead of 0.8903). The draft below keeps `_dweight_configs()` whole and filters it only where the autotune decorator takes its list, so the split estimate does not move.
+
+Caveat: the short gather list was picked greedily from timings that include the SpUNet keys, so the SpUNet short result is partly in-sample. The dW list does not have that problem in any meaningful way: its first candidate won all 19 keys.
+
+### 5. Conclusion
+- Cold cost: almost all of it can go. OACNNs 97 min -> 1.9 min with 3+4 candidates, or 38 s with one, and SpUNet about 3.5 h -> 3.7 min (short) or 58 s (fixed). Steady-state cost: none measurable for the short list on OACNNs, +1.6% on SpUNet (0.126 against 0.124 s), and +12% on SpUNet for a single fixed config (0.139 s). The weight-gradient kernel alone, which is 72% of the cold time, loses nothing even at one candidate, because one candidate won every key. If tuning quality must be untouched, compiling each key's candidates in parallel (Triton's own `AsyncCompileMode`, 16 threads) gives OACNNs 97 -> 18 min and SpUNet 3.5 h -> 40 min with full tuning and the same winners.
+- Why: on RDNA3 an fp32 IEEE `tl.dot` is an unrolled scalar-FMA block. The large tiles spill (256 VGPRs, KBs of scratch) and spend a minute or more each in LLVM's greedy register allocator. The same tiles compile for gfx942 in under 3 s on this host. The large tiles also lose at runtime here, so pruning them costs nothing.
+- Smallest change an upstream maintainer could accept: an opt-in environment variable with the default unchanged, so CUDA, CDNA and every existing cache keep today's behaviour. Draft below (against spconv-triton 1.0.0, tested here as the "patched" rows; not pushed, not proposed anywhere). The house style puts live env vars in `constants.py` and `docs/ENVIRONMENT_VARIABLES.md`; that doc hunk is not drafted. Two alternatives an upstream maintainer may prefer:
+  1. an `early_config_prune` that drops candidates whose shared-memory need exceeds the device's LDS. That is a pure win on every target: on gfx1100 those candidates compile in full and then fail with `OutOfResources`, which is 1043 of 1603 s of the OACNNs gather compile and 561 s of the dW compile, about 27% of the cold time. But the estimate has to match Triton's allocation, which was not worked out here.
+  2. parallel candidate compilation, which belongs in Triton's Autotuner (it already has `AsyncCompileMode`) rather than in spconv-triton.
+  Dropping num_stages 6/7, the first idea, would be wrong: the winner is a num_stages 6 candidate.
+- Pointcept side: nothing that is not a hack. Assigning `configs` on spconv-triton's private `_impl.gemm` Autotuner objects from Pointcept would work (it is what `prune_run.py` does) but patches a third party's internals. The honest mitigations are documentation and the persistent Triton cache. The README's ROCm section could say that on RDNA GPUs the first sparse-conv step with an empty `TRITON_CACHE_DIR` compiles for minutes to hours, that the cache makes later runs start in seconds (OACNNs 2.8 s, SpUNet 2.0 to 2.3 s first step warm), and, once spconv-triton has such a switch, name it.
+
+Draft diff (spconv-triton 1.0.0):
+```diff
+--- a/spconv_triton/constants.py
++++ b/spconv_triton/constants.py
+@@ -55,6 +55,13 @@
+ # Faster ONLY on consumer Ampere/Ada.
+ SPCONV_ALLOW_FP16_ACCUM = os.getenv("SPCONV_ALLOW_FP16_ACCUM", "0") == "1"
+ 
++# Autotune candidate set for the conv GEMM kernels: "full" (default) sweeps
++# every candidate; "fast" tries a short list, for targets where compiling the
++# full sweep takes hours on the first call (fp32 on RDNA GPUs).
++SPCONV_TRITON_AUTOTUNE = os.getenv("SPCONV_TRITON_AUTOTUNE", "full")
++if SPCONV_TRITON_AUTOTUNE not in ("full", "fast"):
++    raise AssertionError("please set SPCONV_TRITON_AUTOTUNE to full or fast")
++
+ # Re-exported by spconv_triton.core, where the frozen suite pins it.
+ NDIM_DONT_CARE = 3
+ 
+--- a/spconv_triton/pytorch/_impl/gemm.py
++++ b/spconv_triton/pytorch/_impl/gemm.py
+@@ -191,6 +191,33 @@
+     ]
+ 
+ 
++def _fast_configs(kernel_configs, keep):
++    """``SPCONV_TRITON_AUTOTUNE=fast``: the subset of a kernel's candidates in
++    ``keep`` (meta-parameters, num_warps, num_stages). On GPUs without fp32
++    matrix instructions (RDNA) every fp32 candidate is an unrolled FMA loop that
++    spills registers, and the large tiles take a minute or more each to
++    compile, so the full sweep makes the first training step take hours."""
++    keep = [(dict(kw), w, s) for kw, w, s in keep]
++    return [c for c in kernel_configs if (c.kwargs, c.num_warps, c.num_stages) in keep]
++
++
++def _autotune_configs(full, keep):
++    return _fast_configs(full, keep) if constants.SPCONV_TRITON_AUTOTUNE == "fast" else full
++
++
++_GEMM_FAST = [
++    ({"BLOCK_M": 256, "BLOCK_N": 16, "BLOCK_R": 16, "GROUP_SIZE_M": 8}, 4, 3),
++    ({"BLOCK_M": 128, "BLOCK_N": 128, "BLOCK_R": 32, "GROUP_SIZE_M": 1}, 8, 3),
++    ({"BLOCK_M": 64, "BLOCK_N": 16, "BLOCK_R": 16, "GROUP_SIZE_M": 8}, 2, 4),
++    ({"BLOCK_M": 64, "BLOCK_N": 64, "BLOCK_R": 32, "GROUP_SIZE_M": 8}, 4, 2),
++]
++_DWEIGHT_FAST = [
++    ({"BLOCK_P": 64, "BLOCK_K": 32, "BLOCK_C": 32}, 4, 6),
++    ({"BLOCK_P": 64, "BLOCK_K": 32, "BLOCK_C": 32}, 2, 5),
++    ({"BLOCK_P": 128, "BLOCK_K": 32, "BLOCK_C": 16}, 4, 3),
++]
++
++
+ # Largest dW tile, derived (not hardcoded) so the _dweight_splits occupancy
+ # estimate can't drift when configs grow.
+ _DW_MAX_BLOCK_K = max(c.kwargs["BLOCK_K"] for c in _dweight_configs())
+@@ -204,7 +231,7 @@
+ 
+ 
+ @triton.autotune(
+-    configs=_gemm_configs(),
++    configs=_autotune_configs(_gemm_configs(), _GEMM_FAST),
+     # HAS_BIAS is deliberately NOT a key: bias is a single post-reduction broadcast
+     # add that does not shift the optimal tile/warp/stage, so keying on it would run
+     # two identical sweeps (bias vs no-bias). It stays a constexpr compile specializer.
+@@ -322,7 +349,7 @@
+ 
+ 
+ @triton.autotune(
+-    configs=_dweight_configs(),
++    configs=_autotune_configs(_dweight_configs(), _DWEIGHT_FAST),
+     key=["kv", "K_dim", "C_dim", "IEEE", "ALLOW_TF32", "FP16_ACC"],
+     **AUTOTUNE_CACHE_KW,
+ )
+```
+
+Scripts (host-local `agent_space/`, not committed): `analyze_autotune.py`, `gaps.py` (mtime-gap attribution grouped by warps/stages/shared), `asmstat.py` (VGPRs, scratch, asm lines per cached kernel), `compile_bench.py`, `prune_run.py`, `cmp_winners.py`, `run.sh`.
