@@ -783,3 +783,37 @@ utils/timeit.sh FlexGEMM test -- bash -c "cd projects/FlexGEMM/src/tests && FLEX
 CUDA compile check: not rerun. The commit changes only Python (`utils.py`), which nvcc never compiles; the round-1 nvcc check covers every CUDA source at this head.
 
 Environment rebuilt in this fresh job as in round 2 (TheRock `torch==2.16.0a0+rocm10.2.0a20261022`, `triton==3.9.0+gitfc8d31a5.rocm10.2.0a20261022`, `rocm[libraries,devel]`, `rocm-sdk-device-gfx942` and `amd-torch-device-gfx942` pinned to the same nightly, base-env ROCm 10.1 and Triton links removed from `venv-base-links`); `python -m rocm_sdk test` OK. The fleet guard accepts pip only as `$FLEET_VENV/bin/python -m pip` spelled literally.
+
+## Review 2026-11-20 round 3 (linux-gfx942 fleet job, AMD Instinct MI300X; reviewed head 8592d5fcb68855864c8a82274d3033ae651f8027)
+
+Reviewed `git diff 6dd94a8...8592d5f` (6 commits) with the pr-review skill, focusing on 8592d5f, the porter's round-3 claims and the new "Correction for the final history" subsection. **Verdict: review passed, no findings.** Round-2 finding 1 is resolved: `flat_grid` (`flex_gemm/kernels/triton/utils.py:21-34`) tests the import-time `_IS_HIP` (`:18`) and uses integer arithmetic.
+
+### Re-checked (evidence for the porter, Jeff and the validator)
+
+- **Import-time platform check:** `_IS_HIP` is computed once, after `get_platform_name` is defined (`utils.py:10-18`). `flat_grid` is referenced only inside the grid lambdas (`indice_weighed_sum_fwd.py:81`, `indice_weighed_sum_bwd.py:80`), so nothing calls it during import. Upstream already queries the device at import: `spconv/config.py:10` calls `get_autotune_config(platform=..., device=...)` at module level, which calls `torch.cuda.get_device_name()` and possibly `get_platform_name()`, and `flex_gemm/kernels/triton/__init__.py` imports `spconv`. So the flag adds no new kind of import-time device query, on CUDA or on HIP. "As the autotune config selection already does" in the 8592d5f body and in the correction text is accurate.
+- **Arithmetic:** a pure-Python check (300,000 random n in [1, 2^31-1] plus the edge values around 4,194,303) confirmed that the new `flat_grid` returns the same grid as e7d36f1's `triton.cdiv` form for every n, that axis 0 stays at or below 4,194,303 programs (so below 2^32 work-items with any work-group up to 1024), and that the overrun stays below the row count. `flat_grid(2^31-1) = (4186128, 513)`.
+- **Per-call time** (`agent_space/review3/launch_overhead.py`, the porter's driver copied unchanged; `git archive` trees per commit; M=1000 C=8 V=8 float32, autotuned, 2000 calls, best of 5; 8 interleaved runs for 6dd94a8 and 8592d5f, 3 for e7d36f1):
+  ```
+                 fwd us/call     bwd us/call     flat_grid(1000)
+  6dd94a8        27.65-29.46     30.65-32.35     -
+  bcf7c6f        28.18-29.62     30.98-33.06     -
+  e7d36f1        32.73-33.29     35.73-36.83     4.19-4.62 us
+  8592d5f        28.78-29.96     31.11-33.20     0.18-0.19 us
+  ```
+  The e7d36f1 regression is gone. The ranges for 8592d5f overlap upstream's, so "unchanged within noise" in the correction holds. The medians sit about 0.5 us higher on HIP, of which the measured grid-callable delta is 0.28 us.
+- **Host cost of the grid callable alone** (`agent_space/review3/gridcost.py`, upstream lambda vs flat_grid lambda, 200k calls, best of 5): with `_IS_HIP` False (the CUDA path) the flat_grid form costs 0.057-0.088 us more per launch (one extra Python call and the flag test). With `_IS_HIP` True it costs 0.27-0.29 us more. This matches the commit body's "one module-level truth test more" in magnitude. Before 8592d5f the CUDA path also paid `torch.cuda.is_available()` (0.8 us).
+- **Strict per-config driver on the head tree** (`agent_space/review3/allcfg.py`, the porter's driver): `fwd M=4194305 C=64 V=8 cfg2`, grid (2097153, 2) with overrun 1: OK, nan 0. `bwd M=1048576 C=1024 V=8`: 12/12 configs OK.
+- **Correction text:** the quoted phrases match the e7d36f1 and 8592d5f bodies verbatim ("This commit removes that prune and changes the launch shape instead.", "The previous commit's message says ..."). In both the squashed and the separate case, the replacement paragraphs are accurate against the code and the measurements above. When the squashed body is assembled, the "fourth paragraph" means e7d36f1's original fourth paragraph, the one beginning "On CUDA the grid, ...". The replacement starts with that same sentence. It does not mean the AI-disclosure line, which becomes the fourth paragraph once the second is dropped.
+- **Commit hygiene:** 8592d5f's title is 58 characters with `[ROCm]`, correctly, because it changes only the HIP branch's helper. No `Co-Authored-By` or noreply line in any of the 6 commits, every body carries the AI-agent disclosure and a Test Plan, and the author is the user's own address. `python3 utils/jargon.py --port FlexGEMM` is clean, `utils/prose.py` on the 8592d5f body is clean, and the diff adds no non-ASCII. `git -C projects/FlexGEMM/src status --porcelain` is clean, and `origin/moat-port` is at 8592d5f. The installed `flex_gemm` in the job venv matches the 8592d5f export (`diff -rq`, excluding build output).
+- **CUDA compile check:** skipping the nvcc rerun is correct, because 8592d5f changes only Python.
+
+Commands, from the moat checkout, after `source agent_space/env.sh` (HIP_VISIBLE_DEVICES=2, TheRock ROCm 10.2 nightly, torch 2.16.0a0, Triton 3.9.0):
+
+```
+for s in 6dd94a8 bcf7c6f e7d36f1 8592d5f; do mkdir -p agent_space/review3/t-$s && git -C projects/FlexGEMM/src archive $s flex_gemm | tar -x -C agent_space/review3/t-$s; done
+cd agent_space/review3
+for run in 1 2 3 4 5; do for s in 6dd94a8 8592d5f bcf7c6f; do $FLEET_VENV/bin/python launch_overhead.py $PWD/t-$s; done; done
+$FLEET_VENV/bin/python gridcost.py $PWD/t-8592d5f
+$FLEET_VENV/bin/python allcfg.py $PWD/t-8592d5f fwd 4194305 64 8 2
+$FLEET_VENV/bin/python allcfg.py $PWD/t-8592d5f bwd 1048576 1024 8 all
+```
