@@ -72,8 +72,8 @@ what passes and what does not).
   and a rough cost, and a person decides.
 - NATTEN and mirage are recorded `cant-port` on CUTLASS/CuTe grounds from before FlyDSL was
   available. Revisiting them is a person's call, not an agent's. (This line used to name
-  FlashKDA and spconv too; their recorded dispositions are `ported-elsewhere` and
-  `already-supported`. Read `data/dispositions.json`, not a list in prose.)
+  FlashKDA and spconv too, which was never their disposition. Read
+  `data/dispositions.json`, not a list in prose.)
 - MOAT ported OpenCV's CUDA modules (opencv/opencv_contrib#4147). A project blocked on
   "OpenCV CUDA has no ROCm build" records `depends_on: [opencv_contrib]` rather than a
   decline.
