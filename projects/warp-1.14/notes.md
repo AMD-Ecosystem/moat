@@ -7951,3 +7951,227 @@ None.
 
 - With gfx942 (8 XCDs) failing and gfx90a (one die, one L2) clean under the same subset, load and suite, the defect follows the multi-XCD devices: consistent with session 21's reading of one XCD's L2 lines for the buffer being lost or written back late. It does not rule out a gfx94x/gfx950 code-generation or runtime difference (gfx90a takes other code paths in both); a gfx942 run in CPX mode (one XCD per device) would separate the two on the same chip, if that host can be repartitioned (a host-wide change, not mine to make).
 - gfx1100 (one XCD, wave32) was not run here.
+
+## Evidence session 2 (2026-11-20, linux-gfx942): narrowing the copy flake
+
+Requested by Jeff Daily, same evidence-only job as the section above (lock with linux-gfx950, no state change, nothing pushed to the fork; `HIP_VISIBLE_DEVICES=4` kept, `ulimit -c 0` on every GPU run; background processes started and stopped by recorded PID, never by pattern). Same clone `agent_space/w` at `7059a340`, same venv (ROCm 10.2, HIP runtime 7.17), same driver (amdgpu 6.16.13). Host module parameters, for the record: `mtype_local=0` (MTYPE_RW for local VRAM), `cwsr_enable=1`, `noretry=1`, `sched_policy=0` (HWS), `mes=0`.
+
+**Result: a Warp-free reproducer exists.** `copy_flake2.hip` (below), about 120 lines of plain HIP following Warp's per-iteration call sequence, fails 8 times in 40,000 iterations under 8 `copy_flake load` processes, with the same signature: exactly one mod-8 class of 256-thread blocks (all 488 or 489 of them, 124,928 or 125,184 floats) left as zeros for good. It needs both (a) the destination allocated with `hipMalloc` at the address of a buffer that was `hipFree`d just before (0/40,000 when the destination is allocated before the free, so the address is not reused), and (b) other processes working on the same GPU (0/40,000 alone, 0/40,000 with one load process). Registered as deferred item `hip-mi300-xcd-lost-writes-after-free-realloc` (rocm-bug-report, not drafted, not filed).
+
+### Step 1: the call sequence
+
+`AMD_LOG_LEVEL=3 AMD_LOG_MASK=1` on 4 iterations of `loop.py` (the test's `s2c_d2d` body: source pool off, destination pool off, Warp's default stream, no graph), log `agent_space/e2/logs/trace3.log`. The per-iteration sequence (S = Warp's device stream from `hipStreamCreateWithPriority(&s, 0, 0)`, e = `hipEventCreateWithFlags(.., hipEventDisableTiming)`):
+
+```
+hipMalloc(4000000)                     -> A = 0x...1fa00000         (wp.array(data=src): contiguous copy of the source)
+hipMemcpyAsync(A <- pageable, 4000000, H2D, S)
+hipMalloc(8000000)                     -> Y = 0x...1de00000         (wp.zeros with stride 8 B: the strided source)
+hipLaunchKernel(fill kernel,  {3907}, {256}, S)                     (zero every 2nd float of Y)
+hipLaunchKernel(array_copy_1d_kernel, {3907}, {256}, S)             (A -> Y, dst stride 8)
+hipFree(A)                                                          <- no synchronize before it; hipFree synchronizes implicitly
+hipMalloc(4000000)                     -> D = 0x...1fa00000 = A     (the destination, pool off)
+hipMemcpyAsync(D <- pageable zeros, 4000000, H2D, S)
+hipDeviceSynchronize()
+hipLaunchKernel(array_copy_1d_kernel, {3907}, {256}, S)             (Y -> D, src stride 8: the copy under test)
+hipStreamSynchronize(S)
+hipEventRecord(e, S); hipStreamWaitEvent(null stream, e)
+hipMemcpyAsync(pageable <- D, 4000000, D2H, null stream)            (dst.numpy(); returns after the copy)
+hipFree(D); hipFree(Y)
+```
+
+So the destination always gets the address the source's temporary `A` had a moment earlier: `A` was written by an H2D copy, read by every XCD in the `A -> Y` kernel, then freed (with that kernel possibly still in flight; `hipFree` waits). The subset's `copy_template` makes the same calls in the same order (`as_strided_array` builds `A` and `Y`, frees `A`, then `dst_ctor` allocates the destination). Session 21's `copy_flake.hip` allocated its destination before freeing its `a`, so its destination never reused an address, which is why it never failed. A trace of a *failing* subset run was not taken: the loop and the reproducer fail with the same signature, so no further trace was needed.
+
+### Step 2: narrowing inside Warp (`loop.py`, under 8 `copy_flake load` processes, 4 streams each)
+
+`loop.py` is session 21's `s2c_loop.py` with switches that remove one ingredient each, plus a fuller diagnostic. Every iteration hipMallocs and frees as above. Session 21's `s2c_loop.py` itself: 5 of 20,000 wrong with the source pool off, 0 of 20,000 with it on.
+
+| variant (`ablate.sh 40000 <label> <option>`) | wrong iterations |
+|---|---|
+| baseline (4 runs: 30,000, 30,000, 30,000, 40,000) | 6, 4, 1, 5 = **16 / 130,000** (about 1 in 8,000) |
+| `keep`: no free/realloc of `dst` and the strided source between iterations | **0 / 40,000** |
+| `pool_dst`: destination from the mempool (`hipMallocAsync`) | **0 / 40,000** |
+| `pool_src`: source temporaries from the mempool, destination still `hipMalloc` | **0 / 40,000** (and 0 / 20,000 with `s2c_loop.py`) |
+| `kernel_zero`: destination zero-filled by `wp.zeros` (Warp's memset kernel) instead of the pageable H2D copy | 10 / 40,000 |
+| `sync_before_copy`: an extra `wp.synchronize_device()` right before the copy | 1 / 40,000 |
+| `rtc`: the copy by a hipRTC-compiled Warp kernel instead of the library's `array_copy_1d_kernel` | 5 / 40,000 |
+
+At the baseline rate a variant would show about 5 failures in 40,000, so 0 means a chance of about 0.4 % that the ingredient is not needed (0.02 % for `pool_src` over 60,000). Needed: the free and re-`hipMalloc` of the destination, at the address the source temporaries just used. Not needed: how the destination is zeroed, an extra synchronize, which kernel (library or hipRTC) does the copy.
+
+**What the XCDs see.** On a failure `loop.py` re-reads, synchronizes, and runs device-side checks in which block b reads block b + s (s = 0..7). Since blocks are dealt round robin to the 8 XCDs, each shift puts the reader of class c on a different XCD. Logs `agent_space/e2/logs/abl_base*.log`, `abl_kernel_zero.log`:
+- After `hipDeviceSynchronize()` the XCDs disagree about the same memory. In the first failures (`loop_base.log`, iterations 5141, 12450, 19016, 20024, 23530) a reader with shift 0 (the XCD that wrote the class) counted 0 wrong, while every other shift counted that class fully wrong. With shift 1, the writing XCD reading the *next* class also saw part of it wrong (58,944 to 100,352 floats). `copy_flake2` shows the same (for example iteration 6729 of `cf2_load8.log`: shift 2 sees class 4 correct, shifts 0, 1 and 3-7 see it wrong).
+- The wrong count can grow after the copy has finished: `abl_base3.log` iteration 6403 read 12,352 wrong, then 56,128 on the second read, then 124,928 (the whole class) after a device synchronize and 1 s. So the correct data first reached memory and was later overwritten with zeros, in exactly that XCD's blocks. Conversely, the second partial class seen in many first reads clears on a re-read.
+- By value (a gather kernel), the bad class reads as zeros, never as the previous iteration's values or anything else.
+
+Reading (hypothesis): one XCD's cached copy of the reused range is out of step with memory after the free/re-allocation, either stale lines in that XCD's L2 for the old buffer written back late, or a stale per-XCD translation. Either is below the HIP API. The two session-1 failures that lost only the class blocks after block 2048 (= 2 MiB into a 2 MiB-aligned buffer) fit a per-2 MiB-page effect. In every `copy_flake2` failure the destination is 2 MiB-aligned (4,000,000 B spans two 2 MiB pages) and the whole class was lost across both pages, so 2 MiB alignment is common but no boundary condition was isolated.
+
+### Step 3: the Warp-free reproducer
+
+`copy_flake2.hip` follows the trace exactly: Warp's `array_copy_1d_kernel` body (memcpy of `elem_size` bytes through `size_t` strides), 3907 x 256 launches with `<<<>>>` (= `hipLaunchKernel`, as Warp's library launches its kernels; the hipRTC module path is not needed, see `rtc` above), a fill kernel for the strided source, the same stream and event flags, the same order of frees and allocations, the pageable H2D and D2H copies, `hipDeviceSynchronize` before the copy and the event wait before the read-back.
+
+```
+// copy_flake2.hip
+// copy_flake2: Warp's per-iteration HIP call sequence for test_async's s2c_d2d copy (from an AMD_LOG_LEVEL=3 trace of
+// warp 1.14 at 7059a340), with Warp's array_copy_1d_kernel body, 3907 x 256 launches and its stream setup:
+//   A = hipMalloc(n*4); hipMemcpyAsync(A <- pageable src, H2D, S)
+//   Y = hipMalloc(2n*4); fill kernel (zero every 2nd float of Y) on S; copy kernel A -> Y (stride 8 B) on S
+//   hipFree(A)                                   <- no explicit sync: relies on hipFree's implicit synchronization
+//   D = hipMalloc(n*4)  (normally returns A's address); hipMemcpyAsync(D <- pageable zeros, H2D, S)
+//   hipDeviceSynchronize(); copy kernel Y -> D on S; hipStreamSynchronize(S)
+//   hipEventRecord(e, S); hipStreamWaitEvent(null, e); hipMemcpyAsync(pageable out <- D, D2H, null); check out
+//   hipFree(D); hipFree(Y)
+// S = hipStreamCreateWithPriority(0, 0), e = hipEventCreateWithFlags(hipEventDisableTiming).
+// Usage: copy_flake2 <iterations> [noreuse] [syncfree] [memsetfill]
+//   noreuse: allocate D before freeing A, so D never gets A's address; syncfree: hipDeviceSynchronize() before hipFree(A);
+//   memsetfill: zero D with hipMemsetAsync on S instead of the pageable H2D copy
+// On a mismatch: wrong count per (block % 8) for the first read, a second read, a read after hipDeviceSynchronize,
+// and a device-side count by a kernel whose block b reads block b + s (s = 0..7).
+#include <hip/hip_runtime.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <unistd.h>
+#define CK(x) do { hipError_t e_ = (x); if (e_ != hipSuccess) { printf("%s:%d %s -> %s\n", __FILE__, __LINE__, #x, hipGetErrorString(e_)); exit(2); } } while (0)
+
+static __global__ void array_copy_1d_kernel(void* dst, const void* src, size_t dst_stride, size_t src_stride,
+                                            const int* dst_indices, const int* src_indices, size_t n, size_t elem_size)
+{
+    size_t i = size_t(blockIdx.x) * size_t(blockDim.x) + size_t(threadIdx.x);
+    if (i < n) {
+        size_t src_idx = src_indices ? src_indices[i] : i;
+        size_t dst_idx = dst_indices ? dst_indices[i] : i;
+        const char* p = (const char*)src + src_idx * src_stride;
+        char* q = (char*)dst + dst_idx * dst_stride;
+        memcpy(q, p, elem_size);
+    }
+}
+
+static __global__ void fill_strided(float* dst, size_t stride_elems, size_t n)
+{
+    size_t i = size_t(blockIdx.x) * size_t(blockDim.x) + size_t(threadIdx.x);
+    if (i < n)
+        dst[i * stride_elems] = 0.0f;
+}
+
+static __global__ void count_wrong(const float* d, float off, int shift, int n, int* wrong)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) {
+        int j = (i + shift * 256) % n;
+        if (d[j] != off + float(j))
+            atomicAdd(&wrong[(j / 256) % 8], 1);
+    }
+}
+
+static void classes(const float* x, const float* ref, int n, int* cnt, int* tot)
+{
+    memset(cnt, 0, 8 * sizeof(int)); *tot = 0;
+    for (int i = 0; i < n; ++i) if (x[i] != ref[i]) { cnt[(i / 256) % 8]++; (*tot)++; }
+}
+
+int main(int argc, char** argv)
+{
+    const int n = 1000000; const int blocks = (n + 255) / 256;
+    int iters = argc > 1 ? atoi(argv[1]) : 1000;
+    bool noreuse = false, syncfree = false, memsetfill = false;
+    for (int a = 2; a < argc; ++a) {
+        if (!strcmp(argv[a], "noreuse")) noreuse = true;
+        else if (!strcmp(argv[a], "syncfree")) syncfree = true;      // hipDeviceSynchronize() before hipFree(A)
+        else if (!strcmp(argv[a], "memsetfill")) memsetfill = true;  // zero D with hipMemsetAsync instead of a pageable H2D copy
+    }
+    hipStream_t S; CK(hipStreamCreateWithPriority(&S, 0, 0));
+    hipEvent_t ev; CK(hipEventCreateWithFlags(&ev, hipEventDisableTiming));
+    int* wrong; CK(hipMalloc(&wrong, 8 * sizeof(int)));
+    int bad = 0, reused = 0;
+    for (int it = 0; it < iters; ++it) {
+        float off = float(it * 7 % 1000);
+        float* src = (float*)malloc(n * 4); for (int i = 0; i < n; ++i) src[i] = off + float(i);
+        float* zeros = (float*)calloc(n, 4);
+        float *A, *Y, *D;
+        CK(hipMalloc(&A, n * 4));
+        CK(hipMemcpyAsync(A, src, n * 4, hipMemcpyHostToDevice, S));
+        CK(hipMalloc(&Y, 2 * (size_t)n * 4));
+        fill_strided<<<blocks, 256, 0, S>>>(Y, 2, n);
+        array_copy_1d_kernel<<<blocks, 256, 0, S>>>(Y, A, 8, 4, nullptr, nullptr, n, 4);
+        if (syncfree) CK(hipDeviceSynchronize());
+        if (noreuse) { CK(hipMalloc(&D, n * 4)); CK(hipFree(A)); }
+        else { CK(hipFree(A)); CK(hipMalloc(&D, n * 4)); }
+        if (D == A) ++reused;
+        if (memsetfill) CK(hipMemsetAsync(D, 0, n * 4, S));
+        else CK(hipMemcpyAsync(D, zeros, n * 4, hipMemcpyHostToDevice, S));
+        CK(hipDeviceSynchronize());
+        array_copy_1d_kernel<<<blocks, 256, 0, S>>>(D, Y, 4, 8, nullptr, nullptr, n, 4);
+        CK(hipStreamSynchronize(S));
+        float* out = (float*)malloc(n * 4);
+        CK(hipEventRecord(ev, S)); CK(hipStreamWaitEvent(nullptr, ev, 0));
+        CK(hipMemcpyAsync(out, D, n * 4, hipMemcpyDeviceToHost, nullptr));
+        int c1[8], t1; classes(out, src, n, c1, &t1);
+        if (t1) {
+            ++bad;
+            int c2[8], t2, c3[8], t3, c4[8], t4;
+            CK(hipMemcpy(out, D, n * 4, hipMemcpyDeviceToHost)); classes(out, src, n, c2, &t2);
+            CK(hipDeviceSynchronize());
+            CK(hipMemcpy(out, D, n * 4, hipMemcpyDeviceToHost)); classes(out, src, n, c3, &t3);
+            int dv[8][8];
+            for (int s = 0; s < 8; ++s) {
+                CK(hipMemset(wrong, 0, 8 * sizeof(int)));
+                count_wrong<<<blocks, 256>>>(D, off, s, n, wrong);
+                CK(hipMemcpy(dv[s], wrong, 8 * sizeof(int), hipMemcpyDeviceToHost));
+            }
+            usleep(1000000);
+            CK(hipMemcpy(out, D, n * 4, hipMemcpyDeviceToHost)); classes(out, src, n, c4, &t4);
+            printf("iter %d D=%p A-reuse=%d: read1 %d [%d %d %d %d %d %d %d %d] | read2 %d [%d %d %d %d %d %d %d %d] | after sync %d [%d %d %d %d %d %d %d %d] | after 1 s %d [%d %d %d %d %d %d %d %d]\n",
+                   it, (void*)D, D == A, t1, c1[0], c1[1], c1[2], c1[3], c1[4], c1[5], c1[6], c1[7], t2, c2[0], c2[1], c2[2], c2[3], c2[4], c2[5], c2[6], c2[7],
+                   t3, c3[0], c3[1], c3[2], c3[3], c3[4], c3[5], c3[6], c3[7], t4, c4[0], c4[1], c4[2], c4[3], c4[4], c4[5], c4[6], c4[7]);
+            for (int s = 0; s < 8; ++s)
+                printf("    device check, block b reads block b+%d: wrong per class %d %d %d %d %d %d %d %d\n", s, dv[s][0], dv[s][1], dv[s][2], dv[s][3], dv[s][4], dv[s][5], dv[s][6], dv[s][7]);
+            fflush(stdout);
+        }
+        free(out); free(src); free(zeros);
+        CK(hipFree(D)); CK(hipFree(Y));
+        if ((it + 1) % 5000 == 0) { printf("progress %d iterations, %d wrong\n", it + 1, bad); fflush(stdout); }
+    }
+    printf("%d of %d iterations wrong%s%s%s (D got A's address in %d)\n", bad, iters, noreuse ? " (noreuse)" : "", syncfree ? " (syncfree)" : "", memsetfill ? " (memsetfill)" : "", reused);
+    return bad ? 1 : 0;
+}
+```
+Build and run: `hipcc --offload-arch=gfx942 -O2 -o copy_flake2 copy_flake2.hip`; load: 8 x `copy_flake load 7200 4` (session 21's `copy_flake.hip`, in `notes-session21-scripts.md`) on the same GPU; `copy_flake2 40000`.
+
+### Steps 3 and 4: the reproducer by condition and load kind (HIP_VISIBLE_DEVICES=4; load processes on the same GPU)
+
+Logs `agent_space/e2/logs/cf2_*.log`, `cf2c_*.log`; drivers `cf2_batch.sh`, `cf2_batch3.sh`; load kinds from `loadkind.hip` (`alloc`: `hipMalloc`/`hipMemset`/`hipFree` of 16-64 MiB in a loop; `kernel`: a compute kernel on 4 streams over resident buffers; `copy`: D2D plus D2H `hipMemcpyAsync` on 4 streams, no kernels).
+
+| `copy_flake2` variant | load on GPU 4 | wrong iterations |
+|---|---|---|
+| default | 8 x `copy_flake load` (kernels + copies, 4 streams) | **8 / 40,000**; again 10 / 40,000 (eviction-sampling build) |
+| `noreuse` (destination allocated before the free) | 8 x `copy_flake load` | **0 / 40,000** |
+| default | none | **0 / 40,000** |
+| default | 1 x `copy_flake load` | **0 / 40,000** |
+| default | 8 x `loadkind kernel` | 3 / 40,000 |
+| default | 8 x `loadkind copy` | 7 / 40,000 |
+| default | 8 x `loadkind alloc` | **32 in about 5,800** (1 in ~180; killed at the 1,500 s timeout, so the summary line was lost; last failing iteration 5792) |
+| `syncfree` (`hipDeviceSynchronize()` before `hipFree(A)`) | 8 x `copy_flake load` | 8 / 40,000 |
+| `memsetfill` (`hipMemsetAsync` zero fill instead of the pageable H2D) | 8 x `copy_flake load` | 15 / 40,000 |
+
+Every one of the 83 `copy_flake2` failures lost exactly one whole class (125,184 or 124,928 floats), always at a 2 MiB-aligned destination. Within one run the lost class repeats (8 `alloc`: class 1 23 times, class 0 9 times; 8 `copy_flake load`: class 4 five times, 1 twice, 7 once), consistent with particular XCDs.
+
+The load matters by amount and kind: one process of any kind I tried does not trigger it; 8 processes doing only kernels or only copies do; 8 processes that only allocate and free memory raise the rate about 25-fold. Caution for whoever repeats this on a shared host: under 8 `alloc` processes the kernel spent its time clearing VRAM (`amdgpu_fill_buffer` in the load processes' wait channel), `amd-smi` timed out ("amdsmi_init() timed out after 60s. The GPU driver may be unresponsive") and an exiting `copy_flake2e` sat in `D` state in `dma_fence_wait_any_timeout` for minutes. It recovered by itself once those processes were stopped (amd-smi and a 500-iteration `copy_flake2` run normal afterwards). The remaining `alloc` variants were not run for that reason.
+
+### Evictions and the 2 MiB question
+
+- `copy_flake2e` (the reproducer plus per-iteration sampling of this process's `/sys/class/kfd/kfd/proc/<pid>/stats_*/evicted_ms`, summed over GPUs, before the first allocation and after the read-back of each iteration) under 8 `copy_flake load`: **10 failures, none in an iteration where `evicted_ms` moved** (39 -> 39 each time; the 39 ms are from start-up). In the whole run of 40,000 iterations only 1 iteration (a passing one) saw an eviction (22 ms in total). So the failures do not coincide with a queue eviction of the failing process at the 1 ms resolution of that counter. Preemption of its queues by the hardware scheduler without an eviction is not visible in this counter and was not measured. The subset-level `amd-smi process` sampling was superseded by this per-iteration counter.
+- 2 MiB: in every `copy_flake2` and `loop.py` failure the destination was 2 MiB-aligned and 4,000,000 bytes (two 2 MiB pages, the second partly used); every failure there lost the class across both pages. Session 1's two partial failures (class blocks from block 2048 on) are the only page-shaped cases. Alignment is therefore always present, but a boundary dependence was not shown.
+
+### Could the port cause this?
+
+No, from this evidence it is below the HIP API (runtime, KFD/driver, firmware or hardware), not in the port:
+- `copy_flake2` contains no Warp code: plain HIP calls, the same signature, the same dependence on address reuse and on a second process.
+- The call sequence is legal. `hipFree` synchronizes implicitly, and an explicit `hipDeviceSynchronize()` before it (`syncfree`) changes nothing (8 / 40,000). The copy is followed by `hipStreamSynchronize` and, for the read-back, an event wait; a `hipDeviceSynchronize()` before the copy (`sync_before_copy` in Warp) does not help.
+- After `hipDeviceSynchronize()` different XCDs read different values from the same device address, and the visible content changes later without any further API call. No ordering of HIP calls can produce that.
+- The session 20 free-path change is not involved: at `7059a340` `wp_free_device_default` is a plain `hipFree` outside graph captures, the reproducer uses neither Warp nor that path, and the session 19 failure predates the change.
+
+What the port can do (no decision taken, Jeff's call): Warp's default (mempool enabled on this device) allocates through `hipMallocAsync`, which did not fail (`pool_dst` 0 / 40,000), so the exposure is code that turns the mempool off, as `test_async`'s `DstPoolOff` cases do. A workaround inside Warp, for example never returning a freshly freed address to `hipMalloc`, would mask a runtime defect rather than fix it.
+
+### For Jeff (no decision taken here)
+
+- Deferred item `hip-mi300-xcd-lost-writes-after-free-realloc` (rocm-bug-report) is registered with the reproducer as its reference; nothing drafted or filed.
+- Open: whether gfx950 fails `copy_flake2` the same way (expected, not run); whether a single-XCD part (gfx90a, clean in 250 subset runs) is clean under `copy_flake2` and the 8-process load; whether the effect is L2 write-back or translation (a test would be to make the freed range's last reader one XCD only).

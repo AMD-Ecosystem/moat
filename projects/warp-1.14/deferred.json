@@ -266,6 +266,19 @@
           "reason": "session 16 identified and reproduced the in-launch variant: it is the memset node's unlocked lookup, not the memcpy node (which holds WorkerThreadLock_), and it also hits single-stream graphs and AutoFreeOnLaunch relaunches"
         }
       ]
+    },
+    {
+      "id": "hip-mi300-xcd-lost-writes-after-free-realloc",
+      "kind": "rocm-bug-report",
+      "component": "HIP runtime (clr) or amdgpu/KFD, not yet located",
+      "summary": "MI300X (gfx942, SPX, 8 XCDs), ROCm 10.2, HIP 7.17, amdgpu 6.16.13: a kernel's writes from one XCD (exactly the blocks with blockIdx % 8 == k) are lost when the destination was hipMalloc'd at the address of a buffer hipFree'd just before and other processes run on the same GPU; after hipDeviceSynchronize different XCDs read different values at the same address. Warp-free reproducer copy_flake2.hip (about 120 lines): 8/40000 iterations under 8 load processes, 0/40000 alone, 0/40000 without the address reuse. Seen through Warp's test_async on gfx950 and gfx942.",
+      "refs": [
+        "projects/warp-1.14/notes.md: Evidence session 2 (2026-11-20, linux-gfx942): narrowing the copy flake"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-20T09:45:06Z",
+      "decided": null
     }
   ]
 }
