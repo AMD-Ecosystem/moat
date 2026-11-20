@@ -8242,3 +8242,264 @@ cf2_run.sh alone 0 40000
 `amd-smi process`: before the runs no process on GPU 0, 1 or 3 (10 MB VRAM, 0 % activity); GPU 2 had another job's process (329 MB, 99 % activity), not touched and not part of this measurement. In each load run, at start 8 processes at 1.1 GB each (the load), and 60 s in those 8 plus one at 397-401 MB (`copy_flake2`); in the run with no load, only `copy_flake2` (458 MB). amd-smi shows host-namespace PIDs. They differ from the container's PIDs by a constant offset (the 8 consecutive load PIDs map 1:1), so the counts and sizes identify the processes. Nothing was left on GPU 0 afterwards.
 
 At gfx942's rate (about 9 in 40,000 under this load) 0 in 80,000 would have probability about e^-18 = 1.5e-8. Under load the run took 1.5-1.6x as long as without load (gfx942's load factor is not recorded in its section), so the load was real. With the 250 clean subset runs above, both the Warp test and the Warp-free reproducer are clean on this single-die device and fail on the 8-XCD gfx942: consistent with a per-XCD effect, and evidence for the deferred item `hip-mi300-xcd-lost-writes-after-free-realloc` that gfx90a is not affected (still not a proof that the cause is the XCD split rather than a gfx94x-specific runtime or firmware path; a gfx942 run in CPX mode would separate the two).
+
+## Evidence session 3 (2026-11-20, linux-gfx942): copy_flake2 on other ROCm versions and the issue draft
+
+Requested by Jeff Daily, same evidence-only job (no lock, no state change, no fork push, nothing posted; `HIP_VISIBLE_DEVICES=4` kept, `ulimit -c 0`, every background process started and stopped by recorded PID). Host: MI300X HF (gfx942, SPX, NPS1), kernel 6.8.0-110-generic, amdgpu 6.16.13 for every run below.
+
+**Result: not fixed on the newest nightly.** ROCm 10.1.0 (the image's own), 10.2.0 and nightly 10.3.0a20261120 all reproduce it at similar rates. A one-file reproducer (`lost_writes.hip`, inline in the draft) starts its own load, prints one line per failure and exits 1; its controls are clean. No existing upstream issue matches; a new-issue draft for `ROCm/rocm-systems` is below, with placeholder rows for the gfx950 and gfx90a runs.
+
+### Versions
+
+| ROCm | `hipconfig --version` | `copy_flake2` x2 (8 `copy_flake load`) | `lost_writes` v1 (kernels fill the source) | `lost_writes` final (host fills the source) |
+|---|---|---|---|---|
+| 10.1.0 (image, `/opt/python-3.11-venv`) | 7.16.26385-0000000 | 11, 7 / 40,000 | 5 / 40,000 | 9, 5 / 40,000 |
+| 10.2.0 (job venv) | 7.17.26434-0000000 | 8, 10 / 40,000 (session 2) | 2 and 0 / 40,000 | 10, 11 / 40,000 |
+| 10.3.0a20261120 (nightly) | 7.18.26463-0000000 | 8, 3 / 40,000 | 5 / 40,000 | 7, 19 / 40,000 |
+
+Controls with the final program on 10.2.0: `noreuse` 0 / 40,000; no load processes 0 / 40,000. The first no-load run overlapped a debug run of mine that started its own 8 load processes (my mistake), so it was repeated alone: 0 / 40,000 both times. With v1 on 10.2.0, `noreuse` and no load were also 0 / 40,000 each. Every failure of the final program on all three versions lost exactly one whole class (1, 4 or 7). Most failures also show a second zero region that is not aligned to workgroups: one contiguous 1 KiB run per 8 KiB, starting 240 bytes into a block (from a dump of one failure, `lw_dbg.hip`). Session 2's "two classes lost" reading of v1's first output was this region counted by class, and is withdrawn.
+
+Nightly install: the fleet guard refuses `pip` for any environment except `$FLEET_VENV` (a second venv under the job directory was refused: "pip changing the Python environment every job on this host shares"), so the nightly went into `$FLEET_VENV` temporarily (`pip install --pre "rocm[devel]==10.3.0a20261120" --extra-index-url https://nightly.repo.amd.com/rocm/whl-next/`), and 10.2.0 was restored afterwards (`pip install "rocm[devel]==10.2.0" "rocm-sdk-core==10.2.0" "rocm-sdk-devel==10.2.0" --extra-index-url https://stable.repo.amd.com/rocm/whl-next/`; `python -m rocm_sdk version` = 10.2.0 at the end). The empty second venv was deleted.
+
+### Experiments (nightly 10.3.0a20261120; `exp.hip` = `copy_flake2`'s sequence with a size and a "last reader" knob, 8 `copy_flake load` processes)
+
+| variant | wrong iterations | note |
+|---|---|---|
+| 1 MiB buffers | 0 / 40,000 | destination got the freed address every time |
+| exactly 2 MiB | 11 / 40,000 | destination never got the freed address |
+| 4,000,000 B (baseline) | 2 / 40,000 | |
+| 4 MiB | 11 / 40,000 | |
+| 16 MiB | 1 / 10,000 | |
+| freed buffer read by one workgroup only | 0 / 40,000 | that kernel runs much longer, so timing changes too |
+| only its first 1/8 read by a kernel | 0 / 40,000 | |
+| never read by a kernel (written by H2D only, strided source filled from the host) | **93 / 40,000** | became the final `lost_writes` sequence |
+
+Reading: the condition is a fresh allocation of 2 MiB or more right after one was freed, not the virtual address as such (at 1 MiB the address is reused without failures, probably suballocated without unmapping; at 2 MiB a different address still fails). Stale cached copies from the freed buffer's last kernel reader are not the cause: the rate is highest when no kernel touches it. The one-workgroup and part-read zeros are suggestive at best given the baseline's spread (2 to 11).
+
+Environment variables (one run each of `lost_writes` v1, 40,000 iterations, variable inherited by the 8 load processes): `HSA_XNACK=1` 0; `HSA_ENABLE_SDMA=0` 10 (no change); `GPU_MAX_HW_QUEUES=1` 0. Not repeated; at the v1 baseline (0 to 5) the two zeros are weak evidence.
+
+### Existing reports (read-only search, `ROCm/rocm-systems`, `ROCm/ROCm` (now `ROCm/legacy-rocm-build`, archived) and `ROCm/TheRock`)
+
+Queries on stale data, lost writes, XCD, multi-process, hipFree/hipMalloc reuse, MI300 corruption; the search API rate limit was hit once and the queries were repeated. No match. Closest:
+- rocm-systems #5815 (open): MI300X, 16 processes, `hipHostMalloc`/`hipHostFree` staging reused, staging buffer reads back stale zeros in a contiguous range, a second D2H is correct. Same hardware, multi-process and allocation-reuse conditions, but host-pinned memory, contiguous, transient; here device memory, interleaved by XCD, persistent. Named as possibly related in the draft, not commented on.
+- rocm-systems #15007 and TheRock #8744 (gfx1201, VMM remap at a reused virtual address uses a stale mapping): single-XCD consumer part, VMM API; not the same.
+
+### Component and labels
+
+`project: clr` plus `bug` (from `gh label list -R ROCm/rocm-systems`). Why clr rather than the kernel driver: the failing calls are clr's `hipFree`/`hipMalloc`, and the size threshold suggests its suballocator decides when a buffer is really unmapped. rocm-systems has no label for the amdgpu kernel driver, so clr maintainers are the right first owners and can route it on. `project: rocr-runtime` would be the alternative if Jeff prefers.
+
+### Draft (for Jeff to review and file; nothing posted)
+
+Repository: `ROCm/rocm-systems`. Labels: `bug`, `project: clr`.
+Title: `[clr] MI300X: one XCD's kernel writes lost after hipFree and hipMalloc` (70 characters)
+
+====
+My agent came up with this analysis, but I've read and approved it.
+
+### Problem Description
+
+On an MI300X, a kernel that writes a buffer just obtained from `hipMalloc` sometimes leaves one eighth of its output unwritten: every 256-thread workgroup whose index is k mod 8 (for one k per failure), which is the share of the workgroups one XCD runs. Every API call returns `hipSuccess`, and the wrong data stays wrong in device memory after `hipDeviceSynchronize()`. It needs two things: the destination allocation is made right after another allocation of 2 MiB or more was freed with `hipFree`, and other processes are using the same GPU at the same time. The practical consequence is silently wrong results with no error reported.
+
+Expected: after the copy kernel and `hipStreamSynchronize`, the destination holds the copied values (here `it % 1000 + i` at index i), on every iteration.
+
+Actual: in roughly 1 iteration in 2,000 to 8,000 under load, all 488 or 489 workgroups of one class (block index mod 8 = k) left their part of the destination with the zeros written before the kernel ran (124,928 or 125,184 of 1,000,000 floats). Re-reading after `hipDeviceSynchronize()` returns the same wrong data. In most failures of this program there is also a second, address-shaped region of zeros that is not aligned to workgroups: in every 8 KiB of the destination one contiguous 1 KiB run, starting 240 bytes past a block boundary (the "partial" blocks in the output).
+
+What is known about the conditions:
+
+- Allocation reuse after `hipFree`: if the destination is allocated before the previous buffer is freed (`noreuse` below), there are no failures (0 of 40,000). With 1 MiB buffers there are no failures (0 of 40,000) even though the destination gets the freed address every time; with exactly 2 MiB buffers it fails (11 of 40,000) even though the destination did not get the freed address. So the condition seems to be a freshly made allocation of 2 MiB or more replacing a freed one, not the virtual address as such.
+- A second process on the same device: 0 of 40,000 with no load processes and 0 of 40,000 with one; it fails with 8. The same 8 load processes on a different GPU of the same host gave 0 failures in a larger application test. Load processes that only run kernels, or only run copies, are each enough. A load made only of processes that allocate and free memory in a loop raised the rate further, but it also left the driver unresponsive to `amd-smi` for over a minute, so the reproducer does not use it.
+- One XCD's share: the lost elements are always whole 256-element blocks of one class (block index mod 8), which matches round-robin placement of workgroups across the 8 XCDs.
+- The XCDs disagree about the data: after `hipDeviceSynchronize()`, a check kernel whose workgroups run on the XCD that did the writing can read the correct values, while workgroups on the other XCDs and host copies read the stale zeros. The wrong count can also grow after the copy has finished (for example 12,352 wrong on the first read, 124,928 a second later), so the correct values can reach memory and then be overwritten by the stale ones.
+- Not involved: whether the freed buffer was last read by a kernel (the rate is highest, 93 of 40,000, when no kernel touches it at all), how the destination is zeroed (`hipMemsetAsync`, a kernel or a pageable H2D copy), an extra `hipDeviceSynchronize()` before the `hipFree` or before the copy, and `HSA_ENABLE_SDMA=0` (10 of 40,000).
+- Allocations from the stream-ordered pool (`hipMallocAsync`) did not fail in the application where this was found (0 of 40,000).
+- With `HSA_XNACK=1` or `GPU_MAX_HW_QUEUES=1` (set for all processes) one run each gave 0 of 40,000, against 0 to 11 per 40,000 without; not repeated.
+- The failing process's queues were not evicted during the failing iterations (its `evicted_ms` counter in sysfs did not change in any of 10 failing iterations).
+- Seen only on 8-XCD devices so far: an MI250X (one GCD per device) was clean in an application-level test; the MI355X and MI250X rows of the table come from separate runs of this reproducer.
+
+The cause is not known. The evidence points below the HIP API (the call sequence is legal and the XCDs end up with different views of the same memory after a device synchronize), in the handling of a newly mapped allocation by one XCD while other processes are active, but whether that is in the runtime's allocator, the kernel driver, or firmware is not established.
+
+Possibly related: #5815 (MI300X, multiple processes, reused staging allocations read back as zeros). That report's wrong data is in host-pinned staging memory, contiguous and correct on a second read; here it is device memory, interleaved by XCD, and stays wrong.
+
+Results (40,000 iterations per run, 8 load processes started by the program):
+
+| GPU | ROCm (HIP runtime) | wrong iterations per run |
+|---|---|---|
+| MI300X (gfx942) | 10.1.0 (7.16.26385) | 9, 5 |
+| MI300X (gfx942) | 10.2.0 (7.17.26434) | 10, 11 |
+| MI300X (gfx942) | 10.3.0a20261120 nightly (7.18.26463) | 7, 19 |
+| MI300X (gfx942) | 10.2.0, `noreuse` (control) | 0 |
+| MI300X (gfx942) | 10.2.0, no load processes (control) | 0 |
+| MI355X (gfx950) | [PLACEHOLDER: gfx950 run pending] | [PLACEHOLDER] |
+| MI250X (gfx90a) | [PLACEHOLDER: gfx90a run pending] | [PLACEHOLDER] |
+
+Every failure in the MI300X runs above lost exactly one whole class (block index mod 8 = 1, 4 or 7).
+
+Earlier, longer versions of the same call sequence (with kernels instead of host copies filling the source buffers) gave 11, 7 and 5 (10.1.0), 8, 10, 2 and 0 (10.2.0) and 8, 3 and 5 (10.3.0a20261120) per 40,000 iterations on the same machine.
+
+Sample output (ROCm 10.2.0):
+
+```
+iteration  wrong        after sync   whole blocks wrong after sync, class (block % 8):count
+147        249920       249920       4:488 (+1041 partial)
+1629       249920       249920       4:488 (+1041 partial)
+5861       250192       250192       1:489 (+1042 partial)
+15053      249920       249920       4:488 (+1041 partial)
+...
+10 of 40000 iterations read back wrong data (8 load processes, destination reusing the freed address)
+```
+
+<details>
+<summary>Reproducer: lost_writes.hip</summary>
+
+```cpp
+// lost_writes.hip: a kernel's writes from one XCD are lost when its destination reuses a just-freed address
+// while other processes use the same GPU.
+// Build: hipcc --offload-arch=gfx942 -O2 -o lost_writes lost_writes.hip
+// Run:   ./lost_writes [iterations=40000] [loads=8] [noreuse]
+//   Starts <loads> copies of itself as background load (kernels and copies on 4 streams), then per iteration:
+//   A = hipMalloc(4 MB), H2D copy into A; Y = hipMalloc(8 MB), H2D copy of the source into every second float of Y;
+//   hipFree(A); D = hipMalloc(4 MB) (gets A's address; "noreuse" allocates D before freeing A); H2D zeros into D;
+//   hipDeviceSynchronize; kernel copies Y -> D (3907 blocks of 256 threads); hipStreamSynchronize; D2H and compare.
+//   Exit status 1 if any iteration read back wrong data.
+#include <hip/hip_runtime.h>
+#include <csignal>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <sys/wait.h>
+#include <unistd.h>
+#define CK(x) do { hipError_t e_ = (x); if (e_ != hipSuccess) { fprintf(stderr, "%s:%d %s: %s\n", __FILE__, __LINE__, #x, hipGetErrorString(e_)); exit(2); } } while (0)
+
+__global__ void copy_strided(float* dst, const float* src, size_t dst_stride, size_t src_stride, size_t n)
+{
+    size_t i = size_t(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (i < n) dst[i * dst_stride] = src[i * src_stride];
+}
+
+__global__ void burn(float* x, int n)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) { float v = x[i]; for (int k = 0; k < 100; ++k) v = v * 0.999f + 0.5f; x[i] = v; }
+}
+
+static int load()  // background load: kernels and copies on 4 streams until the parent exits
+{
+    const size_t m = 16 << 20;
+    hipStream_t s[4]; float *a[4], *b[4]; float* h = (float*)calloc(m / 16, 4);
+    for (int k = 0; k < 4; ++k) { CK(hipStreamCreate(&s[k])); CK(hipMalloc(&a[k], m * 4)); CK(hipMalloc(&b[k], m * 4)); }
+    pid_t parent = getppid();
+    while (getppid() == parent) {
+        for (int k = 0; k < 4; ++k) {
+            burn<<<(m + 255) / 256, 256, 0, s[k]>>>(a[k], (int)m);
+            CK(hipMemcpyAsync(b[k], a[k], m * 4, hipMemcpyDeviceToDevice, s[k]));
+            CK(hipMemcpyAsync(h, b[k], m / 16 * 4, hipMemcpyDeviceToHost, s[k]));
+        }
+        for (int k = 0; k < 4; ++k) CK(hipStreamSynchronize(s[k]));
+    }
+    return 0;
+}
+
+static int count_wrong(const float* x, const float* ref, int n)
+{
+    int w = 0;
+    for (int i = 0; i < n; ++i) w += x[i] != ref[i];
+    return w;
+}
+
+// "class:blocks" for each block class (block index % 8) with whole 256-element blocks wrong, plus partial blocks
+static void lost_blocks(const float* x, const float* ref, int n, char* text, size_t len)
+{
+    int whole[8] = {0}, partial = 0;
+    for (int b = 0; b * 256 < n; ++b) {
+        int m = n - b * 256 < 256 ? n - b * 256 : 256, w = 0;
+        for (int i = 0; i < m; ++i) w += x[b * 256 + i] != ref[b * 256 + i];
+        if (w == m) ++whole[b % 8]; else if (w) ++partial;
+    }
+    text[0] = 0;
+    for (int k = 0; k < 8; ++k) if (whole[k]) snprintf(text + strlen(text), len - strlen(text), "%d:%d ", k, whole[k]);
+    snprintf(text + strlen(text), len - strlen(text), "(+%d partial)", partial);
+}
+
+int main(int argc, char** argv)
+{
+    if (argc > 1 && !strcmp(argv[1], "load")) return load();
+    int iters = argc > 1 ? atoi(argv[1]) : 40000, loads = argc > 2 ? atoi(argv[2]) : 8;
+    bool noreuse = argc > 3 && !strcmp(argv[3], "noreuse");
+    pid_t pids[64];
+    for (int k = 0; k < loads && k < 64; ++k)
+        if ((pids[k] = fork()) == 0) { execl("/proc/self/exe", argv[0], "load", (char*)nullptr); _exit(127); }
+    sleep(2);
+
+    const int n = 1000000, blocks = (n + 255) / 256;
+    hipStream_t S; CK(hipStreamCreate(&S));
+    float* src = (float*)malloc(n * 4); float* zeros = (float*)calloc(n, 4); float* out = (float*)malloc(n * 4);
+    float* strided = (float*)calloc(2 * (size_t)n, 4);
+    int bad = 0;
+    printf("%-10s %-12s %-12s %s\n", "iteration", "wrong", "after sync", "whole blocks wrong after sync, class (block % 8):count");
+    for (int it = 0; it < iters; ++it) {
+        for (int i = 0; i < n; ++i) strided[2 * i] = src[i] = float(it % 1000 + i);
+        float *A, *Y, *D;
+        CK(hipMalloc(&A, n * 4));
+        CK(hipMemcpyAsync(A, src, n * 4, hipMemcpyHostToDevice, S));
+        CK(hipMalloc(&Y, 2 * (size_t)n * 4));
+        CK(hipMemcpyAsync(Y, strided, 2 * (size_t)n * 4, hipMemcpyHostToDevice, S));
+        if (noreuse) { CK(hipMalloc(&D, n * 4)); CK(hipFree(A)); }
+        else { CK(hipFree(A)); CK(hipMalloc(&D, n * 4)); }
+        CK(hipMemcpyAsync(D, zeros, n * 4, hipMemcpyHostToDevice, S));
+        CK(hipDeviceSynchronize());
+        copy_strided<<<blocks, 256, 0, S>>>(D, Y, 1, 2, n);
+        CK(hipStreamSynchronize(S));
+        CK(hipMemcpy(out, D, n * 4, hipMemcpyDeviceToHost));
+        int w = count_wrong(out, src, n);
+        if (w) {
+            ++bad;
+            CK(hipDeviceSynchronize());
+            CK(hipMemcpy(out, D, n * 4, hipMemcpyDeviceToHost));
+            char lost[128]; lost_blocks(out, src, n, lost, sizeof(lost));
+            printf("%-10d %-12d %-12d %s\n", it, w, count_wrong(out, src, n), lost);
+            fflush(stdout);
+        }
+        CK(hipFree(D)); CK(hipFree(Y));
+    }
+    for (int k = 0; k < loads && k < 64; ++k) { kill(pids[k], SIGTERM); waitpid(pids[k], nullptr, 0); }
+    printf("%d of %d iterations read back wrong data (%d load processes, destination %s)\n", bad, iters, loads,
+           noreuse ? "allocated before the free" : "reusing the freed address");
+    return bad ? 1 : 0;
+}
+```
+
+</details>
+
+### Operating System
+
+Ubuntu 24.04.5 LTS (container), host kernel 6.8.0-110-generic
+
+### CPU
+
+2x Intel Xeon Platinum 8480C
+
+### GPU
+
+AMD Instinct MI300X HF (gfx942), SPX compute partition, NPS1 memory partition; amdgpu driver 6.16.13
+
+### ROCm Version
+
+ROCm 10.1.0, 10.2.0 and nightly 10.3.0a20261120, all as Python wheels (`rocm[devel]`)
+
+### ROCm Component
+
+clr (HIP runtime)
+
+### Steps to Reproduce
+
+```
+hipcc --offload-arch=gfx942 -O2 -o lost_writes lost_writes.hip
+./lost_writes 40000        # exits 1 and prints one line per failing iteration when the defect appears
+./lost_writes 40000 8 noreuse   # control: destination allocated before the free, expected 0 failures
+./lost_writes 40000 0      # control: no load processes, expected 0 failures
+```
+
+The program starts 8 copies of itself as load on the same GPU (kernels and copies on 4 streams each) and stops them at the end. Use one GPU (for example `HIP_VISIBLE_DEVICES=0`) that nothing else is using. Failures are rare and bursty; run 40,000 iterations (a few minutes) more than once.
+====
+
+Placeholders to fill before filing: the MI355X (gfx950) and MI250X (gfx90a) rows of the table, from the parallel sessions. Scripts: `notes-evidence3-gfx942-flake-scripts.md`.
