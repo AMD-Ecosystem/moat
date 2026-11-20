@@ -28,18 +28,19 @@ will read as that project's work everywhere the branch is not shown.
 - [ ] Licence recorded and the gate passes (`moatlib.py license-gate <name>`). Tier 3 and 4 need a clearance recorded against that project; an unrecorded licence blocks too, and the fix is to read it, not to approve it
 - [ ] The port diff was reviewed on the fork's review PR, not just this one -- link it, and record it with `moatlib.py set-review-pr <name> <url>`:
 - [ ] That PR's title and body are the ones the upstream PR will carry, written for the external maintainer. Approving it approves all three of code, title and body at once, so a placeholder title means the real one is never read
-- [ ] Coverage gates satisfied, or a waiver approved by a maintainer (`moatlib.py pr-ready <name>`)
+- [ ] Reviewed at the current head and coverage gates satisfied, or a waiver approved by a maintainer (`moatlib.py pr-ready <name>`)
 - [ ] Fork working tree clean; nothing validated against uncommitted edits
 - [ ] No in-house vocabulary anywhere on the fork branch (`utils/jargon.py --port <name>` -- the whole branch, not the newest commit)
-- [ ] Generalizable lessons promoted to the `cuda-to-rocm` skill (MOAT-free) or the `moat-porting` skill (MOAT workflow), in the file their reader would open, with the source project named
+- [ ] Generalizable lessons recorded in `notes.md` under `## Lesson for cuda-to-rocm: <title>` (MOAT-free) or `## Lesson for moat-porting: <title>` (MOAT workflow), naming the reference file each belongs in; they are promoted on the trunk after this review
 
 ## For a negative outcome
 
 A project we will not port still merges -- merging is what records the decision, so it is
 not proposed again.
 
-- [ ] Disposition and a concrete reason in `data/dispositions.json` (`utils/triage.py skip <owner/repo> --reason <reason> --by <who> --note "..."`)
-- [ ] If this records a decline, it came from `intake_queue.py apply --decline` carrying a person's answer on the queue issue. Labels record nothing.
+- [ ] Disposition and a concrete reason in `data/dispositions.json`, with `--by` naming the person who decided
+- [ ] A decline of a screened project came from `intake_queue.py apply --decline <owner/repo>:<reason> --note "..." --by <who>` carrying a person's answer on the queue issue. Labels record nothing, and an agent never records a decline it inferred.
+- [ ] `utils/triage.py skip <owner/repo> --reason <reason> --by <who> --note "..."` was used only for a person's disposition of a candidate that never went through the queue (already supported upstream, not a real target), never as a way around it
 
 ## Notes for the reviewer
 
