@@ -1519,3 +1519,67 @@ Sparse `gsa_on_device` CUDA extension, compiled this time (the eda03f1 check cou
 - `paged_ham_dist_mla.cu.o` cubins and PTX differ between the two worktrees only in nvcc's `_INTERNAL_<hash>` prefix for internal-linkage symbols, which nvcc derives from the source path (`sp-port` vs `sp-upstream`); PTX normalized for that prefix is identical for all five arches. Direct proof: in the port worktree, `git checkout 7bba620 -- ucm/sparse/gsa_on_device/csrc/cuda/ham_dist/` and rebuilding `--target hamming` gives cubins and PTX byte-identical to the port's for all five arches (restored afterwards). So the port's `USE_ROCM` wrappers in `operator.h` and `paged_ham_dist_mla.cu` leave the CUDA device code unchanged.
 
 Result: no CUDA regression at 5a45243, in the default CUDA build with unit tests and in the hamming CUDA extension. Platform states unchanged; nothing pushed to the fork.
+## Validation 2026-11-20 (linux-gfx1100, RDNA3 / AMD Radeon Pro W7800 48GB, ROCm 7.16 pip SDK, revalidate) -- PASS at 5a45243
+
+Fresh fork clone checked out detached at `5a4524333f6c286dbf82f08e796d9946cac1a7e1` from `origin/moat-fix-1021` (not `moat-port`); `git status --porcelain` empty. hipconfig 7.16.26385, kernel 6.8.0-138. One GPU: dispatcher pin `HIP_VISIBLE_DEVICES=0` kept (amd-smi showed GPU 0 idle; other jobs use the others); `ulimit -c 0`. Carry-forward does not apply (the delta from eda03f1 is the 40-commit upstream merge plus 5a45243, `mixed`), so this is a full rebuild and run.
+
+Commands: the configure lines from the 2026-11-04 gfx1100 entry (`P=$PWD/projects/unified-cache-management; R=$(hipconfig --rocmpath)`, `gfx1100`), `-j30` builds, sparse `--target hamming`, each wrapped in `utils/timeit.sh`. Tests:
+```
+ctest --test-dir $P/build_rocm -j1 --timeout 600 --output-on-failure
+ctest --test-dir $P/build_simu -j1 --timeout 600 --output-on-failure
+cd /tmp && HAMMING_DIR=$P/build_sparse/ucm/sparse/gsa_on_device/csrc/rocm/ham_dist \
+  /opt/python-3.11-venv/bin/python3 $P/src/ucm/sparse/test/gsa/test_hamming_rocm_ref.py
+```
+All three builds clean. Sparse configure prints `[INFO] Skipping gsa_prefetch_v2: no ROCm backend`. `llvm-objdump --offloading`: `cuda_sm_kernel.cu.o` and `hamming.cpython-311-x86_64-linux-gnu.so` both `amdgcn-amd-amdhsa--gfx1100`.
+
+- GPU build ctest: 355 discovered, 1 disabled (UCMetricsStress.TenWritersOneCollector), **343/354 pass** (145 s). Failures, all in the allowed set:
+  - UCCache2TransManagerIntegrationTest.{DumpThenLoad, DumpThenLoadWithLayerWise, DumpThenLoadWithLayerAndChunk, DumpThenLoadWithVariableLengthIo}: `Failed(1, invalid argument) to copy shard for dump task(1)` at dump_queue.h:215. Expected under jeff's caller's-copy-kind ruling; they pass in simu (below).
+  - DataStrategyTest x6 (SetupPublishesAndImportsAllRanks, SegmentsAreSharedAcrossRanks, SecondSetupIsRejected, MissingPeerTimesOut, PeerHandleMismatchIsRejected, PeerPollingWaitsForDelayedPublish): `invalid device ordinal`, one visible GPU.
+  - UCLoggerPerfTest.MultiThreadPerfUCInfoVsRateLimit: ratio 1.144 > 1.1, the known CPU timing flake.
+  - **The 4 posix-store tests gfx942 lost at 5a45243 pass here**: UCPosixStoreTest.DumpThenLoad (and DumpThenLoadWithIoDirect), UCPosixTransManagerTest.{TransBlock, TransBlockLayerWise, PsyncLoadSubmitAfterCloseFailsCleanly}, run from the overlay build directory.
+  - Copy-kernel and alias gates pass: UCTransUnitTest x5, UCPosixTransQueueTest x4, UCCache2TransManagerIntegrationTest.Backend{,Submit}NotFoundIsPreserved.
+- Simu build ctest (upstream `cpp_gtest` configuration): 1152 discovered, 1 disabled, **1151/1151 pass** (142 s), including all 4 cache2 `DumpThenLoad*` and the same 4 posix tests.
+- Hamming: mla PASS (max_abs_err=42.0, max_rel_err=1.25e-03), gqa PASS (0.0), determinism PASS bit-identical.
+
+Against this platform's eda03f1 record (326/337 GPU, 1114/1114 simu): the suites grew to 355 and 1152, and the failure set is the same 11. Against gfx942 at 5a45243 (340/354, 1147/1151): the only difference is the 4 posix-store tests, which pass here.
+
+### Why the 4 posix-store failures on gfx942 do not reproduce here: storage DMA alignment, not the code
+The tests write shards with `O_DIRECT` (posix store default `ioDirect=true`) from a `malloc(32768)` buffer, which glibc aligns only to 16 bytes. Kernel 6.x allows an `O_DIRECT` user buffer that is aligned to the block device's DMA alignment (`/sys/block/<dev>/queue/dma_alignment`, a mask). It no longer has to be aligned to the logical block size. Here the container's overlay upper layer sits on NVMe (`nvme0n1`, `nvme1n1`: logical block 512, `dma_alignment` 3, so 4-byte buffers). The probe `agent_space/probe/odirect.c` (32 KiB `pwrite` at file offset 0) on the build directory's overlay, on `/tmp` and on `/dev/shm`: buffer+0 and +4/+16/+64/+192/+512/+704 succeed, +1/+2/+3 fail EINVAL, and a real `malloc(32768)` buffer (`% 4096 = 688`) succeeds. So a 16-byte-aligned buffer is legal on this storage. The gfx942 host's probe rejected buffer+16, which means its storage advertises a coarser DMA alignment (a device-mapper/RAID/other driver stack with a 512- or 4096-byte mask). The tests are wrong on that storage and happen to work on this one. The port does not touch them (`git diff develop 5a45243 -- ucm/store/posix ucm/store/test` is empty, as the reviewer recorded). They are not real failures of the port. They are a latent upstream test assumption (a non-aligned buffer under `O_DIRECT`), and whether it shows depends on the host's block device. This also reconciles the gfx90a and gfx942 records: tmpfs passed on gfx90a and failed on gfx942. Whether the four pass depends on the storage under the working directory, not on the GPU or the code.
+
+CUDA gate: `cuda-not-validated: no CUDA toolkit on this host` (no `nvcc`, no `/usr/local/cuda*`, no conda). The pip `nvidia-cuda-nvcc-cu12==12.8.*` wheel tried in the job directory ships only `ptxas`, not `nvcc`, so it cannot stand in; removed. Still owed by a Linux host with nvcc at 5a45243 (see the gfx942 entry for what the delta touches).
+
+Pre-completion: `git -C $P/src status --porcelain` empty. `python3 utils/jargon.py --port unified-cache-management` clean (local `develop` at upstream 7bba620, local `moat-fix-1021` at origin; local refs only). Upstream `develop` is still 7bba620, an ancestor of 5a45243, and `git merge-tree --write-tree 5a45243 develop` is clean. ROCm build documented at `docs/source/developer-guide/build_from_source.md:56`.
+
+Result: linux-gfx1100 COMPLETED at 5a4524333f6c286dbf82f08e796d9946cac1a7e1. For the reply, the GPU name is "AMD Radeon Pro W7800 (gfx1100)".
+
+### Fix review PR body (true at 5a452433; supersedes the gfx942 validator's draft)
+Title: `[ROCm] Merge current upstream develop into the ROCm port`
+Head `moat-fix-1021` -> base `moat-port`. Not opened. Changed from the gfx942 draft: the "Tested" paragraph (W7800 results, and the posix-store explanation narrowed to the MI300X host's storage) and the reply now names the W7800. Platforms completed at 5a45243: linux-gfx942, linux-gfx1100. `prose.py` and `jargon.py` clean on the body.
+
+====
+Upstream PR #1021 was reported as conflicting with `develop`. This round merges `develop` into the branch twice: first the tip f366bfa (190 upstream commits since the PR's base), and then the current tip 7bba620 (40 more commits). Both are merges, not rebases, so the published PR commits stay as they are.
+
+Conflicts in the first merge (5 files, both sides kept): platform lists in `setup.py` and `ucm/store/nfsstore/device/CMakeLists.txt` (upstream added `ascend-a5`, the PR added `rocm`); the WIN32 flag block in `CMakeLists.txt`; the test glob in `ucm/shared/test/CMakeLists.txt` (upstream's `CONFIGURE_DEPENDS` and `router_perf` exclude plus the PR's WIN32 exclude); and `quickstart_vllm.md`, where upstream moved the build-from-source section into the developer guide. The second merge had no conflicts.
+
+Follow-up commits:
+- 26b0b3e: upstream's CUDA transfer backend gained `cuda_event.cc` and a few more runtime calls; the ROCm target now builds `cuda_event.cc` and the compat header aliases the new names.
+- 91185a3, e3adb40, 98ba91b and eda03f1: a change that mapped the compat header's copy kinds to `hipMemcpyDefault` was added, reworded, and then reverted. The net effect on the compat header is only the aliases from 26b0b3e; the header still passes the caller's copy kind through, as at the published PR head.
+- af3eb74: the `PLATFORM=rocm` note moves to `build_from_source.md` (`docs/source` and the English docs site), plus the ROCm row in the English docs-site support matrix.
+- c767753: the same row and a Chinese version of the note on the Chinese docs site.
+- dff17ae: the note no longer suggests passing `-DCMAKE_HIP_ARCHITECTURES` to the setup.py build (it does not forward CMake arguments); it says the architecture is detected from the build host and points to the support matrix for the tested GPUs.
+- 5a45243: the sparse build now also configures `ucm/sandbox`, whose GSA v2 prefetch module has only an Ascend backend and stops with `FATAL_ERROR` on other runtimes. A `rocm` arm skips it, so `PLATFORM=rocm ENABLE_SPARSE=true` configures and builds the Hamming extension again. The Ascend path and the error for other runtimes are unchanged.
+
+Upstream's new cache2 `DumpThenLoad*` integration tests pass `malloc` buffers as device addresses (`ucm/store/test/case/detail/data_generator.h:49`). That matches the simulated backend, where device memory is host memory, and upstream CI builds the unit tests only that way (`.github/workflows/lint-and-test.yml:106` passes `-DRUNTIME_ENVIRONMENT=simu`; line 124 relies on the CMake default, `simu`). In the ROCm GPU build these four tests fail with "invalid argument" while copying a shard, so they are run in a simu build, where they pass. The tests are unchanged.
+
+Upstream #1566 stopped compiling nfsstore, so the nfsstore ROCm device arm is now dormant, the same as its CUDA counterpart.
+
+Tested at 5a45243 with one visible GPU each. AMD Instinct MI300X (gfx942), ROCm 7.16: GPU build ctest 340/354. AMD Radeon Pro W7800 (gfx1100), ROCm 7.16: GPU build ctest 343/354. The copy-kernel, event and memset/D2D tests pass on both. Failures on both: the four cache2 `DumpThenLoad*` tests above, and six DataStrategyTest cases that need two visible GPUs. On the W7800 the one other failure is UCLoggerPerfTest.MultiThreadPerfUCInfoVsRateLimit, a timing check (ratio 1.144 against a 1.1 limit). On the MI300X host, four posix store tests (UCPosixStoreTest.DumpThenLoad and three UCPosixTransManagerTest cases) also fail: they write a 16-byte-aligned `malloc` buffer with `O_DIRECT`, and that host's storage rejects the write with EINVAL. Upstream `develop` without this PR fails the same four there. On the W7800 host the same four pass, because its NVMe device (`dma_alignment` 3) accepts `O_DIRECT` buffers aligned to 4 bytes. The tests and the posix store are not changed by this PR. Simu build (upstream CI's configuration), which includes all four `DumpThenLoad*` tests: 1151/1151 on the W7800 host, and 1147/1151 on the MI300X host, where only the same four posix store tests fail. The Hamming kernel reference test passes on both (mla, gqa, determinism).
+
+## Upstream reply
+
+The branch is merged with current `develop` (7bba620), and the ROCm build works again with the sparse module enabled. The C++ unit tests and the Hamming kernel test were rerun on an AMD Instinct MI300X (gfx942) and an AMD Radeon Pro W7800 (gfx1100).
+
+## Before approving
+
+Name only GPUs whose platform record shows a completed validation at this exact head. If upstream `develop` has moved past 7bba620, check `git merge-tree --write-tree 5a45243 <develop>` before approving.
+====
