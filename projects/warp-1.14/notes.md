@@ -8988,3 +8988,7 @@ for op, con, N in keys:
     nr = statistics.median(nb) / statistics.median(na) if na and nb else float("nan")
     print(f"| {op} | {con} | {N} | {statistics.median(a)*1e6:.1f} | {statistics.median(b)*1e6:.1f} | {statistics.median(b)/statistics.median(a):.2f} | {per} | {nr:.2f} |")
 ```
+
+## Ruling on session 24's question 10 (jeff, 2026-11-20)
+
+"(b) Convert that kernel too": winding-number meshes get the depth-level refit as well. Queued for the porter after the fem isolation fix, followed by the final build (prompt `agent_space/p6ev/winding-final-porter.txt`).
