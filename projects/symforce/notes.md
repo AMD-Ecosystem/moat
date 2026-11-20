@@ -2158,3 +2158,577 @@ VALIDATION PASSED on gfx1151 (Radeon 8060S) at e7e0b00c.
 ## Upstream PR body revised (2026-11-05)
 
 jeff approved and ran `agent_space/symforce-465-edit.sh`: the body of https://github.com/symforce-org/symforce/pull/465 is now the "Upstream PR body revision" draft above, with the Validation sentence filled in (MI250X and W7800 on Linux; the four Caspar GPU tests also on Radeon 8060S on Windows). Title unchanged. The fix round moat-fix-465 merged into moat-port at e7e0b00c and the approved reply was posted 2026-11-05T06:12Z.
+
+## Fix round moat-fix-465, round 2: host-include defect and the PartiallyContainedTracks NaN (porter, linux-gfx90a, 2026-11-18)
+
+Jeff's ruling on 2026-11-17: "Fix the host-include defect in symforce PR 465 and carry the PR to merge. Root-cause the PartiallyContainedTracks NaN." Background: the Caspar HIP scoping study at the end of `projects/colmap/notes.md` on `port/colmap`. `fix-branch symforce` re-homed the folder onto `port/symforce` and staged `moat-fix-465` from the published tip `e7e0b00c` (upstream PR head checked live: `e7e0b00c`, OPEN, MERGEABLE). `set-state symforce linux-gfx90a porting` took the lock.
+
+Host: MI250X GCD (gfx90a, wave64), `HIP_VISIBLE_DEVICES=1` (dispatcher pin), GPU programs under `ulimit -c 0`. ROCm: TheRock pip `rocm-sdk-devel` 10.1.0, HIP 7.16, AMD clang 24 (`/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel`, `<SDK>` below). g++ 13.3. Fork clone `projects/symforce/src`, `protect-fork` installed, job venv with `requirements/dev_py311.txt` and `build_py311.txt`.
+
+### Part 1: host-include defect, commit aa31e636 (pushed)
+
+`aa31e636 [ROCm] Keep device-only HIP headers out of host compiles`:
+
+- `symforce/caspar/source/runtime/cuda_to_hip.h`, HIP branch only: `hip/hip_runtime.h` stays unconditional; `hip/hip_cooperative_groups.h`, `hipcub/hipcub.hpp` and `namespace cub = hipcub` now sit under `#if defined(__HIPCC__)`, mirroring the CUDA branch's `__CUDACC__`.
+- `test/CMakeLists.txt`, HIP branch only: the `*_cuda_test.cc` sources and generated `.cc` files are no longer `LANGUAGE HIP`; only the generated `.cu` files are. That makes the test build host-compile `caspar_solver_cuda_test.cc`, `caspar_tridiagonal_cuda_test.cc` and both generated `solver.cc` (all include `solver.h`), plus the other two test `.cc` files, exactly as the CUDA build does. The test runtime now links `hip::host roc::rocprim` plus hip::hipcub's include directories instead of `hip::hipcub`, because `hip::hipcub -> roc::rocprim_hip -> hip::device` puts `-x hip --offload-arch=gfx90a` on every source of a consumer (first attempt: `c++: error: unrecognized command-line option '--offload-arch=gfx90a'` on the six `.cc` objects).
+
+**CUDA path: unchanged.** Both hunks are inside the HIP branch (`#if defined(USE_HIP) || defined(__HIP_PLATFORM_AMD__)` in the header; `else()` of `if(CMAKE_CUDA_COMPILER)` and `if(CMAKE_HIP_COMPILER)` in CMake, and `check_language(HIP)` only runs when no CUDA compiler exists). The nvcc host can scope its compile check to "the CUDA branch of cuda_to_hip.h and the CUDA branch of test/CMakeLists.txt are byte-identical to e7e0b00c" plus the usual 4-target compile.
+
+Macro check against this host's headers: clang in HIP mode predefines `__HIPCC__` (`clang++ -x hip -E -dM` shows `#define __HIPCC__ 1`), and `hip/hip_common.h:28-30` also defines it under `defined(__clang__) && defined(__HIP__)`; g++ including `hip/hip_runtime.h` with `-D__HIP_PLATFORM_AMD__` leaves it undefined (a `#ifdef __HIPCC__ #error` probe compiles clean). `hip_cooperative_groups.h` is itself host-safe (it includes the AMD implementation only under `__HIP__`); hipCUB/rocPRIM are what break host code.
+
+Evidence (SymForce):
+
+```
+cmake -S <src> -B <src>/build -GNinja -DCMAKE_BUILD_TYPE=Release -DPython_EXECUTABLE=$FLEET_VENV/bin/python -DSYMFORCE_PYTHON_OVERRIDE=$FLEET_VENV/bin/python -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_PREFIX_PATH=<SDK>
+ninja -C <src>/build bin.tests.caspar_padding_lane_cuda_test bin.tests.caspar_solver_cuda_test bin.tests.caspar_tridiagonal_cuda_test bin.tests.caspar_backend_coverage_cuda_test
+PATH=$FLEET_VENV/bin:$PATH cmake --build <src>/build -j 48
+PYTHONPATH=$PWD:$PWD/build/lcmtypes/python2.7:$PWD/gen/python:$PWD/third_party/skymarshal ctest --test-dir <src>/build -j16
+```
+
+- New CMake with the OLD header (e7e0b00c's): 6 objects fail (the four test `.cc` files using generated headers or `cuda_to_hip.h` and both `solver.cc`), first error `<SDK>/include/rocprim/intrinsics/arch.hpp:49:12: error: '__builtin_amdgcn_wavefrontsize' was not declared in this scope` via `solver.h:6 -> cuda_to_hip.h:18 -> hipcub/hipcub.hpp`. So the test catches the defect.
+- With the fix: all 4 targets build (the `.cc` objects by `/usr/bin/c++`), and pass on the MI250X: padding_lane 6/6 assertions, solver 24/24 (5 cases), tridiagonal 140/140 (2 cases) 5 of 5 runs, backend_coverage 302/302. Same counts as e7e0b00c.
+- ctest: 209/212. Failures are environment only, same as the 2026-11-04 round: `symengine_symforce_docs_test` (`No module named 'jsonschema'`), `symengine/sympy_symforce_rust_codegen_test` (`rustfmt` not installed). Linter tests pass; `clang-format --dry-run --Werror cuda_to_hip.h` clean. Caspar codegen tests pass (no generated test data embeds `cuda_to_hip.h`).
+- Configure gotchas on this host: `-DSYMFORCE_PYTHON=` is ignored (the variable is computed); use `-DSYMFORCE_PYTHON_OVERRIDE=`. symenginepy's `FindCython` needs the venv's `bin/` on `PATH`.
+
+Evidence (colmap, scratch): `agent_space/colmap-hip` (copied from the study job, colmap main `137f2168` with the study's 8+/4- CMake edits and the f32 tree patched with #465's runtime), with the fork's runtime files at this tip copied over it (`memops.cuh`, `shared_indices.{cu,h}`, `sort_indices.{cu,h}`, `solver_tools.{cu,h}`, `cuda_to_hip.h`); fresh build dir in this job; Ceres/METIS/OIIO-config reused read-only from the study job's `deps/`.
+
+```
+cmake -S agent_space/colmap-hip -B <job>/colmap-hip-build -GNinja -DCUDA_ENABLED=OFF -DHIP_ENABLED=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_BUILD_TYPE=Release -DTESTS_ENABLED=ON -DGUI_ENABLED=OFF -DOPENGL_ENABLED=OFF -DCGAL_ENABLED=OFF -DDOWNLOAD_ENABLED=OFF -DONNX_ENABLED=OFF -DCASPAR_ENABLED=ON -DCMAKE_PREFIX_PATH="<study>/deps/prefix;<SDK>" -DOpenImageIO_DIR=<study>/deps/oiio-cmake -DMETIS_INCLUDE_DIRS=<study>/deps/prefix/include -DMETIS_LIBRARIES=<study>/deps/prefix/lib/libmetis.so
+ninja -C <job>/colmap-hip-build -j 64 colmap_estimators_bundle_adjustment_caspar_test colmap_estimators_bundle_adjustment_test
+```
+
+- e7e0b00c's header: `bundle_adjustment_caspar.cc.o` fails with the same `__builtin_amdgcn_wavefrontsize` error; aa31e636's header: it compiles, and the full build of both test targets (including all six host files the study listed) completes, rc=0.
+
+### Part 2: the PartiallyContainedTracks NaN, root cause found (not in SymForce; no fork change)
+
+**Cause.** colmap main's vendored **f32** Caspar tree (`src/thirdparty/Symforce-Caspar/generated/f32/`, last regenerated by colmap #4799 `68b722be`) was generated WITHOUT SymForce's register zero-initialisation `a768308` (#469): 0 of 237 f32 kernels have `= 0` on their register declarations, while 227 of 237 f64 kernels do. #4799's description lists `a768308` among the included fixes, and the scoping study took that at its word; it holds for f64 only. In a kernel whose guarded body ends with a value passed BY VALUE to an accessor outside the guard (here `SumStore(..., global_thread_idx < problem_size, r43)`), padding lanes pass a register nothing assigned. Reading an indeterminate value is UB in C++, and clang marks by-value parameters `noundef` (`float noundef %651` in the unoptimised IR); LLVM therefore treats the padding-lane path as unreachable and emits `llvm.assume(global_thread_idx < problem_size)` (`%33` in the optimised IR, right after the barrier that precedes the main body). With that assume, the `if (global_thread_idx < problem_size)` guard and SumStore's `valid ? data : 0` mask both fold away. In the gfx90a ISA the residual computation, its global loads, the `global_store_dwordx2` of `out_res` and the `ds_bpermute` reduction input all run with the full exec mask. Padding lanes read inputs past `problem_size` (zeros or neighbouring data in the arena), compute `1/z` on them, and the non-finite values enter the block sum, so `score_init` is NaN; every later step compares against a NaN `score_best` and is rejected, which is the observed `CONVERGED_DIAG_EXIT` with unchanged parameters. It is the same defect class as SymForce #469, which `a768308` fixed in SymForce's template; colmap's f32 tree simply does not carry that fix.
+
+Not wave-width related, from the code: the deleted guard is a per-lane predicate on `global_thread_idx`, so it matters whenever a 1024-thread block has padding lanes (any `problem_size` not a multiple of 1024), on any wavefront width. The transformation is in LLVM's target-independent middle end: the same 12 f32 kernels get the assume when compiled for gfx1100 as for gfx90a (sorted lists identical). Whether a given problem turns it into NaN depends on what the padding lanes read, not on the GPU. That fits MI300X (wave64) showing the same signature in August, and a768308's own report of NaN on NVIDIA built with clang. nvcc does not exploit the `noundef` (per a768308's message: identical code with or without zeroing), which is why colmap's A100 run passes.
+
+**Evidence (all on the MI250X, scratch colmap build described in part 1, fork runtime at aa31e636):**
+
+1. Baseline: `bundle_adjustment_test --gtest_filter='*PartiallyContainedTracks*'`: CERES OK, CASPAR FAILED (`score_init: nan`), as in the study.
+2. All 227 register declarations in the scratch f32 kernels zeroed (`agent_space/zero_regs.py`, a regex that turns `float r0, r1, ...;` into `float r0 = 0, r1 = 0, ...;`, exactly what a768308's template emits): PartiallyContainedTracks/1 passes 5 of 5, `score_init: 1.984851e+02`.
+3. Bisection (rebuild with chosen kernels restored un-zeroed, `GLOG_v=2`): all 237 un-zeroed -> nan; none -> 1.984851e+02; the two `res_jac_first` kernels of the variants this test uses -> nan; `kernel_simple_radial_split_fixed_pose_fixed_principal_point_fixed_point_res_jac_first` alone un-zeroed -> nan; `kernel_simple_radial_split_fixed_pose_fixed_principal_point_res_jac_first` alone -> 1.984851e+02. So the first non-finite value comes from the residual-and-Jacobian kernel of the 198-factor variant (fixed pose, principal point and point; 826 padding lanes in its single block), in its residual sum, at the first evaluation.
+4. Mechanism control: all 237 kernels un-zeroed but compiled with `-Xclang -no-enable-noundef-analysis` added to the generated CMakeLists' HIP options: passes 3 of 3, `score_init: 1.984851e+02` (bit-identical score to the zeroed build). That flag removes only the `noundef` parameter attributes, so the NaN depends on exactly that UB inference.
+5. IR census, un-zeroed tree, `clang++ -x hip -O3 -ffp-contract=fast -fno-math-errno --cuda-device-only -S -emit-llvm`: 12 of 237 kernels carry `llvm.assume(i1 %...)` for gfx90a, the same 12 for gfx1100; the zeroed tree: 0 of 237. The 12: pinhole `fixed_pose_fixed_point_{score,res_jac_first}`, `fixed_point_res_jac_first`, `split_fixed_pose_fixed_focal_fixed_point_{score,res_jac_first}`, `split_fixed_focal_fixed_point_res_jac_first`, `split_fixed_focal_fixed_principal_point_fixed_point_res_jac_first`, `split_fixed_pose_fixed_principal_point_fixed_point_res_jac_first`; simple_radial `fixed_pose_fixed_point_score`, `split_fixed_pose_fixed_focal_and_extra_fixed_point_{score,res_jac_first}`, `split_fixed_pose_fixed_principal_point_fixed_point_res_jac_first`. All are fixed-point variants (the point is constant, so the kernels are small enough for LLVM to speculate the whole guarded body); that is why it surfaces in tests with constant points.
+6. Full colmap Caspar tests with the zeroed f32 tree, 3 runs each: `bundle_adjustment_test` 40/40 (13/13 CASPAR), `bundle_adjustment_caspar_test` 17/17. **30 of 30 Caspar tests, 3 of 3 runs.**
+
+Inferred, not measured: in those 12 kernels the unconditional `out_res` store (`WriteIdx2`, float2 per thread) also writes past the residual buffer, which `solver.cc` allocates as `2 * <variant>_num_` floats (`assign_and_increment<float>(origin_ptr_, offset, 2 * ..._num_, 4)`), i.e. into the next buffer in the arena. This is visible in the IR and the allocation code; it was not observed at runtime.
+
+**Minimal standalone reproducer** (`agent_space/repro/noundef_padding.hip`, not durable; full source):
+
+```cpp
+#include <hip/hip_runtime.h>
+#include <cstdio>
+#include <vector>
+#ifndef INIT
+#define INIT
+#endif
+__device__ __forceinline__ void MaskedAdd(float* out, bool valid, float data) {
+  float v = valid ? data : 0.0f;
+  atomicAdd(out, v);
+}
+__global__ void Score(const float* z, float* out, int n) {
+  const int i = blockIdx.x * blockDim.x + threadIdx.x;
+  float r INIT;
+  if (i < n) { r = 1.0f / z[i]; r = r * r; }
+  MaskedAdd(out, i < n, r);
+}
+int main() {
+  const int n = 200, alloc = 1024;
+  std::vector<float> h(alloc, 0.0f);
+  for (int i = 0; i < n; ++i) h[i] = 2.0f;
+  float *z, *out;
+  hipMalloc(&z, alloc * sizeof(float)); hipMalloc(&out, sizeof(float));
+  hipMemcpy(z, h.data(), alloc * sizeof(float), hipMemcpyHostToDevice);
+  hipMemset(out, 0, sizeof(float));
+  Score<<<1, 1024>>>(z, out, n);
+  float s = 0; hipMemcpy(&s, out, sizeof(float), hipMemcpyDeviceToHost);
+  printf("sum = %g (expected %g) -> %s\n", s, n * 0.25, s == n * 0.25f ? "PASS" : "FAIL");
+  return s == n * 0.25f ? 0 : 1;
+}
+```
+
+```
+hipcc -O3 --offload-arch=gfx90a noundef_padding.hip                                 # sum = inf -> FAIL, 2 llvm.assume in device IR
+hipcc -O3 --offload-arch=gfx90a '-DINIT==0.0f' noundef_padding.hip                  # sum = 50 -> PASS, 0 assume
+hipcc -O3 --offload-arch=gfx90a -Xclang -no-enable-noundef-analysis noundef_padding.hip   # PASS
+hipcc -O0 --offload-arch=gfx90a noundef_padding.hip                                 # PASS
+```
+
+Device IR for gfx1100, gfx1151 and gfx942 has the same 2 assumes (compile only). Toolchain: AMD clang 24.0.0git (ROCm/llvm-project d6f6cb69). This is legal compiler behaviour for UB source, not a ROCm bug, so nothing is to be filed against ROCm.
+
+**Where the fix belongs:** colmap's f32 generated tree. Regenerating it with `caspar_generate.py` against current SymForce (which has a768308; the fork's `kernel.cu.jinja:47-50` emits `= 0` for every register) fixes it; this is item 3 of the study's scope ("regenerate colmap's f32 and f64 trees from SymForce main") and needs no SymForce change. The fork is unchanged for part 2. SymForce's runtime was checked for the same pattern: its uninitialised locals (`StorageT tot` in the CUDA arms of `FlushSumShared`/`FlushSumBlock*`, `StorageT data` in the cross-block helpers, `T result` in `ReadCuMem`) are only read on paths that assign them, so no by-value read of an indeterminate value occurs; SymForce's existing `caspar_padding_lane_cuda_test` already guards the template behaviour. A colmap-side PR would be separate work for jeff to direct (colmap project, not this one).
+
+**Hypotheses from the ruling, each with its result:**
+
+- Uninitialised solver arena: ruled out earlier by the study (zeroing the arena changes nothing); consistent, since the garbage is in registers, not memory.
+- SymForce `a768308` already present: **false for colmap's f32 tree** (present only in f64). This was the decisive check.
+- Divide or rsqrt on a padded or masked-out lane: yes, this is where the non-finite values originate (`1.0 / r25`, `1.0 / r23` on padding-lane inputs), but only because the guard is deleted; the divide is not itself the defect.
+- `-ffp-contract=fast` vs `--use_fast_math`: not the cause. The failing and passing builds use identical flags; the single `-Xclang -no-enable-noundef-analysis` toggle (control 4) or register zeroing flips the result, and the reproducer fails without any fast-math flag at all.
+- Reduction over garbage lanes where CUDA's cg reduce masked them: the garbage does reach the reduction, but the HIP arm of SumStore masks exactly as CUDA does (`valid ? data : 0`); the compiler removed the mask, on HIP and on clang-built CUDA alike. Not a difference between the HIP and CUDA reduction code.
+- Zero-sized factor group: not the cause. Unused variants return before launch (`if (problem_size == 0) return;` in every launcher), and bisection shows one non-empty kernel alone produces the NaN.
+
+### Exit state and notes for the reviewer and validators
+
+- Fork: `moat-fix-465` = `e7e0b00c` + `aa31e636` (part 1 only). `head_sha` advanced to aa31e636; every platform reads revalidate.
+- CUDA no-regression scope for the nvcc host: the diff is confined to the HIP branch of `cuda_to_hip.h` and the HIP branch of `test/CMakeLists.txt`; compile the 4 Caspar test targets with nvcc 12.8 as on 2026-11-04 (the CUDA build never reads either changed region, so the expected result is identical).
+- Validators (wave32 and Windows): rerun the 4 Caspar tests and the ctest. New in this round: the test `.cc` files are compiled by the host C++ compiler, not as HIP. On Windows that means MSVC or clang-cl compiles them against `hip_runtime.h` with `__HIP_PLATFORM_AMD__`; this host could not check that, so a Windows build failure there would be news, not an environment issue. The test runtime no longer links `hip::hipcub` (headers only) and the executables still link through the HIP language.
+- The PartiallyContainedTracks NaN is a colmap f32 regeneration issue; nothing for the SymForce PR to change. Worth a line in the upstream reply only if jeff wants to mention it.
+- Not done: wave32 or Windows runs (this host is wave64 only; the "not wave related" conclusion is from the code and the gfx1100 IR, not a wave32 run), colmap f64, a real regeneration of colmap's f32 tree with `caspar_generate.py` (the zeroing was applied by regex, which matches the template's output form but is not byte-identical to a regeneration, since current SymForce has other template changes).
+
+## Lesson for cuda-to-rocm: an uninitialised register passed by value lets clang delete a padding-lane guard
+
+Promoted to `references/fault-classes.md` in 1dfd0095.
+
+Belongs in `references/fault-classes.md` (Floating point or Memory and lifetime; it surfaces as NaN). A kernel that declares locals without initialisers, assigns them only inside `if (idx < n)`, and then passes one BY VALUE to a helper outside the guard (a masked block reduction `Reduce(valid, value)` is the usual shape) has UB in its padding lanes: they read an indeterminate value. clang marks by-value parameters `noundef`, so LLVM proves the padding-lane path unreachable, inserts `llvm.assume(idx < n)`, and drops both the guard and the helper's `valid ? value : 0` mask; the padding lanes then compute on out-of-range inputs, store past the end of outputs, and feed inf/NaN into the reduction. nvcc does not exploit this, so the CUDA build passes and the HIP build (or clang-built CUDA) gives NaN on any problem size that leaves padding lanes, on either wavefront width. Check the device IR for `llvm.assume` on the thread-index compare (`--cuda-device-only -S -emit-llvm`); confirm with `-Xclang -no-enable-noundef-analysis` (diagnostic only, not a fix). Fix the source: initialise the locals (zero is the identity of a sum). Seen in a code generator's kernels: the generator had fixed its template, but a vendored copy of its output predated the fix, so check that vendored generated code actually carries a fix its changelog claims.
+
+## Review 2026-11-18 (fix round moat-fix-465 round 2, delta e7e0b00c...aa31e636; reviewer, linux-gfx90a)
+
+Scope: the one commit `aa31e636` on `moat-fix-465` over the published tip `e7e0b00c` (`git diff e7e0b00c...aa31e636`, 2 files, +19/-4), reviewed with the pr-review skill; every check below was re-read against the code or run on this host (TheRock `rocm-sdk-devel` 10.1.0, AMD clang 24, g++ 13.3). Fork clone status clean; `python3 utils/jargon.py --port symforce`: clean; `utils/prose.py` on the commit message: clean.
+
+**Verdict: no findings. review-passed.**
+
+Checks jeff asked for, with what was verified:
+
+1. CUDA path untouched. Both header hunks sit between `#if defined(USE_HIP) || defined(__HIP_PLATFORM_AMD__)` and `#else  // CUDA path` in `symforce/caspar/source/runtime/cuda_to_hip.h` (lines 14-58 at aa31e636); the CUDA arm (lines 60-75) is byte-identical to e7e0b00c and already used the same `__CUDACC__` guard and comment. The first `test/CMakeLists.txt` hunk (lines 117-122) is in the `else()` of `if(CMAKE_CUDA_COMPILER)`; the second (lines 144-151) is inside `if(CMAKE_HIP_COMPILER)`, which is never true in a CUDA build because `check_language(HIP)` only runs when no CUDA compiler exists (line 83). The nvcc compile check can be scoped as the porter states.
+2. Host compile of the test `.cc` files. None of the six host-compiled sources (four `test/caspar_*_cuda_test.cc`, both generated `solver.cc`) nor the headers they reach (`kernel_*.h`, `caspar_mappings.h`, `solver.h`, `shared_indices.h`, `sort_indices.h`, `solver_tools.h`, `solver_params.h`) use `cub::`, `cg::`, `__global__`, `__device__`, `__shared__` or `<<<`; grep empty. Syntax-only compiles on this host with `-DUSE_HIP -D__HIP_PLATFORM_AMD__=1 -I<SDK>/include`: both `solver.cc` and a probe TU including `cuda_to_hip.h` plus every kernel and runtime header pass with g++ AND with the SDK clang++ in non-HIP mode (the compiler and mode the Windows GNU-driver route uses for CXX); with e7e0b00c's header, clang++ non-HIP fails exactly as g++ does (`arch.hpp:49: use of undeclared identifier '__builtin_amdgcn_wavefrontsize'`). `__HIPCC__` is defined in both clang HIP passes (predefined, and `hip/hip_common.h` under `__clang__ && __HIP__`) and by no host compiler, so device code is unaffected. CMake: `roc::rocprim` in `<SDK>/lib/cmake/rocprim/rocprim-targets.cmake:59-62` is an INTERFACE target with include directories only; `hip::device` arrives only through `roc::rocprim_hip` (line 70), which `hip::hipcub` links (hipcub-targets.cmake:63), so the commit's reasoning holds. `hipcub-config.cmake:90` does `find_dependency(rocprim)`, so `roc::rocprim` is always defined once `find_package(hipcub)` succeeds; both targets have existed under these names across ROCm releases. `hip::host` supplies `__HIP_PLATFORM_AMD__=1` (hip-config-amd.cmake:124-126) to the host sources through `caspar_test_runtime`'s PUBLIC link; the hipCUB include directory is the ROCm `include/` that also holds `hip/`, so includes resolve on Windows too, where `hip::device` carries no include directories anyway (hip-config-amd.cmake:133). Dropping `hip::device` also drops its `--offload-arch=<GPU_TARGETS>` flags, so the HIP objects now build only for `CMAKE_HIP_ARCHITECTURES` (or what CMake detects); that is the documented behaviour, not a regression.
+   - Wave32: nothing in the delta is wavefront-dependent. The only wave-sensitive code (rocPRIM, cooperative groups, the kernels) is still compiled only in the HIP passes with `__HIPCC__` defined, exactly as at e7e0b00c; the host objects contain no device code. A wave32 validator should see the same counts as at e7e0b00c.
+   - Windows: the HIP headers carry explicit MSVC branches for host-only compiles (`amd_detail/host_defines.h:358` for MSVC proper, `amd_hip_vector_types.h:805` for `_MSC_VER`, which clang targeting MSVC also defines and which the previous all-HIP Windows build already exercised), and the clang-only parts of `amd_hip_runtime.h` (clang CUDA wrapper includes) are under `__HIP_CLANG_ONLY__`. Not verified on Windows from here (no MSVC SDK on this host). Expectation for the Windows validator: with the route recorded on 2026-11-04 (clang++ GNU driver for C, CXX and HIP), the four targets should build and pass with the same counts; the six `.cc` objects are now CXX objects from the same clang++ in non-HIP mode, which is the configuration checked above on Linux. A compile error inside `hip/` or `amd_detail/` headers would be a genuine finding against this commit, not environment. Mixing MSVC `cl.exe` for CXX with clang for HIP is a different route that was never used for this project; if a validator tries it and hits a C runtime-library mismatch at link time (LNK2038), that is that route's configuration, not this delta.
+   - **The Windows validator must re-mirror its standalone project.** `agent_space/sf-caspar-tests/CMakeLists.txt` on the laptop copied the e7e0b00c Caspar block (all `.cc` as `LANGUAGE HIP`, `hip::hipcub`). Running it unchanged would not test this commit. Copy the block from `test/CMakeLists.txt` at aa31e636 (lines 81-171): `.cc` files stay CXX, only the `.cu` data sources are HIP, the runtime links `hip::host roc::rocprim` plus hipCUB's include directories.
+3. Commit message: title `[ROCm] Keep device-only HIP headers out of host compiles` is 56 characters; body one line per paragraph, rationale plus evidence, "Authored with Claude.", fenced Test Plan with literal commands, no `Co-Authored-By` or noreply trailer, ASCII only, no MOAT vocabulary (jargon gate clean over `main..moat-fix-465`).
+
+Part 2 (colmap f32 NaN): read, not reviewed as code. The reasoning holds as far as I can check it: the noundef/`llvm.assume` mechanism is the documented clang behaviour for passing an indeterminate value by value; the single-flag control (`-Xclang -no-enable-noundef-analysis`) and the zero-initialisation both flip the result on otherwise identical builds; the bisection isolates one kernel. One caveat on wording only: "reading an indeterminate value is UB" is right for C++17/20 (what these kernels compile as); C++26 reclassifies it as erroneous behaviour, which would change the reasoning if the code were ever built as C++26. The lesson's "store past the end of outputs" follows from the guard removal visible in the IR; the notes correctly mark the arena overwrite as inferred, not observed. No finding.
+
+## CUDA no-regression compile at aa31e636 (nvcc host, 2026-11-18)
+
+jeff asked for the CUDA no-regression compile check of the staged round `moat-fix-465` at `aa31e636` (`head_sha` in status.json; fork branch tip confirmed by `git fetch`), against the published tip `e7e0b00c`. I ran it as a fleet worker on a Linux host with NVIDIA's CUDA 12.8 toolkit (`/usr/local/cuda-12.8`, nvcc V12.8.93, host g++ 13.3.0, CMake 3.31.6, Ninja) and no NVIDIA GPU. This is evidence only: no stage or platform state changed, no fork push, no `gh` write.
+
+**Result: no CUDA regression.** The CUDA regions are byte-identical. At aa31e636 the four Caspar test targets build and link with the same 78 nvcc compiles and 0 warnings as at e7e0b00c on 2026-11-04. Built from the same path, all 78 sm_75 cubins have identical code at both commits.
+
+### Setup
+
+Fresh clone of AMD-Ecosystem/symforce in the job directory: `<job>/sf-cuda`, detached at aa31e636, plus a worktree `<job>/sf-base` at e7e0b00c. Neither is under `projects/symforce/src`. The job venv got `pip==25.0.1 setuptools==75.3.2` and `requirements/dev_py311.txt`, installed from `sf-cuda`. apt deps were already present.
+
+### 1. CUDA regions byte-identical (verified)
+
+- `git diff --stat e7e0b00c aa31e636`: 2 files, `cuda_to_hip.h` (+7/-1) and `test/CMakeLists.txt` (+12/-3).
+- `cuda_to_hip.h`: lines 1-13 (before `#if defined(USE_HIP) || defined(__HIP_PLATFORM_AMD__)`) are identical. The CUDA arm runs from `#else  // CUDA path` to EOF (lines 54-69 at e7e0b00c, 60-75 at aa31e636) and is byte-identical (`cmp`; sha256 `afa91194...` on both). Both new `#if defined(__HIPCC__)` blocks are inside the HIP arm.
+- `test/CMakeLists.txt`: I masked the `else()` arm of `if(CMAKE_CUDA_COMPILER)` around `caspar_test_runtime` and the `if(CMAKE_HIP_COMPILER)` block inside the per-test `foreach`. The rest of the file is then byte-identical between the two commits (sha256 `12c7febc...` on both), and both hunks fall inside those two HIP-only blocks. `check_language(HIP)` only runs `if(NOT CMAKE_CUDA_COMPILER ...)`, and the nvcc configure cache has no HIP entry (`grep -c HIP CMakeCache.txt` = 0).
+
+### 2. nvcc build and link at aa31e636 (verified)
+
+Commands, identical for `<T>` = `sf-cuda` (aa31e636) and `sf-base` (e7e0b00c):
+
+```
+export PATH=$FLEET_VENV/bin:$PATH
+cmake -S <job>/<T> -B <job>/build-<T> -GNinja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.8/bin/nvcc -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ -DSYMFORCE_PYTHON_OVERRIDE=$FLEET_VENV/bin/python -DSYMFORCE_BUILD_BENCHMARKS=OFF -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+ninja -C <job>/build-<T> -v -j 120 bin.tests.caspar_padding_lane_cuda_test bin.tests.caspar_solver_cuda_test bin.tests.caspar_tridiagonal_cuda_test bin.tests.caspar_backend_coverage_cuda_test
+```
+
+| | 2026-11-04 (e7e0b00c, porter) | e7e0b00c (this run) | aa31e636 (this run) |
+|---|---|---|---|
+| configure | rc=0 | rc=0, "CUDA compiler identification is NVIDIA 12.8.93" | same |
+| nvcc `-x cu -c` compiles | 78 | 78 | 78 |
+| host g++ Caspar `.cc` compiles | not recorded (6 at d5eb335d) | 6 | 6 |
+| warnings in the build log | 0 | 0 | 0 |
+| link of the 4 test binaries | pass | rc=0 | rc=0 |
+
+The 78 nvcc compiles break down as 3 runtime, 1 backend_coverage, 1 padding_lane, 18 solver and 55 tridiagonal. Every one carries `--generate-code=arch=compute_75,code=[compute_75,sm_75]` and none carries `USE_HIP`. The 6 host `.cc` compiles are the four `caspar_*_cuda_test.cc` files and both generated `solver.cc`. Per binary, `cuobjdump --list-elf` gives backend_coverage 1, padding_lane 2, solver 21 and tridiagonal 58 sm_75 cubins at both commits. That matches the d5eb335d record, and the binary sizes are identical between the commits. One difference from 2026-11-04: this run used `CMAKE_BUILD_TYPE=Release` and Ninja. I did not run the test binaries, because with no NVIDIA GPU they only reach `REQUIRE(HaveDevice())`.
+
+### 3. Object-code comparison (verified, same build path)
+
+The first comparison used the two separate trees. Every PTX differed there only in the `_INTERNAL_<hash>_..._cu_<hash>` names of internal-linkage symbols, which nvcc derives from the source path. So I rebuilt in one tree instead. I saved the 84 Caspar objects of `build-sf-base` at e7e0b00c, checked the worktree out at aa31e636, deleted those objects, and rebuilt the four targets in the same build directory. The rebuild ran 78 nvcc compiles, rc=0, and printed no `warning:` lines. Its only "Warning" was CMake's deprecation notice for the metis dependency during the reconfigure triggered by the changed `test/CMakeLists.txt`.
+
+- The 6 host `.cc.o` objects are byte-identical.
+- The 78 `.cu.o` objects all differ byte-wise. nvcc embeds a per-compile module id in the host-side object, so this is expected and says nothing about the code.
+- PTX (`cuobjdump -ptx`) is identical for 77 of 78. The exception is `solver_tools.cu.o`, where only the numeric suffix of `_INTERNAL_bd0ba4d3_15_solver_tools_cu_ffd06978_<n>` differs. That suffix is not deterministic: replaying the same compile command twice at the same commit gave `..._10314464...` and `..._10314714...`, and the build itself gave `..._10293264...`.
+- Cubins (`cuobjdump -xelf all`, 78 sm_75 cubins): 77 are byte-identical. In `solver_tools.cu.1.sm_75.cubin`, same size, 51 sections with the same names, a Python ELF section comparison found that only `.strtab` differs, which holds the internal symbol name. All 11 `.text.*` sections are byte-identical. Across the 78 cubins there are 199 kernel `.text` sections, the same count as the d5eb335d SASS check.
+- I did not produce SASS listings, because this toolkit install has no `nvdisasm` and fetching NVIDIA's redist archive was not permitted in this job. Byte-identical cubin `.text` sections are the machine code that SASS disassembles, so the SASS is identical by construction. That conclusion is inferred, not diffed as text.
+
+### Verified vs inferred
+
+- Verified: the byte identity of the CUDA arm of `cuda_to_hip.h` and of the non-HIP parts of `test/CMakeLists.txt`; configure, compile and link at aa31e636 with 78 nvcc compiles, 6 host compiles and 0 warnings; identical device code (cubin `.text`) and host `.cc` objects between e7e0b00c and aa31e636 at the same build path.
+- Inferred: the SASS text is identical (from identical `.text` bytes, with no disassembler run); CUDA runtime behaviour is unchanged (no NVIDIA GPU here, so the tests were not run; the device code and host objects are identical).
+- Clones are clean (`git status --porcelain` empty in both). Build trees and scratch stay in the job directory only.
+## Validation linux-gfx1100 2026-11-18 (fix round moat-fix-465 round 2, tip aa31e636)
+
+Validator, jeff's request. Fresh fork clone `projects/symforce/src`, `git checkout -B moat-fix-465 origin/moat-fix-465`, HEAD = aa31e636e72ba79fc676a04657fdd8bb6bf3c91f (= status.json head_sha), `protect-fork` installed. GPU: AMD Radeon Pro W7800 48GB (gfx1100, wave32), `HIP_VISIBLE_DEVICES=1` as pinned by the dispatcher, all GPU work under `ulimit -c 0`. ROCm: TheRock `rocm-sdk-devel` 10.1.0, HIP compiler AMD clang 24 (`<SDK>/lib/llvm/bin/clang++`); host CXX `/usr/bin/c++` (g++ 13.3.0). Job venv with `requirements/dev_py311.txt` and `build_py311.txt` (cmake 4.2.1), venv `bin` first on PATH.
+
+`classify e7e0b00c aa31e636`: `mixed` (both files, token count differs), so no carry-forward; full revalidation.
+
+### Build
+
+This container has no GMP headers (only the runtime `libgmp.so.10`), and the bundled SymEngine configure failed with `Could NOT find GMP (missing: GMP_LIBRARIES GMP_INCLUDE_DIRS)`. GMP 6.3.0 was built from the ftp.gnu.org tarball into a job-local prefix (`./configure --prefix=<job>/deps/prefix --enable-cxx && make && make install`) and added to `CMAKE_PREFIX_PATH`. Environment only; nothing in the port changes. Build dir outside the fork clone (`<job>/sfbuild`):
+
+```
+cmake -S <src> -B <job>/sfbuild -GNinja -DCMAKE_BUILD_TYPE=Release -DPython_EXECUTABLE=$FLEET_VENV/bin/python -DSYMFORCE_PYTHON_OVERRIDE=$FLEET_VENV/bin/python -DCMAKE_HIP_ARCHITECTURES=gfx1100 "-DCMAKE_PREFIX_PATH=<job>/deps/prefix;<SDK>"
+cmake --build <job>/sfbuild -j 32
+```
+
+rc=0. CMake found HIP (no CUDA compiler). New in this round, confirmed in `build.ninja`: the four `test/caspar_*_cuda_test.cc` files and both generated `solver.cc` are `CXX` objects built by g++; the 78 generated `.cu` files are the only HIP objects in the Caspar test targets. Warnings in Caspar test sources: 125 `-Wunused-result` and 32 `-Wunused-value`, all on ignored `hipError_t` returns. The `-Wunused-result` ones are new as a flag name only: g++ reports the `[[nodiscard]]` `hipError_t` from the host-compiled `.cc` files (both `solver.cc`, `caspar_padding_lane_cuda_test.cc`, `caspar_backend_coverage_cuda_test.cc`) under that flag, where clang in HIP mode reported the same ignored returns as `-Wunused-value`. Same pre-existing class, not a new defect.
+
+### Tests
+
+```
+export PYTHONPATH=<src>:<job>/sfbuild/lcmtypes/python2.7:<src>/gen/python:<src>/third_party/skymarshal
+ctest --test-dir <job>/sfbuild -R caspar --output-on-failure
+for t in padding_lane solver backend_coverage tridiagonal; do for i in 1 2 3 4 5; do <job>/sfbuild/bin/tests/caspar_${t}_cuda_test; done; done   # run twice, 10 runs per test
+ctest --test-dir <job>/sfbuild -j16 --output-on-failure
+```
+
+- Caspar ctest: 6/6. backend_coverage 302/302 (1 case), padding_lane 6/6 (1 case), solver 24/24 (5 cases), tridiagonal 140/140 (2 cases); symengine and sympy symforce_caspar_codegen_test pass.
+- Four GPU test binaries, 10 runs each (two batches of 5): 40/40 pass, same counts every run.
+- Full ctest: 209/212. The 3 failures are the known environmental ones: symengine/sympy_symforce_rust_codegen_test (`'rustfmt' is not installed for the toolchain '1.97.1-x86_64-unknown-linux-gnu'`) and symengine_symforce_docs_test (`Could not import extension nbsphinx (exception: No module named 'jsonschema')`). Same three as this platform at e7e0b00c and the porter's gfx90a run at aa31e636.
+
+### README HIP example
+
+`symforce/caspar/examples/kernel_example/gen_and_run.py` copied to `agent_space/kex/` with only `caslib.compile(out_dir)` -> `caslib.compile(out_dir, use_hip=True, hip_arch="gfx1100")`, run with the venv python, `CMAKE_PREFIX_PATH=<SDK>`, PYTHONPATH as above plus the image site-packages for torch. Rerun because the generated library includes the changed `cuda_to_hip.h`: it built (`gfx1100` in its CMakeCache), ran on the GPU and printed "Success!".
+
+### Gates
+
+- CUDA compile gate: not run here (no CUDA toolkit and no conda on this host). Recorded at aa31e636 by the nvcc host in parallel with this run (commit c6a9b0af on port/symforce: 78 compiles, 0 warnings, links, cubin code identical to e7e0b00c). The delta touches only the HIP branches of `cuda_to_hip.h` and `test/CMakeLists.txt` (see Review 2026-11-18).
+- `python3 utils/jargon.py --port symforce`: clean.
+- Documentation: ROCm build documented in `symforce/caspar/README.md` "AMD GPUs (ROCm/HIP)" (unchanged in this delta); its example ran above.
+- Fork worktree: `git status --porcelain` empty.
+- Not rerun this round: the SumStore harness (the delta does not touch `memops.cuh` or any device code).
+
+Compared with this platform's record at e7e0b00c: identical pass counts everywhere; the only differences are the host-compiled test `.cc` files (as intended by aa31e636) and the warning flag name above.
+
+VALIDATION PASSED on linux-gfx1100 (Radeon Pro W7800) at aa31e636.
+## Validation linux-gfx90a 2026-11-18 (fix round moat-fix-465 round 2, tip aa31e636)
+
+Validator, jeff's request. Fresh fork clone `projects/symforce/src`, `git checkout -B moat-fix-465 origin/moat-fix-465`, HEAD == `aa31e636e72ba79fc676a04657fdd8bb6bf3c91f` == head_sha; `protect-fork` installed; `git branch main origin/main` for `jargon.py --port`. GPU: AMD Instinct MI250X GCD (gfx90a, wave64), `HIP_VISIBLE_DEVICES=1` as pinned by the dispatcher (all 4 GCDs idle per `amd-smi metric -u`), GPU programs under `ulimit -c 0`. ROCm: TheRock pip `rocm-sdk-devel` 10.1.0, HIP compiler Clang 24.0.0 (`<SDK>` = `/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel`); host g++ 13.3. Job venv with `requirements/dev_py311.txt` and `build_py311.txt`, venv `bin` first on PATH. Full real-GPU run (no carry-forward: the test build changed how six sources compile and what the runtime links).
+
+### Build
+
+```
+cmake -S <src> -B <src>/build -GNinja -DCMAKE_BUILD_TYPE=Release -DPython_EXECUTABLE=$FLEET_VENV/bin/python -DSYMFORCE_PYTHON_OVERRIDE=$FLEET_VENV/bin/python -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_PREFIX_PATH=<SDK>
+cmake --build <src>/build -j 64
+```
+
+rc=0. CUDA compiler NOTFOUND, HIP compiler = SDK clang++ 24.0.0. What this round changed, checked in the ninja commands of the 4 Caspar targets: the six `.cc` sources (`test/caspar_{backend_coverage,padding_lane,solver,tridiagonal}_cuda_test.cc` and both generated `solver.cc`) are compiled by `/usr/bin/c++` with no `-x hip` and no `--offload-arch`; every `.cu` (runtime and generated kernels) by the SDK clang++ with `-x hip`.
+
+### Caspar GPU tests
+
+```
+ulimit -c 0
+build/bin/tests/caspar_{padding_lane,solver,backend_coverage}_cuda_test
+for i in 1 2 3 4 5; do build/bin/tests/caspar_tridiagonal_cuda_test; done
+```
+
+All pass: padding_lane 6/6 assertions (1 case); solver 24/24 (5 cases); backend_coverage 302/302 (1 case); tridiagonal 140/140 (2 cases) in 5 of 5 runs. Identical to the counts at e7e0b00c (this platform 2026-11-04) and to the porter's run at aa31e636.
+
+### Full ctest
+
+```
+PYTHONPATH=<src>:<src>/build/lcmtypes/python2.7:<src>/gen/python:<src>/third_party/skymarshal ctest --test-dir <src>/build -j16 --output-on-failure
+```
+
+209/212 pass. The 3 failures are environmental and the same as at e7e0b00c: `symengine_symforce_docs_test` (sphinx: `Could not import extension nbsphinx (exception: No module named 'jsonschema')`, although jsonschema 4.26 is in the job venv), `symengine_symforce_rust_codegen_test` and `sympy_symforce_rust_codegen_test` (`'rustfmt' is not installed for the toolchain '1.97.1-x86_64-unknown-linux-gnu'`). The four `caspar_*_cuda_test` entries, both caspar codegen tests and both linter tests pass.
+
+### CUDA no-regression gate at aa31e636: cuda-not-validated (no toolkit on this host)
+
+This host has no CUDA toolkit (`/opt/conda`, `/usr/local/cuda*` absent, no conda). The pip wheel `nvidia-cuda-nvcc-cu12==12.8.*` ships only `ptxas`, not `nvcc`; fetching NVIDIA's redistributable nvcc tarball was refused by this session's permission policy, so no nvcc compile ran. Substitute evidence (weaker than a compile): the part of `cuda_to_hip.h` from `#else  // CUDA path` to EOF hashes identically at e7e0b00c and aa31e636 (sha1 `5aacc3e4...`); the two `test/CMakeLists.txt` hunks (at aa31e636 lines 117-122 and 145-150) lie in the `else()` of `if(CMAKE_CUDA_COMPILER)` and inside `if(CMAKE_HIP_COMPILER)`, matching the reviewer's reading. The gate itself is recorded at aa31e636 by the nvcc host (commit c6a9b0af on port/symforce), which landed while this run was in progress.
+
+### Pre-completion checks
+
+- `python3 utils/jargon.py --port symforce`: clean.
+- Documentation: the ROCm build is documented in `symforce/caspar/README.md` ("AMD GPUs (ROCm/HIP)"); this round touches no docs and needs none.
+- `git -C projects/symforce/src status --porcelain`: empty.
+## Validation windows-gfx1151 2026-11-17 (fix round moat-fix-465 round 2, tip aa31e636) -- FAILED: host compile on Windows
+
+Validator, jeff's request, light run. GPU: AMD Radeon 8060S (gfx1151, wave32), `HIP_VISIBLE_DEVICES=0`, `ulimit -c 0`. Fork clone `agent_space/symforce-win` detached at `aa31e636e72ba79fc676a04657fdd8bb6bf3c91f` (== head_sha), `git status --porcelain` empty, nothing patched. Toolchain unchanged from 2026-11-04: TheRock `_rocm_sdk_devel` (clang 23.0.0), CMake 3.31.0, Ninja, GNU-driver route (clang/clang++ for C, CXX and HIP).
+
+### Build
+
+`agent_space/sf-caspar-tests/CMakeLists.txt` re-mirrored from `test/CMakeLists.txt` at aa31e636 (HIP branch): runtime links `hip::host roc::rocprim` plus hipCUB's include directories; only `*.cu` data sources get `LANGUAGE HIP`; the four `caspar_*_cuda_test.cc` and both `solver.cc` stay CXX. Configure and build as on 2026-11-04 (`cmake --build ... --parallel 8`, fresh build dir). Confirmed from `ninja -t commands`: the `.cc` objects are compiled by `clang++.exe -DUSE_HIP -DUSE_PROF_API=1 -D__HIP_PLATFORM_AMD__=1 -isystem <SDK>/include -isystem <vcpkg eigen3> -O3 -DNDEBUG -std=gnu++17 -D_DLL -D_MT -Xclang --dependent-lib=msvcrt -c` (no `-x hip`, no `--offload-arch`); the `.cu` files as HIP (`--offload-arch=gfx1151`). The 4 test `.cc` files compile; the two generated `solver.cc` (caspar_solver_test, caspar_tridiagonal_test) FAIL to compile as host C++, so `caspar_solver_cuda_test` and `caspar_tridiagonal_cuda_test` are not linked.
+
+Errors (clang++ with the MSVC STL on Windows; `-ferror-limit` stops at 20 per file):
+1. `symforce/caspar/source/runtime/sort_indices.h:20,21,25,28: error: unknown type name 'uint'` (via `solver.h -> sort_indices.h`). The header includes `<sys/types.h>` for `uint`, a glibc typedef; it does not exist on Windows. Previously every consumer compiled as HIP, where it was supplied another way; the host compile exposes it.
+2. `solver.cc: error: no member named 'to_string' in namespace 'std'` (solver_test/solver.cc:75,81,82,429..; tridiagonal_test/solver.cc:131,779..836). The generated `solver.cc` includes `<algorithm>`, `<chrono>`, `<stdexcept>`, `<vector>` but not `<string>`; libstdc++ provides it transitively, the MSVC STL does not.
+
+Both are source portability defects exposed by this commit's move of the generated `.cc` files to the host compiler (a Linux libstdc++/glibc host cannot see them), not environment. Fix belongs in the porter's tree: use `unsigned int` (or a `<cstdint>`-based typedef) in `sort_indices.h`, and add `#include <string>` to the generator template for `solver.cc` (and regenerate the checked-in data). No warnings new versus 2026-11-04 besides these errors; the pre-existing `-Wunused-value` on ignored `hipError_t` remains.
+
+### Tests run
+
+Built and run once each, DLLs staged next to the exes: caspar_padding_lane_cuda_test 6/6 (1 case), caspar_backend_coverage_cuda_test 302/302 (1 case). caspar_solver_cuda_test (24/24 expected) and caspar_tridiagonal_cuda_test (140/140 expected): NOT BUILT, not run. Skipped as before: SumStore race harness, full ctest, CUDA gate (no toolkit; recorded at this head by Linux). Jargon gate not re-run here (Linux reviewer recorded clean at this head; no new commits).
+
+VALIDATION FAILED on windows-gfx1151 at aa31e636.
+
+## Porter: Windows host-compile fix, round 2 (linux-gfx90a, 2026-11-18; tip c665e5cc)
+
+jeff asked for the smallest correct fix for the windows-gfx1151 failure at aa31e636 (section "Validation windows-gfx1151 2026-11-17" above), as a new commit on `moat-fix-465`. `set-state symforce linux-gfx90a porting` took the lock. Host and toolchain as in round 2 above: MI250X GCD (gfx90a), `HIP_VISIBLE_DEVICES=1` (dispatcher pin), `ulimit -c 0`, TheRock `rocm-sdk-devel` 10.1.0 (AMD clang 24, `<SDK>`), g++ 13.3 with libstdc++ 14, job venv with `requirements/{build,dev}_py311.txt`. Fresh fork clone `projects/symforce/src`, `protect-fork` installed. Build dir outside the clone (`<job>/sfbuild`).
+
+### Decision: option (a), make the sources portable
+
+The host-compile test from aa31e636 stays as it is on every platform. The two defects are real portability bugs in shared source that any non-glibc or non-libstdc++ host compile of a generated `solver.cc` would hit, the CUDA build on Windows included. Option (b) has no narrower form that keeps that coverage: putting a `uint` typedef or `<string>` into `cuda_to_hip.h` would hide the bug for HIP only, and building the `.cc` files as HIP on Windows removes the coverage. (a) is spelling and includes only, so it is safe. Nothing in it proved unsafe, so the HIP-on-Windows revert was not needed.
+
+### Commit c665e5cc `[ROCm] Fix host compile of generated solver.cc on Windows` (pushed)
+
+The commit gate requires `[ROCm]` on every commit title (`moatlib.py` commit-message check, "title does not start with [ROCm]"), so this host-portability fix in shared code carries it too, as AGENTS.md requires.
+
+**Every changed shared-code line.** All of these are compiled by the CUDA build as well. The nvcc host should re-check them.
+
+1. `symforce/caspar/source/runtime/sort_indices.h:8`: `#include <sys/types.h>` -> `#include <cstddef>` (for `size_t`; the header no longer needs `uint`).
+2. `symforce/caspar/source/runtime/sort_indices.h:20-30`: in the declarations of `SortIndices`, `SortKeys` and `SelectIndex`, every `uint` -> `unsigned int` (9 occurrences), re-wrapped by clang-format 21.1.2 (the repo's pinned version). The declared types are identical (`uint` is `typedef unsigned int uint` in glibc and in HIP's `amd_detail/device_library_decls.h:29`), so the mangled names are too and the definitions in `sort_indices.cu`, which still spell `uint`, match them.
+3. `symforce/caspar/source/templates/solver.cc.jinja:10-12`: `+#include <cstdio>` (`printf`, 10 uses), `+#include <string>` (`std::to_string`, 23 uses), `+#include <utility>` (`std::swap`, 3 uses; the standard declares it in `<utility>`, not `<algorithm>`).
+4. The generated test data, regenerated by the project's generator: `test/symforce_function_codegen_test_data/symengine/symforce_caspar_solver_test/solver.cc` and `.../symforce_caspar_tridiagonal_test/solver.cc` each gain the same three includes (clang-format sorts them in among `<algorithm>`, `<chrono>` and `<stdexcept>`). No other line of either file changed.
+
+**CUDA, inferred (no nvcc here):** in the CUDA build, `sort_indices.cu` used to get `uint` from the header's `<sys/types.h>`. Now it gets it the way `shared_indices.cu` already does (29 `uint` uses, includes only `cuda_to_hip.h` and `shared_indices.h`): through `cuda_to_hip.h` -> `cuda_runtime.h`/CUB -> glibc `<stdlib.h>` -> `<sys/types.h>`, under the `_GNU_SOURCE` that g++ always defines. `sort_indices.cu` includes `cuda_to_hip.h` before `sort_indices.h`, exactly as `shared_indices.cu` does. Expected nvcc result: the same 78 compiles, 6 host compiles and 0 warnings, the same cubin `.text`, and the host `solver.cc.o` objects differ only by the three added includes, which declare nothing the code did not already see. For the nvcc host: build the 4 Caspar test targets as on 2026-11-18 and compare against aa31e636.
+
+### Class audit (every host-compiled file and every header it reaches)
+
+The host-compiled TUs are the four `test/caspar_*_cuda_test.cc` files and both generated `solver.cc`. `g++ -MM` lists the Caspar headers they reach: `cuda_to_hip.h`, `shared_indices.h`, `solver_params.h`, `solver_tools.h`, `sort_indices.h`, the generated `solver.h`, `caspar_mappings.h` and `kernel_*.h`, and `backend_test_function_expected.h`. I grepped all of them, plus the templates (`solver.{h,cc}.jinja`, `kernel.h.jinja`, `caspar_mappings.h.jinja`), for `uint|ushort|ulong|uchar|ssize_t|u_int|off_t`, `<sys/...>` and `<unistd.h>`, and listed every `std::` name and C library call against each file's own includes:
+
+- `uint`: only `sort_indices.h` (fixed). `<sys/types.h>`: only `sort_indices.h` (replaced). No `<unistd.h>` or other `<sys/...>`.
+- `solver.cc.jinja`: `std::to_string`, `printf` and `std::swap` had no include of their own (fixed). `std::chrono`, `std::max/min` and `std::runtime_error` are covered by `<chrono>`, `<algorithm>` and `<stdexcept>`.
+- `solver.h.jinja` (`std::vector`, `uint8_t`, `size_t`), `kernel.h.jinja` and `caspar_mappings.h.jinja` (`size_t`), and the four test `.cc` files (`<cmath>`, `<cstddef>`, `<iterator>`, `<algorithm>`, `<random>`, `<vector>` for what they use): nothing missing. `size_t` in the generated headers comes from `cuda_to_hip.h` -> `hip_runtime.h`/`cuda_runtime.h`, whose APIs declare it on every platform.
+- Outside the six TUs, the same class has one remaining instance, deliberately not changed: `pybind_array_tools.{h:42,cc:219,222}` uses `uint` (`AsUintPtr`). The generated library compiles its `pybind*.cc` sources as HIP under `USE_HIP` (generated `CMakeLists.txt`: `set_source_files_properties(${CPP_SOURCES} PROPERTIES LANGUAGE HIP)`), so the HIP headers supply `uint` on every ROCm platform, Windows included. It is reachable only from a CUDA build's host compile on a non-glibc host. That code predates the port and is not reachable from `solver.h` or the tests. I made and tested the 3-line change, then reverted it to keep this delta to what the round needs; it is a candidate upstream cleanup if jeff wants one. The pybind templates use `std::runtime_error` and the STL casters through pybind11's own headers, which is pybind11's contract, so they need nothing.
+
+### A Linux oracle for the Windows errors
+
+Script `agent_space/strict_host_check.sh` (not durable; recipe here): syntax-only host compile of the six TUs as the Windows GNU-driver route does it, `<SDK>/lib/llvm/bin/clang++ -std=gnu++17 -fsyntax-only -DUSE_HIP -D__HIP_PLATFORM_AMD__=1 -I<runtime> -I<data dir> -I<symengine data root> -isystem <SDK>/include -isystem /usr/include/eigen3 -isystem <build>/_deps/catch2-src/src -isystem <build>/_deps/catch2-build/generated-includes`, with or without (no `-x hip`) these options:
+
+| oracle | flags | aa31e636 | c665e5cc |
+|---|---|---|---|
+| plain libstdc++ | none | 6/6 pass (why Linux never saw it) | 6/6 |
+| glibc BSD typedefs hidden by macro | `-include poison_bsd_types.h` (`#include <sys/types.h>` then `#define uint uint_is_a_glibc_only_typedef`, same for `ushort`, `ulong`) | 4/6: both `solver.cc` fail, `sort_indices.h:20,21,25,28: unknown type name` (the Windows error) | 6/6 |
+| glibc BSD typedefs hidden by feature macros | `-U_GNU_SOURCE -U_DEFAULT_SOURCE -D_POSIX_C_SOURCE=200809L -DEIGEN_ALLOCA=__builtin_alloca` | same 4/6, same errors | 6/6 |
+| libc++, strict | Ubuntu `libc++-18-dev` unpacked into `<job>/deps/libcxx` (`apt-get download` + `dpkg -x`, no root), `-nostdinc++ -isystem <libcxx>/usr/lib/llvm-18/include/c++/v1 -D_LIBCPP_REMOVE_TRANSITIVE_INCLUDES` | 6/6 pass | 6/6 |
+
+**The libc++ check ran but cannot catch the `std::to_string` defect.** libc++ 18's `<vector>` includes `<string>` even with `_LIBCPP_REMOVE_TRANSITIVE_INCLUDES`, through the `vector<bool>` formatter (`<vector>` -> `__format/formatter_bool.h` ... -> `<string>`; seen with `-H`). The TheRock SDK ships libc++ headers without `__config_site`, so they cannot be used on their own. No Linux compile reproduced the missing `<string>`. That half of the fix rests on the include audit above and on the Windows error itself. The macro-poison oracle also reproduces the `uint` error in `pybind_array_tools.cc` at both commits, which is how I confirmed the remaining instance above.
+
+### Evidence at c665e5cc (gfx90a)
+
+```
+cmake -S <src> -B <job>/sfbuild -GNinja -DCMAKE_BUILD_TYPE=Release -DPython_EXECUTABLE=$FLEET_VENV/bin/python -DSYMFORCE_PYTHON_OVERRIDE=$FLEET_VENV/bin/python -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_PREFIX_PATH=<SDK>
+cmake --build <job>/sfbuild -j 64                          # at aa31e636 first: rc=0
+ninja -C <job>/sfbuild bin.tests.caspar_{padding_lane,solver,tridiagonal,backend_coverage}_cuda_test   # after the edit: rc=0
+SYMFORCE_SYMBOLIC_API=symengine python test/symforce_caspar_codegen_test.py            # before --update: FAILED (failures=2), as expected
+SYMFORCE_SYMBOLIC_API=symengine python test/symforce_caspar_codegen_test.py --update   # regenerates the two solver.cc
+SYMFORCE_SYMBOLIC_API={symengine,sympy} python test/symforce_caspar_codegen_test.py    # OK / OK (skipped=5), also re-run on the committed tree
+ctest --test-dir <job>/sfbuild -j16 --output-on-failure
+make lint --keep-going SYMFORCE_LCMTYPES_DIR=<job>/sfbuild/lcmtypes/python2.7
+```
+
+- Rebuild: the six `.cc` objects are CXX (`/usr/bin/c++`), `sort_indices.cu` was rebuilt as HIP and is fine without `<sys/types.h>`. No new warnings.
+- Generated data: the codegen test fails on the edited template before `--update` and passes after, and the only diff is the three include lines in each `solver.cc`. So the checked-in files are exactly what the generator emits.
+- GPU, `ulimit -c 0`: padding_lane 6/6 (1 case), solver 24/24 (5 cases), backend_coverage 302/302 (1 case), tridiagonal 140/140 (2 cases) 5 of 5 runs. The same counts as at aa31e636.
+- ctest: 208/212. Failures: `symengine_symforce_docs_test` (`No module named 'jsonschema'`), `symengine/sympy_symforce_rust_codegen_test` (`rustfmt` not installed), both known environment issues, and `symengine_symforce_linter_test`. The linter test fails only because the Makefile defaults `SYMFORCE_LCMTYPES_DIR` to `build/lcmtypes/python2.7` relative to the source tree and this build is out of tree (mypy `import-untyped` on `lcmtypes.sym`). `make lint` with the variable pointed at the build passes, rc=0, and that includes `clang-format --dry-run -Werror` over every `.h/.cc/.cu`. The Caspar tests, both codegen tests and `sympy_symforce_linter_test` pass.
+- README HIP example (`gen_and_run.py` with `caslib.compile(out_dir, use_hip=True, hip_arch="gfx90a")`, which copies the changed `sort_indices.h` into the generated library): built and printed "Success!", re-run after the pybind revert.
+- Gates: `python3 utils/jargon.py --port symforce` clean; `utils/prose.py` on the commit message clean; title 57 chars, ASCII; `git status --porcelain` empty; `moat-port` still `e7e0b00c`, and `moat-fix-465` = `e7e0b00c` + `aa31e636` + `c665e5cc` is a strict descendant of it.
+
+### Verified vs inferred
+
+- Verified here: both Windows errors reproduced on Linux at aa31e636 (the `uint` errors by the poison oracle) and gone at c665e5cc; build, the four GPU tests, the codegen tests and the README example on gfx90a; the generated data equals the generator's output.
+- Inferred: that Windows now compiles both `solver.cc` (the `<string>` half could not be reproduced on Linux; nothing else reaches the TUs that the audit flagged); CUDA unchanged (reasoned above; needs the nvcc host).
+
+### For the reviewer, the nvcc host and the Windows validator
+
+- Reviewer: the delta is `aa31e636..c665e5cc`, 4 files, +17/-7, all listed above.
+- nvcc host: compile the 4 Caspar test targets at c665e5cc. Check `sort_indices.cu` (now gets `uint` the way `shared_indices.cu` does) and the two host `solver.cc`.
+- Windows validator (gfx1151): re-mirror nothing new in CMake (this delta does not touch `test/CMakeLists.txt`); fetch c665e5cc, rebuild both `solver.cc` objects as host C++ (clang++ GNU driver, no `-x hip`) and link and run `caspar_solver_cuda_test` (24/24 expected) and `caspar_tridiagonal_cuda_test` (140/140 expected), plus padding_lane 6/6 and backend_coverage 302/302. A remaining compile error in a `.cc` object would be the same class missed by this audit; record it in full (no `-ferror-limit` cap: pass `-ferror-limit=0`).
+
+## Review 2026-11-18 #2 (fix round moat-fix-465 round 2, delta aa31e636...c665e5cc; reviewer, linux-gfx90a)
+
+Scope: the one commit `c665e5cc` `[ROCm] Fix host compile of generated solver.cc on Windows` on top of the already-reviewed `aa31e636` (`git diff aa31e636...c665e5cc`, 4 files, +17/-7), reviewed with the pr-review skill. I re-read or re-ran every check below on this host (TheRock `rocm-sdk-devel` 10.1.0, AMD clang 24, g++ 13.3 with libstdc++ 14). Fresh fork clone, `git status --porcelain` clean, `moat-fix-465` = `c665e5cc` on the fork, `moat-port` still `e7e0b00c`. `python3 utils/jargon.py --port symforce`: clean. `utils/prose.py` on the commit message: clean.
+
+**Verdict: no findings. review-passed.**
+
+Checks jeff asked for, with what was verified:
+
+1. **CUDA behaviour-neutral; declarations agree with definitions and uses.**
+   - Declarations: `sort_indices.h` changes only `uint` -> `unsigned int` in `SortIndices`, `SortKeys` and `SelectIndex` (9 occurrences). `SortIndicesGetTmpNbytes` and `SortKeysGetTmpNbytes` are unchanged. The definitions in `sort_indices.cu:31-74` still spell `uint`, which is a typedef for `unsigned int`, so they declare the same functions.
+   - Uses: the generated `solver.cc` calls only `SortIndicesGetTmpNbytes` (template lines 766 and 865; data solver.cc:503 and tridiagonal 949/1051/1108/1139). `sort_indices_pybinding.h:20` calls `SortIndices` with `AsUintPtr` (`uint*`). Nothing calls `SortKeys` or `SelectIndex` outside `sort_indices.cu`.
+   - Measured on HIP (built at both commits from separate trees in `agent_space`):
+     - `sort_indices.cu` compiled with `-x hip --offload-arch=gfx90a -cuid=fixed` gives byte-identical objects at aa31e636 and c665e5cc, host and device code included. Without a fixed CUID only the `__hip_cuid_*` and `__hip_gpubin_handle_*` names differ, because the CUID is derived from the path.
+     - Exported names are `_ZN6caspar11SortIndicesEPvmPKjPjS3_S3_m`, `_ZN6caspar8SortKeysEPvmPKjPjm` and `_ZN6caspar11SelectIndexEPKjS1_Pjm`, with `j` = `unsigned int`.
+     - Both generated `solver.cc` compiled as host C++ with g++ (the CI command line) give identical `nm` symbol tables and a byte-identical `.text` at both commits. Their only reference into this header is `U _ZN6caspar23SortIndicesGetTmpNbytesEm`.
+   - CUDA (inferred; no nvcc on this host): the C++ types are the same, so the Itanium mangling is the same. The three added standard headers are ones libstdc++ already pulled in transitively, which is why the file built before; the identical g++ `.text` above shows they change nothing. In a CUDA build `sort_indices.cu` still gets `uint` without `<sys/types.h>` in the header. It includes `cuda_to_hip.h` (and through it `cuda_runtime.h`) first, the same order `shared_indices.cu` uses, and that file has 29 `uint` uses and compiled under nvcc at aa31e636 (78 compiles, 0 warnings, section "CUDA no-regression compile at aa31e636"). The `cuda_runtime.h` -> glibc `<stdlib.h>` -> `<sys/types.h>` link was checked here: `#include <stdlib.h>` then `uint x;` compiles with g++ at both `-std=c++17` and `-std=gnu++17`, while `<cstddef>` alone does not define `uint`.
+   - No includer relied on the removed `<sys/types.h>`. `sort_indices.h` is never the first header in any TU: `sort_indices.cu` includes `cuda_to_hip.h` first, `sort_indices_pybinding.h` includes `pybind_array_tools.h` first, and generated `solver.cc` includes `solver.h` (which includes `cuda_to_hip.h`) first.
+   - The nvcc host should still compile the 4 Caspar targets at c665e5cc before the round is brought to jeff (the moat rule "CUDA compile before presenting"). The expected result is unchanged from aa31e636.
+2. **Generated files are exactly the generator's output.** I ran `test/symforce_caspar_codegen_test.py` from this clone at c665e5cc, borrowing the winfix porter job's built symengine read-only (its `build/manifest.json` copied into the clone, `PYTHONPATH=<clone>`). Results: symengine `OK` (5 tests), sympy `OK (skipped=5)`. Negative control: with `solver.cc.jinja` restored to aa31e636 and nothing else changed, the same test FAILs `test_generate_solver` and `test_generate_tridiagonal_solver`. The file was then restored. The data diff is the three include lines per file, in clang-format order.
+3. **Nothing else relied on `<sys/types.h>`.** Across `symforce/caspar/` (runtime, templates, codegen), the four `test/caspar_*_cuda_test.cc` files and both generated data directories, a grep for `ssize_t|off_t|u_int*_t|u_char|ushort|ulong|uchar|sys/types|unistd` is empty. `uint` remains in `sort_indices.cu`, `shared_indices.cu` and `memops.cuh` (device TUs, `cuda_to_hip.h` first, `uint` from `device_library_decls.h` in HIP mode on every platform). It also remains in `pybind_array_tools.{h,cc}`, which is not reachable from the six host TUs, is compiled as HIP in the generated library under `USE_HIP`, and is not touched by this delta (the porter's note is accurate). `size_t` in the header comes from `<cstddef>`. All three standard libraries also declare it at global scope, and the header's next include (`hip_runtime.h`/`cuda_runtime.h`) supplies it in any case.
+4. **What else in the six host TUs could fail on Windows (MSVC STL + UCRT).**
+   - Proven on Windows: at aa31e636 the four test `.cc` files already compiled there as host CXX. Through them, `cuda_to_hip.h`, `shared_indices.h`, `solver_params.h`, both generated `solver.h` (`caspar_solver_cuda_test.cc` and `caspar_tridiagonal_cuda_test.cc` include them), Eigen, Catch2 and the HIP host runtime API (`cudaMalloc/Memcpy/Free/Memset/GetDeviceCount/DeviceSynchronize`) are proven in this exact mode.
+   - Not yet proven on Windows: `solver.cc` itself, `caspar_mappings.h`, the `kernel_*.h` headers, `solver_tools.h` and `sort_indices.h`.
+     - `kernel_*.h` and `caspar_mappings.h`: each one, in both data directories, includes only `cuda_to_hip.h`/`shared_indices.h` and uses only `size_t`, `unsigned int`, `float`/`double`, `cudaError_t` and `SharedIndex`.
+     - `solver_tools.h`: templates and `extern template` declarations only, no library names.
+   - I listed every call expression in the tridiagonal `solver.cc` (the larger of the two). Each is one of:
+     - a project function;
+     - a `std::` name, each now with its own header (`to_string` `<string>`, `runtime_error` `<stdexcept>`, `swap` `<utility>`, `max/min` `<algorithm>`, `chrono::steady_clock/duration/time_point` `<chrono>`);
+     - `printf` (`<cstdio>`);
+     - a HIP runtime call through the `cuda*` macros. `cudaSetDevice`, plus `cudaMalloc(&uint8_t_ptr, n)`, which resolves to the `hipMalloc(T**, size_t)` template at `hip_runtime_api.h:11010-11011`, guarded only by `__cplusplus && !__HIP_DISABLE_CPP_FUNCTIONS__`, not `__HIPCC__`.
+   - No math functions, no `M_PI`, no POSIX calls, no `long`-width assumptions. The `std::max` arguments are same-typed (`size_t` + `sizeof`, or `T` with `T`), so they do not depend on `size_t` width.
+   - The previous all-HIP Windows build compiled the same bodies. It got `<string>` from the clang HIP wrapper (`__clang_hip_runtime_wrapper.h:155-157` includes `<algorithm>`, `<complex>`, `<new>`; MSVC's `<complex>` reaches `<string>`) and got `uint` from `amd_detail/device_library_decls.h`. Neither is present in a host compile, and the delta now covers both.
+   - Link: padding_lane and backend_coverage already linked mixed CXX + HIP objects with `caspar_test_runtime` on Windows. The solver targets add only references to explicitly instantiated `solver_tools` templates and the kernel wrappers, all compiled by the same clang.
+   - I found nothing else that should fail. This is an audit, not a Windows compile: the Windows validator is still the gate.
+5. **Commit message.**
+   - Title: 57 characters, ASCII, `[ROCm]`.
+   - Body: one line per paragraph, rationale, "Authored with Claude.", fenced Test Plan, no `Co-Authored-By` or noreply trailer, no MOAT vocabulary.
+   - The `[ROCm]` prefix is accurately described: the body says the failure was exposed by the HIP test build's host compile on Windows, states that the edits are type spellings and includes only, and states that the CUDA build is unchanged. It does not claim to fix a CUDA-on-Windows build, which would be wrong anyway, since `uint` in `shared_indices.cu`/`sort_indices.cu`/`memops.cuh` would still stop nvcc+MSVC. Its claim that the HIP headers supplied both names in a HIP compile matches the include traces above.
+   - The Test Plan's Linux commands cannot observe the Windows defect. The body gives the Linux reproduction (the macro-poison compile) in prose. That is consistent with the evidence, not a finding.
+
+For the validators:
+- windows-gfx1151: the CMake mirror from aa31e636 is still right (this delta does not touch `test/CMakeLists.txt`). Fetch c665e5cc, build all four targets, and pass `-ferror-limit=0` so that any residual error is recorded in full. Expected: solver 24/24, tridiagonal 140/140, padding_lane 6/6, backend_coverage 302/302. An error inside a project header or a generated `.cc` is a port finding. An error inside `hip/` or `amd_detail/` would also be a finding against the host-compile change in aa31e636, not environment.
+- linux-gfx90a and linux-gfx1100: on HIP this delta is object-identical for `sort_indices.cu` and `.text`-identical for both host `solver.cc` objects. A carry-forward of the aa31e636 validations to c665e5cc on a binary-equivalence verdict is supported by the measurements above, if the validator chooses that route. Otherwise a rerun should give the same counts.
+- nvcc host: compile the 4 Caspar targets at c665e5cc; expect 78 nvcc compiles, 6 host compiles and 0 warnings, as at aa31e636.
+
+## CUDA no-regression compile at c665e5cc (nvcc host, 2026-11-18)
+
+jeff asked for the CUDA no-regression compile check of the staged round `moat-fix-465` at `c665e5cc` (`head_sha` in status.json; fork branch tip confirmed by `git fetch origin moat-fix-465` = `c665e5cc723c...`), against `aa31e636`. Unlike aa31e636, this delta changes code the CUDA build compiles: `sort_indices.h` (`<sys/types.h>` -> `<cstddef>`, `uint` -> `unsigned int`) and three added includes in `solver.cc.jinja` and both generated `solver.cc`. Fleet worker on a Linux host with CUDA 12.8 (`/usr/local/cuda-12.8`, nvcc V12.8.93, host g++ 13.3.0, CMake + Ninja), no NVIDIA GPU. Evidence only: no stage or platform state changed, no fork push, no `gh` write.
+
+**Result: no CUDA regression.** At c665e5cc the four Caspar test targets configure, compile and link with 78 nvcc compiles, 6 host g++ compiles and 0 warnings, the same as at aa31e636. Built from the same path, all 6 host `.cc.o` objects (both `solver.cc` included) are byte-identical, and all 199 kernel `.text` sections in the 78 sm_75 cubins are byte-identical. Under nvcc, `sort_indices.cu` and `shared_indices.cu` both still see `uint`, from glibc `<sys/types.h>` reached through the `cuda_runtime.h` that nvcc force-includes.
+
+### Setup
+
+Fresh clone of AMD-Ecosystem/symforce in the job directory, `<job>/sf`, detached at c665e5cc, plus a worktree `<job>/sf-base` at aa31e636. Neither is under `projects/symforce/src`. The job venv got `pip==25.0.1 setuptools==75.3.2` and `requirements/dev_py311.txt`, as in the aa31e636 run.
+
+### 1. nvcc build and link at both commits (verified)
+
+The commands match the aa31e636 run, run for `<T>` = `sf` (c665e5cc) and `sf-base` (aa31e636), with `-j $MAX_JOBS` (128):
+
+```
+export PATH=$FLEET_VENV/bin:$PATH
+cmake -S <job>/<T> -B <job>/build-<T> -GNinja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.8/bin/nvcc -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ -DSYMFORCE_PYTHON_OVERRIDE=$FLEET_VENV/bin/python -DSYMFORCE_BUILD_BENCHMARKS=OFF -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+ninja -C <job>/build-<T> -v -j 128 bin.tests.caspar_padding_lane_cuda_test bin.tests.caspar_solver_cuda_test bin.tests.caspar_tridiagonal_cuda_test bin.tests.caspar_backend_coverage_cuda_test
+```
+
+| | aa31e636 (this run) | c665e5cc (this run) |
+|---|---|---|
+| configure | rc=0, "CUDA compiler identification is NVIDIA 12.8.93 with host compiler GNU 13.3.0" | same |
+| nvcc `-x cu -c` compiles | 78 (3 runtime, 1 backend_coverage, 1 padding_lane, 18 solver, 55 tridiagonal) | 78, same split |
+| every nvcc compile `arch=compute_75,code=[compute_75,sm_75]` / carrying `USE_HIP` | 78 / 0 | 78 / 0 |
+| host g++ compiles (4 `caspar_*_cuda_test.cc` + 2 generated `solver.cc`) | 6 | 6 |
+| `warning` lines in the build log (case-insensitive) | 0 | 0 |
+| link of the 4 test binaries | rc=0 | rc=0 |
+| sm_75 cubins per binary (`cuobjdump --list-elf`): padding_lane / solver / tridiagonal / backend_coverage | 2 / 21 / 58 / 1 | 2 / 21 / 58 / 1 |
+| binary sizes (bytes) | 1369488 / 3325552 / 5031112 / 1380128 | identical |
+
+Both `sort_indices.cu` and `shared_indices.cu` are among the 78 nvcc compiles, and both generated `solver.cc` are g++ host compiles, not nvcc. I did not run the test binaries: with no NVIDIA GPU they only reach `REQUIRE(HaveDevice())`.
+
+### 2. Object-code comparison (verified, same build path)
+
+nvcc derives internal-linkage symbol names from the source path (see the aa31e636 section), so I compared builds from one tree. I copied the 84 Caspar objects of `build-sf-base` at aa31e636 (78 `.cu.o` + 6 `.cc.o`, the `-o` targets of the compile lines) to `<job>/save-aa`. Then I ran `git -C sf-base checkout --detach c665e5cc`, deleted those 84 objects and re-ran the same ninja command in the same build directory. Result: rc=0, 78 nvcc + 6 host compiles, no `warning` lines, no reconfigure (this delta does not touch CMake).
+
+- **Host `.cc.o` (6): all byte-identical** (`cmp`), including both `solver.cc.o`. The three added includes (`<cstdio>`, `<string>`, `<utility>`) were already reached transitively through libstdc++, so the Release object did not change by a byte. Each `solver.cc.o` references only `U _ZN6caspar23SortIndicesGetTmpNbytesEm` from this header.
+- **`.cu.o` (78): all differ byte-wise, but only in symbol names.** Comparing every ELF section with pyelftools:
+  - 77 objects differ only in `.strtab`, the per-compile `module_id` symbol name nvcc embeds.
+  - `solver_tools.cu.o` also differs in `.nv_fatbin`, `.rodata.str1.8`, `.shstrtab` and one `.rodata._ZN4cuda3std...ignoreE` section, whose name carries the internal-symbol suffix.
+  - No object has a differing host `.text*` section.
+  - For `sort_indices.cu.o`, `nm` with the `module_id` lines removed is identical at both commits. The exported names are unchanged: `_ZN6caspar11SortIndicesEPvmPKjPjS3_S3_m`, `_ZN6caspar8SortKeysEPvmPKjPjm` and `_ZN6caspar11SelectIndexEPKjS1_Pjm` (`j` = `unsigned int`), so the `unsigned int` declarations in the header match the `uint` definitions.
+- **Cubins (`cuobjdump -xelf all`, 78 sm_75): 77 byte-identical.** `solver_tools.cu.1.sm_75.cubin` has the same size (149024) and the same 51 section names. Only `.strtab` differs, and its 11 `.text.*` sections are byte-identical. Across all 78 cubins, **199 of 199 kernel `.text` sections are byte-identical**. `sort_indices.cu`'s cubin is byte-identical.
+- **PTX (`cuobjdump -ptx`): identical for 77 of 78.** In `solver_tools.cu.o`, the only diff (78 lines) is the numeric suffix of `_INTERNAL_d1ebb60f_15_solver_tools_cu_6339d7bf_<n>` (`10392394`/`...96` at aa31e636, `10418644`/`...46` at c665e5cc). That suffix is not deterministic. I replayed the same `solver_tools.cu` compile command twice at c665e5cc in the same directory and got `..._10447184` and `..._10447444`. `solver_tools.cu` includes only `cuda_to_hip.h` and `solver_tools.h`, not the changed header. This matches the aa31e636 run.
+- No SASS text listing: this toolkit has no `nvdisasm` (same as the aa31e636 run). The byte-identical cubin `.text` sections are the machine code SASS disassembles, so identical SASS is inferred, not diffed as text.
+
+**Which objects differ, and why:** no object's code differs. The only bytes that change are nvcc's per-compile identifiers: the `module_id` symbol in every `.cu.o`, and the non-deterministic `_INTERNAL_..._<n>` suffix in `solver_tools.cu.o`'s strtab, PTX and fatbin. The same differences appear between two compiles of one commit.
+
+### 3. `uint` under nvcc without `<sys/types.h>` in the header (verified)
+
+- I re-ran the `sort_indices.cu` and `shared_indices.cu` compile commands at c665e5cc with `--keep`. Both the device-pass (`*.cpp1.ii`) and host-pass (`*.cpp4.ii`) preprocessed files contain `typedef unsigned int uint;` exactly once. In all four it is at line 4610, inside `/usr/include/x86_64-linux-gnu/sys/types.h`, before `cuda_to_hip.h` (line 36196 device, 33107 host) and before `sort_indices.h` (line 214572 / 213641).
+- I rebuilt the include stack from the `-E` line markers. It is the same for both files: `cuda_runtime.h` (nvcc's implicit force-include, line 6 of every `.ii`) -> `channel_descriptor.h` -> `cuda_runtime_api.h` -> `cuda_device_runtime_api.h` -> `/usr/include/c++/13/stdlib.h` -> `<cstdlib>` -> `/usr/include/stdlib.h` -> `sys/types.h`.
+- So under nvcc, `uint` is defined before any user include in every `.cu` TU. The `#include "cuda_to_hip.h"`-first order in `sort_indices.cu` does not matter there. The CUDA arm of `sort_indices.h` also includes `<cuda_runtime.h>` itself.
+- Negative control: g++ `-std=c++17` with `#include <cstddef>` then `uint x;` fails ("'uint' does not name a type"). With `#include <stdlib.h>` it compiles. So `<cstddef>` does not provide `uint`, and the glibc path does.
+- This is a glibc fact. An nvcc+MSVC build would not get `uint` this way, but it would already fail on `shared_indices.cu`/`memops.cuh`, as the review notes. CUDA on Windows is not a configuration this port claims.
+
+### Verified vs inferred
+
+- Verified: nvcc configure, compile and link of the four Caspar test targets at c665e5cc and aa31e636 (78 nvcc + 6 host compiles, 0 warnings, rc=0 each). Byte-identical host `.cc.o` for all six g++ TUs. Byte-identical cubin `.text` for all 199 kernels, and identical host `.text*` in all 78 `.cu.o`. Unchanged exported mangled names for `SortIndices`/`SortKeys`/`SelectIndex`. `uint` defined in both device and host passes of `sort_indices.cu` and `shared_indices.cu`, and the exact include path.
+- Inferred: identical SASS text (from identical `.text` bytes, no disassembler). CUDA runtime behaviour unchanged (no NVIDIA GPU, tests not run; device and host code identical).
+- Clones are clean (`git status --porcelain` empty in `sf` and `sf-base`). Build trees and scratch stay in the job directory only.
+
+## Validation linux-gfx1100 2026-11-18 (fix round moat-fix-465 round 2, tip c665e5cc)
+
+Validator, jeff's request. Fresh fork clone `projects/symforce/src`, `git checkout -B moat-fix-465 origin/moat-fix-465`, HEAD = c665e5cc723ccefd02e3505b0adeabc99cdb4838 (= status.json head_sha), `protect-fork` installed, `git branch main origin/main` for `jargon.py --port`. GPU: AMD Radeon Pro W7800 48GB (gfx1100, wave32), `HIP_VISIBLE_DEVICES=1` as pinned by the dispatcher, all GPU programs under `ulimit -c 0`. ROCm: TheRock `rocm-sdk-devel` 10.1.0 (`<SDK>`), HIP compiler AMD clang 24.0.0; host CXX g++ 13.3.0. Job venv with `requirements/dev_py311.txt` and `build_py311.txt` (cmake 4.2.1), venv `bin` first on PATH. GMP 6.3.0 built from the ftp.gnu.org tarball into `<job>/deps/prefix` again (this container has no GMP headers; environment only).
+
+`classify aa31e636 c665e5cc`: `mixed` (all four files). Full real-GPU revalidation as jeff asked, no carry-forward.
+## Validation linux-gfx90a 2026-11-18 #2 (fix round moat-fix-465 round 2, tip c665e5cc)
+
+Validator, jeff's request: full rerun at the staging tip, not a carry-forward (the reviewer's binary-equivalence measurements would have supported one; jeff asked for the four Caspar tests and ctest to run). Fresh fork clone `projects/symforce/src`, `git checkout -B moat-fix-465 origin/moat-fix-465`, HEAD == `c665e5cc723ccefd02e3505b0adeabc99cdb4838` == head_sha; `protect-fork` installed; `git branch main origin/main` for `jargon.py --port`. GPU: AMD Instinct MI250X GCD (gfx90a, wave64), `HIP_VISIBLE_DEVICES=1` as pinned by the dispatcher (all 4 GCDs at 0% GFX activity), GPU programs under `ulimit -c 0`. Toolchain unchanged from the aa31e636 run: TheRock pip `rocm-sdk-devel` 10.1.0, HIP compiler Clang 24.0.0 (`<SDK>`), host g++ 13.3. Job venv with `requirements/dev_py311.txt` and `build_py311.txt` (installed with `$FLEET_VENV/bin/python -m pip`), venv `bin` first on PATH.
+
+### Build
+
+```
+cmake -S <src> -B <job>/sfbuild -GNinja -DCMAKE_BUILD_TYPE=Release -DPython_EXECUTABLE=$FLEET_VENV/bin/python -DSYMFORCE_PYTHON_OVERRIDE=$FLEET_VENV/bin/python -DCMAKE_HIP_ARCHITECTURES=gfx1100 "-DCMAKE_PREFIX_PATH=<job>/deps/prefix;<SDK>"
+cmake --build <job>/sfbuild -j 32
+```
+
+rc=0. HIP found, no CUDA compiler. `build.ninja`: the four `test/caspar_*_cuda_test.cc` and both generated `solver.cc` are CXX objects (g++), `sort_indices.cu` is a HIP object in `caspar_test_runtime`, 78 `.cu` objects in total. Caspar warnings unchanged from aa31e636: 125 `-Wunused-result` and 32 `-Wunused-value` (ignored `hipError_t` returns).
+
+### Tests
+
+```
+export PYTHONPATH=<src>:<job>/sfbuild/lcmtypes/python2.7:<src>/gen/python:<src>/third_party/skymarshal
+ctest --test-dir <job>/sfbuild -R caspar --output-on-failure
+for t in padding_lane solver backend_coverage tridiagonal; do for i in 1 2 3 4 5; do <job>/sfbuild/bin/tests/caspar_${t}_cuda_test; done; done   # run twice
+ctest --test-dir <job>/sfbuild -j16 --output-on-failure
+make lint --keep-going SYMFORCE_LCMTYPES_DIR=<job>/sfbuild/lcmtypes/python2.7   # from <src>
+```
+
+- Caspar ctest: 6/6. backend_coverage 302/302 (1 case), padding_lane 6/6 (1 case), solver 24/24 (5 cases), tridiagonal 140/140 (2 cases); symengine and sympy symforce_caspar_codegen_test pass (the regenerated `solver.cc` data match the generator).
+- Four GPU test binaries, 10 runs each (two batches of 5): 40/40 pass, same counts every run.
+- Full ctest: 208/212. Three are the known environment failures: symengine/sympy_symforce_rust_codegen_test (`'rustfmt' is not installed for the toolchain '1.97.1-x86_64-unknown-linux-gnu'`) and symengine_symforce_docs_test (`No module named 'jsonschema'`). The fourth is `symengine_symforce_linter_test`: mypy `import-untyped` on `lcmtypes.sym`, because the Makefile's default `SYMFORCE_LCMTYPES_DIR=build/lcmtypes/python2.7` is relative to the source tree and this build is out of tree. `make lint` with the variable pointed at the build: rc=0 (mypy, ruff format/check, and `clang-format --dry-run -Werror` over every `.h/.cc/.cu`). Same cause and same result as the porter's gfx90a run at c665e5cc.
+
+### README HIP example
+
+`symforce/caspar/examples/kernel_example/gen_and_run.py` copied to `agent_space/kex/` with `caslib.compile(out_dir, use_hip=True, hip_arch="gfx1100")`. The generated library carries the new `sort_indices.h` (`<cstddef>`, `unsigned int`). Built (`gfx1100` in its CMakeCache), ran on the GPU, printed "Success!".
+
+### Gates
+
+- CUDA compile gate: recorded at c665e5cc by the nvcc host (commit 15756750 on port/symforce: 78 nvcc + 6 host compiles, 0 warnings, host objects and kernel `.text` byte-identical to aa31e636). Not rerun here (no CUDA toolkit on this host).
+- `python3 utils/jargon.py --port symforce`: clean.
+- Documentation: ROCm build in `symforce/caspar/README.md` "AMD GPUs (ROCm/HIP)", unchanged in this delta; its example ran above.
+- Fork worktree: `git status --porcelain` empty.
+
+### Compared with this platform's run at aa31e636
+
+Build, warning counts, all four GPU tests (40/40 runs) and the Caspar ctest are identical. Full ctest is 208/212 here against 209/212 then; the difference is `symengine_symforce_linter_test`, and it is the harness, not the delta: the aa31e636 job's fork clone held an in-tree `build/` (with `build/lcmtypes/python2.7/lcmtypes/sym`), which the Makefile's relative default found; this clone has no in-tree `lcmtypes`, and `make lint` with the path set passes.
+
+VALIDATION PASSED on linux-gfx1100 (Radeon Pro W7800) at c665e5cc.
+cmake -S <src> -B <src>/build -GNinja -DCMAKE_BUILD_TYPE=Release -DPython_EXECUTABLE=$FLEET_VENV/bin/python -DSYMFORCE_PYTHON_OVERRIDE=$FLEET_VENV/bin/python -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_PREFIX_PATH=<SDK>
+cmake --build <src>/build -j 64
+```
+
+rc=0. CUDA compiler NOTFOUND, HIP compiler = SDK clang++ 24.0.0. Ninja commands: both generated `solver.cc` are compiled by `/usr/bin/c++` (no `-x hip`, no `--offload-arch`), `sort_indices.cu` by the SDK clang++ with `-x hip --offload-arch`. The two `solver.cc` emit 23 and 83 warnings, all `-Wunused-result` (discarded `hipError_t` returns in host mode). I recompiled the aa31e636 copies of both files with the identical ninja command line and got the same counts (23 and 83), so they come from the host compile introduced in aa31e636 and are not new in c665e5cc.
+
+### Caspar GPU tests
+
+```
+ulimit -c 0
+build/bin/tests/caspar_{padding_lane,solver,backend_coverage}_cuda_test
+for i in 1 2 3 4 5; do build/bin/tests/caspar_tridiagonal_cuda_test; done
+```
+
+All pass: padding_lane 6/6 assertions (1 case); solver 24/24 (5 cases); backend_coverage 302/302 (1 case); tridiagonal 140/140 (2 cases) in 5 of 5 runs. Identical to this platform's run at aa31e636 and to the porter's run at c665e5cc.
+
+### Full ctest
+
+```
+PYTHONPATH=<src>:<src>/build/lcmtypes/python2.7:<src>/gen/python:<src>/third_party/skymarshal ctest --test-dir <src>/build -j16 --output-on-failure
+```
+
+209/212 pass, the same as at aa31e636. The 3 failures are the same environmental ones: `symengine_symforce_docs_test` (`Could not import extension nbsphinx (exception: No module named 'jsonschema')`), `symengine_symforce_rust_codegen_test` and `sympy_symforce_rust_codegen_test` (`'rustfmt' is not installed for the toolchain '1.97.1-x86_64-unknown-linux-gnu'`). The four `caspar_*_cuda_test` entries, both caspar codegen tests and both linter tests pass (in-tree build, so the porter's out-of-tree `SYMFORCE_LCMTYPES_DIR` linter failure does not arise).
+
+### CUDA no-regression gate at c665e5cc: cuda-not-validated on this host
+
+No CUDA toolkit here (`/opt/conda` and `/usr/local/cuda*` absent, no `nvcc`), as at aa31e636. The nvcc host still owes the compile of the 4 Caspar targets at c665e5cc (expected 78 nvcc compiles, 6 host compiles, 0 warnings).
+
+### Pre-completion checks
+
+- `python3 utils/jargon.py --port symforce`: clean.
+- Documentation: this delta touches no build procedure; the ROCm build stays documented in `symforce/caspar/README.md`.
+- `git -C projects/symforce/src status --porcelain`: empty.
+
+## Validation windows-gfx1151 2026-11-17 #2 (fix round moat-fix-465 round 2, tip c665e5cc)
+
+Validator, jeff's request, light run. GPU: AMD Radeon 8060S (gfx1151, wave32), `HIP_VISIBLE_DEVICES=0`, `ulimit -c 0`. Fork clone `agent_space/symforce-win` detached at `c665e5cc723ccefd02e3505b0adeabc99cdb4838` (== head_sha), `git status --porcelain` empty, nothing patched. Toolchain as in the earlier Windows sections (TheRock `_rocm_sdk_devel`, clang 23.0.0, CMake 3.31.0, Ninja, GNU-driver route). `git diff aa31e636 c665e5cc -- test/CMakeLists.txt` is empty, so the mirror `agent_space/sf-caspar-tests/CMakeLists.txt` was reused unchanged.
+
+Commands: same cmake configure as the 2026-11-04 section into fresh `agent_space/sf-caspar-build2`, then `ninja -C agent_space/sf-caspar-build2 -k 0 -j 8`. Configure 10 s, build 40 s, rc=0, 0 FAILED steps. Per `ninja -t commands`: the six `.cc` files (four `caspar_*_cuda_test.cc`, both generated `solver.cc`) compile as plain host C++ with `clang++.exe -DUSE_HIP ... -std=gnu++17 -c` (no `-x hip`, no `--offload-arch`); 78 `-x hip` compiles are the `.cu` files. The `uint` and `std::to_string` errors from aa31e636 are gone. Warnings: 157 pre-existing `-Wunused-value` on ignored `hipError_t` plus 4 `--rtlib=compiler-rt` unused-argument link notes; nothing new versus 2026-11-04.
+
+Tests (each once, serial, DLLs staged next to the exes): caspar_backend_coverage_cuda_test 302/302 (1 case), caspar_padding_lane_cuda_test 6/6 (1 case), caspar_solver_cuda_test 24/24 (5 cases), caspar_tridiagonal_cuda_test 140/140 (2 cases). All rc=0.
+
+Skipped: SumStore race harness and repeat loops (laptop lockup history), full ctest (non-GPU suite validated on Linux), CUDA gate (no toolkit; nvcc check passed at c665e5cc on Linux), jargon and docs gates not re-run here (Linux reviewer and validators recorded them at this head; no new commits since).
+
+VALIDATION PASSED on windows-gfx1151 (Radeon 8060S) at c665e5cc.
