@@ -7481,3 +7481,9 @@ Add clang's `--offload-jobs` to the HIP compile options, with the total bounded 
 ## Ruling on toolkit_version and ROCm version attributes (2026-11-19, Jeff Daily)
 
 `runtime.toolkit_version` and `runtime.driver_version` stay `None` on a HIP build, documented in the release notes. Add `runtime.rocm_version` and `runtime.hip_version`. Design to implement (the coordinator's reading of the CUDA pair, toolkit = build time and driver = run time; Jeff asked for the two attributes, not this split): `rocm_version` is the ROCm release the core library was built with, as `(major, minor)` (10, 2), from the build (the same value the `.rocm` marker records); `hip_version` is the version of the HIP runtime loaded in the process, as `(major, minor)` (7, 17), from `hipRuntimeGetVersion` or the equivalent. Both are `None` on CUDA and CPU builds. The `wp.init()` banner on a HIP build names them where a CUDA build names its toolkit and driver, if that is not already the case. Smallest diff; one test.
+
+## Ruling on wheel classifiers (2026-11-19, Jeff Daily)
+
+A ROCm wheel drops the two `Environment :: GPU :: NVIDIA CUDA` classifiers (in `setup.py`, beside the ROCm dependency logic; `pyproject.toml` untouched, the CUDA wheel's METADATA byte-identical). PyPI has no ROCm classifier, so none is added.
+
+All four of session 19's questions are now ruled: compressed bundles at level 3 for all targets; `--offload-jobs` with a bounded total; `toolkit_version` stays None with `rocm_version` and `hip_version` added; classifiers removed. These go to the porter as the turn after the performance round.
