@@ -7763,3 +7763,46 @@ Notes for Jeff on the draft (not part of the body):
 - The fp-contract sentence describes the current `-ffp-contract=on`; it changes if question 5 is ruled (b) or (c).
 - Windows wheel name and the 22 Windows targets are from session 13; the Windows wheel has not been built yet.
 - Upstream's "requires NVIDIA driver" paragraphs in the docs are untouched; the installation guide's ROCm paragraph already points here.
+
+### Evidence 5 (not a commit): the `test_async` copy flake, a wrong-result defect on gfx950 under concurrent GPU load
+
+Reproduced, with a diagnostic that locates it; no reproducer without Warp yet, so no deferred item registered.
+
+Reproduction rates (tree `agent_space/w43` = `113e1e70` sources; subset = `python -m warp.tests -s autodetect -p test_async.py -k s2f_d2d -k s2c_d2d`, 192 tests, ~10 s per run):
+
+| condition | failing runs | notes |
+|---|---|---|
+| subset alone (session 20) | 0 / 15 | |
+| subset alone, clean (`flake_b.sh ... 0 30`) | 0 / 30 | |
+| subset while a full suite runs on the same GPU, run 1 (`flake_a.sh`) | 5 / 51 (6 failing tests of 9,792) | during it, `copy_flake load` processes and -j 8 builds also ran for part of the time; failures at 03:29-03:39 coincided with those |
+| the same, run 2 with only the suite beside it (instrumented) | 0 / 225 | suite killed after 38 min |
+| subset with 8 `copy_flake load` processes (4 streams each), nothing else of this job's (`flake_b.sh ... 8 30`) | 1 / 30 | |
+| the same, instrumented (`flake_b.sh ... 8 40`) | 2 / 40 | diagnostics below |
+| full default suite alone | 1 run with 2 failures (session 20, `fb4803bb`), 0 in 3 other full runs (sessions 19 wheel run 2, 20 at `113e1e70`, 21 wheel) | session 19's first full run also had 2 |
+
+Caveat for every row: an outside, non-fleet process used GPU 1 throughout (13-28 GB), so "alone" means without this job's other processes. So it needs at least a second process on the device; with only the subset and nothing else of this job's it never failed (45 runs).
+
+Every failing case so far has the destination allocated with the memory pool off (`hipMalloc`), the default stream, and a strided source copied by Warp's kernel (`s2c` and `s2f`; source pooled or not, graph-captured or not). The instrumented test (scratch edit in `w43/warp/tests/cuda/test_async.py` only: on a mismatch, read `dst` again, then after `wp.synchronize()`, and print the wrong-index range) gave:
+- `test_copy_s2f_d2d_SrcPoolOn_DstPoolOff_NoStream_NoGrad_NoGraph_AccessSrcDst`: 125,184 wrong, indices 256..999,935 (blocks 1..3905), first wrong value 1263.0 (data from an earlier allocation at that address, the test's per-test offsets differ); second read 125,184 wrong; after `wp.synchronize()` 125,184 wrong.
+- `test_copy_s2c_d2d_SrcPoolOn_DstPoolOff_NoStream_NoGrad_NoGraph_AccessSrcDst`: first read 118,272 wrong, indices 768..998,399 (blocks 3..3899), values 0.0; second read 124,928 wrong; after `wp.synchronize()` 124,928 wrong.
+
+Reading: 125,184 = 489 x 256 and 124,928 = 488 x 256 are exactly the copy kernel's workgroups with block index = 1 (mod 8) (489 of them between 1 and 3905) and = 3 (mod 8) (488 between 3 and 3899). Workgroups are placed round-robin over the 8 XCDs of an MI355X, so in each failure exactly one XCD's share of the copy is missing. The stale data stays wrong in device memory across a second read and a device synchronize, and in one case the wrong count grew between two reads (more of that XCD's elements reverted to zero later). That looks like one XCD's L2 lines for this buffer being lost or overwritten (dirty stale lines from the address's previous use written back late, or the copy kernel's writes not written back), not like an early host read: the read-back is not the cause (it stays wrong after synchronizing). Earlier sessions' "first/last 1/8 is zero" reading came from NumPy's abbreviated printout; the full index sets are interleaved, not contiguous.
+
+Standalone HIP program (`agent_space/flake/copy_flake.hip`, below): the same sequence without Warp (`hipMalloc`ed destination zero-filled from pageable memory, strided source written by a kernel, device sync, strided-to-contiguous kernel of 3907 256-thread blocks on a blocking stream, stream sync, `hipMemcpyAsync` D2H on the null stream into fresh `malloc` memory, immediate check, per-iteration `hipFree`/`hipMalloc` so addresses and stale data recur; variants with a null-stream sync and with the source from `hipMallocAsync`), under 4-8 `copy_flake load` processes with 1-4 streams each and once beside a full Warp suite: **0 wrong in 200 + 2,000 + 3,000 + 4,000 iterations.** Not reproduced without Warp, so no deferred item (as instructed). What Warp does that the program does not: kernels from Warp's library and hipRTC modules, graph capture and graph exec destruction in neighbouring tests, mempool trimming/access settings, more streams and events per process. Needs gfx950? Not decidable on this host (no other arch); MI300X (gfx942) is also an 8-XCD device and would show the same placement pattern if it is an XCD effect; MI250X (one die per device) and Radeon (single XCD) would be the controls.
+
+Question for Jeff (release blocker until understood): options: (a) dispatch the instrumented subset-under-load to the gfx942 host (8 XCDs) and to gfx90a/gfx1100 (one XCD per device) to see whether it follows the multi-XCD hardware; (b) capture an `AMD_LOG_LEVEL=4` (or `rocprofv3 --hip-runtime-trace --kernel-trace --memory-copy-trace`) trace of a failing subset run to extract Warp's exact API sequence for a Warp-free reproducer, then register a `rocm-bug-report` deferred item with it; (c) both. Without a reproducer it cannot be reported to ROCm.
+
+### Questions for Jeff (session 21; no decision taken; session 20's six are still open)
+
+7. The `test_async` flake (Evidence 5): (a) cross-arch dispatch of the instrumented subset under load; (b) API trace of a failing run to build a Warp-free reproducer, then a deferred `rocm-bug-report`; (c) both. Until then it is a known wrong-result risk on gfx950 under concurrent GPU work, not seen without a second process.
+8. Build parallelism: `build_lib.py` halves `-j` for the library because `warp-clang` builds alongside, but `warp-clang` finishes in about 5 s while the library's HIP compile takes ~480 s at the default -j 8, so half the budget is idle (4 threads busy on an 8-thread budget). Options: (a) leave it (upstream's logic, smallest diff); (b) give the library's HIP phase the full `-j` once `warp-clang` is done (more diff in upstream's `build_lib.py`). With (b) the default build would run 8 HIP files at once, about 2x faster at -j 8.
+9. Release-notes draft below: wording, the hardware-run list, and whether the fp-contract and compressed-bundle lines belong in it.
+
+### Next step (head `7059a340`)
+
+- Not moved to `ported`, as directed: session 20's six questions and this session's three (7-9) are with Jeff and may add commits; the release notes draft needs his edit.
+- The release wheel at `7059a340` is built and passed the full suite on gfx950 from the installed wheel (not a clean venv; see above): `/var/lib/jenkins/fleet/jobs/mi355-20261119-154230-warp114-perf-porter-mi355-prompt/wheel/warp_lang-1.14.0+rocm10.2.0-py3-none-manylinux_2_28_x86_64.whl`, sha256 `2100e06c...d5ea25`. If the head moves, the wheel is rebuilt and revalidated (release goal).
+- Owed by the ruling on compression: the full suite on a compressed build on Windows (gfx1151) and the 22-target Windows size; the Windows `--offload-jobs` measurement (with the bound, the default -j 8 gives one job per file there too: 11 HIP files, 4 workers).
+- Validators: every platform revalidates at `7059a340` (compressed library, new `rocm_version`/`hip_version`, setup.py classifiers); the gate platforms should validate the wheel file that will be uploaded.
+- Flake (question 7) before the release.
+- Scripts: `notes-session21-scripts.md`.
