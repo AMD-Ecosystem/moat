@@ -155,6 +155,29 @@ correctly-detected device is a missing architecture in the wheel, never a port f
 Pin one date-stamp across torch, `rocm-sdk-core/libraries/devel` and the device packages,
 because they resolve against each other. (gfx1151, torch 2.12.0+rocm7.14.0a20260519.)
 
+### On Windows, Triton comes from the `triton-windows` package
+
+`pip install triton` finds nothing on Windows (`from versions: none`), and a Windows ROCm
+PyTorch wheel does not bring a Triton with it, but that does not mean there is no Triton for
+Windows. The third-party `triton-windows` package on PyPI
+(github.com/triton-lang/triton-windows; 3.9.0.post30 seen 2026-11, `cp312-abi3-win_amd64`)
+installs the `triton` module with an AMD backend that handles Windows: it finds
+`amdhip64*.dll` and resolves the SDK through `rocm-sdk path --root` or
+`ROCM_HOME`/`HIP_PATH`/`ROCM_PATH`. A Triton-based dependency that declares no `triton`
+requirement of its own (it expects the one that comes with PyTorch on Linux, as
+spconv-triton does) fails with `ModuleNotFoundError: No module named 'triton'` from inside
+the dependency until `triton-windows` is installed.
+
+Treat it as the way to get Triton on Windows, and validate the Triton kernels you depend on
+there instead of assuming either that they work or that they cannot run. Seen on gfx1151
+with a TheRock torch 2.12 wheel: a non-sparse model (Point Transformer V1) built and ran one
+forward+backward pass on the GPU, and one spconv-triton sparse convolution layer ran forward
+in 0.3 s and matched a dense CPU reference. Its backward pass took 472 s on a cold cache,
+all of it kernel compilation, and then matched too, so a 10-minute cap reads as a hang
+there: give the first run a persistent `TRITON_CACHE_DIR` and a long window
+(strategy-b-torch.md, the Triton cold-compile item under "Dependency environment").
+(Pointcept)
+
 ### A dev package neither TheRock nor vcpkg ships
 
 conda-forge ships MSVC-toolchain win-64 builds of common C/C++ libraries (GMP, OpenSSL,
@@ -210,7 +233,8 @@ pip-installed ROCm SDK puts `hipconfig.exe` in the venv `Scripts`) and set `CMAK
 to it unless the user gave one. Three more Windows gaps travel with it: CMake picks the
 default `CMAKE_HIP_ARCHITECTURES` with `rocm_agent_enumerator`, which ROCm does not ship on
 Windows, and silently falls back to gfx906 (run `amdgpu-arch` from the clang directory
-instead); `find_package(hip)` needs `CMAKE_HIP_COMPILER_ROCM_ROOT` on `CMAKE_PREFIX_PATH`
+instead; torch's `find_package(Torch)` has the same gap and fails outright, see
+"`find_package(Torch)` in a CMake HIP project" below); `find_package(hip)` needs `CMAKE_HIP_COMPILER_ROCM_ROOT` on `CMAKE_PREFIX_PATH`
 (there is no `/opt/rocm/bin` on PATH to derive it from); and CMake before 3.29 links a Windows
 HIP DLL without `-shared` (`lld-link: error: subsystem must be defined`; 3.28.4 fails, 3.29.2
 works). Outside a Visual Studio developer prompt three more fail, and the documented command
@@ -277,6 +301,37 @@ applies the same rules. See LichtFeld-Studio `cmake/HipCompute.cmake` and pytorc
 Note the split with PyTorch extension ports, where `clang-cl` IS the required host
 compiler (strategy-b-torch.md, "Windows"): torch drives the compile itself and never goes
 through CMake's `HIP` language.
+
+### `find_package(Torch)` in a CMake HIP project needs the architecture and the ROCm root
+
+A CMake torch extension (one that calls `find_package(Torch)` against a pip ROCm torch, not
+a `CUDAExtension`) has two more Windows gaps, both inside torch's `LoadHIP.cmake`, and a
+build shell that exports the variables hides both from whoever writes the README.
+
+- **The architecture.** Naming the target with `-DCMAKE_HIP_ARCHITECTURES` is not enough:
+  `find_package(Torch)` stops with `LoadHIP.cmake: No GPU arch specified for ROCm build`,
+  because torch's `torch_hip_get_arch_list` reads only the `PYTORCH_ROCM_ARCH` environment
+  variable or `rocm_agent_enumerator`, which ROCm does not ship on Windows. In the project,
+  on `WIN32`, when `ENV{PYTORCH_ROCM_ARCH}` is undefined, `set(ENV{PYTORCH_ROCM_ARCH} ...)` from the resolved
+  `CMAKE_HIP_ARCHITECTURES` before `find_package(Torch)`, and stop with a message when no
+  architecture was given at all.
+- **The ROCm root, when the Python environment is not activated.** Finding the HIP
+  `clang++` through the interpreter's directory (the `hipconfig` recipe above) does not
+  carry over: with `-DPython_EXECUTABLE=<venv>/Scripts/python.exe` and nothing activated,
+  `LoadHIP.cmake` locates ROCm only through `ENV{ROCM_PATH}` or `find_program(rocm-sdk)` on
+  PATH (`rocm-sdk.exe` is a venv `Scripts` console script too). It prints "ROCM_PATH
+  environment variable is not set and C:/opt/rocm does not exist. Building without ROCm
+  support." as a STATUS line, and the configure fails only at generate time with `The link
+  interface of target "c10_hip" contains: hip::amdhip64 but the target was not found`. In
+  the project, on `WIN32`, after `enable_language(HIP)` and before `find_package(Torch)`:
+  when `ENV{ROCM_PATH}` is undefined, `set(ENV{ROCM_PATH} "${CMAKE_HIP_COMPILER_ROCM_ROOT}")`.
+
+Test the documented non-activated command in a shell that has neither the environment's
+`Scripts` nor the SDK `bin` on PATH and exports neither variable. FindPython on Windows
+follows an activated environment (`VIRTUAL_ENV`/`CONDA_PREFIX`), not PATH order, so say in
+the README which of the two cases a command is for. A Release default for such a project
+has to run before `project()` on Windows (build-cmake-link.md, "An unset CMake build type
+runs every HIP kernel unoptimized"). (Quest)
 
 ### CRT flags, compiler-rt builtins and Git Bash flag mangling in a CMake HIP build
 
@@ -403,39 +458,74 @@ one source file keeps the optimization level and compiles it in a second.
 
 ## Linking
 
-### CMake's HIP link rule mangles MSVC-style flags and paths
+### Linking HIP through CMake: what each compiler arrangement needs
 
-On Windows, CMake's HIP link path routes through `hipcc.exe`, which invokes `clang.exe
---driver-mode=g++` for `--hip-link`. That GCC driver then receives CMake's MSVC-style
-response file and flags, and misreads them two ways: it treats bare MSVC linker flags
-(`/machine:x64`, `/subsystem:console`) as file paths, and it applies GNU backslash-escaping
-to the response file, eating every backslash so `D:\path\torch.lib` arrives as
-`D:pathtorch.lib`. CMake also injects `-fuse-ld=lld-link`, which conflicts with `--hip-link`.
+Whether a Windows CMake HIP link needs help depends on two things: which driver compiles the
+host code, and whether the target uses relocatable device code (`-fgpu-rdc`). CMake calls the
+linker driver directly (`clang++.exe`, or `lld-link` through `cmake -E vs_link_exe`); `hipcc`
+is not involved. Measured with one test project (an executable and a shared library, import
+libraries in every spelling, MSVC-style linker options, a library path with a space, and a
+link line long enough for Ninja to use a response file) on ROCm 7.14 (clang 23) with CMake
+3.31.0 and 4.3.2, gfx1151:
 
-**This has nothing to do with `-fgpu-rdc`.** A project with no relocatable device code at all
-still hits it if it links HIP through CMake on Windows. Do not conclude you are safe because
-you are not using RDC -- that mistake was made once already and cost a round.
+| host compiler / HIP compiler | without `-fgpu-rdc` | with `-fgpu-rdc` |
+|---|---|---|
+| GNU-style `clang++` for C, C++ and HIP (recommended, see "Keep one clang driver") | links with CMake's own rule | fails: `clang++: error: invalid linker name in argument '-fuse-ld=lld-link'`; one CMake line fixes it (below) |
+| `clang-cl` for C and C++, GNU-style `clang++` for HIP | links if the target's `LINKER_LANGUAGE` is `CXX`; with the HIP link rule the GNU driver gets an MSVC-style line and fails | needs a link wrapper (below) |
+| `clang-cl` for all three (CMake 4.x only; 3.31 does not configure) | links with CMake's own rule | needs the `/Fo` compile-rule fix (below) and a link wrapper or a rewritten link rule |
 
-Fix: interpose a wrapper on the link step, set as `CMAKE_HIP_LINK_EXECUTABLE`.
-`assets/hip_link_win.py` is one. It strips `-fuse-ld=*`, converts `-Xlinker` pairs and bare
-MSVC `/flags` to `-Wl,` form, and rewrites `-lXXX.lib` and bare `XXX.lib` to
-`-Xlinker XXX.lib` so lld-link resolves them via `LIB`. It is under 100 lines of standard
-library Python and carries no project-specific state. **Copy it into the project**
-(conventionally `cmake/hip_link_win.py`): the project's CMake calls it, so a pull request
-cannot depend on a file outside the project.
+**`-fuse-ld=lld-link` is harmless without `-fgpu-rdc` and fatal with it.** CMake 3.29 and
+later adds it to every clang link line on Windows (`Platform/Windows-Clang.cmake`,
+`CMAKE_<LANG>_USING_LINKER_DEFAULT`), HIP included. `clang++ --hip-link -fuse-ld=lld-link`
+runs one `lld-link` job and links. With `-fgpu-rdc` the device-link step rejects the name.
+For the all-GNU-driver arrangement the whole fix is, after the languages are enabled and on
+Windows only:
 
-Unresolved: the wrapper rewrites the argument list only. It does not read the response file
-and does nothing about the backslash loss described above. What is known is when the loss
-appears: only once a target's object list is long enough for CMake and Ninja to switch from
-an inline command line to an `@file.rsp`. In alien the GUI executable (`alien.exe`) failed
-with a wall of "no such file or directory" for names like `CMakeFilesFoo.dirbar.cpp.obj`,
-while the smaller executables (the engine and persister tests, the CLI) stayed under the
-threshold and linked cleanly. So "some targets link, one does not" says nothing about the
-smaller ones being more correct: check whether the failing one is the one using a response
-file. The fix, not yet implemented in the wrapper, is to expand `@file` itself with Windows
-quoting rules and hand the GNU driver individual arguments. (alien)
+```cmake
+set(CMAKE_HIP_USING_LINKER_DEFAULT "-fuse-ld=lld")
+```
 
-Guard the override to Windows. Related and separate: the clang-cl `/Fo` bundler bug, where the
+(set the `CXX` variable too if a target is forced to link as CXX). It covers executables and
+shared libraries and needs no wrapper. `-DCMAKE_LINKER_TYPE=LLD` does not help: CMake still
+emits `-fuse-ld=lld-link`. Without `-fgpu-rdc`, do not strip the flag out of habit: build
+once without touching it and read the actual error first. A recipe that carried a `sed` over
+`build.ninja` for months turned out to need none of it. (ohm)
+
+**MSVC linker options belong behind `LINKER:` or `-Xlinker`.** With the GNU-style driver a
+raw `/subsystem:console` in `target_link_options` is read as a file name
+(`no such file or directory: '/subsystem:console'`) in every arrangement; `LINKER:/subsystem:console`
+works. CMake's own flags are already spelled correctly in the all-GNU arrangement, and import
+libraries arrive as `-lws2_32.lib`, which links unmodified.
+
+**The MSVC-style link line is the real problem, and it only arises with a `clang-cl` host.**
+There CMake composes the line for an MSVC linker (bare `/machine:x64`, `/INCREMENTAL:NO`,
+`/subsystem:console`, bare `ws2_32.lib`), and `-fgpu-rdc` needs the GNU-style driver to do
+the device link, so the GNU driver is handed arguments it reads as files. Prefer moving the
+project to the all-GNU-driver arrangement, which removes the problem. Where that is not
+possible, interpose a wrapper as `CMAKE_HIP_LINK_EXECUTABLE`; `assets/hip_link_win.py` is
+one. Of its rewrites, the ones that matter are turning bare `/flags` into `-Wl,` form and
+bare `foo.lib` into `-Xlinker foo.lib`; dropping `-fuse-ld=*` matters only where CMake emits
+it. Copy it into the project (conventionally `cmake/hip_link_win.py`), since the project's
+CMake calls it and a pull request cannot depend on a file outside the project. Know its two
+limits before relying on it:
+
+- It does not read response files. Once a target's object list is long enough for CMake and
+  Ninja to switch to `@file.rsp`, the bare libraries sit in that file where the wrapper never
+  sees them, and with `clang-cl` for all three languages the GNU driver also applies GNU
+  quoting to the file and eats every backslash (`no such file or directory:
+  'CMakeFilesapp.dirmain.hip.obj'`). In alien the large GUI executable failed this way while
+  the smaller executables stayed under the threshold and linked, so "some targets link, one
+  does not" says to check whether the failing one uses a response file. `--rsp-quoting=windows`
+  on the driver cures the backslash loss; a wrapper has to expand `@file` itself to fix the
+  rest.
+- `CMAKE_HIP_LINK_EXECUTABLE` covers executables only. A shared library goes through
+  `CMAKE_HIP_CREATE_SHARED_LIBRARY` (and `CMAKE_HIP_CREATE_SHARED_MODULE`), which needs the
+  same treatment plus `-shared` and `-Xlinker /implib:<TARGET_IMPLIB>`.
+
+(alien, origin of the wrapper and the only project known to need it; of the projects linked
+on Windows since, the rest used the all-GNU-driver arrangement or linked as CXX.)
+
+Guard any link-rule override to Windows. Related and separate: the clang-cl `/Fo` bundler bug, where the
 CMake HIP compile rule must emit `-o <OBJECT>` instead of `/Fo<OBJECT>` because the driver
 hands the same path to `clang-offload-bundler` as both input and output and Windows refuses to
 rewrite a memory-mapped file (ROCm/TheRock#5615). The fix is a compile-rule override after
@@ -449,8 +539,7 @@ matters, not object size or build parallelism. Passing `--offload-new-driver` on
 compile and the link step avoids the same bundler path and is the alternative where the
 compile rule cannot be overridden. A newer SDK may no longer hit the bug at all, so re-run
 the build before trusting an older note that a project is blocked on it. A project can need the compile-rule fix, the
-link wrapper, or both -- they are independent. (alien, origin of the wrapper; LichtFeld-Studio,
-which needs the link half.)
+link wrapper, or both -- they are independent. (alien.)
 
 ### A ROCm library linked by name may have no `.lib`
 
