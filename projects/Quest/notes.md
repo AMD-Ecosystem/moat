@@ -3597,3 +3597,35 @@ One commit on `6c06912`, plain push, nothing rewritten: `9cb8bee` `[ROCm] Keep g
 ## Review 2026-11-20 pass 2 (linux-gfx942, delta 6c06912..9cb8bee, whole delta 2b938d8..9cb8bee) -- PASS
 
 Item 1 of the first pass is fixed by `9cb8bee`: the gfx12 WMMA branch names `__gfx1200__`, `__gfx1201__`, `__gfx12_generic__` (the RDNA4 macros `clang -dM` reports), so gfx1250 (`__GFX12__ __gfx1250__`) takes the emulation, and `__gfx9_4_generic__` joins the MFMA list. Checked independently of the porter's notes: the delta touches only the selector and the hip_compat README, `prefill.cuh` is unchanged from `6c06912` (whose CUDA view was verified identical to `2b938d8` in the first pass), and the per-target device compiles and the whole-extension gfx1250 build recorded in the porter round were run in this session (`agent_space/quest/build-gfx1250.log`, rc 0). `__GFX11__` still covers only targets with the gfx11 WMMA (gfx1100-1103, gfx1150-1153, gfx11-generic). Commit `9cb8bee`: `[ROCm]`, 48 chars, AI sentence, literal fenced Test Plan, no trailer, ASCII; `jargon.py --port Quest` and `prose.py` clean. No findings.
+
+## Validation 2026-11-20 (linux-gfx942, at `9cb8bee`) -- PASS
+
+Host: whole MI300X (`gfx942:sramecc+:xnack-`, 304 CUs, 192 GiB, idle before the runs), `HIP_VISIBLE_DEVICES=1`, PyTorch 2.16.0a0+git6c3af02 / HIP 7.16.26385 (pip ROCm SDK 10.1), Python 3.11 (`/opt/python-3.11-venv`), all GPU runs under `ulimit -c 0`. Fork clone at `9cb8bee`, submodules initialised, `git status --porcelain` empty.
+
+- Build: `agent_space/quest/build_readme.sh` (README Linux block verbatim with `-DCMAKE_HIP_ARCHITECTURES=gfx942`, after `rm -rf build`, `ninja -j $MAX_JOBS`), wrapped `utils/timeit.sh Quest compile`: rc 0, 8/8, 555 s, 0 errors, `CMAKE_BUILD_TYPE=Release` from the default.
+- Tests: `env PYTHONPATH=<fork>:<job>/pylib-test python -m pytest <fork>/quest/tests -p no:cacheprovider -v -rs` (transformers 4.37.2, tokenizers 0.15.2, pytest 7.3.2): **202 passed, 28 skipped, 0 failed** (32.3 s). rope 64, estimate 9, decode_attention 6, approx_attention 42, decode_launch_shape 3, topk 49 + 15 skipped (k >= kv_len), prefill_attention 29 + 13 skipped (qo_len > kv_len). Same as `2b938d8` and `6c06912`.
+- End-to-end: `NousResearch/Llama-2-7b-chat-hf` at `351844e75ed0bcbbe3f10671b3c808d2b83894ee` (`do_sample` false), `scripts/example_textgen.py` with only `MODEL_PATH` changed (`agent_space/quest/e2e/example_textgen.py`), `PYTHONPATH=<fork>:<job>/pylib-e2e` (transformers 4.45.2): `--method hg`, `--method quest --token_budget 1024`, `--method quest --token_budget 128`, all rc 0. The generated text is byte-identical across the three (Quest's banner lines aside; md5 `fb7b22be...` of the filtered output for all three) and identical to the `6c06912` run ("Reason: The rabbit is the only one who is not working hard. ... can also mean \"lazy.\"").
+- Prefill time through the operator against SDPA (`agent_space/quest/prefill_time.py`; causal, 32 heads x 128, fp16, page size 16; `is_causal` where qo = kv, `causal_lower_right` where qo < kv; mean of 20, 5 for the large shapes):
+
+| qo x kv | Quest prefill_forward | torch SDPA | ratio | max abs diff vs SDPA |
+|---|---|---|---|---|
+| 1 x 4096 | 0.460 ms | 0.176 ms | 2.61 | 6.1e-05 |
+| 128 x 4096 | 0.582 ms | 0.200 ms | 2.91 | 1.2e-04 |
+| 1024 x 1024 | 0.215 ms | 0.077 ms | 2.77 | 2.0e-03 |
+| 1024 x 4096 | 0.593 ms | 0.265 ms | 2.24 | 2.4e-04 |
+| 4096 x 4096 | 1.135 ms | 0.614 ms | 1.85 | 2.0e-03 |
+| 8192 x 8192 | 3.116 ms | 2.039 ms | 1.53 | 2.0e-03 |
+| 16384 x 16384 | 10.656 ms | 7.954 ms | 1.34 | 2.0e-03 |
+
+  Kernel alone (standalone harness built from the `9cb8bee` tree, `f_mfma time`): 0.364, 0.516, 0.148, 0.526, 1.061, 3.055 ms for the first six shapes. The plan's target (4096 x 4096 within 2x of SDPA, <= 1.2 ms) holds: 1.06 ms kernel, 1.135 ms through the operator. Within 1-2% of the `6c06912` figures, as expected: `9cb8bee` changes no gfx942 code.
+- fp64 reference sweep at `9cb8bee`: MFMA 100/100 (porter round above); the RDNA3/RDNA4 layout emulations were run at `6c06912`, and `9cb8bee` does not touch the code they exercise.
+- CUDA gate: not run here, no CUDA toolkit on this host (`/opt/conda/envs` absent, no `nvcc`). `cuda-not-validated: no toolkit on this host`; owed on the gfx950 host at `9cb8bee`. The CUDA view of `prefill.cuh` was shown identical to `2b938d8` by preprocessing (review 2026-11-20), and `9cb8bee` changes only the HIP-only header and a README.
+- Content: `jargon.py --port Quest` clean; ROCm build documented in the README (Linux and Windows blocks); `audit-commits` reports only the known `6e7d8db` gap.
+
+### Owed next (Quest at `9cb8bee`)
+
+1. linux-gfx1201 (RDNA4, wave32): first real run of the gfx12 WMMA layout (Q in registers at nfx=2 head 128, Q in LDS never). Run the seven suites, the end-to-end comparison, and `prefill_time.py` for timing; the instantiations used at nfx=2 spill 144-512 B/lane (review 2026-11-20 has the per-instantiation table and a compile-measured zero-spill configuration if the time disappoints). The emulation verified the index logic against the documented layout; only hardware can confirm the hardware matches.
+2. linux-gfx1100 (RDNA3, wave32): first real run of the gfx11 layout (replicated A/B halves, the xor-16 P exchange, Q in LDS at nfx=2 head 128). Same runs and timing; gfx1100 spills at both nfx=1 (72-192 B) and nfx=2 (340-448 B), and no cheap reduction was found.
+3. windows-gfx1151 (gfx11 WMMA, Windows build with the README's PowerShell block): suites, end-to-end, timing.
+4. linux-gfx90a (MFMA `bf16_1k` form, the only target using it): suites and timing.
+5. Real-nvcc compile of `9cb8bee` on the gfx950 host (the CUDA gate).
