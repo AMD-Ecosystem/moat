@@ -1497,3 +1497,21 @@ print('GENERATED', outdir)
 ```
 
 </details>
+
+## Validation 2026-11-20 (windows-gfx1151) -- PASS at 1c9536f
+
+- GPU: AMD Radeon 8060S (gfx1151, RDNA3.5, wave32), Windows 11. TheRock pip SDK 7.14.0a20260612 (`D:/Develop/TheRock/.venv`, `_rocm_sdk_libraries_gfx1151`), brian2 2.10.1, Python 3.13.13 venv `agent_space/b2c_venv`, mingw32-make (Strawberry). Same environment as the 2026-08-13 entry.
+- Source: fresh clone of the fork, `moat-fix-327` detached at head_sha 1c9536f, `git status --porcelain` clean. Nothing pushed to the fork. Used via `PYTHONPATH` (no reinstall), `SETUPTOOLS_SCM_PRETEND_VERSION=1.0.0`; the generated makefile shows `-Ibrianlib/hip_shims` and `-DB2C_LOG_LEVEL=20` (commit 7aafb3d active) and `--offload-arch=gfx1151`.
+- Cases, the 2026-08-13 `test_basic.py` unchanged (`agent_space/b2c_win/test_basic.py`), `ulimit -c 0`, once:
+  `utils/timeit.sh brian2cuda test -- bash agent_space/b2c_win/run.sh`
+  - t1 LIF exact decay: PASS, max |GPU - closed form| 6.661e-16 (same as the earlier record)
+  - t2 Poisson + 1 ms delay (spike-queue lock, wave32): PASS, 1047 synapses, 510 spikes, 50/50 targets
+  - t3 recurrent, 11907 synapses, 2054 spikes, no deadlock
+  - 3/3, identical counts to the 90d6d7c record (same seed). Linux 1c9536f also 3/3 (counts differ there: reconstructed scripts).
+  - t4 `poisson(lambda_i)`: FAIL to compile, `reference to __host__ function '_host_poisson' in __host__ __device__ function`: same known pre-existing `__CUDA_ARCH__` guard gap as gfx90a/gfx1201, not new.
+- Upstream pytest with HIP: test_logging.py::{test_codegen_log_level_flags,test_file_log_level,test_log_level_gating} + test_cuda_standalone.py::test_codegen_and_compile: 4 passed in 37 s (covers logging.h, hip_shims, log flags, link). Harness notes, not port defects: (1) these tests call the default `make`, absent on Windows: a `make.exe` copy of mingw32-make on PATH; (2) rocminfo is absent so the gpu_arch fell back to gfx90a and `test_log_level_gating` failed at runtime with `cudaMemcpyToSymbol ... invalid kernel file`; setting `prefs.devices.hip_standalone.hip_backend.gpu_arch='gfx1151'` via a `-p` plugin fixed it (4/4). Same environment-class issue as the 2026-08-13 pref.
+- Windows-specific risks asked about: the `-Wl,` rewrite change (82a1097), the hip_shims include path (backslash path in H_SRCS is harmless), `_run_hip_windows` called from the single `run()` (1c9536f) with DLL staging log lines (amdhip64_7, hiprand, amd_comgr, rocm_kpack, rocrand) all fine; no compile or link error with clang-cl/lld-link in any of the four commits.
+- CUDA gate: already recorded PASS at 1c9536f (mi355 nvcc host); not applicable on Windows.
+- Jargon clean at 1c9536f. Docs: no new build step this round.
+
+Verdict: completed at 1c9536f.

@@ -81,3 +81,8 @@
 {"kind":"session","ts":"2026-11-20T22:39:06Z","epoch":1795214346.693796,"event":"end","platform":"linux-gfx1201"}
 {"kind":"phase","ts":"2026-11-20T22:39:24Z","phase":"compile","seconds":48.163,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi355-20261120-143434-nvcc-brian2cuda-prompt/b2c/scripts/run_all.sh"}
 {"kind":"phase","ts":"2026-11-20T22:41:24Z","phase":"compile","seconds":93.767,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi355-20261120-143434-nvcc-brian2cuda-prompt/b2c/scripts/run_all.sh"}
+{"kind":"phase","ts":"2026-11-20T22:47:42Z","phase":"test","seconds":49.49,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/b2c_win/run.sh"}
+{"kind":"phase","ts":"2026-11-20T22:48:18Z","phase":"test","seconds":1.003,"exit":1,"cmd":"bash /d/Develop/moat/agent_space/b2c_win/run_pt.sh"}
+{"kind":"phase","ts":"2026-11-20T22:48:33Z","phase":"test","seconds":4.756,"exit":1,"cmd":"bash /d/Develop/moat/agent_space/b2c_win/run_pt.sh"}
+{"kind":"phase","ts":"2026-11-20T22:49:26Z","phase":"test","seconds":32.872,"exit":1,"cmd":"bash /d/Develop/moat/agent_space/b2c_win/run_pt.sh"}
+{"kind":"phase","ts":"2026-11-20T22:50:28Z","phase":"test","seconds":40.048,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/b2c_win/run_pt.sh"}
