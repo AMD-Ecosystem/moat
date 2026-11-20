@@ -3,11 +3,11 @@
 ## Port status
 
 2026-11-20: fork `moat-port` @ 29e2494, a merge of upstream main (4fb6019,
-13 commits past the old base 46594e0) on top of f9604bb. Built on gfx1100 and
-CUDA-compiled; NOT yet run on a GPU at 29e2494 (the gfx1100 host's pinned card
-was wedged, see "## Upstream sync 2026-11-20"). Both Linux platforms read
-`revalidate`. Earlier history: 3798cb2 (port) and f9604bb (warp-intrinsic
-functions), both validated on gfx90a and gfx1100.
+13 commits past the old base 46594e0) on top of f9604bb. CUDA-compiled, and
+validated on gfx1100 (W7800) at 29e2494: 90 frames, no wedge (see
+"## Validation 2026-11-20"). linux-gfx90a still reads `revalidate` at 29e2494.
+Earlier history: 3798cb2 (port) and f9604bb (warp-intrinsic functions), both
+validated on gfx90a and gfx1100.
 
 ## Build recipe (Linux)
 
@@ -1571,7 +1571,85 @@ Reviewed by an independent reviewer pass (pr-review skill, inline fact-check),
 then each finding re-checked by the session. Verdict: **review-passed**. No code
 defects. Two wording errors in the pushed merge message of 29e2494, which may
 not be amended (pushed, history is evidence); correct them in the upstream PR
-body (done in "## Upstream PR draft" below):
+body (done in "## Validation 2026-11-20: linux-gfx1100 at 29e2494
+
+GPU: `HIP_VISIBLE_DEVICES=1` (dispatcher pin, kept) = AMD Radeon Pro W7800
+48GB, gfx1100, PCI 46:00.0. Not the wedged card from earlier today (26:00.0,
+still at `gpu_busy_percent` 100 at 22:18; not touched). HIP 7.16.26385
+(pip ROCm SDK), AMD clang 24.0.0git.
+
+### Card health check first
+
+A tiny HIP program (hipMalloc + hipMemset 150 KB, one 64-thread kernel,
+hipMemcpy, hipDeviceSynchronize) on the pin returned in 0.12 s with
+`no error` and the expected value. The card was trusted after that.
+
+### Build
+
+Fresh clone of `moat-port` at 29e249433e6b. Recipe from "## Upstream sync
+2026-11-20" (pip SDK as `CMAKE_PREFIX_PATH`, `libglut-dev` extracted with
+`apt-get download libglut-dev; dpkg -x` into the job directory, its
+`libglut.so` linked to the system `libglut.so.3.12`), Ninja, `-j 10`. Exit 0.
+Warnings: 15 `-Wunused-result` and 138 `-Wunused-value`, all `[[nodiscard]]`
+`hipError_t` from `cudaFree`/`cudaMemset` etc. (136 of them one line,
+device_buffer.h:124, included from many TUs; 2 in cuda_cub_wrappers.cu): the
+pre-existing pattern, no new class of warning.
+
+### Run
+
+One run, `ulimit -c 0`, the "Running it headless" harness (Xvfb on `:141`,
+`LIBGL_ALWAYS_SOFTWARE=1`, `stdbuf -o0`, `xdotool key space`), run from a
+scratch directory so nothing landed in the fork tree; killed after 480 s.
+
+```bash
+Xvfb :141 -screen 0 1024x1024x24 &
+DISPLAY=:141 LIBGL_ALWAYS_SOFTWARE=1 stdbuf -o0 ./build/gipc > run.log 2>&1 &
+DISPLAY=:141 xdotool key --window $(DISPLAY=:141 xdotool search --name FEM) space
+sleep 480; kill %2 %1
+```
+
+Result:
+
+- Scene: `vertNum: 38386 tetraNum: 159870 faceNum: 41664`, `surfVertNum:
+  20836 surfEdgesNum: 62496`, `level num: 4`, `bboxDiagSize2: 2.225734`,
+  identical to every earlier record.
+- 90 frames completed, still advancing when killed (frame 90 finished at the
+  end of the window). Reported average time cost 240 ms at frame 1 rising to
+  310 ms by frame 90 (old gfx1100 record: 209-234 ms over 37 frames).
+- No NaN (`grep -ic nan` 0), no HIP error, no crash, no "intersection
+  happened" line at all, `boundary alpha: 1.000000` every frame.
+- Newton iterations per frame: 2-3 for frames 1-22, then the contact phase
+  (frame 24 at 17; peak 67 at frame 35; 8-46 thereafter, 34 at frame 90).
+  Kappa starts at 2824.037412 (the old records' constant value) and adapts
+  upward in the contact phase (2957.18 at frame 90).
+
+### Compared with f9604bb (the nearest platform's record is this platform's)
+
+At f9604bb and 3798cb2 this card wedged in `GIPC::lineSearch` between frames
+25 and 37 (37 on 2026-08-08; gfx90a 31-32), printing "type 0 intersection
+happened" with an unbounded counter. At 29e2494 the same scene enters contact
+at about the same frame (iterations jump at frame 24) and the solver works
+through it with more Newton iterations instead of wedging, past frame 90.
+That fits upstream's merged commits 34fc121 "harden GPU solver", d66c0ab and
+2626a18 (Hessian reserves and dynamic headroom), which are in code the port's
+merge took from upstream. So the behavior change is an upstream improvement
+and not a regression: the earlier "known upstream limitation" (the wedge)
+does not reproduce at this head on gfx1100. Whether gfx90a also clears it is
+for its own revalidation.
+
+### Gates
+
+- CUDA no-regression compile at 29e2494: already recorded (pass) in
+  "## Upstream sync 2026-11-20"; not repeated.
+- `jargon.py --port GPU_IPC`: clean (local `main` in the clone pointed at
+  `upstream/main` 4fb6019 first, as the porter did; the fork's `main` mirror is
+  behind and was not pushed). Upstream main still 4fb6019.
+- README documents the ROCm build (Dependencies table and the `USE_HIP` build
+  block). Fork tree clean (`git status --porcelain` empty).
+
+linux-gfx1100 -> `completed`, `validated_sha` = 29e249433e6b.
+
+## Upstream PR draft" below):
 
 1. Merge message paragraph 2 says "the bending Hessian projection is now `void`
    upstream". The dropped `return tempMat;` was in
@@ -1714,6 +1792,17 @@ Status: the AMD GPU test sentence below names only GPUs with a completed run
 at 29e2494: so far the Instinct MI300X (gfx942, 2026-11-20). gfx1100 and gfx90a
 are still `revalidate` at this head; add each one to the sentence only after
 its run completes at the final head, before jeff reviews it.
+Correction (validator, later the same day): that is wrong. `initScene1` loads
+the same two `bunny2.msh` meshes at f9604bb and at 29e2494
+(`git show f9604bb:GPU_IPC/gl_main.cpp`), and the run at 29e2494 printed the
+same 38386 vertices / 159870 tets. The counts are directly comparable.
+
+## Upstream PR draft
+
+Status: the Testing paragraph names the GPUs with a completed run at
+29e2494: the Radeon PRO W7800 (gfx1100), 2026-11-20. linux-gfx90a has not
+revalidated at 29e2494; add the MI250X (gfx90a) to the sentence only after it
+completes at the final head.
 
 Title:
 
@@ -1744,6 +1833,7 @@ cmake --build build -j
 Use the architecture of your GPU (`rocminfo | grep gfx` lists it), for example gfx90a, gfx942 or gfx1100.
 
 Testing: on an AMD Instinct MI300X (gfx942) the default scene ran headless for 833 frames in five minutes with no HIP errors and no NaN. The CUDA sources were compiled with nvcc 12.8 (sm_80) before and after this change; every `.cu` file compiles, and `load_mesh.cpp` fails identically on current main without this change (load_mesh.h uses `uint32_t` without including `<cstdint>`). On Windows the AMD build was compiled with CMake and Ninja but not run on a GPU.
+Testing: on a Radeon PRO W7800 (gfx1100) the default scene ran headless for 90 frames with no HIP errors and no NaN. The CUDA sources were compiled with nvcc 12.8 (sm_80) before and after this change; every `.cu` file compiles, and `load_mesh.cpp` fails identically on current main without this change (load_mesh.h uses `uint32_t` without including `<cstdint>`). On Windows the AMD build was compiled with CMake and Ninja but not run on a GPU.
 
 This work was done with the assistance of an AI coding agent and reviewed by me.
 ~~~~
@@ -1755,3 +1845,4 @@ The Windows sentence rests on the 2026-08-19 compile at f9604bb (before the
 upstream merge); re-check that a Windows compile at the final head exists
 before sending, or drop the sentence. Body checked 2026-11-20: `utils/prose.py`
 clean, `utils/jargon.py -` clean; re-run both after each edit (re-checked clean 2026-11-20 after naming the MI300X).
+clean, `utils/jargon.py -` clean; re-run both after any further edit.

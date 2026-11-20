@@ -7,10 +7,9 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:23:54Z",
-  "updated_at": "2026-11-20T22:27:59Z",
+  "updated_at": "2026-11-20T22:31:55Z",
   "head_sha": "29e249433e6b242137779f446f709d9d9dd65f36",
   "depends_on": [],
-  "porting": null,
   "waivers": {
     "windows": {
       "reason": "The only Windows host available (gfx1151 laptop; the gfx1101 and gfx1201 Windows hosts are offline) bugchecks under this project's GPU work: HYPERVISOR_ERROR 0x00020001, traced by dump analysis to csagent.sys (CrowdStrike Falcon), six occurrences (four on 2026-06-03, two on 2026-08-14), with hardware GL at about 30 s and with the HIP solver within seconds. The port builds clean on Windows with cmake and ninja and renders under software GL (checked at 3798cb2). jeffdaily ruled on 2026-11-20 that the laptop would bugcheck again and that the port ships without a Windows GPU run.",
@@ -48,10 +47,10 @@
     "linux-gfx1100": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "f9604bbd1e965106ee0752b46e48f8e7828c6401",
+      "validated_sha": "29e249433e6b242137779f446f709d9d9dd65f36",
       "started_at": "2026-08-08T18:04:03Z",
-      "completed_at": "2026-08-20T04:42:12Z",
-      "updated_at": "2026-11-20T22:13:48Z",
+      "completed_at": "2026-11-20T22:31:55Z",
+      "updated_at": "2026-11-20T22:31:55Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -67,12 +66,9 @@
       },
       "last_agent": "reviewer",
       "state": "completed",
-      "carry_forward": {
-        "to": "f9604bbd1e965106ee0752b46e48f8e7828c6401",
-        "method": "binary-equiv",
-        "detail": "codeobj_diff verdict=identical on gipc binary (exported symbols + device ISA) between 3798cb2 and f9604bb; macro-to-function warp-intrinsic translation is behavior-preserving on gfx1100",
-        "at": "2026-08-20T04:42:12Z"
-      }
+      "validated_prior": [
+        "f9604bbd1e965106ee0752b46e48f8e7828c6401"
+      ]
     },
     "windows-gfx1151": {
       "blocked": true,
