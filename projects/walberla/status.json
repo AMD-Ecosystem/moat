@@ -8,10 +8,27 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-11-19T23:41:44Z",
-  "updated_at": "2026-11-19T23:41:44Z",
+  "updated_at": "2026-11-20T00:07:48Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {},
+  "license_spdx": "GPL-3.0-or-later",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "GPL-3.0-or-later",
+      "evidence": "https://gitos.rrze.fau.de/cs10/walberla/walberla/-/blob/master/COPYING.txt",
+      "at": "2026-11-20T00:00:39Z"
+    }
+  ],
+  "intake": {
+    "verdict": "decline",
+    "reason": "already-supported",
+    "duplicate_effort": "upstream in-tree HIP backend (WALBERLA_BUILD_WITH_HIP, !508); no HIP CI yet (#347)",
+    "viable": true,
+    "summary": "waLBerla already has upstream HIP (since 2023, v7.1; master builds on gfx942 after a 1-line version-check fix); ESPResSo's missing AMD LB/EK lives in espresso's walberla_bridge, not here",
+    "at": "2026-11-20T00:07:48Z"
+  }
 }
