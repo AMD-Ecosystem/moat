@@ -1621,11 +1621,99 @@ frames then the wedge). The default scene changed upstream: `initScene1` now
 loads two `bunny2.msh` tetrahedral meshes instead of the cloth scene, so the
 vertex/tet counts (38386/159870) WILL differ and are not a regression signal.
 
+## Validation 2026-11-20: linux-gfx942 at 29e2494 (first run on this arch)
+
+linux-gfx942, AMD Instinct MI300X HF (`gfx942:sramecc+:xnack-`), one card,
+`HIP_VISIBLE_DEVICES=4` as pinned by the dispatcher. TheRock pip SDK
+(`/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel`, hipcc
+7.16.26385, AMD clang 24.0.0git), cmake and Ninja from the same venv. Fork
+`moat-port` @ 29e249433e6b, first validation on gfx942 (no earlier record).
+
+### Card check before trusting it
+
+15-line HIP program (hipMalloc 150 KB, hipMemset, one 64-thread kernel,
+hipMemcpy back) on the pinned card: returned in 0.64 s, correct result
+(`h[63]=63`). `amd-smi metric -u` GPU 4: GFX_ACTIVITY 0 %, all
+`gpu_busy_percent` 0. The card is healthy (not the wedged-card condition seen
+on the gfx1100 host).
+
+### Build
+
+`sudo apt-get install -y freeglut3-dev xvfb xdotool` (not on this image; an
+`apt-get update` was needed first, the cached mesa index 404'd).
+
+```bash
+cmake -S . -B build -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 \
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=<pip ROCm SDK root>
+cmake --build build -j 56
+```
+
+Exit 0, wrapped in `timeit.sh GPU_IPC compile`. Warnings: 153, all the
+`[[nodiscard]]` ignored-return pattern (138 `-Wunused-value` from
+`cudaFree`/`cudaMemset` in upstream's new device_buffer.h and
+cuda_cub_wrappers.cu, 15 `-Wunused-result`). No other diagnostics.
+
+### Run
+
+"Running it headless" harness, one run, under `ulimit -c 0`, wrapped in
+`timeit.sh GPU_IPC test`: Xvfb on a free display, `LIBGL_ALWAYS_SOFTWARE=1`,
+`AMD_LOG_LEVEL=3`, `stdbuf -o0 ./build/gipc`, `xdotool key --window <FEM> space`,
+killed after 300 s.
+
+- Scene: `vertNum 38386 tetraNum 159870 faceNum 41664 surfVertNum 20836
+  surfEdgesNum 62496`, 4 preconditioner levels, initial Kappa 2824.037412:
+  identical to the f9604bb records on gfx90a and gfx1100.
+- **833 frames completed in the 300 s window, still running when killed. No
+  line-search wedge**: zero "intersection happened" lines (gfx90a at f9604bb
+  stopped at frame 31 in that loop, gfx1100 at frame 37).
+- Newton iterations per frame 2 to 70 (median 4; 490 of 833 frames take 4).
+  Adaptive kappa rises from 2824.04 to 2988.14 over the run (the f9604bb runs
+  never got past the first few kappa steps before wedging).
+- Running average frame time 40-52 ms (gfx1100 at f9604bb: 209-234 ms).
+- `AMD_LOG_LEVEL=3`: 20782664 HIP calls, every one `hipSuccess`, nothing else;
+  12759658 `hipLaunchKernel` entries resolving to project kernels
+  (`__PCG_Solve_AXALL_b2`, `__inverse2_P96x96`, `__buildMultiLevelR_optimized`,
+  `_GroundCollisionDetect`, `PCG_vdv_Reduction`, ...) and to the hipCUB/rocPRIM
+  reduce from the new cuda_cub_wrappers.cu (`target_arch 942`, wave64).
+- `grep -ic nan` on stdout and the trace: 0. No crash, no HIP error.
+
+The trace grew to 8.3 GB in 300 s on a disk at 99 %; it was summarized and
+deleted. A later run should drop `AMD_LOG_LEVEL=3` or cap the run.
+
+### Comparison with the f9604bb records
+
+Nearest platform is gfx90a (wave64, the f9604bb gfx90a run on 2026-08-19): same
+scene, same initial kappa, same convergence pattern for the early frames
+(Newton k 2-4), no HIP errors in either. The difference is that 29e2494 no
+longer wedges in `GIPC::lineSearch`; upstream's 2026-08-29 solver-hardening
+commits in the merge are the likely reason (not bisected; the wedge was
+upstream code in both records). This is an improvement, not a regression.
+
+Correction to "## Validation attempt 2026-11-20" above: the default scene did
+NOT change. `initScene1` at the old base 46594e0 already loads the two
+`bunny2.msh` meshes (`git show 46594e0:GPU_IPC/gl_main.cpp`, lines 655-663),
+and the counts at 29e2494 are byte-identical to the old records. Vertex and tet
+counts are a valid comparison signal.
+
+### Other gates
+
+- CUDA no-regression compile at 29e2494: already recorded (pass) in
+  "## Upstream sync 2026-11-20"; not repeated.
+- `jargon.py --port GPU_IPC`: clean (local `main` in the clone pointed at
+  upstream/main 4fb6019, which is still upstream's tip; nothing pushed).
+- README documents the ROCm build next to CUDA (Dependencies table and build
+  section naming gfx942).
+- Fork tree clean: `git -C projects/GPU_IPC/src status --porcelain` empty;
+  only the ignored `build/`.
+
+linux-gfx942 -> `completed` at 29e249433e6b.
+
 ## Upstream PR draft
 
-Status: the AMD GPU test sentence below is a placeholder. No AMD GPU has
-completed validation at 29e2494 yet. Fill it in, naming only GPUs with a
-completed run at the final head, before jeff reviews it.
+Status: the AMD GPU test sentence below names only GPUs with a completed run
+at 29e2494: so far the Instinct MI300X (gfx942, 2026-11-20). gfx1100 and gfx90a
+are still `revalidate` at this head; add each one to the sentence only after
+its run completes at the final head, before jeff reviews it.
 
 Title:
 
@@ -1655,7 +1743,7 @@ cmake --build build -j
 
 Use the architecture of your GPU (`rocminfo | grep gfx` lists it), for example gfx90a, gfx942 or gfx1100.
 
-Testing: [PLACEHOLDER: name each AMD GPU with a completed run at the final commit, e.g. "Radeon PRO W7800 (gfx1100) and Instinct MI250X (gfx90a)", and what it ran: the default scene headless, N frames, no HIP errors, no NaN.] The CUDA sources were compiled with nvcc 12.8 (sm_80) before and after this change; every `.cu` file compiles, and `load_mesh.cpp` fails identically on current main without this change (load_mesh.h uses `uint32_t` without including `<cstdint>`). On Windows the AMD build was compiled with CMake and Ninja but not run on a GPU.
+Testing: on an AMD Instinct MI300X (gfx942) the default scene ran headless for 833 frames in five minutes with no HIP errors and no NaN. The CUDA sources were compiled with nvcc 12.8 (sm_80) before and after this change; every `.cu` file compiles, and `load_mesh.cpp` fails identically on current main without this change (load_mesh.h uses `uint32_t` without including `<cstdint>`). On Windows the AMD build was compiled with CMake and Ninja but not run on a GPU.
 
 This work was done with the assistance of an AI coding agent and reviewed by me.
 ~~~~
@@ -1666,4 +1754,4 @@ reason; the body above carries the corrected wording (see "## Review 2026-11-20"
 The Windows sentence rests on the 2026-08-19 compile at f9604bb (before the
 upstream merge); re-check that a Windows compile at the final head exists
 before sending, or drop the sentence. Body checked 2026-11-20: `utils/prose.py`
-clean, `utils/jargon.py -` clean; re-run both after filling the placeholder.
+clean, `utils/jargon.py -` clean; re-run both after each edit (re-checked clean 2026-11-20 after naming the MI300X).
