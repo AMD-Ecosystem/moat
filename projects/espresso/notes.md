@@ -1036,3 +1036,68 @@ No tolerance was changed, and no test missed.
 - Windows: waived for this project (approved 2026-11-18).
 - For jeff, once wave32 passes: the review page on the fork (AMD-Ecosystem/espresso#1) still shows bc8d73dd9, and its body describes the core only. Refresh it for the five-commit series before approval. No upstream PR is open.
 - For a trunk session: promote the three `## Lesson for cuda-to-rocm` sections above (the uint3 one with its corrected heading).
+
+## Validation 2026-11-20 (linux-gfx950, MI355X wave64, waLBerla LB/EK GPU head 917d6f707)
+
+Validator on the MI355X host, reproducing the method of "Validation 2026-11-20 (linux-gfx942 ...)" above. Host: AMD Instinct MI355X (gfx950, wave64), `HIP_VISIBLE_DEVICES=0` (pinned by the dispatcher), `ulimit -c 0`, `MAX_JOBS=64`. Pip ROCm SDK 10.1.0 (HIP 7.16.26385, clang from `rocm-sdk path --root`, no /opt/rocm), GCC 13.3.0, CMake 3.31.6, FFTW 3.3.10, system Boost 1.83 headers. This host has no system MPI: OpenMPI 5.0.8 (runtime build with the `null` accelerator, see "Porter 2026-11-19 (CUDA path fix)") and Boost.MPI/serialization/unit_test 1.83 were copied from the earlier espresso jobs' prefixes into this job (`work/deps/ompi`, `work/deps/boostpfx`), with `OPAL_PREFIX` set, `ompi/bin` first on `PATH` and `ompi/lib:boostpfx/lib` first on `LD_LIBRARY_PATH`. Test venv `$FLEET_VENV/py312` by `uv` (Python 3.12, numpy 2.5.5, scipy 1.18.1, Cython 3.3.1, tqdm, matplotlib, pint, vtk 9.7.2; the same versions as the gfx942 run). Source: `projects/espresso/src` checked out at 917d6f707 (= `origin/moat-port`), clean tree.
+
+Note on the dispatch prompt: it described this run as the first on a 32-wide Radeon. This host is the MI355X (wave64); orient dispatched `linux-gfx950` (`revalidate`, validated bc8d73dd9). The waLBerla HIP kernels had never run on gfx950 either, so this is a full run, not a carry-forward. It does not satisfy wave32; that gate still needs linux-gfx1201 at this head.
+
+Configure: the porter's command ("Porter 2026-11-20") with `-DCMAKE_HIP_ARCHITECTURES=gfx950`, plus this host's MPI pins, each build in a **new** directory (`agent_space/cfg.sh <build> [extra]`):
+
+```
+cmake -S <src> -B <build> -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_COMPILER=/usr/bin/gcc -DCMAKE_CXX_COMPILER=/usr/bin/g++ \
+  -DESPRESSO_BUILD_WITH_CUDA=ON -DESPRESSO_BUILD_WITH_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx950 \
+  -DCMAKE_HIP_COMPILER=$ROCM_SDK/llvm/bin/clang++ -DCMAKE_PREFIX_PATH="$ROCM_SDK;<deps>/boostpfx" \
+  -DPython_EXECUTABLE=$FLEET_VENV/py312/bin/python \
+  -DESPRESSO_BUILD_WITH_WALBERLA=ON -DESPRESSO_BUILD_WITH_HDF5=OFF \
+  -DESPRESSO_BUILD_WITH_SCAFACOS=OFF -DESPRESSO_BUILD_WITH_STOKESIAN_DYNAMICS=OFF \
+  -DESPRESSO_BUILD_WITH_GSL=OFF -DESPRESSO_BUILD_WITH_NLOPT=OFF \
+  -DESPRESSO_BUILD_WITH_CALIPER=OFF -DESPRESSO_BUILD_WITH_FFTW=ON \
+  -DMPI_C_COMPILER=<deps>/ompi/bin/mpicc -DMPI_CXX_COMPILER=<deps>/ompi/bin/mpicxx -DMPIEXEC_EXECUTABLE=<deps>/ompi/bin/mpiexec \
+  -DESPRESSO_BUILD_WITH_PYTHON=ON -DESPRESSO_BUILD_TESTS=ON
+# maxset: the same plus -DESPRESSO_MYCONFIG_FILE=<src>/maintainer/configs/maxset.hpp
+cmake --build <build> -j 64 -- -k 0
+cmake --build <build> -j 64 --target python_test_data cuda_test local_samples local_benchmarks
+cmake --build <build> -j 64 --target check_unit_tests
+ctest --test-dir <build> -L gpu --timeout 1200 -j 8 -V
+ctest --test-dir build-hip -LE gpu --timeout 1200 -j 16
+```
+
+The MPI pins matter on this host: without them CMake picks `mpicc`/`mpiexec` from the Boost prefix, whose OpenMPI was built with `--enable-mca-no-build=accelerator` and aborts in `MPI_Init`. Cache in both builds: `WALBERLA_BUILD_WITH_HIP=on`, `WALBERLA_BUILD_WITH_CUDA=OFF`, `Heffte_ENABLE_ROCM=ON`, `Heffte_ENABLE_CUDA=OFF`, `ESPRESSO_BUILD_WITH_HIP=ON`.
+
+GPU-class counts come from `agent_space/parse_gpu.py <log>` (written for this run; the gfx942 parser is container-local on that host). It splits the `-V` log by ctest test number, follows a case's status onto later lines (docstrings, warnings), and calls a case GPU-class when its class name names GPU/CUDA or the ctest name is a `*checkpoint*gpu*` test. Like the gfx942 parser, it parses 907 of the 917 cases the logs report as run (a lower bound). Per-script groupings below are by ctest name, so `*_1_core` twins are listed separately; the LB/EK/lattice total is the comparable number.
+
+### Default myconfig (`work/build-hip`)
+
+- Build: **0 FAILED**. Only warnings: 28 known `nodiscard hipError_t` (`-Wunused-value`), as on gfx942. `llvm-objdump --offloading espresso_walberla.so`: **58 gfx950 code objects** (gfx942 had 58).
+- `check_unit_tests`: **152/152 passed**. `PoissonSolver_test_cuda --log_level=test_suite`: `ek_poisson_solver_fft_cuda<float>` 0.72 s, `<double>` 0.72 s, `ek_poisson_solver_none_cuda` 0.17 s, "No errors detected" (heFFTe rocFFT backend on gfx950). `LBWalberlaImpl_field_accessors_tests_cuda`: `macroscopic_accessors<float>` 0.47 s, `<double>` 0.40 s, no errors. The timings show the GPU cases ran.
+- `ctest -L gpu --timeout 1200 -j 8 -V`: **74/74 passed** (419 s; ctest's 3 "Skipped" are `sample_p3m_with_gpu`, `benchmark_p3m_with_gpu`, `benchmark_lb_with_gpu`, the upstream "NO TESTS RAN" scripts, as on every earlier run). 74 `Ran` lines totalling **917 cases**, 71 `OK` summaries, 0 `FAILED`. Parsed: 847 ok / 60 skipped / **0 FAIL/ERROR**; GPU-class **311 ok, 37 skipped, 0 FAIL/ERROR**; **214 GPU-class `ok` in the LB/EK/lattice scripts, identical to gfx942's 214**: ek_boundary 6, ek_bulk_reactions 2, ek_diffusion 2, ek_diffusive_flux 2, ek_eof 2, ek_ext_efield 2, ek_fixeddensity 2, ek_fixedflux 2, ek_fluctuations 2, ek_friction_coupling 2, ek_indexed_reactions 2, ek_interface 38, ek_noflux 2, ek_potential 2, ek_potential_periodic 2, ek_slice 4, lattice_vtk 17, lb 56, lb_boundary 8, lb_boundary_1_core 8, lb_boundary_ghost_layer 6, lb_boundary_volume_force 2, lb_buoyancy_force 2, lb_circular_couette 2, lb_interpolation_1_core 6, lb_mass_conservation_1_core 2, lb_momentum_conservation_1_core 1, lb_poiseuille 2, lb_poiseuille_cylinder 6, lb_pressure_tensor 2, lb_shear 2, lb_slice 4, lb_streaming_1_core 2, lb_thermostat_1_core 12. The four `*checkpoint__therm_lb__{p3m,elc}_gpu__lj__lb_walberla_gpu_*` tests pass (5 + 5 save cases, 29 + 29 test cases ok). **0 occurrences of "compiled without CUDA support".** GPU-class skips: 1 `TestLBMomentumConservationRegularSinglePrecisionWalberlaGPU` (the test's own "LB with regular decomposition already tested with 2 MPI ranks" filter), and 36 `CheckpointTest` mode/feature filters (features not built: H5MD, STOKESIAN_DYNAMICS, SCAFACOS(_DIPOLES), THERMAL_STONER_WOHLFARTH; upstream mode filters "... not in modes", "missing combination", "Lees-Edwards not implemented for LB GPU", "LB not supported", which apply to CUDA as well). `lattice_vtk`'s GPU classes ran (17 ok) with vtk installed.
+- Non-GPU suite `ctest -LE gpu -j 16` (419 tests, 208 s): **391 passed (29 of them ctest "Skipped" samples/benchmarks), 28 failed**: 26 `tutorial_*` Not Run, `test_convert` (`ModuleNotFoundError: No module named 'nbformat'`), `test_install` (never installed). Identical to the gfx942 record at this head (419 / 391 / 28, same set). No regression.
+
+### Maxset myconfig (`work/build-max`)
+
+- Build: **0 FAILED**. Only warnings: 30 known `nodiscard hipError_t`. 58 gfx950 code objects in `espresso_walberla.so`.
+- `check_unit_tests`: **152/152 passed**.
+- `ctest -L gpu --timeout 1200 -j 8 -V`: **74/74 passed** (485 s; the same 3 ctest Skipped). 917 cases ran, 71 `OK`, 0 `FAILED`. Parsed: 851 ok / 56 skipped / **0 FAIL/ERROR**; GPU-class **311 ok, 37 skipped (the same filters), 0 FAIL/ERROR; 214 ok in the LB/EK/lattice scripts**; 0 "compiled without CUDA support". `lb_electrohydrodynamics` (`LBEHTest.test ... ok`), skipped in the default build for the missing `LB_ELECTROHYDRODYNAMICS`, ran and passed here.
+
+No tolerance was changed, and no test missed: there is no finding to classify at this head on gfx950.
+
+### CUDA no-regression compile at 917d6f707 (nvcc on this host), redone as requested
+
+nvcc 12.8 (V12.8.93, `/usr/local/cuda`), no NVIDIA GPU: compile and link only. The `cuda12-maxset` recipe of "CUDA no-regression compile 2026-11-20" (maxset myconfig, `ESPRESSO_WARNINGS_ARE_ERRORS=ON`, waLBerla ON, Python OFF, Caliper OFF), with this job's OpenMPI/Boost (`agent_space/cuda-build.sh <build>`), from the same clean checkout at 917d6f707 into `work/build-cuda`:
+
+```
+ninja -C <build> -k 0 -j 64 all <the 154 unit-test executables: ninja -t targets all, src/**/tests|unit_tests, minus */test>
+```
+
+- Cache: `WALBERLA_BUILD_WITH_CUDA=on`, `WALBERLA_BUILD_WITH_HIP=OFF`, `Heffte_ENABLE_CUDA=ON`, `Heffte_ENABLE_ROCM=OFF`, `ESPRESSO_BUILD_WITH_HIP=OFF`, `Kokkos_ENABLE_CUDA=OFF`.
+- Result: **690/690 steps, 0 FAILED, 0 warnings under -Werror** (134 s). 73 nvcc compile commands (67 in `src/walberla_bridge`). `espresso_walberla.so` carries 61 cubins each for sm_75/86/89. `PoissonSolver_test_cuda` and `LBWalberlaImpl_field_accessors_tests_cuda` link. PASS; agrees with the review's run on the gfx942 host.
+
+### Gates
+
+- `python3 utils/jargon.py --port espresso`: clean (needs local `python` and `moat-port` branches in the clone; a fresh clone has neither, and jargon then says "cannot resolve python..moat-port").
+- Docs: "AMD GPU acceleration" in `doc/sphinx/installation.rst` (:300), `ESPRESSO_BUILD_WITH_HIP` in the configure example (:311) and the options list (:917).
+- Integrity: `git -C projects/espresso/src status --porcelain` empty at 917d6f707. Nothing was edited in the fork and nothing was pushed to it.
+- Coverage: wave64 is satisfied at 917d6f707 by gfx942 and now gfx950. **wave32 is still owed**: linux-gfx1201 validated bc8d73dd9, and the waLBerla HIP kernels have not yet run on a 32-wide GPU. Windows is waived.
