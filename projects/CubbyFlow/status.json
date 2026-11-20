@@ -7,18 +7,22 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:19:23Z",
-  "updated_at": "2026-08-21T04:14:06Z",
+  "updated_at": "2026-11-20T21:14:32Z",
   "head_sha": "29bac0b9b1e8981d9921446829f9c0df1b97f2fe",
   "depends_on": [],
   "pr_url": "https://github.com/utilForever/CubbyFlow/pull/145",
   "pr_number": 145,
   "pr_opened_at": "2026-06-19T05:05:08Z",
-  "porting": null,
+  "porting": {
+    "arch": "windows-gfx1151",
+    "since": "2026-11-20T21:14:32Z",
+    "holder": "2e86842d8592"
+  },
   "waivers": {},
   "pr_state": "open",
   "license_spdx": "MIT",
   "upstream_repo_id": 132249264,
-  "stage": "review-passed",
+  "stage": "porting",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -129,9 +133,9 @@
       "blocked_reason": null,
       "validated_sha": null,
       "failed_sha": "29bac0b9b1e8981d9921446829f9c0df1b97f2fe",
-      "started_at": null,
+      "started_at": "2026-11-20T21:14:32Z",
       "completed_at": null,
-      "updated_at": "2026-08-21T04:14:06Z",
+      "updated_at": "2026-11-20T21:14:32Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
