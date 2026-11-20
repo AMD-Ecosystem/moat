@@ -1496,3 +1496,26 @@ The branch is merged with current `develop` (7bba620), and the ROCm build works 
 
 Name only GPUs whose platform record shows a completed validation at this exact head. If upstream `develop` has moved past 7bba620, check `git merge-tree --write-tree 5a45243 <develop>` before approving.
 ====
+
+## CUDA compile check (nvcc 12.8) at 5a45243
+
+Compile-only check on a Linux host with NVIDIA CUDA 12.8.93 (`/usr/local/cuda-12.8`) and no NVIDIA GPU; GCC 13.3.0, CMake 3.31.6, Python 3.11 job venv. Port: fork `moat-fix-1021` at 5a4524333f6c286dbf82f08e796d9946cac1a7e1 (the fork's branch tip). Baseline: upstream ModelEngine-Group/unified-cache-management `develop` at 7bba620a27ba6cbd2a8aa06f2207e74f9a04d2c5, the commit the round merged (an ancestor of 5a45243), so `git diff 7bba620 5a45243` is exactly the port (29 files) and any build difference belongs to it. Fresh clones, nothing modified.
+
+Same procedure as the eda03f1 entry, both trees:
+```bash
+cmake -S . -B build-cuda -DCMAKE_BUILD_TYPE=Release -DRUNTIME_ENVIRONMENT=cuda -DBUILD_UNIT_TESTS=ON -DCUDA_ROOT=/usr/local/cuda-12.8 -DPython_EXECUTABLE=<venv>/bin/python
+VERBOSE=1 cmake --build build-cuda -j20
+cd build-cuda && ctest -j16 --timeout 120
+```
+- Configure rc=0 and build rc=0 on port and upstream. `-Wall -Werror` holds: zero warnings on both.
+- nvcc compiled `ucm/shared/trans/cuda/cuda_sm_kernel.cu` (`-x cu`, compute/sm 75, 80, 86, 89, 90) on both. Cubins and PTX for all five arches (`cuobjdump -xelf all -xptx all` on `kernel.dir/cuda_sm_kernel.cu.o`) are byte-identical between port and upstream.
+- Targets: port 32 "Built target" lines, upstream 35; the only difference is again `infra_template`, `infra_thread`, `infra_time` (OBJECT -> INTERFACE in the port).
+- `ucm/store/nfsstore/device/cuda/cuda_device.cu` (not reached by the CMake build since upstream #1566): compiled standalone with the eda03f1 entry's nvcc flags (`-O3 -std=c++17`, sm_75/80/90, `--diag-suppress=128,2417,2597 -Xcompiler -Wall`, includes for nfsstore/device, shared/infra, shared, store and the fetched fmt/spdlog): rc=0 on both, no diagnostics, sm_75/80/90 cubins byte-identical.
+- ctest: 355 discovered on each, same 1 disabled (UCMetricsStress.TenWritersOneCollector) and same 52 skipped on both. The same 17 GPU-dependent tests fail on both (UCTransUnitTest x5, UCCache2TransManagerIntegrationTest x6, DataStrategyTest x6; no NVIDIA driver). Beyond those, at -j16 port failed UCLoggerTest.LogEventuallyReachesUcmFile and upstream failed that one plus UCLoggerTest.RegistersLoggerAndLevelFilter; `ctest -R UCLogger` run serially twice on each tree passes 6/6 every time, so these are load flakes as at eda03f1. The posix-store `O_DIRECT` cases that fail on the gfx942 host pass here on both trees.
+
+Sparse `gsa_on_device` CUDA extension, compiled this time (the eda03f1 check could not): torch 2.11.0+cu128 installed into the job venv only (`pip install --index-url https://download.pytorch.org/whl/cu128 torch`).
+- `-DCMAKE_BUILD_TYPE=Release -DRUNTIME_ENVIRONMENT=cuda -DBUILD_UCM_STORE=OFF -DBUILD_UCM_SPARSE=ON -DCUDA_ROOT=/usr/local/cuda-12.8 -DPython_EXECUTABLE=<venv>/bin/python` stops at configure on both trees, at upstream's own `ucm/sandbox/sparse/gsav2/prefetch/CMakeLists.txt` FATAL_ERROR ("RUNTIME_ENVIRONMENT must be 'ascend' (CUDA backend was removed)"; line 99 in the port, 96 upstream, the port's ROCm arm is the 3-line shift). Upstream behaviour, unchanged by the port, as the gfx942 validator predicted.
+- To compile past it, scratch worktrees of both trees with the same one-line edit (comment out `add_subdirectory(sandbox)` in `ucm/CMakeLists.txt`), same configure, `VERBOSE=1 cmake --build build-sparse -j20` and then `-- -k`: `hamming` (nvcc on `paged_ham_dist_mla.cu`, sm 75/80/86/89/90, `hamming.cpython-311-x86_64-linux-gnu.so` linked), `hash_retrieval_backend`, `retrieval_backend`, `gsa_offload_ops` and `kernel` build on both, zero warnings. The only failing target, on both, is `gsa_prefetch` (`ucmstore.h:27: task/task_shard.h: No such file or directory`, a consequence of `BUILD_UCM_STORE=OFF` in code the port does not touch).
+- `paged_ham_dist_mla.cu.o` cubins and PTX differ between the two worktrees only in nvcc's `_INTERNAL_<hash>` prefix for internal-linkage symbols, which nvcc derives from the source path (`sp-port` vs `sp-upstream`); PTX normalized for that prefix is identical for all five arches. Direct proof: in the port worktree, `git checkout 7bba620 -- ucm/sparse/gsa_on_device/csrc/cuda/ham_dist/` and rebuilding `--target hamming` gives cubins and PTX byte-identical to the port's for all five arches (restored afterwards). So the port's `USE_ROCM` wrappers in `operator.h` and `paged_ham_dist_mla.cu` leave the CUDA device code unchanged.
+
+Result: no CUDA regression at 5a45243, in the default CUDA build with unit tests and in the hamming CUDA extension. Platform states unchanged; nothing pushed to the fork.
