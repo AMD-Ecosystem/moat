@@ -9,10 +9,16 @@
       "refs": [
         "projects/symforce/notes.md#review-2026-11-04"
       ],
-      "status": "open",
+      "status": "not-applicable",
       "upstream_issue": null,
       "created_at": "2026-11-04T20:46:33Z",
-      "decided": null
+      "decided": null,
+      "closed": {
+        "as": "not-applicable",
+        "reason": "The squash this waited for cannot happen: both commits (38f16ea39, daa1a7bf6) are published as written in the open upstream PR symforce-org/symforce#465, the branch is frozen and is not force-pushed. The code is correct; only the commit-body explanations are off. If the maintainer asks about the PCG fix, the accurate description goes in the reply.",
+        "by": "jeffdaily",
+        "at": "2026-11-18T18:17:50Z"
+      }
     }
   ]
 }
