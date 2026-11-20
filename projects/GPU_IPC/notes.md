@@ -1832,8 +1832,8 @@ cmake --build build -j
 
 Use the architecture of your GPU (`rocminfo | grep gfx` lists it), for example gfx90a, gfx942 or gfx1100.
 
-Testing: on an AMD Instinct MI300X (gfx942) the default scene ran headless for 833 frames in five minutes with no HIP errors and no NaN. The CUDA sources were compiled with nvcc 12.8 (sm_80) before and after this change; every `.cu` file compiles, and `load_mesh.cpp` fails identically on current main without this change (load_mesh.h uses `uint32_t` without including `<cstdint>`). On Windows the AMD build was compiled with CMake and Ninja but not run on a GPU.
-Testing: on a Radeon PRO W7800 (gfx1100) the default scene ran headless for 90 frames with no HIP errors and no NaN. The CUDA sources were compiled with nvcc 12.8 (sm_80) before and after this change; every `.cu` file compiles, and `load_mesh.cpp` fails identically on current main without this change (load_mesh.h uses `uint32_t` without including `<cstdint>`). On Windows the AMD build was compiled with CMake and Ninja but not run on a GPU.
+Testing: on an AMD Instinct MI300X (gfx942) the default scene ran headless for 833 frames in five minutes with no HIP errors and no NaN. The CUDA sources were compiled with nvcc 12.8 (sm_80) before and after this change; every `.cu` file compiles, and `load_mesh.cpp` fails identically on current main without this change (load_mesh.h uses `uint32_t` without including `<cstdint>`). On Windows the AMD build compiles and links with clang and Ninja, but it was not run on a GPU.
+Testing: on a Radeon PRO W7800 (gfx1100) the default scene ran headless for 90 frames with no HIP errors and no NaN. The CUDA sources were compiled with nvcc 12.8 (sm_80) before and after this change; every `.cu` file compiles, and `load_mesh.cpp` fails identically on current main without this change (load_mesh.h uses `uint32_t` without including `<cstdint>`). On Windows the AMD build compiles and links with clang and Ninja, but it was not run on a GPU.
 
 This work was done with the assistance of an AI coding agent and reviewed by me.
 ~~~~
@@ -1841,8 +1841,59 @@ This work was done with the assistance of an AI coding agent and reviewed by me.
 Notes for whoever finalizes this draft: the merge commit message of 29e2494
 misnames the projection ("bending") and misstates the `WARP_MASK_FROM_COUNT`
 reason; the body above carries the corrected wording (see "## Review 2026-11-20").
-The Windows sentence rests on the 2026-08-19 compile at f9604bb (before the
-upstream merge); re-check that a Windows compile at the final head exists
-before sending, or drop the sentence. Body checked 2026-11-20: `utils/prose.py`
+The Windows sentence rests on the 2026-11-20 compile and link at c44ed01
+(see "## Windows link fix 2026-11-20"); re-check it if the head moves again. Body checked 2026-11-20: `utils/prose.py`
 clean, `utils/jargon.py -` clean; re-run both after each edit (re-checked clean 2026-11-20 after naming the MI300X).
 clean, `utils/jargon.py -` clean; re-run both after any further edit.
+
+## Windows link fix 2026-11-20 (porter, windows-gfx1151, build only)
+
+Diagnosis: agent_space/gpu-ipc-wincompile/RESULT.md (checkup session, same day).
+At 29e2494 the documented Windows AMD build compiled all 10 translation units
+but failed to link: `clang++: error: invalid linker name in argument
+'-fuse-ld=lld-link'`. CMake 3.29+ (`Platform/Windows-Clang.cmake`,
+`CMAKE_<LANG>_USING_LINKER_DEFAULT`) puts that flag on Windows clang link lines
+and the `-fgpu-rdc` HIP link rejects it. The 2026-08 Windows links only worked
+because of an unrecorded hand edit of `build.ninja`.
+
+Fix, fork commit c44ed01 on moat-port ("[ROCm] Link the Windows HIP build with
+clang's lld driver name"), CMakeLists.txt, directly after
+`project(gpu_ipc LANGUAGES CXX HIP)` inside the existing `if(USE_HIP)`:
+
+```cmake
+    if(WIN32)
+        # CMake 3.29+ passes -fuse-ld=lld-link, which the -fgpu-rdc HIP link rejects
+        set(CMAKE_HIP_USING_LINKER_DEFAULT "-fuse-ld=lld")
+    endif()
+```
+
+The CUDA configure never reaches it (else branch of `USE_HIP`) and a Linux HIP
+configure skips it (`WIN32` false). Placement after `project()` is honoured:
+CMake reads the variable at generate time, and the generated `build.ninja`
+carries `-fuse-ld=lld` once and no `lld-link`.
+
+Verification, fresh build dir, cmake 3.31.0, ninja 1.13.2, TheRock SDK
+7.14.0a20260612 clang++ (GNU driver) for CXX and HIP, vcpkg x64-windows deps,
+env ROCM_PATH/HIP_PATH=<sdk root>, HIP_PLATFORM=amd,
+HIP_DEVICE_LIB_PATH=<sdk root>/lib/llvm/amdgcn/bitcode, no extra -D flags,
+no hand edit:
+
+```
+R=D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel
+cmake -S src -B build3 -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151   -DCMAKE_CXX_COMPILER=$R/lib/llvm/bin/clang++.exe -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++.exe   -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=D:/Develop/vcpkg/scripts/buildsystems/vcpkg.cmake   -DVCPKG_TARGET_TRIPLET=x64-windows -DCMAKE_PREFIX_PATH=$R
+ninja -C build3 -j8
+```
+
+Configure exit 0, build exit 0, 0 errors, 165 warnings (the 164 pre-existing
+plus `argument unused during compilation: '--rtlib=compiler-rt'` at link),
+gipc.exe 3,465,728 bytes, freeglut.dll and glew32.dll copied beside it. gipc.exe
+was NOT run (Windows GPU run waived; this host bugchecks under the project's GPU
+work). README untouched: its Windows section covers only the CUDA build.
+
+Pushed 29e2494..c44ed01 to moat-port (plain push, no upstream PR open).
+jargon: `--port` needs projects/GPU_IPC/src, which this worktree lacks, so the
+same range was scanned by hand: `jargon.py -C <clone> --commits
+origin/main..moat-port` and `--diff origin/main..moat-port`, both clean.
+Delta 29e2494..c44ed01 touches only the WIN32+USE_HIP branch of CMakeLists.txt,
+so it cannot change a Linux build; carry-forward and review are left to the
+checkup session.
