@@ -19,3 +19,5 @@
 {"kind":"phase","ts":"2026-11-20T23:16:11Z","phase":"test","seconds":72.783,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi300b-20261120-145910-fix-flexgemm-prompt/moat/projects/FlexGEMM/src/tests && /var/lib/jenkins/fleet/jobs/mi300b-20261120-145910-fix-flexgemm-prompt/venv/bin/python grid_sample.py"}
 {"kind":"phase","ts":"2026-11-20T23:18:08Z","phase":"test","seconds":96.639,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi300b-20261120-145910-fix-flexgemm-prompt/moat/projects/FlexGEMM/src/examples && /var/lib/jenkins/fleet/jobs/mi300b-20261120-145910-fix-flexgemm-prompt/venv/bin/python submconv.py"}
 {"kind":"phase","ts":"2026-11-20T23:18:19Z","phase":"test","seconds":3.818,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi300b-20261120-145910-fix-flexgemm-prompt/moat/projects/FlexGEMM/src/examples && /var/lib/jenkins/fleet/jobs/mi300b-20261120-145910-fix-flexgemm-prompt/venv/bin/python submconv.py"}
+{"kind":"session","ts":"2026-11-20T23:21:41Z","epoch":1795216901.566388,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-20T23:32:40Z","epoch":1795217560.752158,"event":"end","platform":"linux-gfx942"}

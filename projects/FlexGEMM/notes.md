@@ -620,3 +620,72 @@ bcf7c6f's body is false where it says "The remaining configs (larger BM) cover t
 ```
 Add an early_config_prune that drops, on HIP only, the configs whose launch would reach that limit. This covers the RES=2048 test case but not larger inputs: from about M * C * V = 2^33 on 64-wide wavefronts every config reaches the limit and the list is empty; the next commit replaces the prune with a launch that splits the grid. CUDA keeps every config.
 ```
+
+## Review 2026-11-20 round 2 (linux-gfx942 fleet job, AMD Instinct MI300X; reviewed head e7d36f10fcef3efc623656ca7592361db662f04b)
+
+Reviewed `git diff 6dd94a8...e7d36f1` (5 commits) with the pr-review skill, focusing on e7d36f1 and on the porter's answers to the round-1 review. Every finding was re-checked against the code and measured on the GPU. **Verdict: changes requested, one finding.** The launch change itself is correct on every input I could construct: round-1 findings 1 and 2 are resolved, and findings 3 to 5 are resolved by the "Correction for the final history" section (the corrected text is accurate; it has to be applied when the commits are prepared for the upstream PR).
+
+### Findings
+
+1. **`flat_grid` adds a per-launch host cost on both platforms, and the CUDA path pays it for a HIP-only fix** (`flex_gemm/kernels/triton/utils.py:28-31`, e7d36f1). Triton calls the grid lambda on every launch (`triton/runtime/jit.py:778-779`, `grid = grid(bound_args)`), so every `indice_weighed_sum_fwd`/`_bwd_input` call now runs `get_platform_name()`, which calls `torch.cuda.is_available()` (0.86 us here), and on HIP two more `triton.cdiv` calls (1.3 us each; `triton.cdiv` is a wrapped function, not plain arithmetic). `flat_grid(1000)` measures 4.0 us. End to end, a small forward call (M=1000 C=8 V=8, autotuned, 2000 calls, best of 5) goes from 28.0-28.7 us/call at bcf7c6f to 33.3 us/call at e7d36f1 on MI300X, about 16% slower. On CUDA the cost is the `is_available()` call, about 0.9 us per launch: small, but it contradicts the commit body's "on CUDA ... unchanged" and is the kind of change an upstream CUDA maintainer rejects in a ROCm PR. Upstream evaluates the platform once, at import (`get_autotune_config`, `utils.py:53`). Fix: decide the platform once at import and use integer arithmetic, for example
+   ```
+   def flat_grid(num_programs):
+       ...
+       if not _IS_HIP:
+           return (num_programs,)
+       rows = max(1, -(-num_programs // ((2**32 - 1) // 1024)))
+       return (-(-num_programs // rows), rows)
+
+   _IS_HIP = get_platform_name() == 'hip'
+   ```
+   I measured exactly that variant (`agent_space/review2/fixcheck`, not committed anywhere): 29.2-29.8 us/call, and all 12 configs still pass `bwd M=4194304 C=8 V=8`. The CUDA path then costs one module-global truth test per launch. A new commit on top (no amend), with the e7d36f1 body's correction note in "Correction for the final history" extended if the two are to be squashed.
+
+### Checked with no finding (for the porter's and Jeff's information)
+
+- **Round-1 findings 1 and 2 (launch size):** no prune remains, so no config list can go empty. Axis 0 holds `cdiv(n, rows) <= 4,194,303` programs because `rows >= n / 4,194,303`, so axis 0 stays below 2^32 work-items for any work-group up to 1024 (Triton's maximum: 16 warps of 64, or 32 of 32). Axis 1 has block dimension 1, and `rows <= 512` for any program count Triton's int32 `program_id` can index. The limit is a property of the HIP dispatch (32-bit work-item counts per dimension), not of the wavefront size, and FlexGEMM's configs are all `num_warps=2` (64 work-items on wave32, 128 on wave64), so the same bound holds on wave32 parts with more headroom. Not run on wave32 here (no such GPU); the wave32 validator covers it.
+- **Masking of overrun programs:** backward: an overrunning program has `block_id_m >= cdiv(M,BM)`, so `offset_m >= M`, and the `grad_output`, `indices` (`other=0xffffffff`, so `valid_mask` false) and `weight` loads and the atomic are all masked (`indice_weighed_sum_bwd.py:43-56`). Forward: `offset_m` wraps modulo M (`indice_weighed_sum_fwd.py:41`), so loads stay in bounds, and the new `block_id_m < tl.cdiv(M, BM)` term (`:63`) stops the store. Without it the overrun would rewrite wrapped rows with identical values (benign, but racy); the mask is right.
+- **CUDA kernel behaviour:** off HIP `flat_grid` returns `(num_programs,)`, the same 1-tuple as upstream; `program_id(1)` is 0 and the new store term is always true because the grid is exactly `cdiv(M,BM)*cdiv(C,BK)`. `config.py` and the autotune keys are untouched. Apart from finding 1, CUDA behaviour is unchanged.
+- **32-bit indexing claim in the notes:** with every config having `BM*BK >= 64` and V <= 64 (V is 1 or 8 from the op), any input whose tensors stay below 2^31 elements gives fewer than 2^31 programs, so `block_id` cannot overflow before the pre-existing (shared with CUDA) offset overflow. The notes' bound is right.
+- **Lesson `HIP rejects a launch of 2^32 or more work-items ...`:** the CUDA caveat (keep the large count on axis 0, or keep axis 1 at or below 65,535), the y/z measurements and the "pruning is not a fix" point are now correct. "The grid callable receives only the kernel arguments, not num_warps" checks out against Triton 3.9 `jit.py:779`. The MI300X total-size claim is confirmed and extended: `grid=(4129777, 65) x 128` (2^35 work-items) and `grid=(4177984, 257) x 128` (about 2^37) both ran correctly here. Ready to promote.
+- **Deferred `flexgemm-grid-sample-bwd-autotune-accumulates`:** reproduced (`agent_space/firstcall.py`, M=4096 C=8 V=8 N=1024 float32): first/second call max ratio 26,971 on 6dd94a8 and 26,339 on e7d36f1. Upstream, not ROCm-specific, unchanged by the port; the ruling stays with Jeff.
+- **Porter's driver** (`agent_space/repro_launch.py`) tests what it says, but its tolerance (1% of the reference maximum) is loose enough to hide a missing tile in backward, and in an autotuned forward run the benchmark runs of other configs fill the same output buffer, which would mask a config that skips tiles. So I wrote a stricter driver (below) and checked it with a negative control.
+- Commit hygiene: e7d36f1's title is 67 characters with `[ROCm]`, no trailer, AI-agent disclosure present, `python3 utils/jargon.py --port FlexGEMM` clean, no non-ASCII added lines. `git -C projects/FlexGEMM/src status --porcelain` clean. The installed `flex_gemm` in the venv matches the e7d36f1 export (`diff -rq`, ignoring build output).
+
+### GPU runs (MI300X gfx942, GPU 2 via the dispatcher's HIP_VISIBLE_DEVICES=2, TheRock ROCm 10.2.0a20261022, torch 2.16.0a0, Triton 3.9.0)
+
+```
+source agent_space/env.sh
+git -C projects/FlexGEMM/src archive e7d36f1 flex_gemm | tar -x -C agent_space/review2/tree
+```
+
+Previously failing shapes, through the wrappers with autotuning (`agent_space/repro_launch.py <tree> <fwd|bwd> M C V float16`, absolute tree paths):
+
+```
+                         e7d36f1                                   bcf7c6f                    6dd94a8 (upstream)
+bwd M=1048576 C=1024 V=8 OK (BM4 BK64; err 0.187, tol 0.383)       ValueError: min() arg is   SystemError (__reversed__ ...)
+                                                                   an empty sequence
+fwd M=2097152 C=1024 V=8 OK (BM4 BK64; err 0.00781, tol 0.123)     SystemError (__reversed__) SystemError
+bwd M=4194304 C=8    V=8 OK (BM16 BK8; err 0.478, tol 0.616)       OK (BM16 BK16)             SystemError
+float32 at e7d36f1: bwd 1048576/1024/8 err 1.14e-05; fwd 2097152/1024/8 err 1.91e-06; bwd 4194304/8/8 err 6.1e-05 (all OK)
+```
+
+Every config forced, strict driver `agent_space/review2/allcfg.py <tree> <fwd|bwd> M C V [cfgs|all]`: launches the raw JIT kernel once per config with the `flat_grid` grid (no autotuner, so no benchmark run touches the output), float32, forward output prefilled with NaN, backward output fresh zeros, float64 torch reference, tolerance 1e-5 x reference max, and it counts never-written outputs. Negative control: a copy of the e7d36f1 tree with `block_id = tl.program_id(axis=0)` restored (`agent_space/review2/sabotage`) fails `fwd M=4194305 C=64 V=8 cfg2` with 134,217,728 NaN outputs; the real tree passes it.
+
+```
+SUMMARY bwd M=1048576   C=1024 V=8: 12/12 configs OK   grids up to (4067204, 33), overrun up to 7
+SUMMARY fwd M=2097152   C=1024 V=8: 12/12 configs OK   grids up to (3728271, 9)
+SUMMARY bwd M=4194304   C=8    V=8: 12/12 configs OK   (1048576, 1) to (3728271, 9)
+SUMMARY bwd M=2097152   C=1024 V=8: 12/12 configs OK   up to (4129777, 65), overrun 49
+SUMMARY fwd M=270003    C=1000 V=8: 12/12 configs OK   partial last M tile, odd num_k (BK=8)
+SUMMARY bwd M=270003    C=1000 V=8: 12/12 configs OK
+SUMMARY fwd M=4194303   C=64   V=8: cfg2 OK            (4194303, 1): last unsplit size
+SUMMARY fwd M=4194304   C=64   V=8: cfg2 OK            (2097152, 2): first split size
+SUMMARY bwd M=134217728 C=8    V=8: cfg2, cfg11 OK     (4177984, 257) x 128, 2^30 programs, overrun 64
+SUMMARY fwd M=134217728 C=8    V=8: cfg2, cfg11 OK     (4067204, 33)
+```
+
+Max abs errors: 1.9e-06 forward everywhere; backward 2.1e-05 to 6.9e-05 (C=1024 / C=8), 1.7e-03 at M=134217728 (about 16,000 float32 atomic contributions per row, tolerance 3.9e-03). Full log: `agent_space/review2/allcfg.log` (job-local).
+
+`tests/grid_sample.py`, unchanged, against the installed e7d36f1 build with the autotune cache off (`FLEX_GEMM_USE_AUTOTUNE_CACHE=0 FLEX_GEMM_AUTOSAVE_AUTOTUNE_CACHE=0 python grid_sample.py` in `src/tests`): rc 0, all four tables (Nearest/Trilinear Fwd/Bwd) through RES=2048, all 72 err_max/err_mean cells 0 per mille.
+
+Launch overhead (`agent_space/review2/launch_overhead.py <tree>`, finding 1): bcf7c6f 27.8-28.7 us/call, e7d36f1 33.3, e7d36f1 with the import-time platform check 29.2-29.8.
