@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-05T01:25:53Z",
-  "updated_at": "2026-08-07T07:05:33Z",
+  "updated_at": "2026-11-20T21:31:21Z",
   "head_sha": "c65c0b823fe81f022e060291a47374ac8483cfc8",
   "depends_on": [],
   "pr_url": "https://github.com/ivan-chai/torch-linear-assignment/pull/31",
@@ -135,5 +135,11 @@
       }
     }
   },
-  "published_sha": "c65c0b823fe81f022e060291a47374ac8483cfc8"
+  "published_sha": "c65c0b823fe81f022e060291a47374ac8483cfc8",
+  "fix": {
+    "branch": "moat-fix-31",
+    "base_sha": "c65c0b823fe81f022e060291a47374ac8483cfc8",
+    "review_pr": null,
+    "opened_at": "2026-11-20T21:31:21Z"
+  }
 }
