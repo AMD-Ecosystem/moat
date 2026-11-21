@@ -250,3 +250,7 @@
 {"kind":"session","ts":"2026-11-20T23:00:21Z","epoch":1795215621.990679,"event":"start","platform":"linux-gfx942"}
 {"kind":"phase","ts":"2026-11-20T23:00:35Z","phase":"compile","seconds":6.046,"exit":1,"cmd":"bash -c cd projects/TIGRE/src && /var/lib/jenkins/fleet/jobs/mi300-20261120-145727-tigre-fullturn-gfx942-prompt/venv/bin/python setup.py build_ext --inplace -j 12"}
 {"kind":"session","ts":"2026-11-20T23:11:43Z","epoch":1795216303.19018,"event":"end","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-21T03:40:27Z","phase":"compile","seconds":0.895,"exit":1,"cmd":"bash /d/Develop/moat/agent_space/tigre_build_win1151_c01.sh"}
+{"kind":"phase","ts":"2026-11-21T03:41:08Z","phase":"compile","seconds":5.839,"exit":1,"cmd":"bash /d/Develop/moat/agent_space/tigre_build_win1151_c01.sh"}
+{"kind":"phase","ts":"2026-11-21T03:42:04Z","phase":"compile","seconds":45.388,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/tigre_build_win1151_c01.sh"}
+{"kind":"phase","ts":"2026-11-21T04:00:32Z","phase":"test","seconds":1085.516,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/tigre_run_c01.sh"}

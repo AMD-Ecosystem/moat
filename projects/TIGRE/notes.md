@@ -1983,3 +1983,41 @@ CPU reference (`probe/fullturn_norm_orders.py`, float32 numpy over all 4096 pixe
 
 ## Lesson for cuda-to-rocm: a deterministic one-arch test failure can be FMA contraction on a ceil/floor knife edge
 Symptom: a test passes on some AMD architectures and fails deterministically on others with the same software path, and the error scales with a sampling step. Look for `ceilf`/`floorf`/integer casts of float quantities that are exact integers in exact arithmetic (a ray length that equals a box dimension, a count derived from length/step). LLVM contracts `a*a+b*b+c*c` differently per target: CDNA (gfx90a/gfx942) pairs two products into `v_pk_mul_f32` and rounds both, while RDNA (gfx11/gfx12, no packed FP32) builds an FMA chain. That is a one-ulp difference, and the knife edge turns it into a whole extra sample. Diagnose by printing the integer from the device for one differing pixel, emulating the expression in float32 with each contraction order, and confirming with `__fmaf_rn`/`__fmul_rn` forced in a scratch build. It is not a wavefront-width bug, even when it splits along wave64/wave32 lines. To get CDNA3 evidence on code that needs the image API (unavailable on gfx94x), a scratch global-memory emulation of `tex3D` point fetches plus the code's own software trilinear reproduces the gfx90a numbers exactly.
+
+## Validation 2026-11-20 (windows-gfx1151, validator, moat-fix-747 @ c015150 -> completed)
+
+jeff asked for this run (relayed by the checkup session). GPU: AMD Radeon 8060S / gfx1151 (RDNA3.5 APU, wave32), TheRock ROCm SDK (`D:/Develop/TheRock/.venv`, `win_rocm_env.sh`), Windows 11, MSVC 14.44 + clang-cl, Python 3.12.10. Fresh clone `agent_space/tigre-win3`, detached at c0151501c2a97922e9afea20007f3d049d0a815a (= `origin/moat-fix-747`), push URL disabled, nothing pushed. Full run, no carry-forward (first run at this head, device-code delta). All GPU runs once, `ulimit -c 0`, no repeat loops (`repeat` mode of the probe not run; the 20x repeat checks are barred on this host).
+
+### Build (documented Windows command with the new switch)
+```
+utils/timeit.sh TIGRE compile -- bash agent_space/tigre_build_win1151_c01.sh
+# TIGRE_BACKEND=hip HIP_ARCH=gfx1151 HIPCC=<rocm>/lib/llvm/bin/clang++.exe, CC/CXX unset, ROCM_PATH/HIP_PATH from win_rocm_env.sh
+# python setup.py build_ext --inplace   (venv agent_space/tigre_venv2)
+```
+rc 0, 0 `error:`, 8/8 `.pyd`. Prints `TIGRE: building the hip backend (set by TIGRE_BACKEND).` and `compiling for the AMD GPU architectures gfx1151`. `TIGRE_BACKEND=hip` works on Windows.
+- **Venv change, upstream not port:** the old `tigre_venv` (setuptools 71.1) fails with `project.license must be valid exactly by one definition` because upstream's pyproject now uses an SPDX license string and requires `setuptools>=77`. A new venv `tigre_venv2` (setuptools 84.2.1, numpy 1.26.4, scipy 1.17.1, Cython 3.3.1, pytest 9.2.0) builds cleanly.
+- **`build_ext -j 8` fails on Windows** (first attempt): `fatal error C1083 ... GpuIds.obj: Permission denied` (parallel object-file collisions) and `.cu` files handed to MSVC `cl.exe` (`hiprandState` undeclared in RandomNumberGenerator.cu) -- the parallel compile path bypasses the `.cu` redirect to the HIP compiler. Serial build (as in every earlier Windows record) is rc 0. This is in the shared build code path (the CUDA `.cu` redirect), not a new HIP-switch change; not chased, not patched. Anyone building on Windows should not pass `-j`.
+- **ROCm discovery from hipcc (d9a9027):** with `ROCM_PATH`/`HIP_PATH` unset and the SDK `bin` on PATH, `setup.py` prints `building the hip backend (hipcc is on the PATH)` and resolves the correct ROCm root; its default `hipcc` is `<root>/bin/hipcc` (no extension; `hipcc.exe` exists), which is why the docs still say to set `HIPCC` to the ROCm `clang++` on Windows. Checked by loading `setup.py` only (no second build).
+
+### Tests
+```
+utils/timeit.sh TIGRE test -- bash agent_space/tigre_run_c01.sh
+# cd tigre-win3/Python; PYTHONPATH set, MPLBACKEND=Agg, runtime DLLs staged next to the .pyd files (rocm_stage_runtime)
+# pytest -q -p no:cacheprovider -rfEs tests/ ; ... -m extended tests/ ; probe/tigre_gates.py <Python> cone|solvers|parallel
+```
+| set | gfx1151 @ c015150 | gfx1201 @ c015150 | gfx90a @ c015150 |
+|---|---|---|---|
+| core (default markers) | **246 passed, 1 failed, 22 skipped**, 16 deselected (430 s) | 247 / 0 / 22 | 246 / 1 / 22 |
+| extended | **12 passed**, 13 skipped (447 s) | 12 / 13 | 12 / 13 |
+| probe gates cone, solvers, parallel | **RESULT PASS** x3 | PASS | PASS |
+
+Against this platform's f779703 record (74 tests over 8 files): those 8 files are inside the core run, all passed. Skips: torch absent in the Windows venv (the 79-test torch files were NOT run here), 2-GPU tests, ctypes CUDA-runtime tests (NVIDIA-only by design), one parallel-beam skip.
+- Gates, cone: Siddon 27.46/111.2, interp vs Siddon 0.0040, FDK 0.2864, OS-SART-20 0.1929, adjointness 1.833e-05 / 6.601e-05 (gfx1201 1.835e-05 / 6.601e-05). Solvers: sart 0.0406, ossart 0.2972, sirt 0.4828, cgls 0.1916, fista 0.2855, asd_pocs 0.0468, awasd_pocs 0.0387, os_asd_pocs 0.3090, ossart_tv 0.3184 (equal to gfx1201 to the printed digit). Parallel: axis 0.0043, offset 0.0041, Euler 0.0056, FBP 0.0833, SIRT-20 0.1952, zero fraction 0.862/0.855; adjointness Siddon 1.478e-05 / 7.567e-05 / 5.267e-05, interp 3.550e-06 / 7.913e-08 / 9.092e-08. The 74-test/gates numbers of the earlier f779703 record (dVoxel 1 gates) used different scripts; the new probe numbers equal the Linux records to the printed digit.
+- Hardware trilinear filtering reported supported on the 8060S.
+- **The one failure:** `test_projectors_gpu.py::test_forward_is_invariant_to_a_full_turn[parallel-interpolated]`, **2.384e-04 against 1e-4**. Same test fails on gfx90a (2.404e-04) at c015150 and at the published tip; passes on gfx1201. Recorded, not chased (upstream's sample-count rounding knife edge). Note for whoever follows it up: gfx1151 is wave32 with hardware trilinear filtering like gfx1201, yet fails, so the gfx1201 write-up's guess that the large steps are specific to wave64 or to the software filter path is not supported; the card dependence is still unexplained.
+
+### Other gates
+- `jargon.py --port TIGRE`: clean (local `master` = upstream `d21492f`, `moat-fix-747` = origin; with the fork's mirror `master` as base it reports one upstream-authored line in docs/tools/build_demos.py, a false positive on merged upstream text).
+- Docs: `docs/install/python.md` "AMD GPUs (ROCm)" with `TIGRE_BACKEND=hip` and the Windows `HIPCC` note; matches the build.
+- Integrity: `git status --porcelain` in the validated clone: untracked build output only.
+- CUDA compile gate: `cuda-not-validated` on this host (Windows, no nvcc here); owed by the mi355 host per the c015150 entries.
