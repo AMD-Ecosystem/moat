@@ -399,3 +399,34 @@ Same counts as the porter's MI300X baseline, so wave32 adds no failure.
 CUDA gate: `cuda-not-validated: no nvcc on this host (no /opt/conda/envs, no /usr/local/cuda) and the job venv carries ROCm torch only`; unchanged from the gfx942 validation, the mi355 nvcc build remains owed.
 
 Finish checks: `python3 utils/jargon.py --port rl` clean (after `git -C projects/rl/src fetch origin main:main` in the fresh clone); ROCm build documented in README.md (lines 470-472), CONTRIBUTING.md and docs/source/index.rst. Nothing pushed to the fork.
+
+## Validation 2026-11-20 (validator, windows-gfx1151, Radeon 8060S APU, wave32): FAILED, GPU build gate falls back to CPU on the documented install
+
+Head `845ee50d3feb81e21555cfa61dfa871df7eb935e` (fresh clone of `moat-port` in the worktree, `git status --porcelain` empty). Environment: existing `agent_space/torch_venv` torch 2.12.0+rocm7.14.0a20260519 (hip 7.13), rocm-sdk-devel 7.14.0a20260519, reached through a small overlay venv `agent_space/rl_venv` (a `.pth` to torch_venv's site-packages, plus pybind11, pyvers, hoptorch, tensordict 0.15.6, pytest plugins, gymnasium, setuptools_scm; 31 MB, pip cache `agent_space/pip_cache_rl`). Env script `agent_space/rl_env.sh` = `win_torch_env.sh` with `HIP_DEVICE_LIB_PATH` unset (verified empty); it keeps `ROCM_PATH`/`HIP_PATH` (torch on Windows only finds ROCM_HOME through them), `CC=CXX=clang-cl`, `DISTUTILS_USE_SDK=1`, `PYTORCH_ROCM_ARCH=gfx1151`. Commands via `timeit.sh rl compile`: `python -m pip install -v --no-build-isolation --no-deps -e projects/rl/src`.
+
+**Build 1, `HIP_DEVICE_LIB_PATH` unset, no FORCE_CUDA (the documented path): rc=0 but CPU-only.** The log prints, for every build_ext call:
+`Skipping TorchRL GPU extension build because hipcc from the ROCm installation at D:/Develop/moat/agent_space/torch_venv/Lib/site-packages/_rocm_sdk_devel cannot compile it: ...\_rocm_sdk_devel\include\rocprim\config.hpp:69:6: error: "rocPRIM requires at least C++17". Set FORCE_CUDA=1 to build anyway.`
+**Build 2, `HIP_DEVICE_LIB_PATH` set by hand: identical message and CPU-only result.** So the device-library handling is not the cause.
+
+Cause: `_hipcc_error()` in setup.py runs `hipcc -E probe.hip` with COMMON_HIP_FLAGS + COMMON_HIPCC_FLAGS but no `-std=`. On Linux hipcc defaults to a C++ standard rocPRIM accepts; on Windows the clang driver default is below C++17 and rocPRIM's `#error` fires (it is included through ATen/hip/HIPContext.h). The real compile line (build 3) carries `-std=c++20` from BuildExtension. Checked by hand with the same flags: `hipcc -E probe.hip ... --rocm-device-lib-path=<bitcode>` rc=1 without `-std`, rc=0 with `-std=c++17` and with `-std=c++20`. The port's own test `test/test_setup.py::test_hipcc_probe_agrees_with_gpu_build` fails here with the same assertion (`_hipcc_error()` is not None), so the check designed to catch this does.
+
+**Build 3, `FORCE_CUDA=1` and `HIP_DEVICE_LIB_PATH` unset: GPU build OK.** hipcc line: `hipcc.exe -std=c++20 ... -c torchrl/csrc/hip_segment_tree.hip --offload-arch=gfx1151 --rocm-device-lib-path=...\_rocm_sdk_devel\lib\llvm\amdgcn\bitcode`, so `_hip_device_lib_args()` works on Windows as claimed and nothing else in the build fails. `torchrl._torchrl` exposes `CudaMinSegmentTreeFp32/Fp64` and `CudaSumSegmentTreeFp32/Fp64`.
+
+Tests on that forced GPU build (`ulimit -c 0`, single runs, via `timeit.sh rl test`, `-rs`):
+
+| command | result |
+|---|---|
+| `pytest -q -rs test/rb/test_prioritized.py` | 36 passed, 0 skipped |
+| `pytest -q -rs test/rb/test_storages.py -k cuda` | 8 passed, 162 deselected, 0 skipped |
+| `TORCHRL_SMOKE_REQUIRE_CUDA_EXT=1 pytest -q test/smoke_test.py` | 2 passed |
+| `pytest -q -rs test/test_setup.py -k "not install_no_deps"` | 18 passed, 1 failed (`test_hipcc_probe_agrees_with_gpu_build`, the probe bug above), 2 skipped (`test_setup.py:303` "checks the Unix compiler flags", Windows-irrelevant), 2 deselected |
+| `pytest -q -rs test/rb -m gpu` | 53 passed, 1 skipped (`test_rb_distributed.py:413` ray required) |
+
+Not run: Triton RNN tests (out of scope), full CPU `test/rb` regression (verdict already decided; Linux CPU regression stands at 4500 passed).
+
+What a porter must change: make the probe in `_hipcc_error()` pass the same C++ standard the build uses (at least on win32: `-std=c++20`, or derive it from the BuildExtension flag), so the documented Windows install builds the GPU extension without FORCE_CUDA. After that, rebuild on Windows with no `FORCE_CUDA` and no `HIP_DEVICE_LIB_PATH`; the tests above already pass on this APU. Linux validators did not see this because the Linux hipcc default standard satisfies rocPRIM.
+
+CUDA gate: not rerun (host has no nvcc; passed at this head on linux-gfx950). Any fix touches setup.py, so the nvcc compile check owes a rerun at the new head.
+
+## Lesson for cuda-to-rocm: a hipcc preprocess probe must carry the build's -std on Windows
+Belongs in `strategy-b-torch.md` next to the "ask hipcc" probe lesson. A `hipcc -E` capability probe that omits the language standard works on Linux (hipcc defaults to a modern standard) and fails on Windows with rocPRIM's `#error "rocPRIM requires at least C++17"`, which sends a documented install down the CPU-only path with a plausible-looking reason. Pass the same `-std=` the real compile gets. (rl)
