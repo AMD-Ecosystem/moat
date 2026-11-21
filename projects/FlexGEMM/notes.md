@@ -1045,4 +1045,118 @@ torch's fp16 matmul is accurate here (0.4 per mille relative to max |r|, K up to
 
 ## Lesson for cuda-to-rocm: Triton on AMD accepts input_precision='tf32' only on gfx942
 
-Belongs where Triton porting faults are listed. Symptom: a Triton kernel that runs on CUDA and on MI300X fails to compile on every other AMD GPU (MI200, MI355, every RDNA part) with `CompilationError: ... input_precision must be one of ('ieee', 'bf16x3', 'bf16x6'). Got tf32`. It is raised from inside autotuning, which does not catch it, and it happens even when the `tl.dot` operands are fp16. Cause: Triton's AMD backend (3.9; `backends/amd/compiler.py`, "Enable XF32 (TF32) for CDNA3 GPUs") adds `'tf32'` to the allowed dot precisions only when the target arch is `gfx942`. A project that exposes an `allow_tf32` switch and passes `input_precision='tf32' if allow_tf32 else 'ieee'` breaks wherever a user, a benchmark script or a default turns the switch on, so validating only on MI300X hides it. Fix: choose the precision from the target, for example `'tf32'` only off HIP or when `triton.runtime.driver.active.get_current_target().arch == 'gfx942'`, and `'ieee'` otherwise; do not rely on the default alone. (FlexGEMM)
+Belongs where Triton porting faults are listed. Symptom: a Triton kernel that runs on CUDA and on MI300X fails to compile on every other AMD GPU (MI200, MI355, every RDNA part) with `CompilationError: ... input_precision must be one of ('ieee', 'bf16x3', 'bf16x6'). Got tf32`. It is raised from inside autotuning, which does not catch it, and it happens even when the `tl.dot` operands are fp16. Cause: Triton's AMD backend (3.9; `backends/amd/compiler.py`, "Enable XF32 (TF32) for CDNA3 GPUs") adds `'tf32'` to the allowed dot precisions only when the target arch is `gfx942`. A project that exposes an `allow_tf32` switch and passes `input_precision='tf32' if allow_tf32 else 'ieee'` breaks wherever a user, a benchmark script or a default turns the switch on, so validating only on MI300X hides it. Fix: choose the precision from the target, for example `'tf32'` only off HIP or when `triton.runtime.driver.active.get_current_target().arch == 'gfx942'`, and `'ieee'` otherwise; do not rely on the default alone. Better than naming gfx942: ask Triton for the target's accepted set once on the host, `'tf32' in triton.compiler.make_backend(triton.runtime.driver.active.get_current_target()).parse_options({}).allowed_dot_input_precisions`, which follows Triton's own per-target rule (and honours `TRITON_OVERRIDE_ARCH`), and pass the result into the kernels as a module-level `tl.constexpr`. Triton's deprecated `tl.dot(allow_tf32=...)` makes the same choice in-kernel, but `TRITON_F32_DEFAULT` overrides it, which would change the CUDA path. (FlexGEMM)
+
+## Porting round 4 (2026-11-21, linux-gfx1100 fleet job, AMD Radeon Pro W7800 48GB, wave32)
+
+Answers the gfx1100 validation finding (`allow_tf32 = True` crashes on every AMD target except gfx942). New fork head **ab4245582c7ecdbe9ed687577d00c39d14f9de39**, one commit on top of 8592d5f, pushed plainly to `moat-port` (no amend, rebase or force-push). Title `[ROCm] spconv: request tf32 only where Triton accepts it` (56 characters). 13 files, +37 / -20. `jargon.py --port FlexGEMM` and `prose.py` on the body: clean.
+
+### Design
+
+- **Where:** `flex_gemm/kernels/triton/spconv/config.py`, the module that owns `allow_tf32`. At import it computes `TF32_PRECISION = tl.constexpr(_tf32_input_precision())`. The 20 `tl.dot` calls (12 kernel files, every `tl.dot` in the package) change `input_precision='tf32' if allow_tf32 else 'ieee'` to `input_precision=config.TF32_PRECISION if allow_tf32 else 'ieee'`; every one of those files already had `from . import config`. Trailing `# (B1, B2)` comments keep their column. Nothing is evaluated per launch: the constexpr is resolved when Triton compiles a kernel, and the precision is a compile-time constant in the binary.
+- **How the target is learned (no arch list copied):** on HIP, `make_backend(triton.runtime.driver.active.get_current_target()).parse_options({}).allowed_dot_input_precisions`, then `'tf32'` if listed, else `'ieee'`. `triton.compiler.make_backend` is in `triton.compiler`'s public names; `parse_options` is exactly what the compiler runs, so the answer matches the compile (it also honours `TRITON_OVERRIDE_ARCH`). Shown on this host, import only: no override -> `ieee`; `TRITON_OVERRIDE_ARCH=gfx942` -> `tf32`; gfx90a, gfx950, gfx1201 -> `ieee`.
+- **CUDA provably unchanged:** `_tf32_input_precision()` returns `'tf32'` immediately when `torch.version.hip` is falsy, before any Triton query, so `config.TF32_PRECISION if allow_tf32 else 'ieee'` is the upstream expression with the same value; no new device or driver call on CUDA. The default `allow_tf32 = not torch.version.hip` is untouched (still `'ieee'` by default on every AMD GPU, including gfx942).
+- **Semantics:** `allow_tf32` stays a permission (like `torch.backends.cuda.matmul.allow_tf32`): reading it back still gives what the user set. The autotune key still contains `allow_tf32`, so on a non-tf32 AMD target the on and off settings tune separately to the same binaries; harmless.
+- **Rejected:** Triton's deprecated `tl.dot(..., allow_tf32=...)` does the same choice in-kernel, but `TRITON_F32_DEFAULT` overrides it, which would change the CUDA path. Editing the 33 wrapper call sites (`allow_tf32=config.allow_tf32 and ...`) touches more lines and still needs the one-time check. A property on the config module would change attribute semantics on CUDA too.
+- Test scripts not edited.
+
+### Evidence (gfx1100, GPU 0, TheRock ROCm 10.2.0a20261022 wheels as in the validation section, job-local HOME and TRITON_CACHE_DIR, `ulimit -c 0`)
+
+Fresh job venv: `$FLEET_VENV/bin/python -m pip install --index-url https://nightly.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple torch==2.16.0a0+rocm10.2.0a20261022 amd-torch-device-gfx1100==2.16.0a0+rocm10.2.0a20261022 triton==3.9.0+gitfc8d31a5.rocm10.2.0a20261022 "rocm[libraries,devel]==10.2.0a20261022" rocm-sdk-device-gfx1100==10.2.0a20261022 matplotlib tqdm` (the per-arch `gfx110X-all/` index does not carry these; the flat index does), plus `spconv-triton==1.0.0 --no-deps`; the job's `venv-base-links` ROCm 10.1 / Triton entries moved aside first. Build: `pip install -v ./projects/FlexGEMM/src --no-build-isolation --no-deps --force-reinstall` with `ROCM_HOME=$(python -m rocm_sdk path --root)`, `GPU_ARCHS=gfx1100`: Successfully installed, before and after the change.
+
+- **Reproduced at 8592d5f:** `inf_ablation.py`, `train_ablation.py` (run unmodified from `tests/submconv`) and `inf_benchmark.py`, `train_benchmark.py` (through the third-party driver with `DROP_SPCONV=1`, no TF32 switch) all rc 1 in seconds with `CompilationError ... input_precision must be one of ('ieee', 'bf16x3', 'bf16x6'). Got tf32`.
+- **At ab42455, same commands, `allow_tf32 = True` as written:** all four rc 0.
+  - `inf_ablation.py` (fp16): RES=512 C=128 L=2 egemm 145.22 ms, igemm 36.47, igemm_splitk 36.17, migemm 19.75, migemm_splitk 20.62 (round-3 validation with TF32_OFF: 147.63 / 37.57 / 37.59 / 20.91 / 20.92).
+  - `train_ablation.py`: RES=256 C=256 egemm 199.35, igemm 103.42, igemm_splitk 93.02, migemm 58.31, migemm_splitk 53.57; RES=512 migemm_splitk 59.19.
+  - `inf_benchmark.py`: flex_gemm RES=256 20.44 ms, RES=512 23.77 ms. `train_benchmark.py`: RES=256 55.39 ms. Same as the TF32_OFF numbers of the validation, as expected for identical binaries.
+- **Conv correctness for the precision actually used (`ieee` on this GPU)**, driver `tf32check.py` (text below), sphere RES=64 C=256 N=15,192, K=3; each Triton algorithm run with `allow_tf32` False then True, forward + backward; submanifold and strided (stride 2, padding 1); reference EXPLICIT_GEMM in float64. Relative error = max |x - ref| / max |ref|, per output (out, dfeat, dweight, dbias):
+
+```
+kind    dtype    algo                         on==off  relerr vs float64
+subm    float32  implicit_gemm                True     2.5e-06 2.9e-06 4.7e-06 1.7e-07
+subm    float32  implicit_gemm_splitk         True     1.1e-06 1.2e-06 9.6e-07 1.7e-07
+subm    float32  masked_implicit_gemm         True     2.5e-06 2.6e-06 4.7e-06 1.7e-07
+subm    float32  masked_implicit_gemm_splitk  True     1.1e-06 1.1e-06 9.6e-07 1.7e-07
+subm    float16  (all four)                   True     4.0e-04..5.5e-04 4.6e-04 4.9e-04 3.9e-04
+strided float32  implicit_gemm                True     2.1e-06 2.5e-06 2.3e-06 1.1e-07
+strided float32  implicit_gemm_splitk         True     2.1e-06 2.5e-06 1.1e-06 1.1e-07
+strided float32  masked_implicit_gemm         True     2.1e-06 2.5e-06 2.3e-06 1.1e-07
+strided float32  masked_implicit_gemm_splitk  True     7.2e-07 2.5e-06 7.0e-07 1.1e-07
+strided float16  (all four)                   True     4.1e-04..5.8e-04 4.6e-04 4.8e-04..4.9e-04 3.3e-04
+FAILURES 0
+```
+
+16/16 bitwise equal on vs off; fp32 at ieee accuracy (about 1e-6), fp16 at fp16 accuracy. (A first run of the driver reused the fp32 leaf tensor across runs and accumulated gradients; fixed with `.detach().clone()`, not a library issue.)
+- `git -C projects/FlexGEMM/src status --porcelain` clean after the runs (the benchmark's `conv_fwd.png` output removed).
+- Not rerun here: CUDA compile (no CUDA toolkit on this host; the CUDA sources are untouched, only Triton Python changed, and the CUDA value of the expression is the upstream one by construction). The real-nvcc and V100 evidence at earlier heads covers the compiled sources; a V100 run of a Triton spconv conv with `allow_tf32 = True` at ab42455 would confirm the Triton side, and is the remaining CUDA check for whoever has the hardware.
+
+Driver `run_tp.py` (round-3 text plus switches `MAX_RES`, `MIN_RES`, `BATCH1`, `DROP_EXTRA`, `TF32_OFF`, each only commenting out or rewriting lines of the script):
+
+```
+import os, re, sys
+path = os.path.abspath(sys.argv[1])
+drop = ["torchsparse", "fvdb", "warpconvnet"]
+if os.environ.get("DROP_SPCONV") == "1":
+    drop.append("spconv")
+extra = [e for e in os.environ.get("DROP_EXTRA", "").split(",") if e]
+alias = {
+    "import spconv.pytorch as spconv": "import spconv_triton.pytorch as spconv",
+    "import spconv as spconv_core": "import spconv_triton as spconv_core",
+}
+max_res = int(os.environ.get("MAX_RES", "1000000"))
+min_res = int(os.environ.get("MIN_RES", "0"))
+batch1 = os.environ.get("BATCH1") == "1"
+out = []
+for line in open(path).read().splitlines():
+    s = line.strip()
+    if re.match(r"(import|from)\s+(%s)\b" % "|".join(drop), s) or re.match(r"'(%s)'\s*:\s*\(" % "|".join(drop + extra), s):
+        out.append("# [removed] " + line); continue
+    m = re.match(r"\{'RES':\s*(\d+),", s)
+    if m:
+        if not (min_res <= int(m.group(1)) <= max_res):
+            out.append("# [removed] " + line); continue
+        if batch1:
+            line = re.sub(r"'B':\s*\d+", "'B': 1", line)
+    if s in alias:
+        line = line.replace(s, alias[s])
+    if os.environ.get("TF32_OFF") == "1" and s == "allow_tf32 = True":
+        line = line.replace("True", "False")
+    out.append(line)
+sys.argv = [path] + sys.argv[2:]
+sys.path.insert(0, os.path.dirname(path))
+exec(compile("\n".join(out) + "\n", path, "exec"), {"__name__": "__main__", "__file__": path})
+```
+
+Driver `tf32check.py <tests dir> <RES>`:
+
+```
+import sys, torch
+sys.path.insert(0, sys.argv[1])
+from utils import sphere_coords, calc_err
+from flex_gemm.ops import spconv as ops
+from flex_gemm.ops.spconv import sparse_submanifold_conv3d, sparse_conv3d
+from flex_gemm.kernels.triton.spconv import config
+RES, C = int(sys.argv[2]), 256
+A = ops.Algorithm
+ALGOS = [A.IMPLICIT_GEMM, A.IMPLICIT_GEMM_SPLITK, A.MASKED_IMPLICIT_GEMM, A.MASKED_IMPLICIT_GEMM_SPLITK]
+torch.manual_seed(0)
+f32, coords, shape = sphere_coords(RES, C, 1, dtype=torch.float32)
+w32 = torch.randn(C, 3, 3, 3, C, device='cuda') * 0.05
+b32 = torch.randn(C, device='cuda')
+def run(kind, algo, dtype, tf32):
+    config.allow_tf32 = tf32
+    ops.set_algorithm(algo)
+    f = f32.detach().clone().to(dtype).requires_grad_()
+    w = w32.detach().clone().to(dtype).requires_grad_()
+    b = b32.detach().clone().to(dtype).requires_grad_()
+    if kind == 'subm':
+        out, _ = sparse_submanifold_conv3d(f, coords, shape, w, b)
+    else:
+        out, _, _ = sparse_conv3d(f, coords, shape, w, b, stride=(2, 2, 2), padding=(1, 1, 1))
+    g = torch.Generator(device='cuda').manual_seed(1)
+    out.backward(torch.randn(out.shape, device='cuda', generator=g).to(dtype))
+    return [out.detach(), f.grad, w.grad, b.grad]
+# for kind in subm, strided: ref = run(kind, EXPLICIT_GEMM, float64, False);
+# for dtype in fp32, fp16 and each algo: off/on = run(..., False/True);
+# same = all(torch.equal); rel = max|on-ref|/max|ref|; fail if not same or rel >= 1e-4 (fp32) / 2e-2 (fp16)
+```
