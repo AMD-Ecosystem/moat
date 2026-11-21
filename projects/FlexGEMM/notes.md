@@ -1160,3 +1160,20 @@ def run(kind, algo, dtype, tf32):
 # for dtype in fp32, fp16 and each algo: off/on = run(..., False/True);
 # same = all(torch.equal); rel = max|on-ref|/max|ref|; fail if not same or rel >= 1e-4 (fp32) / 2e-2 (fp16)
 ```
+
+## Review 2026-11-21 round 4 (linux-gfx1100 fleet job, AMD Radeon Pro W7800; reviewed head ab4245582c7ecdbe9ed687577d00c39d14f9de39)
+
+Scope: the delta `git diff 8592d5f..ab42455` (one commit, `[ROCm] spconv: request tf32 only where Triton accepts it`, 13 files, +37/-20) and its message. Verdict: **review-passed**, no findings.
+
+Checked, each against the code (Triton 3.9.0 in the job venv):
+
+- CUDA path: `_tf32_input_precision()` (`flex_gemm/kernels/triton/spconv/config.py:12-21`) returns `'tf32'` before any Triton query when `torch.version.hip` is falsy, so every `tl.dot` requests what upstream requested. The only new CUDA-side work is `from triton.compiler import make_backend` at import, a public name of `triton.compiler` since the 3.0 backend refactor (the project requires `triton>=3.2.0`).
+- Coverage: all 20 `tl.dot` calls in the package (12 spconv kernel files; `grid_sample` has none) use `config.TF32_PRECISION if allow_tf32 else 'ieee'`, and each file already imports `config`. Nothing orphaned.
+- The query: `HIPBackend.parse_options` (`triton/backends/amd/compiler.py:356-371`) is the function the compiler runs, and it adds `'tf32'` only for `gfx942`. `get_current_target()` (`backends/amd/driver.py:371-376`) honours `TRITON_OVERRIDE_ARCH`. Reproduced here: no override -> `ieee`; overrides gfx942 / gfx90a / gfx950 / gfx1201 -> `tf32` / `ieee` / `ieee` / `ieee`, matching the commit's Test Plan.
+- JIT behaviour of a module attribute: `config` is a module global, which `DependenciesFinder.record_reference` skips (`runtime/jit.py:120`), and the attribute's value is not added to `used_global_vals`, so it is not part of the kernel cache key. That is safe: the value is fixed for the process at import and depends only on the target arch, which is already in the compile cache key (and so is an override arch). `CodeGenerator.visit_Attribute` resolves the module attribute to the `tl.constexpr`, and the `if allow_tf32` IfExp picks a branch at compile time.
+- Import side effects: the new query touches the device at import on HIP. 8592d5f already did that (`config.py` -> `get_autotune_config` -> `get_gpu_name` -> `torch.cuda.get_device_name`): both heads initialize torch.cuda on `import flex_gemm`, and both fail to import with no visible GPU (checked by importing the 8592d5f Python sources over the installed extension). No new behaviour change. A process that mixes AMD archs gets device 0's answer, as upstream's autotune config already does.
+- Knob check rerun on this GPU with the porter's `tf32check.py` at RES=32 (installed `flex_gemm` Python matches the fork tree at ab42455): 16/16 bitwise equal with `allow_tf32` on and off, fp32 rel err <= 3.4e-6 and fp16 <= 7.0e-4 against float64, `FAILURES 0`.
+- Commit message: title 56 characters, `[ROCm]` is right (the added lines branch on HIP), AI assistance disclosed, no trailer, Test Plan in fenced blocks; its claims (gfx942-only in 3.9, the error text, the CUDA value unchanged) match the code. `python3 utils/jargon.py --port FlexGEMM`: clean.
+- `## Lesson for cuda-to-rocm: Triton on AMD accepts input_precision='tf32' only on gfx942`: accurate for Triton 3.9. The `TRITON_F32_DEFAULT` remark is confirmed by `tl.dot` (`language/core.py:2267-2270`: `knobs.language.fp32_default` takes precedence when `input_precision` is None).
+
+Still open for later stages, not a review finding: no NVIDIA run of a Triton spconv conv with `allow_tf32 = True` at ab42455 yet (the CUDA value is the upstream expression by construction). The gfx1100 platform needs its revalidation at this head.
