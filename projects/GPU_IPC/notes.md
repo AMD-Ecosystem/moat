@@ -1908,3 +1908,50 @@ Checked:
 - Isolation: inside `if(USE_HIP)` (CUDA configure takes the else branch) and `if(WIN32)` (Linux HIP unaffected). Only HIP link lines are changed; gipc links with the HIP language.
 - Commit: title 63 chars with `[ROCm]` (ROCm-specific), body states cause and fix, AI disclosure in prose, no Co-Authored-By/noreply, Test Plan with literal commands in a fenced block; diff and message ASCII only; `jargon.py -C <clone> --commits/--diff 29e2494..c44ed01` both clean. Code comment is accurate and ASCII.
 - Not run: gipc.exe (Windows GPU run waived; host rule). Build-only evidence is sufficient for a link-line change.
+
+## Validation 2026-11-21: linux-gfx1100 at c44ed01 (carry-forward, binary-equiv)
+
+Delta 29e2494..c44ed01 is the Windows HIP link fix: CMakeLists.txt +4 lines,
+`if(WIN32) set(CMAKE_HIP_USING_LINKER_DEFAULT "-fuse-ld=lld") endif()` inside
+`if(USE_HIP)`. `moatlib.py classify GPU_IPC 29e2494... c44ed01...`:
+`class=mixed` (CMakeLists.txt token count differs). It needs the fork clone at
+`projects/GPU_IPC/src`; without one it answers `class=unknown`.
+
+Built both commits at the SAME source path (a fresh fork clone in the job
+directory: checkout 29e2494, build into `build-old`; checkout c44ed01, build into
+`build-new`), with the recipe from "## Upstream sync 2026-11-20": TheRock pip SDK
+(hipcc 7.16.26385) as `CMAKE_PREFIX_PATH`, cmake 3.31.6, Ninja, `-j 10`,
+`libglut-dev` extracted with `apt-get download; dpkg -x` and its `libglut.so`
+linked to the system `libglut.so.3.12`:
+
+```bash
+cmake -S . -B <build> -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=<pip ROCm SDK root> \
+  -DGLUT_INCLUDE_DIR=<glut>/include -DGLUT_glut_LIBRARY=<glut>/lib/x86_64-linux-gnu/libglut.so
+cmake --build <build> -j 10
+```
+
+Both exit 0, 165 warning lines each (the pre-existing `[[nodiscard]]` pattern).
+
+Comparison:
+
+- `python3 utils/codeobj_diff.py build-old build-new`: `verdict=identical`
+  (gipc: exported symbols + device ISA identical, 14 exports). Same on the two
+  `gipc` binaries directly.
+- Host side: `gipc` is byte-identical (`cmp` equal, sha256 1a48133c...50c6 for
+  both), all 10 object files under `CMakeFiles/gipc.dir/GPU_IPC/` are
+  byte-identical, and the generated `build.ninja` files are identical once the
+  build directory name is normalized. The Linux configure never evaluates the
+  new lines, as expected.
+
+No GPU run was needed. The last real GPU pass on this platform is the 29e2494
+run in "## Validation 2026-11-20: linux-gfx1100 at 29e2494" (90 frames, no HIP
+error, no NaN, no wedge).
+
+```bash
+python3 utils/moatlib.py carry-forward GPU_IPC linux-gfx1100 \
+  c44ed01799bbcd932c8bb3e203c174ce21197521 binary-equiv "<summary above>" --host-checked
+```
+
+Fork tree untouched (nothing pushed); the throwaway clone lives in the job
+directory only.

@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:23:54Z",
-  "updated_at": "2026-11-20T23:02:19Z",
+  "updated_at": "2026-11-21T03:42:32Z",
   "head_sha": "c44ed01799bbcd932c8bb3e203c174ce21197521",
   "depends_on": [],
   "waivers": {
@@ -47,10 +47,10 @@
     "linux-gfx1100": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "29e249433e6b242137779f446f709d9d9dd65f36",
+      "validated_sha": "c44ed01799bbcd932c8bb3e203c174ce21197521",
       "started_at": "2026-08-08T18:04:03Z",
-      "completed_at": "2026-11-20T22:31:55Z",
-      "updated_at": "2026-11-20T22:31:55Z",
+      "completed_at": "2026-11-21T03:42:32Z",
+      "updated_at": "2026-11-21T03:42:32Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -67,8 +67,18 @@
       "last_agent": "reviewer",
       "state": "completed",
       "validated_prior": [
-        "f9604bbd1e965106ee0752b46e48f8e7828c6401"
-      ]
+        "f9604bbd1e965106ee0752b46e48f8e7828c6401",
+        "29e249433e6b242137779f446f709d9d9dd65f36"
+      ],
+      "carry_forward": {
+        "from": "29e249433e6b242137779f446f709d9d9dd65f36",
+        "to": "c44ed01799bbcd932c8bb3e203c174ce21197521",
+        "method": "binary-equiv",
+        "class": "mixed",
+        "detail": "Built 29e2494 and c44ed01 at the same source path with the recorded pip-SDK recipe (gfx1100, Release): codeobj_diff verdict=identical on the build tree and on gipc (14 exports, device ISA identical); ",
+        "at": "2026-11-21T03:42:32Z",
+        "host_checked": true
+      }
     },
     "windows-gfx1151": {
       "blocked": true,
