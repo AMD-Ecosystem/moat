@@ -70,3 +70,4 @@
 {"kind":"phase","ts":"2026-11-21T01:45:00Z","phase":"test","seconds":8.806,"exit":0,"cmd":"/d/Develop/moat/agent_space/rl_venv/Scripts/python.exe -m pytest -q -rs -p no:cacheprovider --rootdir=projects/rl/src projects/rl/src/test/rb/test_storages.py -k cuda"}
 {"kind":"phase","ts":"2026-11-21T01:45:05Z","phase":"test","seconds":3.908,"exit":0,"cmd":"/d/Develop/moat/agent_space/rl_venv/Scripts/python.exe -m pytest -q -rs -p no:cacheprovider --rootdir=projects/rl/src projects/rl/src/test/smoke_test.py"}
 {"kind":"phase","ts":"2026-11-21T01:45:12Z","phase":"test","seconds":6.262,"exit":0,"cmd":"/d/Develop/moat/agent_space/rl_venv/Scripts/python.exe -m pytest -q -rs -p no:cacheprovider --rootdir=projects/rl/src projects/rl/src/test/test_setup.py -k not install_no_deps"}
+{"kind":"session","ts":"2026-11-21T01:55:53Z","epoch":1795226153.959374,"event":"start","platform":"linux-gfx950"}
