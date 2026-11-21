@@ -1238,3 +1238,104 @@ masked_implicit_gemm_splitk tf32 True   2.70e-07 2.75e-07 5.07e-07 1.19e-07
 
   Both settings compile and run. This GPU has no tensor cores, so `tf32` does not lower precision here; the run shows the request is accepted and the result is correct, not what TF32 accuracy looks like on newer NVIDIA hardware.
 - `tests/submconv/inf_ablation.py` unmodified (`allow_tf32 = True`): 3 of 7 resolutions finished without error in 22 minutes of cold autotuning (478 s, 284 s, 574 s per resolution), then the 25-minute cap ended the run. Not a failure of the port; a complete run needs about an hour on this GPU and was not repeated.
+## Validation 2026-11-21 (linux-gfx942 fleet job, AMD Instinct MI300X, wave64; validated head ab4245582c7ecdbe9ed687577d00c39d14f9de39)
+
+**Result: completed on linux-gfx942.** Full wave64 rerun at the reviewed head after porting round 4. No carry-forward: `classify 8592d5f ab42455` says `mixed`, and gfx942 is the one AMD target where the delta changes the compiled kernels (`config.TF32_PRECISION` resolves to `constexpr[tf32]` here; it is `ieee` on gfx1100). Every test script and example from the 8592d5f gfx942 validation gives the same result. All four `tests/submconv/{inf,train}_{ablation,benchmark}.py` scripts run with `allow_tf32 = True` as written. With the knob on, fp32 conv results are within tf32 accuracy of a float64 reference. The porter's `tf32check.py` pass criterion does not hold on this GPU, which is expected: it asks for knob-on and knob-off to be bitwise equal and for fp32 error below 1e-4, and both conditions only hold where tf32 is unavailable. Numbers below.
+
+### Environment and build
+
+MI300X gfx942, GPU 3 (dispatcher pin `HIP_VISIBLE_DEVICES=3`), `ulimit -c 0`, job-local `HOME` (cold `~/.flex_gemm` autotune cache) and `TRITON_CACHE_DIR`. Fresh job venv: the job's `venv-base-links` ROCm 10.1 / Triton entries moved aside, then `$FLEET_VENV/bin/python -m pip install --index-url https://nightly.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple torch==2.16.0a0+rocm10.2.0a20261022 amd-torch-device-gfx942==2.16.0a0+rocm10.2.0a20261022 triton==3.9.0+gitfc8d31a5.rocm10.2.0a20261022 "rocm[libraries,devel]==10.2.0a20261022" rocm-sdk-device-gfx942==10.2.0a20261022 matplotlib tqdm filelock ninja setuptools`, plus `pip install --no-deps spconv-triton==1.0.0`. `python -m rocm_sdk test`: OK.
+
+```
+git clone --recurse-submodules -b moat-port https://github.com/AMD-Ecosystem/FlexGEMM projects/FlexGEMM/src   # HEAD ab42455
+export ROCM_HOME=$($FLEET_VENV/bin/python -m rocm_sdk path --root) GPU_ARCHS=gfx942
+utils/timeit.sh FlexGEMM compile -- timeout 1800 $FLEET_VENV/bin/python -m pip install -v ./projects/FlexGEMM/src --no-build-isolation --no-deps --force-reinstall   # Successfully installed flex_gemm-1.0.0; 6 hipcc compiles at --offload-arch=gfx942
+```
+
+Every script ran from its own directory as `utils/timeit.sh FlexGEMM test -- timeout 5400 env <switches> bash -c "cd <dir> && $FLEET_VENV/bin/python <script>"`. Third-party columns went through `run_tp.py`, using the "Porting round 4" text unchanged.
+
+### A. Asserting tests
+
+| Script | Result |
+|---|---|
+| `tests/hashmap.py` | rc 0, 5 s |
+| `tests/serialize.py` | rc 0, 219 s |
+| `tests/spconv/out_coords.py` | rc 0, 31 s |
+| `tests/spconv/neighbor_cache.py` | rc 0, 10 s |
+| `tests/submconv/neighbor_cache.py` | rc 0, 4 s |
+| `tests/grid_sample.py` | rc 0, 74 s; every err_max/err_mean cell 0 per mille through RES=2048 |
+
+### B. Conv correctness tables (fp16, per mille)
+
+These scripts do not set `allow_tf32`, so they run at the library default (`ieee` on HIP), as at 8592d5f.
+
+- `tests/spconv/fwd.py` (`DROP_SPCONV=1`; spconv-triton stops on the known `only support reuse subm indices` limit): rc 0, 478 s, 14 rows RES 8..512. err_max for igemm, igemmk, migemm and migemmk is 1-2 on every row, and dense is 2 (N/A from RES=256 on, by design). err_mean 0 everywhere. **Pass.**
+- `tests/spconv/bwd.py` (spconv-triton kept): rc 0, 1548 s, 14 rows. err_mean 0 for every non-dense column. err_max is 1-5 through RES=64. Values for spconv-triton / igemm / igemmk / migemm / migemmk at K=3: RES=128 14 / 12 / 14 / 16 / 14; RES=256 8 / 20 / 8 / 11 / 8; RES=512 9 / 49 / 9 / 27 / 8. K=2 rows are 1-3. The dense column is 150-4438. This is the 8592d5f pattern (igemm 46 at RES=512 then): fp16 accumulation order on the largest weight-gradient reductions. **Pass.**
+- `tests/submconv/fwd.py` (spconv-triton kept): rc 0, 61 s, 7 rows. err_max is 2 for spconv-triton and every algorithm (migemmk 1-2). err_mean 0. **Pass.**
+- `tests/submconv/bwd.py` (spconv-triton kept): rc 0, 306 s, 7 rows. egemm err_max 0; spconv-triton 1-6, igemm 2-17, igemmk 2-5, migemm 2-21, migemmk 2-4; err_mean 0 everywhere. The largest values (igemm 17, migemm 21 at RES=512) are slightly above 8592d5f's (13, 10). That run used the same default `ieee` path, so the compiled kernels are unchanged. The difference comes from cold-cache autotune picking different tile configurations, which changes the fp16 accumulation order. **Pass.**
+
+### C. Examples, ablations, benchmarks (tf32 knob on)
+
+- `examples/submconv.py`: rc 0.
+- `examples/spconv.py`: rc 1, `ValueError: too many values to unpack (expected 2)` at line 20. This is the known upstream bug (round-1 question 1), unchanged. An agent-side copy with only that line corrected, run from `examples/` with `PYTHONPATH=.`: rc 0, forward and backward.
+- `inf_ablation.py`: rc 0 (292 s, cold autotune), unmodified with `allow_tf32 = True`. RES=512 C=128 L=2: egemm 28.82 ms, igemm 4.16, igemm_splitk 4.17, migemm 2.88, migemm_splitk 2.89 (8592d5f knob-off: 29.11 / 4.16 / 4.16 / 3.11 / 3.11).
+- `train_ablation.py`: rc 0 (647 s), unmodified. RES=256 C=256: 36.71 / 14.18 / 9.89 / 13.76 / 6.89 ms. RES=512 C=128: 71.18 / 38.19 / 11.77 / 40.72 / 8.08 (8592d5f: migemm_splitk 6.94 at RES=256 and 8.28 at RES=512).
+- `inf_benchmark.py` and `train_benchmark.py` with `DROP_SPCONV=1`: both rc 0. flex_gemm inference 3.01 ms at RES=256 and 3.78 ms at RES=512; training 7.32 ms at RES=256.
+- The same two scripts with the spconv-triton column kept: the timing and memory tables complete, then the plotting code raises the known `ZeroDivisionError` (inf :243, train :246; a driver artifact). Inference was 5.52 / 2.99 ms (spconv-triton / flex_gemm) at RES=256 and 8.40 / 3.76 at RES=512; training was 17.88 / 7.39 at RES=256. The script also sets `SPCONV_ALLOW_TF32` for the spconv-triton column.
+- The ablation and benchmark scripts are fp16 (`DTYPE = torch.float16`), so on this GPU the knob changes the requested precision string and the autotune key, but not the arithmetic (see the fp16 rows below).
+
+### D. tf32 knob on vs off (porter's `tf32check.py`, RES=64, N=15,192, C=256, K=3)
+
+Driver: the head and loop are as described in "Porting round 4" (completed text below). The table prints, for each output (out, dfeat, dweight, dbias): the max-normalized relative error against the float64 EXPLICIT_GEMM reference with the knob on and with it off, plus the on-vs-off difference normalized the same way. `TF32_PRECISION constexpr[tf32]` was printed at start. rc 0, 1326 s (cold autotune).
+
+```
+kind    dtype    algo                         on==off  relerr_on(out,dfeat,dw,db)          relerr_off(...)                     on-vs-off rel
+subm    float32  implicit_gemm                False    8.1e-04 8.0e-04 8.2e-04 1.9e-07   2.8e-06 2.6e-06 3.9e-06 1.9e-07   8.1e-04 8.0e-04 8.2e-04 0.0e+00
+subm    float32  implicit_gemm_splitk         False    8.1e-04 8.0e-04 8.2e-04 1.9e-07   9.9e-07 6.8e-07 6.5e-07 1.9e-07   8.1e-04 8.0e-04 8.2e-04 0.0e+00
+subm    float32  masked_implicit_gemm         False    8.1e-04 8.0e-04 8.2e-04 1.9e-07   2.9e-06 2.6e-06 4.1e-06 1.9e-07   8.1e-04 8.0e-04 8.2e-04 0.0e+00
+subm    float32  masked_implicit_gemm_splitk  False    8.1e-04 8.0e-04 8.2e-04 1.9e-07   2.9e-06 6.3e-07 9.4e-07 1.9e-07   8.1e-04 8.0e-04 8.2e-04 0.0e+00
+subm    float16  implicit_gemm                True     6.8e-04 4.8e-04 4.6e-04 3.9e-04   6.8e-04 4.8e-04 4.6e-04 3.9e-04   0.0e+00 0.0e+00 0.0e+00 0.0e+00
+subm    float16  implicit_gemm_splitk         False    4.7e-04 4.8e-04 4.6e-04 3.9e-04   4.7e-04 4.8e-04 4.6e-04 3.9e-04   5.2e-04 4.9e-04 4.8e-04 0.0e+00
+subm    float16  masked_implicit_gemm         True     6.8e-04 4.8e-04 4.6e-04 3.9e-04   6.8e-04 4.8e-04 4.6e-04 3.9e-04   0.0e+00 0.0e+00 0.0e+00 0.0e+00
+subm    float16  masked_implicit_gemm_splitk  False    6.8e-04 4.8e-04 4.6e-04 3.9e-04   6.8e-04 4.8e-04 4.6e-04 3.9e-04   0.0e+00 2.5e-04 0.0e+00 0.0e+00
+strided float32  implicit_gemm                False    7.9e-04 8.0e-04 7.3e-04 1.8e-07   2.5e-06 1.7e-06 2.0e-06 1.8e-07   7.9e-04 8.0e-04 7.3e-04 0.0e+00
+strided float32  implicit_gemm_splitk         False    7.9e-04 8.0e-04 7.3e-04 1.8e-07   4.2e-07 5.7e-07 2.1e-07 1.8e-07   7.9e-04 8.0e-04 7.3e-04 0.0e+00
+strided float32  masked_implicit_gemm         False    7.9e-04 8.0e-04 7.3e-04 1.8e-07   2.6e-06 1.7e-06 1.9e-06 1.8e-07   7.9e-04 8.0e-04 7.3e-04 0.0e+00
+strided float32  masked_implicit_gemm_splitk  False    7.9e-04 8.0e-04 7.3e-04 1.8e-07   4.1e-07 5.8e-07 9.7e-07 1.8e-07   7.9e-04 8.0e-04 7.3e-04 0.0e+00
+strided float16  implicit_gemm                True     6.5e-04 4.7e-04 4.3e-04 3.0e-04   6.5e-04 4.7e-04 4.3e-04 3.0e-04   0.0e+00 0.0e+00 0.0e+00 0.0e+00
+strided float16  implicit_gemm_splitk         True     4.4e-04 4.7e-04 4.3e-04 3.0e-04   4.4e-04 4.7e-04 4.3e-04 3.0e-04   0.0e+00 0.0e+00 0.0e+00 0.0e+00
+strided float16  masked_implicit_gemm         True     6.5e-04 4.7e-04 4.3e-04 3.0e-04   6.5e-04 4.7e-04 4.3e-04 3.0e-04   0.0e+00 0.0e+00 0.0e+00 0.0e+00
+strided float16  masked_implicit_gemm_splitk  True     4.4e-04 4.7e-04 4.3e-04 3.0e-04   4.4e-04 4.7e-04 4.3e-04 3.0e-04   0.0e+00 0.0e+00 0.0e+00 0.0e+00
+FAILURES (original criterion: on==off and relerr_on < 1e-4 fp32 / 2e-2 fp16) 10
+FAILURES (accuracy criterion: relerr_on < 2e-2, relerr_off < 1e-4 fp32 / 2e-2 fp16) 0
+```
+
+Reading:
+
+- **fp32, knob off (`ieee`):** relerr 4e-7 to 4e-6 on every output, the same ieee accuracy as gfx1100 and as 8592d5f.
+- **fp32, knob on (tf32):** relerr 7.3e-4 to 8.2e-4 on out, dfeat and dweight for all 8 fp32 rows. dbias stays at 1.9e-7 because it is a reduction that does not go through `tl.dot`. On-vs-off differs by the same 7-8e-4. This is the accuracy tf32 implies: tf32 keeps a 10-bit mantissa (unit roundoff 2^-11 = 4.9e-4), so rounding both operands of each product bounds the per-product relative error at about 2u = 9.8e-4 before fp32 accumulation. The measured 8e-4 is under that bound and has the same magnitude as the fp16 rows (4-7e-4), which share the 10-bit mantissa. So tf32 really is in use on gfx942 when the knob is on, and it gives tf32-level, not degraded, accuracy. **Within tf32 accuracy: yes, all 8.**
+- **fp16:** knob on and off are bitwise equal for 6 of 8 rows. The two that differ are subm `implicit_gemm_splitk` and subm `masked_implicit_gemm_splitk`. On and off are equally accurate there (relerr 4.7e-4 / 6.8e-4 against float64, identical in both settings), and the on-vs-off difference (up to 5.2e-4) is fp16 rounding. Cause, checked in the job's autotune cache: `allow_tf32` is part of the Triton autotune key, and for this shape (`sparse_submanifold_conv_fwd_implicit_gemm_splitk_kernel`, key `(13, 256, 256, 27, 4, <tf32>, float16, ...)`) the tuner picked `B1 256, B2 128, BK 64, num_warps 8` for False and `B1 256, B2 256, BK 64, num_warps 16` for True. The fp16 difference is a tile-shape (accumulation-order) effect. It is not caused by the precision string: the non-split-K fp16 kernels compiled with `'tf32'` are bitwise equal to `'ieee'`.
+- **Driver criterion, unchanged:** 10 of 16 rows fail it. The 8 fp32 rows fail both the bitwise comparison and the fp32 1e-4 bound, because that bound was set for ieee and tf32 cannot meet it by design. The 2 fp16 split-K rows fail only the bitwise comparison, for the autotune reason above, and are within the fp16 bound. No row fails an accuracy bound appropriate to the precision in use (the second FAILURES line: 0). I recorded this as expected behaviour on gfx942, not a port fault. The bitwise half of the criterion can only hold where `TF32_PRECISION` is `ieee`, which the porter's and reviewer's gfx1100 runs showed.
+
+```
+# tf32check.py <tests dir> <RES>: the round-4 head (imports, RES, C, ALGOS, data, run()) unchanged, then:
+def rel(x, ref):
+    return ((x.double() - ref).abs().max() / ref.abs().max()).item()
+for kind in ('subm', 'strided'):
+    ref = run(kind, A.EXPLICIT_GEMM, torch.float64, False)
+    for dtype, tol in ((torch.float32, 1e-4), (torch.float16, 2e-2)):
+        for algo in ALGOS:
+            off = run(kind, algo, dtype, False); on = run(kind, algo, dtype, True)
+            same = all(torch.equal(a, b) for a, b in zip(on, off))
+            r_on = [rel(x, r) for x, r in zip(on, ref)]; r_off = [rel(x, r) for x, r in zip(off, ref)]
+            d = [((a.double() - b.double()).abs().max() / r.abs().max()).item() for a, b, r in zip(on, off, ref)]
+            fails += (not same or max(r_on) >= tol)                 # original criterion
+            tf32_fails += (max(r_on) >= 2e-2 or max(r_off) >= tol)  # tf32 shares fp16's 10-bit mantissa
+```
+
+### Other gates
+
+- CUDA compile gate: no compiled source changed (`git diff --stat 8592d5f ab42455 -- '*.cu' '*.cuh' '*.cpp' '*.h' setup.py` is empty), so the real-nvcc check at bcf7c6f still covers the compiled sources. This host has no CUDA toolkit. No NVIDIA run of a Triton spconv conv with `allow_tf32 = True` at this head (`cuda-not-validated` for that runtime path; CUDA's value of the expression is upstream's by construction).
+- Documentation: README "AMD GPUs (ROCm)" under Installation is present and unchanged by the delta.
+- `python3 utils/jargon.py --port FlexGEMM`: clean (after `git fetch origin main:main` in the fork clone; without a local `main` it cannot resolve the range).
+- `git -C projects/FlexGEMM/src status --porcelain`: clean at ab42455 after the run (the benchmark's `tests/submconv/conv_fwd.png` moved to `agent_space/`).
