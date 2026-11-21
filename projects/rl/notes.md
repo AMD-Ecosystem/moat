@@ -566,3 +566,24 @@ Identical to the counts at `845ee50d` on this platform.
 CUDA gate: passed at this head on the mi355 host (see "CUDA compile check (nvcc) at d3b67c35"); not repeated here.
 
 Finish checks: `python3 utils/jargon.py --port rl` clean; ROCm build documented in README.md (lines 470-472), CONTRIBUTING.md and docs/source/index.rst (unchanged by the delta). Nothing pushed to the fork.
+
+## Validation 2026-11-20 (validator, windows-gfx1151, Radeon 8060S APU, wave32): head d3b67c35
+
+Head `d3b67c350ca22523b4c768af9b5d24a42ea79c09` = reviewed_sha; `git rev-parse HEAD` matches and `git status --porcelain` in `projects/rl/src` is empty at the end. Independent build: `build/`, `torchrl/_torchrl.cp313-win_amd64.pyd` and `torchrl/csrc/hip_segment_tree.hip` deleted first. Shell: `source agent_space/rl_env.sh; unset FORCE_CUDA HIP_DEVICE_LIB_PATH` (both verified empty). torch 2.12.0+rocm7.14.0a20260519 (hip 7.13.26190), `PYTORCH_ROCM_ARCH=gfx1151`, `ulimit -c 0`, single runs, no retries.
+
+Documented install: `utils/timeit.sh rl compile -- python -m pip install -v --no-build-isolation --no-deps -e projects/rl/src` rc=0, "Successfully installed torchrl-0.15.0+gd3b67c35", no "Skipping TorchRL GPU extension build" line, `build/.torchrl_build_info.json` `"build_cuda": true, "force_cuda": false`. The gate chose the GPU build with no override. hipcc line: `hipcc.exe -std=c++20 -Xcompiler -D__HIP_PLATFORM_AMD__=1 ... -c ...\torchrl\csrc\hip_segment_tree.hip -DCUDA_HAS_FP16=1 ... -O3 -DWITH_HIP --rocm-device-lib-path=...\_rocm_sdk_devel\lib\llvm\amdgcn\bitcode -DTORCH_EXTENSION_NAME=_torchrl --offload-arch=gfx1151 -fno-gpu-rdc`. Log `agent_space/rllogs/val_build.log`.
+
+`torchrl._torchrl` exposes `CudaMinSegmentTreeFp32/Fp64`, `CudaSumSegmentTreeFp32/Fp64` plus the CPU classes. `torch.cuda.get_device_name(0)` = AMD Radeon(TM) 8060S Graphics, `gcnArchName` gfx1151.
+
+| command (`--rootdir=projects/rl/src`, via `timeit.sh rl test`, `-rs`) | result |
+|---|---|
+| `test/rb/test_prioritized.py` | 36 passed, 0 skipped |
+| `test/rb/test_storages.py -k cuda` | 8 passed, 162 deselected, 0 skipped |
+| `TORCHRL_SMOKE_REQUIRE_CUDA_EXT=1 test/smoke_test.py` | 2 passed |
+| `test/test_setup.py` (whole file) | 22 passed, 3 skipped: 2x `:339` "checks the Unix compiler flags", 1x `:403` "Windows file locking prevents editable re-install" (upstream Windows skips, unrelated to the port); `test_hipcc_probe_agrees_with_gpu_build` and both `test_hipcc_probe_uses_build_cxx_standard` cases passed |
+| `test/rb -m gpu` | 53 passed, 1 skipped (`test_rb_distributed.py:413` ray required), 5508 deselected |
+| CPU regression: `HIP_VISIBLE_DEVICES= CUDA_VISIBLE_DEVICES= test/rb -m "not gpu"` (serial, 131 s) | 4193 passed, 1315 skipped, 54 deselected, 0 failed |
+
+CPU-regression skips are upstream Windows/dependency skips (fork unavailable on Windows, distributed prototype on Windows, ray not installed, etc.); none touch the port's code. Not run: Triton RNN tests (out of scope), test dirs outside `test/rb` (plan's regression subset is `test/rb`; Linux ran the same, 4500 passed with xdist, here fewer tests are collected because of Windows skips and no xdist). Editable install still binds to `0.15.0+gd3b67c35` with the 4 `Cuda*` classes after the test_setup run.
+
+CUDA gate: not run here (no nvcc); passed at this head on the mi355 host. Verdict: pass. Nothing pushed to the fork.
