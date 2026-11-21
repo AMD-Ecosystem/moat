@@ -155,3 +155,41 @@ Environment: the job venv with the porter's recipe, using gfx950 (`"torch[device
 - **The neutral spelling exists and lowers identically on CUDA in every one of those versions.** Each Linux x86_64 cp311 wheel (3.6.0, 3.7.0, 3.7.1, 3.8.0, 3.9.0) ships `triton/language/extra/libdevice.py` with `def tanh` (a stub). Its `triton/backends/nvidia/compiler.py` has `return {"triton.language.extra.libdevice": libdevice}` with `from triton.language.extra.cuda import libdevice`, so on NVIDIA the stub is mapped to the exact CUDA libdevice module at compile time. Compiled without a GPU, `triton.compile(ASTSource(...), target=GPUTarget("cuda", 90, 32))` on a kernel calling `tl.extra.libdevice.tanh` gives PTX identical to the same kernel calling `tl.extra.cuda.libdevice.tanh` once `.loc` debug lines are removed (0 diff lines), and the `from triton.language.extra import libdevice` / `libdevice.tanh` form also compiles, in all five versions. Triton 3.0.0 also has the file, which covers anything older that someone might run.
 - **One caveat for whoever writes the change.** `tl.extra.libdevice` is not a module attribute at Python level (`AttributeError` outside `@triton.jit`; `triton/language/extra/__init__.py` imports only backend subpackages). It resolves only inside jitted code. All 9 TorchRL sites are inside `@triton.jit` functions, so the sed is safe. Triton's documented spelling is the explicit `from triton.language.extra import libdevice`.
 - **gfx950 reproduction.** Same scratch copy, sed applied to the 9 sites, not committed. Upstream, `pytest -m gpu test/modules/test_rnn.py` gives 38 failed / 10 passed, the same count as gfx942. With the neutral spelling it is **44 passed / 4 failed**; `test_dreamer_components.py -k "triton or Triton or gru or GRU"` gives 27 passed. On gfx950, ROCm Triton's `tl.dot` allows only `('ieee', 'bf16x3', 'bf16x6')` (CDNA4 has no xf32), so both explicit `tf32` and `tf32x3` fail in `TestRecurrentMatmulPrecision::test_{lstm,gru}_triton_precision_grad_parity`. On gfx942 only `tf32x3` failed. Any ROCm handling of explicit precision requests under option (a) has to follow the allowed set per architecture (or map explicit tf32 modes the way `auto` already maps to `ieee` on AMD), not special-case `tf32x3` alone.
+
+## Porter round 2 (2026-11-21, linux-gfx942, fleet job, MI300X): review finding 1
+
+Fork `moat-port` at `123797f73094` = `c76657b0` + one commit, `[ROCm] Fall back to the CPU build when hipcc cannot compile` (5 files, +122/-15).
+
+### What the core-only layout lacks (gfx942, ROCm 10.2.0 SDK wheels)
+- `_rocm_sdk_core` has `bin/hipcc`, `include/hip` and the device bitcode at `lib/llvm/amdgcn/bitcode/*.bc`, but no `amdgcn` at its root. The expanded `_rocm_sdk_devel` has `amdgcn -> lib/llvm/amdgcn` (symlink). Neither has `lib/llvm/lib/clang/24/lib/amdgcn/bitcode` (only `amdgcn-amd-amdhsa`, `x86_64-*`).
+- clang finds the device libraries at `--rocm-device-lib-path`, `$HIP_DEVICE_LIB_PATH`, its resource dir `lib/clang/<N>/lib/amdgcn/bitcode`, then `<rocm candidate>/amdgcn/bitcode`. `hipcc -v` on core shows `Found HIP installation: .../_rocm_sdk_core` then `cannot find ROCm device library`. So the missing piece in core-only is `<ROCM_HOME>/amdgcn/bitcode`.
+- Chosen check (no trial compile): `_has_hipcc()` = `<ROCM_HOME>/bin/hipcc` (`hipcc.exe`/`hipcc.bat` on Windows, the names torch's `_get_hipcc_path` uses) exists, and either `HIP_DEVICE_LIB_PATH` is set or a `*.bc` exists in `<ROCM_HOME>/amdgcn/bitcode` or `<ROCM_HOME>/lib/llvm/lib/clang/*/lib/amdgcn/bitcode`. Real dirs: `_rocm_sdk_devel` True, `_rocm_sdk_core` False, 0.2 ms each, so no caching needed. HIP branch: `ROCM_HOME is None` -> False silently (as `CUDA_HOME is None`); toolchain unusable -> `logger.warning(... Set FORCE_CUDA=1 to build anyway.)` and False. `FORCE_CUDA=1` still returns first. CUDA branch byte-identical (`git diff -U0 setup.py` touches only the HIP branch and adds `_has_hipcc`).
+- The warning prints 3 times per `setup.py` run (`_should_build_cuda()` is called 3 times), the same as the existing nvcc-mismatch warning; left as is so the CUDA branch stays untouched.
+- Windows not checked here: whether TheRock's Windows devel layout has `<ROCM_HOME>/amdgcn/bitcode` (a symlink on Linux) is unverified; if the Windows validator sees the warning with a working hipcc, the check needs the Windows path added.
+
+### Tests (`test/test_setup.py`)
+`test_should_build_gpu_extension` now builds fake ROCm trees in `tmp_path` (`_make_rocm_home`): `rocm` (`amdgcn/bitcode`), `rocm-clang-resource-dir`, `rocm-no-device-libs` (bitcode only under `lib/llvm/amdgcn`, the core layout), `rocm-no-hipcc`, `rocm-no-device-libs-force-cuda`, plus the earlier cases. New `test_rocm_without_device_libs_warns` checks the warning text and that `HIP_DEVICE_LIB_PATH` turns it into a build. The stale-build HIP test uses the `rocm` layout. `pytest -q test/test_setup.py -k "not install_no_deps"`: 18 passed; against `c76657b0`'s `setup.py`: 3 failed (`rocm-no-device-libs`, `rocm-no-hipcc`, the warning test), 15 passed. Upstream pre-commit (ufmt, flake8, pyupgrade, codespell, autoflake, ...) clean on all 5 files; `jargon.py --port rl` clean; `prose.py` clean.
+
+### Docs
+README, CONTRIBUTING.md and `docs/source/index.rst` now say the kernels are built when ROCm with `hipcc` is found, and that the ROCm SDK Python packages need `rocm[devel]` and `rocm-sdk init` first (CONTRIBUTING also names the CPU fallback and warning).
+
+### The three cases on this host (MI300X, `HIP_VISIBLE_DEVICES=3`, `ulimit -c 0`)
+Environment: fresh job venv; the porter recipe from round 1 (`torch[device-gfx942]==2.15.0+rocm10.2.0`, `rocm[libraries,devel]==10.2.0`, `rocm-sdk-device-gfx942==10.2.0` from `https://stable.repo.amd.com/rocm/whl-next/`, test deps), `zz-base-links.pth` moved to `$FLEET_VENV/zz-base-links.pth.disabled`. Before `rocm-sdk init`, torch warned that devel was not expanded and `ROCM_HOME` was `_rocm_sdk_core`.
+1. **Full devel SDK** (after `rocm-sdk init`, `ROCM_HOME=_rocm_sdk_devel`): `PYTORCH_ROCM_ARCH=gfx942 pip install -v --no-build-isolation --no-deps -e projects/rl/src` succeeded, hipcc from `_rocm_sdk_devel/bin` compiled `hip_segment_tree.hip`, binding has `Cuda{Sum,Min}SegmentTreeFp{32,64}`.
+
+   | command | result |
+   |---|---|
+   | `pytest -q -rs test/rb/test_prioritized.py` | 36 passed, 0 skipped |
+   | `pytest -q -rs test/rb/test_storages.py -k cuda` | 8 passed |
+   | `pytest -q -rs test/rb/test_prioritized.py test/rb/test_storages.py -k "cuda or prioritized"` | 44 passed |
+   | `TORCHRL_SMOKE_REQUIRE_CUDA_EXT=1 pytest -q test/smoke_test.py` | 2 passed |
+   | `pytest -q test/test_setup.py -k "not install_no_deps"` | 18 passed |
+   | `pytest -q -rs test/rb -m gpu` | 53 passed, 1 skipped (ray) |
+2. **Core-only, reproduced as the reviewer did** (`_rocm_sdk_devel` moved out of site-packages; torch's `ROCM_HOME` printed `.../_rocm_sdk_core`): `PYTORCH_ROCM_ARCH=gfx942 python setup.py build_ext --inplace` on a copy of the working tree: **rc=0**, warning `Skipping TorchRL GPU extension build because the ROCm installation at .../_rocm_sdk_core has no hipcc or no ROCm device libraries. Set FORCE_CUDA=1 to build anyway.` (x3), no hipcc call. The same command on `git archive c76657b0`: **rc=1**, `clang++: error: cannot find ROCm device library ...`, `RuntimeError: Error compiling objects for extension` (the reviewer's reproduction, on gfx942). `pip install -v --no-build-isolation --no-deps <copy>`: installed, `torchrl._torchrl` has only the CPU `{Sum,Min}SegmentTreeFp{32,64}`.
+3. **`FORCE_CUDA=1` on core-only**: `FORCE_CUDA=1 PYTORCH_ROCM_ARCH=gfx942 python setup.py build_ext --inplace`: **rc=1**, `cannot find ROCm device library`, `Error compiling objects for extension`.
+
+Devel restored and the editable install rebuilt from the fork afterwards (binding present).
+
+### Not done
+- CUDA compile check with real nvcc: this host has none. The CUDA branch and every CUDA command line are unchanged by this commit (only the HIP branch and a new helper); the reviewer's CUDA 12.8 build at `c76657b0` stands for the CUDA lines, and the `cuda`/`cuda-nvcc-mismatch`/`cpu` gate cases pass. The checkup should still run the mi355 nvcc build before presenting.
+- Triton files untouched (question 0 unruled); nothing under `.github/`.
