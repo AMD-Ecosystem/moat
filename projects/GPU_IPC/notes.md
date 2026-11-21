@@ -1955,3 +1955,32 @@ python3 utils/moatlib.py carry-forward GPU_IPC linux-gfx1100 \
 
 Fork tree untouched (nothing pushed); the throwaway clone lives in the job
 directory only.
+## Validation 2026-11-21: linux-gfx942 carry-forward 29e2494 -> c44ed01 (binary-equiv)
+
+linux-gfx942 (MI300X, `HIP_VISIBLE_DEVICES=4` as pinned), same TheRock pip SDK and
+recipe as "## Validation 2026-11-20: linux-gfx942 at 29e2494" (cmake 3.31.6 and
+Ninja from `/opt/python-3.11-venv`). Delta 29e2494..c44ed01 is CMakeLists.txt +4,
+the `if(WIN32)` block inside `if(USE_HIP)` setting `CMAKE_HIP_USING_LINKER_DEFAULT`;
+the classifier calls it `mixed`, so it was built rather than asserted.
+
+Both shas built in ONE clone at one absolute path (checkout 29e2494 -> `build-old`,
+checkout c44ed01 -> `build-new`), each with
+
+```bash
+cmake -S src -B src/build-<x> -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 \
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=<pip ROCm SDK root>
+cmake --build src/build-<x> -j 56
+```
+
+Both exit 0, 153 warnings each (the known `[[nodiscard]]` pattern). Comparison:
+
+- `python3 utils/codeobj_diff.py src/build-old src/build-new`: `verdict=identical`,
+  `gipc: exported symbols + device ISA identical (14 exports)`.
+- Host side: `gipc` is byte-identical, sha256
+  `bc1671d20a47446a20cd5eb1f6529158f2eb50ebf48a0357b6c4a6590dcf3a0f` in both; all 10
+  object files `cmp`-identical; `ninja -t commands all` identical after replacing the
+  build-dir name.
+
+No GPU run needed: the executable validated at 29e2494 is the same file. Fork tree
+clean apart from the untracked build dirs. Recorded
+`carry-forward GPU_IPC linux-gfx942 c44ed01 binary-equiv --host-checked`.
