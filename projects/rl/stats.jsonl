@@ -107,3 +107,4 @@
 {"kind":"phase","ts":"2026-11-21T02:34:29Z","phase":"test","seconds":57.224,"exit":0,"cmd":"/d/Develop/moat/agent_space/rl_venv/Scripts/python.exe -m pytest -q -rs --rootdir=projects/rl/src projects/rl/src/test/test_setup.py"}
 {"kind":"phase","ts":"2026-11-21T02:34:42Z","phase":"test","seconds":11.773,"exit":0,"cmd":"/d/Develop/moat/agent_space/rl_venv/Scripts/python.exe -m pytest -q -rs --rootdir=projects/rl/src projects/rl/src/test/rb -m gpu"}
 {"kind":"phase","ts":"2026-11-21T02:37:15Z","phase":"test","seconds":137.298,"exit":0,"cmd":"/d/Develop/moat/agent_space/rl_venv/Scripts/python.exe -m pytest -q -rs --rootdir=projects/rl/src projects/rl/src/test/rb -m not gpu -p no:cacheprovider --timeout=120"}
+{"kind":"session","ts":"2026-11-21T02:37:45Z","epoch":1795228665.552727,"event":"end","platform":"windows-gfx1151"}

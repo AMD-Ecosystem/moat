@@ -123,6 +123,10 @@
     {
       "id": "docs:build_from_source",
       "evidence": "linux-gfx942 porter at c76657b0 (notes.md, Porter round 2026-11-20): CONTRIBUTING.md, docs/source/index.rst and README.md updated"
+    },
+    {
+      "id": "platform:windows",
+      "evidence": "windows-gfx1151 validator at d3b67c35 (notes.md, Validation 2026-11-20 windows-gfx1151 head d3b67c35): documented install builds the GPU extension with HIP_DEVICE_LIB_PATH and FORCE_CUDA unset; test_prioritized 36 passed, test_storages -k cuda 8 passed, smoke 2 passed, test/rb -m gpu 53 passed 1 skipped, test_setup 22 passed 3 skipped"
     }
   ],
   "scoped_out": [],
@@ -130,10 +134,6 @@
     {
       "id": "ci:rocm_wheel_lane",
       "reason": "Awaiting jeff's ruling (plan.md top, notes Porter round 2026-11-20 question 1); nothing under .github/ touched"
-    },
-    {
-      "id": "platform:windows",
-      "reason": "In scope for the windows gate; not yet built or run on a Windows ROCm torch (porter round 2026-11-20 ran linux-gfx942 only)"
     },
     {
       "id": "triton:rnn_libdevice_tanh",
