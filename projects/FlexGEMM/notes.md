@@ -817,3 +817,93 @@ $FLEET_VENV/bin/python gridcost.py $PWD/t-8592d5f
 $FLEET_VENV/bin/python allcfg.py $PWD/t-8592d5f fwd 4194305 64 8 2
 $FLEET_VENV/bin/python allcfg.py $PWD/t-8592d5f bwd 1048576 1024 8 all
 ```
+
+## Validation 2026-11-21 (linux-gfx942 fleet job, AMD Instinct MI300X; validated head 8592d5fcb68855864c8a82274d3033ae651f8027)
+
+**Result: pass on linux-gfx942 (wave64).** Every test script and example in the plan's test plan was run at the reviewed head. Every correctness criterion holds. The one example that fails (`examples/spconv.py`) fails before any GPU work because of the known upstream unpack bug (round-1 question 1, still Jeff's call); an agent-side corrected copy passes. No project test fails because of the deferred `flexgemm-grid-sample-bwd-autotune-accumulates`: `tests/utils.py benchmark_kernel` runs 2 warmup plus 20 timed calls and the error is computed on the last call's output, so the first-call accumulation is never compared.
+
+### Environment and build
+
+MI300X gfx942, GPU 2 (dispatcher pin `HIP_VISIBLE_DEVICES=2`), TheRock ROCm 10.2.0a20261022 wheels in the job venv (torch 2.16.0a0+rocm10.2.0a20261022, Triton 3.9.0+gitfc8d31a5.rocm10.2.0a20261022; recipe in "Porting round 3"), `ulimit -c 0`, job-local `HOME` (so `~/.flex_gemm` starts empty: the autotune cache was cold) and `TRITON_CACHE_DIR`. Extra test deps in the venv: `matplotlib` (pip), `spconv-triton 1.0.0` (`pip install --no-deps spconv-triton`).
+
+```
+source agent_space/env.sh
+rm -rf projects/FlexGEMM/src/build
+utils/timeit.sh FlexGEMM compile -- $FLEET_VENV/bin/python -m pip install ./projects/FlexGEMM/src --no-build-isolation --no-deps --force-reinstall   # Successfully installed flex_gemm-1.0.0
+```
+
+`projects/FlexGEMM/src` at 8592d5f; `git status --porcelain` clean after the run (the ablation scripts' `tests/submconv/conv_fwd.png` was moved out to `agent_space/`).
+
+Every script ran from its own directory through `utils/timeit.sh FlexGEMM test -- bash -c "cd <dir> && $FLEET_VENV/bin/python <script>"` (runner `agent_space/val/run_all.sh`, logs in `agent_space/val/logs/`, job-local).
+
+### A. Asserting tests (unchanged)
+
+| Script | Result |
+|---|---|
+| `tests/hashmap.py` | rc 0, RES 1..1024, 4 key/value dtype pairs |
+| `tests/serialize.py` | rc 0, z_order + hilbert, cpu + cuda, RES up to 2048 |
+| `tests/spconv/out_coords.py` | rc 0, RES up to 2048 |
+| `tests/spconv/neighbor_cache.py` | rc 0, RES up to 512, every cache incl. masked |
+| `tests/submconv/neighbor_cache.py` | rc 0, RES up to 512 |
+| `tests/grid_sample.py` | rc 0, all four tables (Nearest/Trilinear Fwd/Bwd) through RES=2048; all 72 err_max/err_mean cells 0 per mille |
+
+### B. Conv correctness tables (fp16)
+
+Third-party columns: the plan's option 1 (`spconv-triton`) cannot run "unchanged", because the package imports as `spconv_triton` (its README's one-line change). Driver `agent_space/val/run_tp.py` (text below) maps `import spconv.pytorch as spconv` to `import spconv_triton.pytorch as spconv` (and `import spconv as spconv_core` likewise), and removes the torchsparse, fvdb and warpconvnet imports and their `kernel_functions` entries. With `DROP_SPCONV=1` it removes the spconv column too (plan option 2). No fork edit.
+
+- `tests/spconv/fwd.py`: with spconv-triton the script stops in the spconv column, `spconv_triton/pytorch/conv.py:377 AssertionError: only support reuse subm indices` (the script reuses a non-submanifold `indice_dict`; a spconv-triton limit, not FlexGEMM). Rerun with `DROP_SPCONV=1`: rc 0, 14 rows RES 8..512; igemm/igemmk/migemm/migemmk err_max 2 per mille on every row, dense 2 per mille (N/A from RES=256 by design); err_mean 0 everywhere. **Pass** (err_max <= 2x dense, err_mean <= 5).
+- `tests/submconv/fwd.py` (spconv-triton column kept): rc 0, 7 rows; spconv and all four algorithms err_max 2, err_mean 0. **Pass.**
+- `tests/spconv/bwd.py` (spconv-triton kept): rc 0, 14 rows, 29.4 min cold. err_mean 0 for every algorithm on every row. err_max 1-4 per mille through RES=64; at K=3, RES=128: igemm 11, igemmk 13, migemm 11, migemmk 12 (spconv-triton 15); RES=256: 27/8/15/8 (spconv-triton 10); RES=512: 46/13/27/13 (spconv-triton 11). Dense column 167-4984 per mille. Same pattern as round 1 (igemm 44 at RES=512), and the third-party Triton implementation shows the same magnitude, so this is fp16 accumulation order on the largest weight-gradient reductions, not a fault. **Pass.**
+- `tests/submconv/bwd.py` (spconv-triton kept): rc 0, 7 rows; egemm err_max 0; igemm 2-13, igemmk 1-7, migemm 2-10, migemmk 2-5 (spconv-triton 1-7); err_mean 0 everywhere. **Pass.**
+
+### C. Examples and FlexGEMM-only benchmarks
+
+- `examples/submconv.py`: rc 0.
+- `examples/spconv.py`: rc 1, `ValueError: too many values to unpack (expected 2)` at line 20, the upstream bug (round-1 question 1). Agent-side copy with only that line corrected (`out_feats, out_coords, neignbor_cache = sparse_conv3d(`; `agent_space/val/example_spconv_fixed.py`, run from `examples/` with `PYTHONPATH=examples`): output (51664, 256), finite, and the backward gradients are finite.
+- `tests/submconv/inf_ablation.py` (rc 0) and `train_ablation.py` (rc 0), unchanged, RES 8..512. Inference RES=512,C=128: egemm 29.11 ms, igemm 4.16, igemm_splitk 4.16, migemm 3.11, migemm_splitk 3.11. Training RES=512,C=128: egemm 71.85, igemm 38.17, igemm_splitk 11.84, migemm 40.89, migemm_splitk 8.28; RES=256,C=256: migemm_splitk 6.94 ms.
+- `tests/submconv/inf_benchmark.py` and `train_benchmark.py` with the spconv-triton column kept: the timing and memory tables complete, then the plotting code raises `ZeroDivisionError` at `gray = 0.8 - 0.6 * (i / (len(kernels) - 2))` (inf :243, train :246) because only two kernels remain once the CUDA-only columns are removed. That is a driver artifact. Inference times from that run: spconv-triton 5.77-25.15 ms, flex_gemm 1.35-4.04 ms. Rerun with `DROP_SPCONV=1` (one kernel; round 1's setup): both rc 0. flex_gemm inference RES=512,C=128 4.10 ms; training RES=256,C=256 8.89 ms (warm autotune cache).
+
+### Other gates
+
+- CUDA compile gate: the compiled sources (`setup.py`, every `.cu`/`.cuh`, `ext.cpp`) are identical between bcf7c6f and 8592d5f (`git diff --stat bcf7c6f 8592d5f` lists only the three Triton Python files). The real-nvcc check at bcf7c6f (mi355 host, "CUDA compile check" above) therefore covers this head. Not rerun: this host has no CUDA toolkit.
+- Documentation: README "AMD GPUs (ROCm)" under Installation (d45c5e2) is present at this head.
+- `python3 utils/jargon.py --port FlexGEMM`: clean.
+
+Driver `agent_space/val/run_tp.py`:
+
+```
+import os, re, sys
+path = os.path.abspath(sys.argv[1])
+drop = ["torchsparse", "fvdb", "warpconvnet"]
+if os.environ.get("DROP_SPCONV") == "1":
+    drop.append("spconv")
+alias = {
+    "import spconv.pytorch as spconv": "import spconv_triton.pytorch as spconv",
+    "import spconv as spconv_core": "import spconv_triton as spconv_core",
+}
+out = []
+for line in open(path).read().splitlines():
+    s = line.strip()
+    if re.match(r"(import|from)\s+(%s)\b" % "|".join(drop), s) or re.match(r"'(%s)'\s*:\s*\(" % "|".join(drop), s):
+        out.append("# [removed] " + line); continue
+    if s in alias:
+        line = line.replace(s, alias[s])
+    out.append(line)
+sys.argv = [path] + sys.argv[2:]
+sys.path.insert(0, os.path.dirname(path))
+exec(compile("\n".join(out) + "\n", path, "exec"), {"__name__": "__main__", "__file__": path})
+```
+
+## Install as a dependency
+
+Linux, from the linux-gfx942 validated build at 8592d5f (the Windows and wave32 validators add their own OS's recipe here). FlexGEMM is a PyTorch extension plus Triton kernels. A dependent installs it into the same Python environment as its ROCm PyTorch and Triton:
+
+```
+git clone -b moat-port https://github.com/AMD-Ecosystem/FlexGEMM _deps/FlexGEMM/src
+export ROCM_HOME=$(python -m rocm_sdk path --root)   # TheRock wheels; omit with a system ROCm
+GPU_ARCHS=<gfx> python -m pip install _deps/FlexGEMM/src --no-build-isolation --no-deps
+```
+
+- Prerequisites in the environment: a ROCm build of torch (>= 2.14 needs no flag; the C++ standard comes from torch) with its device wheel for `<gfx>`, the matching ROCm Triton, `filelock`, `ninja`, `setuptools`. `GPU_ARCHS` is a `;`-separated list (`gfx942`, `gfx1100;gfx1201`); unset builds for the GPU in the machine.
+- Consume with `import flex_gemm` (ops in `flex_gemm.ops.spconv`, `flex_gemm.ops.grid_sample`, `flex_gemm.ops.serialize`). Nothing to link: the HIP extension is `flex_gemm.kernels.cuda`, inside the wheel.
+- The autotuner reads and writes `~/.flex_gemm/autotune_cache.json` (override with `FLEX_GEMM_AUTOTUNE_CACHE_PATH`; `FLEX_GEMM_USE_AUTOTUNE_CACHE=0` and `FLEX_GEMM_AUTOSAVE_AUTOTUNE_CACHE=0` turn it off). Point `HOME` or that variable at a job-local path on shared hosts.
