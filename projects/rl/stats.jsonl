@@ -33,3 +33,4 @@
 {"kind":"phase","ts":"2026-11-21T01:07:25Z","phase":"test","seconds":6.474,"exit":0,"cmd":"agent_space/runtests.sh setup"}
 {"kind":"phase","ts":"2026-11-21T01:07:35Z","phase":"test","seconds":10.525,"exit":0,"cmd":"agent_space/runtests.sh gpu"}
 {"kind":"phase","ts":"2026-11-21T01:11:33Z","phase":"test","seconds":237.642,"exit":0,"cmd":"agent_space/runtests.sh rbcpu"}
+{"kind":"session","ts":"2026-11-21T01:11:51Z","epoch":1795223511.760933,"event":"end","platform":"linux-gfx942"}
