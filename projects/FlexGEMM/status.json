@@ -6,12 +6,16 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "torch-extension",
-  "stage": "review-passed",
+  "stage": "porting",
   "adopted_at": "2026-08-27T02:01:36Z",
-  "updated_at": "2026-11-21T02:55:21Z",
+  "updated_at": "2026-11-21T03:18:42Z",
   "head_sha": "8592d5fcb68855864c8a82274d3033ae651f8027",
   "depends_on": [],
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx1100",
+    "since": "2026-11-21T03:18:42Z",
+    "holder": "acc8e1895790"
+  },
   "waivers": {},
   "platforms": {
     "windows-gfx1151": {
@@ -89,9 +93,9 @@
       "blocked_reason": null,
       "validated_sha": null,
       "failed_sha": "8592d5fcb68855864c8a82274d3033ae651f8027",
-      "started_at": null,
+      "started_at": "2026-11-21T03:18:42Z",
       "completed_at": null,
-      "updated_at": "2026-11-21T02:55:21Z",
+      "updated_at": "2026-11-21T03:18:42Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
