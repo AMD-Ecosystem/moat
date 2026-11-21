@@ -537,3 +537,32 @@ Triton RNN tests not run (outside the gate; question 0 unruled).
 CUDA gate: passed at this head on this host (see "CUDA compile check (nvcc) at d3b67c35").
 
 Finish checks: `python3 utils/jargon.py --port rl` clean; ROCm build documented in README.md, CONTRIBUTING.md and docs/source/index.rst (unchanged by the delta). Nothing pushed to the fork.
+
+## Validation 2026-11-21 (validator, linux-gfx1100 fleet job, Radeon Pro W7800, wave32): head d3b67c35
+
+Head `d3b67c350ca22523b4c768af9b5d24a42ea79c09` = reviewed_sha; this platform last validated `845ee50d`, and the delta (one commit, the hipcc probe's `-std` in `setup.py` plus its unit tests) was revalidated with a full run, no carry-forward. Fresh clone of `moat-port`, `git -C projects/rl/src rev-parse HEAD` matches and `git status --porcelain` is empty at the end (integrity gate clean). GPU: AMD Radeon Pro W7800 48GB, gfx1100, `warp_size` 32, dispatcher pin `HIP_VISIBLE_DEVICES=2` only, `ulimit -c 0`, `timeout` around every GPU command.
+
+Environment: job venv, `zz-base-links.pth` (base-image ROCm 10.1) moved to `$FLEET_VENV/zz-base-links.pth.disabled`; then the same installs as the gfx1100 validation at `845ee50d` (`torch[device-gfx1100]==2.15.0+rocm10.2.0`, `rocm[libraries,devel]==10.2.0`, `rocm-sdk-device-gfx1100==10.2.0` from `https://stable.repo.amd.com/rocm/whl-next/`, `rocm-sdk init`, the same test dependencies plus `pytest-xdist`). torch 2.15.0+rocm10.2.0, `torch.version.hip` 7.17.26434, `ROCM_HOME` = `_rocm_sdk_devel`.
+
+Build: `PYTORCH_ROCM_ARCH=gfx1100 MAX_JOBS=16 $FLEET_VENV/bin/python -m pip install -v --no-build-isolation --no-deps -e projects/rl/src` (via `timeit.sh rl compile`), rc=0, "Successfully installed torchrl-0.15.0+gd3b67c35", no "Skipping TorchRL" line. `_rocm_sdk_devel/bin/hipcc` compiled `hip_segment_tree.hip` with `-DWITH_HIP --offload-arch=gfx1100 -std=c++20`. `torchrl._torchrl` exposes `Cuda{Min,Sum}SegmentTreeFp{32,64}` plus the CPU `{Min,Sum}SegmentTreeFp{32,64}`.
+
+| command (`--rootdir=projects/rl/src`, all via `timeit.sh rl test`) | result |
+|---|---|
+| `pytest -q -rs test/rb/test_prioritized.py` | 36 passed, 0 skipped |
+| `pytest -q -rs test/rb/test_storages.py -k cuda` | 8 passed, 162 deselected, 0 skipped |
+| `TORCHRL_SMOKE_REQUIRE_CUDA_EXT=1 pytest -q test/smoke_test.py` | 2 passed |
+| `pytest -q -rs test/test_setup.py -k "not install_no_deps"` | 23 passed, 2 deselected, 0 skipped (`test_hipcc_probe_agrees_with_gpu_build` and both new `test_hipcc_probe_uses_build_cxx_standard` cases ran and passed) |
+| `pytest -q -rs test/rb -m gpu` | 53 passed, 1 skipped (`test_rb_distributed.py:413` ray required), 5508 deselected |
+| CPU regression: `HIP_VISIBLE_DEVICES= CUDA_VISIBLE_DEVICES= pytest -q test/rb -n 16` | 4500 passed, 1062 skipped, 0 failed |
+| whole file from the git clone: `PYTORCH_ROCM_ARCH=gfx1100 pytest -q -rs test/test_setup.py` | 25 passed, 91 s (the test uninstalls `setuptools_scm`; reinstalled and the editable install redone afterwards, binding checked: `0.15.0+gd3b67c35`, 4 `Cuda*` classes) |
+
+No skip in the GPU runs says the extension was not built; counts match the gfx950 validation at this head and the gfx942/gfx1100 validations at `845ee50d` (plus the two new setup tests).
+
+Triton RNN tests (outside this port; upstream behaviour awaiting jeff's ruling, porter round 1 question 0), reported separately:
+- `pytest -q -m gpu test/modules/test_rnn.py`: 38 failed, 10 passed, 225 deselected. 36 fail with `RuntimeError: Implicit conversion of CUDA __nv_tanhf device function has been dropped`; the two `test_{lstm,gru}_triton_precision_grad_parity[tf32x3]` with `AssertionError: input_precision must be one of ('ieee', 'bf16x3', 'bf16x6')`.
+- `pytest -q test/modules/test_dreamer_components.py -k "triton or Triton or gru or GRU"`: 8 failed, 19 passed, 230 deselected; all 8 the `__nv_tanhf` error.
+Identical to the counts at `845ee50d` on this platform.
+
+CUDA gate: passed at this head on the mi355 host (see "CUDA compile check (nvcc) at d3b67c35"); not repeated here.
+
+Finish checks: `python3 utils/jargon.py --port rl` clean; ROCm build documented in README.md (lines 470-472), CONTRIBUTING.md and docs/source/index.rst (unchanged by the delta). Nothing pushed to the fork.

@@ -8,7 +8,7 @@
   "ext_type": "torch-extension",
   "stage": "review-passed",
   "adopted_at": "2026-11-06T02:24:49Z",
-  "updated_at": "2026-11-21T02:17:11Z",
+  "updated_at": "2026-11-21T02:28:47Z",
   "head_sha": "d3b67c350ca22523b4c768af9b5d24a42ea79c09",
   "depends_on": [],
   "porting": null,
@@ -89,11 +89,11 @@
     "linux-gfx1100": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "845ee50d3feb81e21555cfa61dfa871df7eb935e",
+      "validated_sha": "d3b67c350ca22523b4c768af9b5d24a42ea79c09",
       "failed_sha": null,
       "started_at": null,
-      "completed_at": "2026-11-21T01:25:29Z",
-      "updated_at": "2026-11-21T01:25:29Z",
+      "completed_at": "2026-11-21T02:28:47Z",
+      "updated_at": "2026-11-21T02:28:47Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -107,7 +107,10 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "state": "completed"
+      "state": "completed",
+      "validated_prior": [
+        "845ee50d3feb81e21555cfa61dfa871df7eb935e"
+      ]
     }
   },
   "license_spdx": "MIT",
