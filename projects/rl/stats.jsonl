@@ -25,3 +25,11 @@
 {"kind":"phase","ts":"2026-11-21T00:48:17Z","phase":"compile","seconds":45.517,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300b-20261120-163815-fix2-rl-prompt/venv/bin/python -m pip install -v --no-build-isolation --no-deps -e projects/rl/src"}
 {"kind":"session","ts":"2026-11-21T00:56:00Z","epoch":1795222560.816812,"event":"start","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-11-21T01:04:27Z","epoch":1795223067.15562,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-21T01:05:37Z","epoch":1795223137.759912,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-21T01:06:44Z","phase":"compile","seconds":62.293,"exit":0,"cmd":"bash -c /var/lib/jenkins/fleet/jobs/mi300b-20261120-163815-fix2-rl-prompt/venv/bin/python -m pip install -v --no-build-isolation --no-deps -e projects/rl/src > agent_space/rl_build.log 2>&1"}
+{"kind":"phase","ts":"2026-11-21T01:07:04Z","phase":"test","seconds":5.963,"exit":0,"cmd":"agent_space/runtests.sh prio"}
+{"kind":"phase","ts":"2026-11-21T01:07:14Z","phase":"test","seconds":9.421,"exit":0,"cmd":"agent_space/runtests.sh stor"}
+{"kind":"phase","ts":"2026-11-21T01:07:18Z","phase":"test","seconds":4.398,"exit":0,"cmd":"agent_space/runtests.sh smoke"}
+{"kind":"phase","ts":"2026-11-21T01:07:25Z","phase":"test","seconds":6.474,"exit":0,"cmd":"agent_space/runtests.sh setup"}
+{"kind":"phase","ts":"2026-11-21T01:07:35Z","phase":"test","seconds":10.525,"exit":0,"cmd":"agent_space/runtests.sh gpu"}
+{"kind":"phase","ts":"2026-11-21T01:11:33Z","phase":"test","seconds":237.642,"exit":0,"cmd":"agent_space/runtests.sh rbcpu"}
