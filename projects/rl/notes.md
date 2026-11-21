@@ -282,6 +282,7 @@ At PR-prep squash time the commit message must describe the end state; these sta
 - `123797f7`: "`hipcc` must exist under `ROCM_HOME`, and the device libraries must be where clang looks for them (`<ROCm>/amdgcn/bitcode` or clang's resource directory), unless `HIP_DEVICE_LIB_PATH` names them". Replaced by the preprocess probe; `HIP_DEVICE_LIB_PATH` alone no longer passes, the resource-directory check is gone, and `<ROCm>/lib/llvm/amdgcn/bitcode` is passed to hipcc when `<ROCm>/amdgcn` is absent.
 - `123797f7`'s Test Plan line "With `FORCE_CUDA=1` it fails in hipcc as before": it still fails, but now on the missing hipSPARSE header rather than the device libraries, because the build passes the device-lib path.
 - `123797f7` title "Fall back to the CPU build when hipcc cannot compile" stays accurate.
+- `845ee50d` (added by porter round 4, windows-gfx1151): "so the Windows SDK packages build the GPU extension without extra setup" was false at that commit; the probe had no `-std=` and failed on rocPRIM's C++17 `#error` on Windows. True from `d3b67c35`. Its "PyTorch's include paths and HIP flags" also omits the language standard, which the probe passes from `d3b67c35` on; the squashed message should say the probe uses BuildExtension's standard.
 
 ## Lesson for cuda-to-rocm: ask hipcc whether a torch extension can build; do not list ROCm paths
 Belongs in `strategy-b-torch.md`, near "Keep compiler flags in the right command-line namespace". A `setup.py` that decides between a GPU and a CPU build under ROCm PyTorch is tempted to check files: `hipcc` exists, the device bitcode is in `<ROCm>/amdgcn/bitcode`. That misses what the build really needs, which is whatever torch's HIP headers include: `ATen/hip/HIPContext.h` pulls in the hipSPARSE, hipBLAS, hipBLASLt and hipSOLVER headers, which a core-only ROCm (the ROCm SDK `core` Python package, or a runtime-dev install without the hip* library dev packages) lacks. Ask the compiler instead: `hipcc -E` a two-line file (`#include <ATen/hip/HIPContext.h>`, `#include <c10/hip/HIPGuard.h>`) with `torch.utils.cpp_extension.include_paths(device_type="cuda")`, `COMMON_HIP_FLAGS` and `COMMON_HIPCC_FLAGS`. The driver refuses to start without the device libraries even for `-E`, and a missing header stops the preprocessor, so one call covers both in under half a second (a full `-c` is about 5 s), and its first error line tells the user what is missing. (rl)
@@ -429,4 +430,42 @@ What a porter must change: make the probe in `_hipcc_error()` pass the same C++ 
 CUDA gate: not rerun (host has no nvcc; passed at this head on linux-gfx950). Any fix touches setup.py, so the nvcc compile check owes a rerun at the new head.
 
 ## Lesson for cuda-to-rocm: a hipcc preprocess probe must carry the build's -std on Windows
-Belongs in `strategy-b-torch.md` next to the "ask hipcc" probe lesson. A `hipcc -E` capability probe that omits the language standard works on Linux (hipcc defaults to a modern standard) and fails on Windows with rocPRIM's `#error "rocPRIM requires at least C++17"`, which sends a documented install down the CPU-only path with a plausible-looking reason. Pass the same `-std=` the real compile gets. (rl)
+Belongs in `strategy-b-torch.md` next to the "ask hipcc" probe lesson. A `hipcc -E` capability probe that omits the language standard works on Linux (hipcc defaults to a modern standard) and fails on Windows with rocPRIM's `#error "rocPRIM requires at least C++17"`, which sends a documented install down the CPU-only path with a plausible-looking reason. Pass the same `-std=` the real compile gets. Derive it the way `torch.utils.cpp_extension.BuildExtension` does for the installed torch rather than hard-coding one: torch 2.11 adds `-std=c++17` (`cpp_flag = cpp_flag_prefix + 'c++17'`, and `cuda_cflags = ['-std=c++17']` on the Windows ninja path), torch 2.12 and later `-std=c++20`. (rl)
+
+## Porter round 4 (2026-11-20, windows-gfx1151, Radeon 8060S APU): Windows validation failure, probe C++ standard
+
+Fork `moat-port` at `d3b67c350ca2` = `845ee50d` + one commit, `[ROCm] Preprocess the hipcc check with the build's C++ standard` (`setup.py` +6/-3, `test/test_setup.py` +36). No amend, no rebase, plain push. CUDA branch of `_should_build_cuda()` byte-identical (`_hipcc_error()` is reached only from the ROCm branch); `.github/` and Triton files untouched.
+
+### Design
+`_hipcc_error()` now passes `"-std=c++20" if _torch_extension_requires_cxx20() else "-std=c++17"` to `hipcc -E`. How BuildExtension picks the standard, read from the sources:
+- torch 2.11.0 (`v2.11.0` `torch/utils/cpp_extension.py`, fetched read-only with `gh api ... contents/...?ref=v2.11.0`): `append_std17_if_no_std_present` uses `cpp_flag = cpp_flag_prefix + 'c++17'` (l.770, Unix non-ninja path: applied to the hipcc flags too); Windows ninja HIP `cuda_cflags = ['-std=c++17']` (l.1101); Unix ninja HIP `cuda_flags + ['-std=c++17']` (l.2880).
+- torch 2.12.0 (installed here) and `main`: the same three places with `c++20`.
+- Windows non-ninja HIP path (`win_hip_flags`) passes no `-std` at all in either version; that is torch's own gap and would make the build fail loudly, not silently fall back; the default (ninja) path is what pip uses.
+So the standard depends only on the torch release, and setup.py already detects it for the host flags with `_torch_extension_requires_cxx20()` (regex on `BuildExtension.build_extensions` source for `cpp_flag = ... 'c++20'`, fallback `torch.__config__.show()`). Reusing it keeps one detection in the file. Not added to `extra_compile_args["nvcc"]`, so the build lines and `test_build_extension_owns_cxx_standard_or_uses_alias` are unchanged. Other build-only flags (`-O3`, `-DWITH_HIP`, `-DTORCH_EXTENSION_NAME`, `-fms-runtime-lib=dll` which torch adds on Windows when it writes the ninja file) do not decide whether the two probe headers preprocess.
+
+Why Linux passed: Linux hipcc's default standard is C++17 (clang's GNU default), which rocPRIM accepts, so probe and build agreed by accident (round-3 review measured `__cplusplus` 201703L in the probe).
+
+### Test
+`test_hipcc_probe_uses_build_cxx_standard[True--std=c++20|False--std=c++17]`: fake `ROCM_HOME/bin/hipcc{,.exe}`, `subprocess.run` replaced by a hipcc stand-in that returns rocPRIM's `#error` unless a `-std=` is present (the Windows behaviour), asserts `_hipcc_error() is None` and that exactly the build's standard was passed. Runs on any platform, no GPU, no ROCm. Against `845ee50d`'s setup.py (`git stash push setup.py`): 2 failed; with the fix: 2 passed.
+
+### Evidence on this host
+Env: `source agent_space/rl_env.sh` (torch_venv torch 2.12.0+rocm7.14.0a20260519, hip 7.13.26190, rocm-sdk-devel 7.14.0a20260519, `PYTORCH_ROCM_ARCH=gfx1151`), then `unset FORCE_CUDA HIP_DEVICE_LIB_PATH` (verified empty). `ulimit -c 0`, single runs.
+
+- Probe directly (setup.py loaded with `importlib`): `_hipcc_error()` -> None in 0.8 s, `_torch_extension_requires_cxx20()` True, `_should_build_cuda()` True.
+- Documented install: `utils/timeit.sh rl compile -- $TORCH_PY -m pip install -v --no-build-isolation --no-deps -e projects/rl/src` rc=0 (log `agent_space/rllogs/build4.log`), no "Skipping TorchRL GPU extension build" line; `build/.torchrl_build_info.json` `"build_cuda": true, "force_cuda": false`. hipcc line: `hipcc.exe -std=c++20 -Xcompiler -D__HIP_PLATFORM_AMD__=1 ... -c ...\torchrl\csrc\hip_segment_tree.hip -o ...hip_segment_tree.obj ... -O3 -DWITH_HIP --rocm-device-lib-path=...\_rocm_sdk_devel\lib\llvm\amdgcn\bitcode -DTORCH_API_INCLUDE_EXTENSION_H -DTORCH_EXTENSION_NAME=_torchrl --offload-arch=gfx1151 -fno-gpu-rdc`.
+- `torchrl._torchrl`: `CudaMinSegmentTreeFp32`, `CudaMinSegmentTreeFp64`, `CudaSumSegmentTreeFp32`, `CudaSumSegmentTreeFp64`.
+
+| command (from the worktree root via `utils/timeit.sh rl test --`, `pytest -q -rs --rootdir=projects/rl/src`) | result |
+|---|---|
+| `test/rb/test_prioritized.py` | 36 passed, 0 skipped |
+| `test/rb/test_storages.py -k cuda` | 8 passed, 162 deselected, 0 skipped |
+| `TORCHRL_SMOKE_REQUIRE_CUDA_EXT=1 ... test/smoke_test.py` | 2 passed |
+| `test/test_setup.py -k "not install_no_deps"` | 21 passed, 2 skipped (`test_setup.py:339` "checks the Unix compiler flags"), 2 deselected; `test_hipcc_probe_agrees_with_gpu_build` now passes |
+
+Negative case, without a new environment: the torch_venv already carries the core-only package `_rocm_sdk_core` (include = `CL amd_comgr hip hsa hsakmt`, `bin/hipcc.exe`, `lib/llvm/amdgcn/bitcode`, no root `amdgcn`). With `ROCM_PATH=HIP_PATH=<site-packages>/_rocm_sdk_core` torch's `ROCM_HOME` is core, `_hip_device_lib_args()` returns the core bitcode flag, and `_should_build_cuda()` returns False with `Skipping TorchRL GPU extension build because hipcc from the ROCm installation at .../_rocm_sdk_core cannot compile it: ...\torch\include\ATen/hip\HIPContextLight.h:11:10: fatal error: 'hipsparse/hipsparse.h' file not found. Set FORCE_CUDA=1 to build anyway.` Gate decision only; the CPU-fallback build itself was shown on Linux in round 3 and is the Linux revalidators' to repeat.
+
+Lint: black 22.3.0 and flake8 6.1.0 (the pre-commit pins, installed with `pip --target agent_space/tmp/lint`) clean on both files; `jargon.py --port rl` clean (needed a local `main` branch in the fork clone: `git branch main origin/main`); `prose.py` clean on the message.
+
+### Owed
+- nvcc compile check at `d3b67c35` (the change touches setup.py only in the ROCm-only probe, but the rule is to rerun it before presenting).
+- Re-review of the delta (head moved at `review-passed`), then revalidation on linux-gfx942, linux-gfx1100 and this host.
