@@ -936,3 +936,113 @@ relerr(first call) = 4.62e+03          relerr(second call) = 1.29e-07
 Not run on CUDA: the conv tables (`tests/spconv`, `tests/submconv`) and the examples.
 
 Script (primary host, not in the repo): `agent_space/pn/v100-flexgemm.sh`.
+
+## Validation 2026-11-21 (linux-gfx1100 fleet job, AMD Radeon Pro W7800 48GB, wave32; head 8592d5fcb68855864c8a82274d3033ae651f8027)
+
+**Result: validation-failed on linux-gfx1100, for one port finding.** Every FlexGEMM kernel is correct on wave32. The fault: the four `tests/submconv/{inf,train}_{ablation,benchmark}.py` scripts in plan section C fail before any GPU work on this GPU. They set `flex_gemm.kernels.triton.spconv.config.allow_tf32 = True`, so the spconv kernels call `tl.dot(..., input_precision='tf32')`. Triton 3.9's AMD backend adds `'tf32'` to the allowed precisions only when `arch == 'gfx942'` (`triton/backends/amd/compiler.py:367-371`, "Enable XF32 (TF32) for CDNA3 GPUs"); everywhere else the allowed set is `('ieee', 'bf16x3', 'bf16x6')`. The result is `triton.compiler.errors.CompilationError: ... input_precision must be one of ('ieee', 'bf16x3', 'bf16x6'). Got tf32`, raised from inside autotuning (`Autotuner._bench` catches only `OutOfResources`, `CompileTimeAssertionFailure` and `PTXASError`). It happens with fp16 operands too, because the string is checked before the dtype matters. So these scripts fail on gfx90a, gfx950 and every RDNA part; the gfx942-only evidence hid it. The library default is safe (`allow_tf32 = not torch.version.hip`), but the public knob crashes on every non-gfx942 AMD target. With only that script line flipped to `allow_tf32 = False` (driver switch, no fork edit), all four scripts complete (below), so tf32 is the only obstacle. Porter's choice of fix: for example, pass `'tf32'` only where the target accepts it (the HIP branch of the kernels or `config.py`), or have the scripts follow `config.allow_tf32`. Not fixed here (validator).
+
+### Environment and build
+
+Radeon Pro W7800 48GB, gfx1100, `warp_size` 32, 44.98 GiB visible, GPU 0 (dispatcher pin `HIP_VISIBLE_DEVICES=0`). TheRock ROCm 10.2.0a20261022 wheels in the job venv from `https://nightly.repo.amd.com/rocm/whl-next/`: `torch==2.16.0a0+rocm10.2.0a20261022`, `amd-torch-device-gfx1100==2.16.0a0+rocm10.2.0a20261022`, `triton==3.9.0+gitfc8d31a5.rocm10.2.0a20261022`, `rocm[libraries,devel]==10.2.0a20261022`, `rocm-sdk-device-gfx1100==10.2.0a20261022` (installed with `$FLEET_VENV/bin/python -m pip`). The job's `venv-base-links` entries for the base env's ROCm 10.1 and Triton were moved aside. `python -m rocm_sdk test`: 27 OK. Extra test deps: `matplotlib`, `tqdm`, `spconv-triton 1.0.0` (`--no-deps`). `ulimit -c 0`; job-local `HOME` (the setup.py-installed `~/.flex_gemm/autotune_cache.json` held only the A100 and MI300X entries, so the autotuner started cold for this GPU) and `TRITON_CACHE_DIR`.
+
+```
+export ROCM_HOME=$(python -m rocm_sdk path --root) ROCM_PATH=$ROCM_HOME HIP_PATH=$ROCM_HOME GPU_ARCHS=gfx1100 PYTORCH_ROCM_ARCH=gfx1100
+utils/timeit.sh FlexGEMM compile -- $FLEET_VENV/bin/python -m pip install -v ./projects/FlexGEMM/src --no-build-isolation --no-deps --force-reinstall   # Successfully installed flex_gemm-1.0.0
+```
+
+hipcc got `-std=c++20 --offload-arch=gfx1100 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1`; no compiler warnings. Every script ran from its own directory through `utils/timeit.sh FlexGEMM test -- timeout 5400 bash -c "cd <dir> && $FLEET_VENV/bin/python <script>"`. Third-party columns went through the gfx942 validation's `run_tp.py` driver (spconv to spconv-triton, torchsparse/fvdb/warpconvnet removed, `DROP_SPCONV=1` drops spconv). This run added four switches to it, each of which only comments out or rewrites lines of the test script: `MAX_RES`/`MIN_RES` (drop config rows), `BATCH1` (set `'B'` to 1 on the kept rows), `DROP_EXTRA=dense` (drop the torch dense column) and `TF32_OFF` (the line `allow_tf32 = True` becomes False). `git -C projects/FlexGEMM/src status --porcelain` was clean after the run.
+
+### (1) Deferred `flexgemm-wave-barrier-syncwarp` on wave32: bit-exact, no fault
+
+- **The neighbour-cache tests do not exercise that kernel.** The round-1 note "every neighbour-cache test (which runs `reduce_code_kernel`) passes bit-exact" is wrong. `tests/{spconv,submconv}/neighbor_cache.py` assert `torch.equal` on `neighbor_map` only. `_compute_neighbor_cache` calls `neighbor_map_post_process_for_masked_implicit_gemm_1`/`_1_no_bwd`. `reduce_code_kernel` (the `__syncwarp` loop, `migemm_neighmap_pp.cu:246-297`) runs only in `..._2`, which `compute_kernel_idx` calls lazily from the masked-GEMM conv paths with `block_size = B1`. Both neighbour-cache scripts still pass here (rc 0, RES up to 512; same as wave64).
+- **Direct check** (`agent_space/val/reduce_check.py`, job-local). It calls `kernels.cuda.neighbor_map_post_process_for_masked_implicit_gemm_2` and compares with a torch reference: per-block OR of `gray_code[sorted_idx]`, popcount cumsum, and set-bit positions in ascending order. Inputs: 48 sources, namely real `gray_code`/`sorted_idx` from submanifold and strided sparse-conv neighbour caches (fwd and bwd) at RES 8..256, plus random 27-bit, random 32-bit and one-bit-per-element codes at N in {1, 31, 32, 33, 255, 256, 257, 1000, 65537, 2^20}. Block sizes 2..256 (on wave32 every size from 16 up runs the warp-level iterations), 20 repetitions each. **7680/7680 bit-exact.** Negative control: a reference with each block's last element zeroed differs from the kernel in 85 of 155 cases (the rest are dense masks where that element adds no new bit), so the comparison is sensitive.
+- **ISA** (gfx1100 code object unbundled from `migemm_neighmap_pp.o`, `llvm-objdump -d`): in the warp-level loop every iteration is `ds_load_b32 buf[tid+cur_len]; ds_load_b32 buf[tid]; s_waitcnt lgkmcnt(0); v_or_b32; ds_store_b32`. The next iteration's loads follow the previous store in program order and are not hoisted above it. LDS operations from one wave complete in order, and on wave32 the branch `threadIdx.x < 32` is exactly one wave. So the weaker `__builtin_amdgcn_wave_barrier()` stand-in is correct with this compiler on wave32, as on wave64.
+- The masked GEMMs that consume it (`migemm`, `migemmk`) agree with the other algorithms and with float64 truth in every conv run below. **No wave32 fault; nothing to bring back to Jeff on this item.**
+
+### (2) Triton fp32 configs and the 64 KB LDS limit: nothing fails, nothing near the limit
+
+- `max_shared_mem` reported by Triton for this GPU: 65,536. The spconv list in use is the `'hip'` list (5 configs), because no device key matches "AMD Radeon Pro W7800 48GB".
+- Every config forced alone (`agent_space/val/cfg_probe.py`). Each of the 31 spconv `TritonPersistentCacheAutotuner` kernels was given a one-entry config list, so no autotuner could absorb an error, then all four Triton algorithms ran forward plus backward, submanifold and strided (stride 2, padding 1) sparse conv, fp32 and fp16, sphere RES=64, C=256 (N=15,192). Result: **80/80 runs OK**, compared against EXPLICIT_GEMM in float64 (relative error over each output's max, below 1e-3 for fp32 and 2e-2 for fp16).
+- Compiled LDS (`CompiledKernel.metadata.shared`, 362 kernels): the largest is **33,792 B**. That is the `B1=256, B2=256, BK=16, num_warps=8, num_stages=2` config at fp32 (32,768-33,792 B; its fp16 build uses 16,384-17,408 B). Triton's AMD backend keeps one LDS stage at `num_stages=2`, so the plan's "64 KB of operand tiles" estimate never materializes.
+- What the autotuner would do: `TritonPersistentCacheAutotuner.run` benchmarks through Triton's `Autotuner._bench`, which in Triton 3.9 catches `OutOfResources` (also `CompileTimeAssertionFailure`, `PTXASError`) and scores the config `inf`. So the plan's "FlexGEMM's autotuner does not catch `OutOfResources`" holds only for the single-config path (a one-entry list, or a config loaded from the persisted cache, launches without `_bench`) and if every config fails (`min` then returns an `inf` config, whose launch raises). Neither arises here. Any other compile error (the tf32 finding above) propagates out of autotuning uncaught.
+- Autotuned fp32 runs (`agent_space/val/lds_probe.py`, same shapes, normal autotuning): fp32 relative error 3.9e-7 to 3.2e-6 on output, dfeat, dweight and dbias for every algorithm; fp16 3.1e-4 to 5.8e-4.
+
+### (3) Two-dimensional grid_sample launch, strict per-config driver, large shapes
+
+`agent_space/val/allcfg.py` is rebuilt from the round-3 description (the round-3 copy was job-local). It launches the raw JIT kernel (no autotuner) once per config with the `flat_grid` grid. Data: float32, N=65,536, uint32 indices with every 7th row's first neighbour 0xffffffff; forward output prefilled with NaN, backward output zeros; float64 torch reference (chunked), tolerance 1e-5 x reference max, NaN outputs counted. This GPU has 45 GiB, so the round-3 list ran in full, including M=134,217,728:
+
+```
+bwd M=1048576   C=1024 V=8: 12/12 OK  grids (3728271, 9)..(4067204, 33), overrun <= 13, err 2.1e-05 (tol 3.7e-04)
+bwd M=4194304   C=8    V=8: 12/12 OK  overrun <= 7, err 6.2e-05 (tol 6.4e-04)
+bwd M=2097152   C=1024 V=8: 12/12 OK  grids (3947581, 17)..(4129777, 65), overrun <= 49, err 4.5e-05 (tol 5.5e-04)
+bwd M=270003    C=1000 V=8: 12/12 OK  overrun <= 8, err 6.9e-06
+bwd M=134217728 C=8    V=8: cfg2, cfg11 OK  (4177984, 257) overrun 64, (4067204, 33); err 1.6e-03 (tol 3.6e-03)
+fwd M=2097152   C=1024 V=8: 12/12 OK  grids (2796203, 3)..(3728271, 9), overrun <= 7, err 1.7e-06, nan 0
+fwd M=270003    C=1000 V=8: 12/12 OK  partial last M tile, err 1.9e-06, nan 0
+fwd M=4194303   C=64   V=8: cfg2 OK   (4194303, 1), last unsplit size
+fwd M=4194304   C=64   V=8: cfg2 OK   (2097152, 2), first split size
+fwd M=4194305   C=64   V=8: cfg2 OK   (2097153, 2), overrun 1
+fwd M=134217728 C=8    V=8: cfg2, cfg11 OK  err 1.7e-06, nan 0
+```
+
+Negative control: a copy of the installed package with the forward kernel's `block_id = tl.program_id(axis=0)` restored fails `fwd M=4194305 C=64 V=8 cfg2` with nan=134,217,728, the same count as round 3. FlexGEMM's configs are all `num_warps=2`, which is 64 work-items on wave32, so axis 0 (at most 4,194,303 programs) stays far below 2^32 work-items, and the largest launch, (4129777, 65) x 64, is about 2^34 work-items in total.
+
+### A. Asserting tests (unchanged)
+
+| Script | Result |
+|---|---|
+| `tests/hashmap.py` | rc 0, 8 s |
+| `tests/serialize.py` | rc 0, 204 s (z_order + hilbert, cpu + cuda, RES up to 2048) |
+| `tests/spconv/out_coords.py` | rc 0, 133 s |
+| `tests/spconv/neighbor_cache.py` | rc 0, 25 s |
+| `tests/submconv/neighbor_cache.py` | rc 0, 6 s |
+| `tests/grid_sample.py` | rc 0, 66 s; all four tables (Nearest/Trilinear Fwd/Bwd) through RES=2048; all 72 err_max/err_mean rows 0 per mille in both columns |
+
+### B. Conv correctness tables (fp16)
+
+On this GPU the err_max column is larger than on gfx942 for every algorithm and for the reference columns alike. It is the distance between two fp16 results of equal accuracy, not a FlexGEMM error. Float64 ground truth (`agent_space/val/refcheck.py`, `bwdcheck.py`; same generators as the tests, batch reduced to fit float64; `calc_err` from `tests/utils.py`, per mille):
+
+```
+forward, sparse conv K=3 S=1   egemm(test reference)  igemm   migemmk   truth rounded to fp16
+RES=8  C=1024 B=16             10.4                   10.8    8.4       0.5
+RES=32 C=1024 B=2              11.1                   11.4    11.4      0.5
+RES=64 C=512  B=1               4.3                    4.6    4.6       0.5
+submanifold backward (dfeat / dweight / dbias)
+RES=8   C=1024 B=16  egemm 10.2/1.3/0.5   igemm=igemmk=migemm=migemmk 11.0/1.2/0.5
+RES=64  C=1024 B=1   egemm 10.7/13.5/0.5  igemm..migemmk 10.7/11.2/0.5
+RES=128 C=512  B=1   egemm 4.7/79.6/0.5   igemm 4.8/87.0/0.5  igemmk 4.8/87.0  migemm 4.9/87.0  migemmk 4.9/41.2
+```
+
+torch's fp16 matmul is accurate here (0.4 per mille relative to max |r|, K up to 27,648). The `min(abs, rel)` metric weighs outputs near magnitude 1, where both fp32-accumulated results carry absolute errors of about 0.01 from cancellation in sums of magnitude about 600. The test reference and every FlexGEMM algorithm sit at the same distance from truth; mean errors are 0.2 per mille.
+
+- `tests/spconv/fwd.py`: with spconv-triton it stops at `spconv_triton/pytorch/conv.py:377 AssertionError: only support reuse subm indices` (as on gfx942). With `DROP_SPCONV=1`: rc 0, 14 rows RES 8..512, 819 s cold. err_max: dense = igemm = igemmk = migemm = migemmk on every row (16-18 per mille at C=1024 K=3, 5-6 at K=2, 8/3 at RES=128, 4/2 at RES=256, 2/2 at RES=512; dense N/A from RES=256 by design); err_mean 0 everywhere. **Pass** (err_max <= 2x dense, err_mean <= 5).
+- `tests/submconv/fwd.py` (spconv-triton kept): rc 1 at the last row, RES=512 C=128 B=4. The EXPLICIT_GEMM reference's im2col (N x 27 x 128 fp16, about 40 GB) does not fit this 45 GiB GPU; `benchmark_kernel` returns `None` and the script's ratio raises `TypeError`, which loses the whole table. Rerun with `MAX_RES=256`: rc 0, 6 rows. spconv-triton and all four algorithms equal on every row (17, 16, 18, 15, 8, 4 per mille), err_mean 0. **Pass**; RES=512 not runnable on this card (reference capacity).
+- `tests/submconv/bwd.py` (spconv-triton kept): rc 0, 7 rows, 585 s. err_mean 0 for every column on every row. err_max: igemm/igemmk/migemm/migemmk 40-60 per mille through RES=64 (spconv-triton the same, 40-60); RES=128: 186/571/203/571 (spconv-triton 203); RES=256: 324/1591/512/1587 (512); RES=512: 2682/948/2682/971 (1647). The independent third-party Triton implementation shows the same magnitudes, and the float64 check above puts FlexGEMM's gradients level with the test's own reference. **Pass.**
+- `tests/spconv/bwd.py`: the full run (rc 1, 1737 s) hit the reference OOM at row 9 (RES=128 K=3 C=512 B=4). The EXPLICIT_GEMM backward alone peaks at 36.8 GiB there (N=256,640, M=856,608, a 22 GiB im2col per pass), and `benchmark_kernel` keeps the previous result alive, so the row cannot fit. Rerun in parts:
+  - `MAX_RES=64`: rc 0, 8 rows, 343 s; err_mean 0 for all; err_max igemm 9-65, igemmk 7-65, migemm/migemmk 8-75, spconv-triton 8-75, dense 12-1689 per mille.
+  - `MIN_RES=128 MAX_RES=256 BATCH1=1 DROP_EXTRA=dense`: rc 0, 4 rows; err_mean 0. RES=128 K=3: spconv-triton 84, igemm 78, igemmk 121, migemm 84, migemmk 123; K=2: 8-9. RES=256 K=3: 359 / 259 / 1182 / 359 / 1166; K=2: 52 / 29 / 53 / 34 / 52.
+  - RES=512 at batch 1 still exceeds 45 GiB in the reference. Not runnable on this card.
+  - A `PYTORCH_HIP_ALLOC_CONF=expandable_segments:True` attempt made things worse: mapping OOM, then `hipErrorNoBinaryForGpu` from a later op. Recorded only as what not to try.
+  - **Pass** for every row this GPU can hold.
+
+### C. Examples, ablations, benchmarks
+
+- `examples/submconv.py`: rc 0, 12 s.
+- `examples/spconv.py`: rc 1, `ValueError: too many values to unpack (expected 2)` at line 20, the upstream bug (round-1 question 1, still Jeff's call). The corrected copy (`agent_space/val/example_spconv_fixed.py`, line 20 only, plus a print) gives output (51664, 256), finite, with finite weight and bias gradients.
+- Unchanged, `inf_ablation.py`, `train_ablation.py`, `inf_benchmark.py`, `train_benchmark.py` (the last two with and without the spconv-triton column) all rc 1 in 3-7 s with the tf32 `CompilationError` (the finding above).
+- `TF32_OFF=1`:
+  - `inf_ablation.py` rc 0 (100 s), RES=512 L=2: egemm 147.63 ms, igemm 37.57, igemm_splitk 37.59, migemm 20.91, migemm_splitk 20.92.
+  - `train_ablation.py` rc 0 (147 s), RES=256 C=256: egemm 201.12, igemm 102.55, igemm_splitk 94.41, migemm 58.88, migemm_splitk 53.38; RES=512: migemm_splitk 60.87.
+  - `inf/train_benchmark.py` with spconv-triton: tables complete, then the known plotting `ZeroDivisionError` (driver artifact, as on gfx942). Inference RES=256: spconv-triton 32.40 ms, flex_gemm 20.39; RES=512: 40.02 / 23.70. Training RES=256: 94.98 / 53.45.
+  - With `DROP_SPCONV=1`: both rc 0; flex_gemm inference RES=512 23.53 ms, training RES=256 53.16 ms.
+  - These are the RDNA tuning baseline from the `'hip'` list, not a gate.
+
+### Other gates
+
+- CUDA compile gate: covered at this head by the real-nvcc check at bcf7c6f (the compiled sources are identical, per the gfx942 validation) and by the V100 run at 8592d5fc. This host has no CUDA toolkit.
+- Documentation: README "AMD GPUs (ROCm)" is present at this head and names `gfx1100;gfx1201` in its `GPU_ARCHS` example.
+- `python3 utils/jargon.py --port FlexGEMM`: clean (needed local `main`/`moat-port` branches in the fork clone).
+
+## Lesson for cuda-to-rocm: Triton on AMD accepts input_precision='tf32' only on gfx942
+
+Belongs where Triton porting faults are listed. Symptom: a Triton kernel that runs on CUDA and on MI300X fails to compile on every other AMD GPU (MI200, MI355, every RDNA part) with `CompilationError: ... input_precision must be one of ('ieee', 'bf16x3', 'bf16x6'). Got tf32`. It is raised from inside autotuning, which does not catch it, and it happens even when the `tl.dot` operands are fp16. Cause: Triton's AMD backend (3.9; `backends/amd/compiler.py`, "Enable XF32 (TF32) for CDNA3 GPUs") adds `'tf32'` to the allowed dot precisions only when the target arch is `gfx942`. A project that exposes an `allow_tf32` switch and passes `input_precision='tf32' if allow_tf32 else 'ieee'` breaks wherever a user, a benchmark script or a default turns the switch on, so validating only on MI300X hides it. Fix: choose the precision from the target, for example `'tf32'` only off HIP or when `triton.runtime.driver.active.get_current_target().arch == 'gfx942'`, and `'ieee'` otherwise; do not rely on the default alone. (FlexGEMM)
