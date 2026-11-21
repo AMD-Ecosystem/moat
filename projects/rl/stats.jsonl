@@ -23,3 +23,5 @@
 {"kind":"session","ts":"2026-11-21T00:28:24Z","epoch":1795220904.989017,"event":"start","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-11-21T00:35:55Z","epoch":1795221355.962289,"event":"end","platform":"linux-gfx942"}
 {"kind":"phase","ts":"2026-11-21T00:48:17Z","phase":"compile","seconds":45.517,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300b-20261120-163815-fix2-rl-prompt/venv/bin/python -m pip install -v --no-build-isolation --no-deps -e projects/rl/src"}
+{"kind":"session","ts":"2026-11-21T00:56:00Z","epoch":1795222560.816812,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-21T01:04:27Z","epoch":1795223067.15562,"event":"end","platform":"linux-gfx942"}
