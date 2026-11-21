@@ -1221,3 +1221,20 @@ Environment: GPU 0 (pin `HIP_VISIBLE_DEVICES=0`), the job venv with the TheRock 
 - Documentation: README "AMD GPUs (ROCm)" is present and unchanged by the delta.
 - `python3 utils/jargon.py --port FlexGEMM`: clean (the porter checked before the push, the reviewer checked at this head).
 - `git -C projects/FlexGEMM/src status --porcelain`: clean after the run (benchmark PNGs removed).
+
+## CUDA run of the Triton spconv path with `allow_tf32` on (2026-11-21, head ab4245582c7ecdbe9ed687577d00c39d14f9de39)
+
+Closes the open item from the round-4 review and the linux-gfx1100 validation ("no NVIDIA run of a Triton spconv conv with `allow_tf32 = True` at ab42455"). Run by the dispatching session on a Tesla V100-SXM2-32GB (driver 575.57.08, CUDA toolkit 12.9, torch 2.14.1+cu126, Triton 3.8.0), `BUILD_TARGET=cuda`, `TORCH_CUDA_ARCH_LIST=7.0`, a clean clone of `moat-port` at ab42455 built with `pip install . --no-build-isolation --no-deps`, job-local `HOME` and `TRITON_CACHE_DIR` (cold autotune cache).
+
+- `config.TF32_PRECISION` is `constexpr[tf32]` on CUDA: the kernels make upstream's request.
+- A submanifold conv (RES=32, C=64, fp32, forward and backward) with the knob off and on, relative error of out / dfeats / dweight / dbias against a float64 EXPLICIT_GEMM reference:
+
+```
+implicit_gemm               tf32 False  1.05e-06 1.08e-06 1.93e-06 1.19e-07
+implicit_gemm               tf32 True   1.05e-06 1.08e-06 1.93e-06 1.19e-07
+masked_implicit_gemm_splitk tf32 False  2.70e-07 2.58e-07 5.07e-07 1.19e-07
+masked_implicit_gemm_splitk tf32 True   2.70e-07 2.75e-07 5.07e-07 1.19e-07
+```
+
+  Both settings compile and run. This GPU has no tensor cores, so `tf32` does not lower precision here; the run shows the request is accepted and the result is correct, not what TF32 accuracy looks like on newer NVIDIA hardware.
+- `tests/submconv/inf_ablation.py` unmodified (`allow_tf32 = True`): 3 of 7 resolutions finished without error in 22 minutes of cold autotuning (478 s, 284 s, 574 s per resolution), then the 25-minute cap ended the run. Not a failure of the port; a complete run needs about an hour on this GPU and was not repeated.
