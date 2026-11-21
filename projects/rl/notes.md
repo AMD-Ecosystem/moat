@@ -498,3 +498,42 @@ Validator role's CUDA compile check only (2026-11-21, linux-gfx950 fleet job, mi
 4. **`test/test_setup.py` on CUDA torch**: on `git archive d3b67c35`, `-k "not install_no_deps"`: **22 passed, 1 skipped** (`test_hipcc_probe_agrees_with_gpu_build`, "needs ROCm PyTorch", by design), 2 deselected; the two new `test_hipcc_probe_uses_build_cxx_standard` cases pass on CUDA torch. Whole file from a git checkout detached at `d3b67c35`, `TORCH_CUDA_ARCH_LIST=9.0`: **24 passed, 1 skipped**, 55 s; both `install_no_deps` cases built the CUDA extension with nvcc (installed `torchrl 0.15.0+gd3b67c35`, 64 `CudaSegmentTree` symbols).
 
 The owed "nvcc compile check at `d3b67c35`" from porter round 4 is satisfied. Scratch trees and logs in the job directory (`nvcc/`, container-local).
+
+## Validation 2026-11-21 (validator, linux-gfx950 fleet job, MI355X, wave64)
+
+Head `d3b67c350ca22523b4c768af9b5d24a42ea79c09` = reviewed_sha; fresh clone of `moat-port`, `git -C projects/rl/src rev-parse HEAD` matches and `git status --porcelain` is empty at the end (integrity gate clean). GPU: MI355X, `gfx950:sramecc+:xnack-`, dispatcher pin `HIP_VISIBLE_DEVICES=3` only, `ulimit -c 0`, `timeout` around every test command. First validation recorded for this platform.
+
+Environment: job venv, `zz-base-links.pth` (base-image ROCm 10.1) moved to `$FLEET_VENV/zz-base-links.pth.disabled`; then
+```
+pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple \
+    "torch[device-gfx950]==2.15.0+rocm10.2.0" "rocm[libraries,devel]==10.2.0" "rocm-sdk-device-gfx950==10.2.0"
+rocm-sdk init
+pip install "pybind11[global]" "pyvers>=0.2.3" "hoptorch>=0.1.4" "tensordict>=0.15.2,<0.16.0" pyyaml scipy psutil \
+    pytest-instafail pytest-mock pytest-asyncio pytest-benchmark pytest-timeout gymnasium setuptools_scm ninja
+```
+torch 2.15.0+rocm10.2.0, `torch.version.hip` 7.17.26434, `ROCM_HOME` = `_rocm_sdk_devel`.
+
+Build: `PYTORCH_ROCM_ARCH=gfx950 MAX_JOBS=128 $FLEET_VENV/bin/python -m pip install -v --no-build-isolation --no-deps -e projects/rl/src` (via `timeit.sh rl compile`), rc=0, "Successfully installed torchrl-0.15.0+gd3b67c35", no "Skipping TorchRL" line. `_rocm_sdk_devel/bin/hipcc` compiled `hip_segment_tree.hip` with `-DWITH_HIP --offload-arch=gfx950 -std=c++20`, no `--rocm-device-lib-path` (Linux devel has the root `amdgcn` link). Build info `"hip_version": "7.17.26434", "force_cuda": false, "build_cuda": true`. `torchrl._torchrl` exposes `Cuda{Min,Sum}SegmentTreeFp{32,64}` plus the CPU `{Min,Sum}SegmentTreeFp{32,64}`.
+
+| command (absolute paths, `--rootdir=projects/rl/src`, all via `timeit.sh rl test`) | result |
+|---|---|
+| `pytest -q -rs test/rb/test_prioritized.py` | 36 passed, 0 skipped |
+| `pytest -q -rs test/rb/test_storages.py -k cuda` | 8 passed, 162 deselected, 0 skipped |
+| `TORCHRL_SMOKE_REQUIRE_CUDA_EXT=1 pytest -q test/smoke_test.py` | 2 passed |
+| `pytest -q -rs test/test_setup.py -k "not install_no_deps"` | 23 passed, 2 deselected, 0 skipped (21 as before plus the two new `test_hipcc_probe_uses_build_cxx_standard` cases; `test_hipcc_probe_agrees_with_gpu_build` ran and passed) |
+| `pytest -q -rs test/rb -m gpu` | 53 passed, 1 skipped (`test_rb_distributed.py:413` ray required), 5508 deselected |
+| CPU regression: `HIP_VISIBLE_DEVICES= CUDA_VISIBLE_DEVICES= pytest -q test/rb -n 16` | 4500 passed, 1062 skipped, 0 failed |
+| whole file from the git clone: `PYTORCH_ROCM_ARCH=gfx950 pytest -q -rs test/test_setup.py` | 25 passed, 71 s (both `install_no_deps` cases build the GPU extension into the job venv; the test uninstalls `setuptools_scm`, so it was reinstalled and the editable install redone afterwards, binding checked) |
+
+No skip in the GPU runs says the extension was not built; counts match the gfx942 and gfx1100 validations at `845ee50d`.
+
+Core-only negative case (`_rocm_sdk_devel` moved out of site-packages, torch warns the devel payload is not expanded and `ROCM_HOME` prints `.../_rocm_sdk_core`; on a `git archive HEAD` copy, `FORCE_CUDA` and `HIP_DEVICE_LIB_PATH` unset):
+- `PYTORCH_ROCM_ARCH=gfx950 python setup.py build_ext --inplace`: **rc=0**, warning x3 `Skipping TorchRL GPU extension build because hipcc from the ROCm installation at .../_rocm_sdk_core cannot compile it: .../torch/include/ATen/hip/HIPContextLight.h:11:10: fatal error: 'hipsparse/hipsparse.h' file not found. Set FORCE_CUDA=1 to build anyway.`; no hipcc compile line; the `.so` has 0 `CudaSumSegmentTree` and 26 CPU `SumSegmentTree` dynamic symbols; build info `"build_cuda": false`.
+- `FORCE_CUDA=1`, same command: **rc=1**, hipcc stops at `HIPContextLight.h:11:10: fatal error: 'hipsparse/hipsparse.h' file not found`, `1 error generated when compiling for gfx950`. Loud, as forcing should be.
+- Devel restored afterwards (`ROCM_HOME` back to `_rocm_sdk_devel`).
+
+Triton RNN tests not run (outside the gate; question 0 unruled).
+
+CUDA gate: passed at this head on this host (see "CUDA compile check (nvcc) at d3b67c35").
+
+Finish checks: `python3 utils/jargon.py --port rl` clean; ROCm build documented in README.md, CONTRIBUTING.md and docs/source/index.rst (unchanged by the delta). Nothing pushed to the fork.
