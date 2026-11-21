@@ -364,3 +364,38 @@ torch 2.11.0+cu128 (`torch.version.cuda` 12.8, `torch.version.hip` None; the Tor
    - Whole file from a git checkout (`git clone` of the fork clone, detached at `845ee50d`, so `test_install_no_deps_has_nonzero_version` does not skip as "not a git checkout"), `TORCH_CUDA_ARCH_LIST=9.0 MAX_JOBS=64 python -m pytest -q -rs test/test_setup.py`: **22 passed, 1 skipped** (same ROCm-only test), 56 s. Both `install_no_deps` cases (editable and wheel) do a `pip install --no-deps --no-build-isolation` into `venv-cuda` and build the CUDA extension with nvcc: the installed `torchrl 0.15.0+g845ee50d` has 64 `CudaSegmentTree` symbols, build info `"build_cuda": true, "build_cuda_version": "12.8"`. The test uninstalls `setuptools_scm` from `venv-cuda` (its own behaviour, job-local env).
 
 Owed item from the round-3 review and the validation ("the mi355 nvcc build before presenting") is satisfied at `845ee50d`. Scratch trees and logs are in the job directory (`nvcc/`, container-local).
+## Validation 2026-11-21 (validator, linux-gfx1100 fleet job, Radeon Pro W7800, wave32)
+
+Head `845ee50d3feb81e21555cfa61dfa871df7eb935e` = reviewed_sha; fresh clone of `moat-port`, `git -C projects/rl/src rev-parse HEAD` matches and `git status --porcelain` is empty (integrity gate clean). GPU: AMD Radeon Pro W7800 48GB, gfx1100, `warp_size` 32, dispatcher pin `HIP_VISIBLE_DEVICES=2` only, `ulimit -c 0`, `timeout` around every GPU command.
+
+Environment: job venv, `zz-base-links.pth` (base-image ROCm 10.1) moved to `$FLEET_VENV/zz-base-links.pth.disabled`; then
+```
+pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple \
+    "torch[device-gfx1100]==2.15.0+rocm10.2.0" "rocm[libraries,devel]==10.2.0" "rocm-sdk-device-gfx1100==10.2.0"
+rocm-sdk init
+pip install "pybind11[global]" "pyvers>=0.2.3" "hoptorch>=0.1.4" "tensordict>=0.15.2,<0.16.0" pyyaml scipy psutil \
+    pytest-instafail pytest-mock pytest-asyncio pytest-benchmark pytest-timeout gymnasium setuptools_scm ninja
+```
+torch 2.15.0+rocm10.2.0 (pulls `amd-torch-device-gfx1100` and `amd-torch-device-gfx110x`), `torch.version.hip` 7.17.26434, triton 3.9.0+rocm10.2.0, `ROCM_HOME` = `_rocm_sdk_devel`.
+
+Build: `PYTORCH_ROCM_ARCH=gfx1100 MAX_JOBS=16 $FLEET_VENV/bin/python -m pip install -v --no-build-isolation --no-deps -e projects/rl/src` (via `timeit.sh rl compile`), rc=0, "Successfully installed torchrl-0.15.0+g845ee50d". Log shows `_rocm_sdk_devel/bin/hipcc ... -c .../torchrl/csrc/hip_segment_tree.hip ... -DWITH_HIP ... --offload-arch=gfx1100 -fno-gpu-rdc -std=c++20`. `torchrl._torchrl` exposes `CudaMinSegmentTreeFp32/Fp64` and `CudaSumSegmentTreeFp32/Fp64` (plus the CPU `{Min,Sum}SegmentTreeFp{32,64}`).
+
+| command (from the fork root, all via `timeit.sh rl test`) | result |
+|---|---|
+| `pytest -q -rs test/rb/test_prioritized.py` | 36 passed, 0 skipped |
+| `pytest -q -rs test/rb/test_storages.py -k cuda` | 8 passed, 162 deselected, 0 skipped |
+| `TORCHRL_SMOKE_REQUIRE_CUDA_EXT=1 pytest -q test/smoke_test.py` | 2 passed |
+| `pytest -q test/test_setup.py -k "not install_no_deps"` | 21 passed, 2 deselected |
+| `pytest -q -rs test/rb -m gpu` | 53 passed, 1 skipped (`test_rb_distributed.py:413` ray required) |
+| CPU regression: `HIP_VISIBLE_DEVICES= CUDA_VISIBLE_DEVICES= pytest -q test/rb` | 4500 passed, 1062 skipped, 0 failed |
+
+Identical counts to the gfx942 validation; no skip in the GPU runs says the extension was not built.
+
+Triton RNN tests (outside this port; upstream behaviour awaiting jeff's ruling, see porter round 1 question 0), reported separately:
+- `pytest -q -m gpu test/modules/test_rnn.py`: 38 failed, 10 passed, 225 deselected. Errors: `RuntimeError: Implicit conversion of CUDA __nv_tanhf device function has been dropped` (`tl.extra.cuda.libdevice.tanh`) and, for the two `test_{lstm,gru}_triton_precision_grad_parity[tf32x3]` cases, `AssertionError: input_precision must be one of ...`.
+- `pytest -q test/modules/test_dreamer_components.py -k "triton or Triton or gru or GRU"`: 8 failed, 19 passed, 230 deselected; all 8 the `__nv_tanhf` error.
+Same counts as the porter's MI300X baseline, so wave32 adds no failure.
+
+CUDA gate: `cuda-not-validated: no nvcc on this host (no /opt/conda/envs, no /usr/local/cuda) and the job venv carries ROCm torch only`; unchanged from the gfx942 validation, the mi355 nvcc build remains owed.
+
+Finish checks: `python3 utils/jargon.py --port rl` clean (after `git -C projects/rl/src fetch origin main:main` in the fresh clone); ROCm build documented in README.md (lines 470-472), CONTRIBUTING.md and docs/source/index.rst. Nothing pushed to the fork.
