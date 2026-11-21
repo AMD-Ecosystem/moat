@@ -907,3 +907,32 @@ GPU_ARCHS=<gfx> python -m pip install _deps/FlexGEMM/src --no-build-isolation --
 - Prerequisites in the environment: a ROCm build of torch (>= 2.14 needs no flag; the C++ standard comes from torch) with its device wheel for `<gfx>`, the matching ROCm Triton, `filelock`, `ninja`, `setuptools`. `GPU_ARCHS` is a `;`-separated list (`gfx942`, `gfx1100;gfx1201`); unset builds for the GPU in the machine.
 - Consume with `import flex_gemm` (ops in `flex_gemm.ops.spconv`, `flex_gemm.ops.grid_sample`, `flex_gemm.ops.serialize`). Nothing to link: the HIP extension is `flex_gemm.kernels.cuda`, inside the wheel.
 - The autotuner reads and writes `~/.flex_gemm/autotune_cache.json` (override with `FLEX_GEMM_AUTOTUNE_CACHE_PATH`; `FLEX_GEMM_USE_AUTOTUNE_CACHE=0` and `FLEX_GEMM_AUTOSAVE_AUTOTUNE_CACHE=0` turn it off). Point `HOME` or that variable at a job-local path on shared hosts.
+
+## CUDA run on real NVIDIA hardware (2026-11-20, V100, run by the orchestrating session; head 8592d5fc)
+
+Purpose: the port's shared changes (06873dd drops the forced C++17; e7d36f1 and 8592d5f change how the grid_sample launches are shaped) had been compiled with nvcc but never run on a CUDA GPU. Also a CUDA data point for the deferred `flexgemm-grid-sample-bwd-autotune-accumulates`.
+
+Setup: Tesla V100-SXM2-32GB (driver 575.57.08), nvcc 12.9 (V12.9.86), fresh venv with `torch==2.14.1+cu126` (Triton 3.8.0), fork `moat-port` at 8592d5fcb68855864c8a82274d3033ae651f8027, fresh HOME (cold autotune cache) and Triton cache.
+
+```
+export PATH=/usr/local/cuda/bin:$PATH CUDA_HOME=/usr/local/cuda TORCH_CUDA_ARCH_LIST="7.0" BUILD_TARGET=cuda
+pip install . --no-build-isolation --no-deps      # Successfully installed flex_gemm-1.0.0
+cd tests && python hashmap.py && python serialize.py && python grid_sample.py
+```
+
+Results:
+- Build: succeeds against torch 2.14.1 (the release where upstream main stops building because of its forced C++17).
+- `tests/hashmap.py` rc 0 (through res=1024, all key/value dtype pairs); `tests/serialize.py` rc 0 (z_order and hilbert, cpu and cuda, through res=2048).
+- `tests/grid_sample.py` rc 0: all four tables (nearest and trilinear, forward and backward) show err_max 0 and err_mean 0 per mille on every row from RES=8,C=2048 to RES=2048,C=8. So the launch helper's CUDA path (a 1-tuple grid, as upstream) gives correct results on CUDA.
+- First-call gradient defect, on CUDA: trilinear backward at a shape not in the autotune cache (RES=48, C=8), autograd through `grid_sample_3d` twice against the `grid_sample_3d_torch` reference:
+
+```
+max|g1| = 3.415e+04   max|g2| = 7.396   max|ref| = 7.396   ratio g1/g2 = 4617
+relerr(first call) = 4.62e+03          relerr(second call) = 1.29e-07
+```
+
+  The first call's gradient is about 4600 times too large and the second is correct, so the upstream defect is confirmed on NVIDIA hardware, not only on AMD. `tests/grid_sample.py` does not see it because its benchmark helper calls each kernel several times and compares a later call.
+
+Not run on CUDA: the conv tables (`tests/spconv`, `tests/submconv`) and the examples.
+
+Script (primary host, not in the repo): `agent_space/pn/v100-flexgemm.sh`.
