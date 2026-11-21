@@ -215,3 +215,76 @@ Reviewed `moat-port` at `123797f73094` (`c76657b0` + `123797f7` on upstream `1d9
 - Earlier lessons in this file ("nvcc's -G breaks a torch extension's HIP debug build", "TheRock torch release wheels need the device extra") still read as accurate.
 
 Environment restored: `_rocm_sdk_devel` moved back into site-packages, torch `ROCM_HOME` = `_rocm_sdk_devel`, `torchrl._torchrl` has `CudaSumSegmentTreeFp32`. Scratch builds were in `agent_space/rev2/` (`git archive 123797f7`); the fork working tree was not modified.
+
+## Porter round 3 (2026-11-21, linux-gfx942, fleet job, MI300X): review round 2 findings 1 and 2
+
+Fork `moat-port` at `845ee50d3feb` = `123797f7` + one commit, `[ROCm] Check that hipcc can preprocess the HIP headers` (5 files, +171/-96). No amend, no rebase, plain push.
+
+### Design: why a preprocess probe and not a third path list
+Two rounds of path checks were each incomplete for the same reason: they listed the files the porter thought a build needs, and the build needs whatever torch's HIP headers happen to include. Round 2 modeled the device libraries; the review showed the math-library headers (`HIPContextLight.h` includes hipsparse, hipblas, hipblaslt, hipsolver); a future torch can add another include, and system, SDK-wheel and Windows layouts each put things in different places. A list can only be kept correct by re-deriving it every time torch or the SDK changes.
+
+Options weighed:
+- (a) Extend the list with the four headers. Smallest diff, but it is the third list, it copies torch's include set into TorchRL, and it goes stale silently when torch changes.
+- (b) Full compile probe (`hipcc -c` of a file including `ATen/hip/HIPContext.h`), the round-1 reviewer's suggestion. Correct by construction, but measured 5.1 s on devel per call, and `_should_build_cuda()` runs 3 times per setup.py process and setup.py runs several times per pip install.
+- (c) **Preprocess probe (chosen)**: `hipcc -E` of `#include <ATen/hip/HIPContext.h>` + `#include <c10/hip/HIPGuard.h>` (the two ROCm-specific includes of the hipified kernel; `torch/extension.h` is the shared host requirement the CPU build already has), with the hipcc under `ROCM_HOME`, `include_paths(device_type="cuda")`, `COMMON_HIP_FLAGS` + `COMMON_HIPCC_FLAGS` and the `PYTORCH_ROCM_ARCH` targets, i.e. what the build will actually include and invoke. Measured on this host: devel rc=0 in 0.36-0.41 s; core rc=1 in 0.04 s with `clang++: error: cannot find ROCm device library` (the driver checks device libraries even for `-E`); core plus a device-lib path rc=1 in 0.2 s with `HIPContextLight.h:11:10: fatal error: 'hipsparse/hipsparse.h' file not found`. So preprocessing sees both halves at about a tenth of the compile cost, and its first error line is exactly "what is missing" for the warning. Not cached: 3 calls cost about 1.2 s per setup.py run, and caching complicates the tests for little.
+
+The one layout fact that stays is finding 2's workaround, because it is a flag the build needs, not a check: `_hip_device_lib_args()` returns `--rocm-device-lib-path=<ROCM_HOME>/lib/llvm/amdgcn/bitcode` when torch is HIP, `HIP_DEVICE_LIB_PATH` is unset (a user's explicit setting wins; clang ranks the flag above the variable), `<ROCM_HOME>/amdgcn/bitcode` is absent and that directory has `*.bc`. It is appended to `extra_compile_args["nvcc"]` (after the platform block, `[]` on CUDA, so CUDA command lines do not change) and to the probe, so probe and build agree.
+
+Torch floor check: `torch==2.11.0` (CPU wheel from download.pytorch.org, `torch/utils/cpp_extension.py`) defines `COMMON_HIP_FLAGS` (l.285), `COMMON_HIPCC_FLAGS` (l.294) and `include_paths(device_type: str = "cpu", torch_include_dirs=True)` (l.1612), so the new module-top imports cannot break a CUDA or CPU build on the floor.
+
+### Real layouts (ROCm 10.2.0 SDK Python packages) and the gate's answer
+| layout | hipcc | device bitcode | root `amdgcn` | math headers (`include/hipsparse`, `hipblas`, `hipblaslt`, `hipsolver`) | device-lib flag added | gate |
+|---|---|---|---|---|---|---|
+| Linux devel (`_rocm_sdk_devel`, after `rocm-sdk init`) | `bin/hipcc` | `lib/llvm/amdgcn/bitcode` | `amdgcn -> lib/llvm/amdgcn` (and `llvm -> lib/llvm`) | all four | no | **build** (probe rc=0; GPU extension built and tested below) |
+| Linux core (`_rocm_sdk_core`; include is only `CL amd_comgr aqlprofile-sdk hip hsa hsakmt rocprofiler-register roctracer`) | `bin/hipcc` | `lib/llvm/amdgcn/bitcode` | absent | none | yes | **CPU + warning** (`'hipsparse/hipsparse.h' file not found`) |
+| Linux core + `HIP_DEVICE_LIB_PATH=<core>/lib/llvm/amdgcn/bitcode` | same | same | absent | none | no (variable set) | **CPU + warning** (same header error) |
+| Windows devel (`rocm_sdk_devel-10.2.0-py3-none-win_amd64.whl`, `rocm_sdk_devel/_devel.tar`, 9986 entries, 714 file links to `_rocm_sdk_core`) | `bin/hipcc.exe`, `bin/hipcc.bat` (links to core) | only `lib/llvm/amdgcn/bitcode` (75 `.bc`, links to core); `lib/llvm/lib/clang/24/lib/` has only `windows` | absent; top level is `.info __init__.py bin cmake include lib libexec share` | all four | yes | **build expected**; proven on Linux by the proxy below, the Windows build itself is the Windows validator's |
+| Windows core (`rocm_sdk_core-10.2.0-py3-none-win_amd64.whl`, 667 entries) | `bin/hipcc.exe`, `hipcc.bat` | `lib/llvm/amdgcn/bitcode` | absent | none (`include/` is `CL amd_comgr hip ...`) | yes | CPU + warning (header error; inferred, same headers as Linux core) |
+| system `/opt/rocm` | `bin/hipcc` | `amdgcn/bitcode` | itself | depends on packages | no | probe decides; a runtime-dev-only install without the hip* library dev packages gets the warning |
+
+Listings: `pip download --no-deps --only-binary=:all: --platform win_amd64 --python-version 3.11 --index-url https://stable.repo.amd.com/rocm/whl-next/ rocm-sdk-devel==10.2.0 rocm-sdk-core==10.2.0`, then the wheels' zip and inner tar members listed with Python `zipfile`/`tarfile` (nothing extracted or run). The unit test's fake layouts (`_ROCM_LAYOUTS` in `test/test_setup.py`: `linux-devel`, `linux-core`, `windows-devel`, `system`) carry exactly the hipcc and bitcode entries above; the headers are not faked because the probe, not a file check, decides on them.
+
+### Tests (`test/test_setup.py`)
+- `test_should_build_gpu_extension`: the gate over `rocm`, `rocm-hipcc-cannot-compile`, `rocm-hipcc-cannot-compile-force-cuda`, `rocm-no-rocm-home`, `rocm-force-cuda`, `cuda`, `cuda-nvcc-mismatch`, `cpu`, with `_hipcc_error` set to `None` or the real hipsparse error line. The warning case checks that the text names `ROCM_HOME`, the missing header and `FORCE_CUDA=1`.
+- `test_rocm_device_lib_path`: `get_extensions()` over the four real layouts plus `linux-core-hip-device-lib-path`; the flag is passed for `linux-core` and `windows-devel` only. Replaces the round-2 assertion that `HIP_DEVICE_LIB_PATH` alone makes the gate pass (the false positive the review named).
+- `test_hipcc_probe_agrees_with_gpu_build`: with ROCm torch and an installed `torchrl._torchrl` that has `CudaSumSegmentTreeFp32`, the real probe must return None (guards against probe flags drifting from the build's). Ran (not skipped) here.
+- `test_debug_build_device_debug_flag` pins `ROCM_HOME=None` so the nvcc list stays exact; the stale-build test sets the probe to succeed.
+- `pytest -q test/test_setup.py -k "not install_no_deps"`: **21 passed**. Against `123797f7`'s `setup.py`: 12 failed / 9 passed (the device-lib cases `linux-core` and `windows-devel` fail on behaviour; the rest fail because `_hipcc_error` does not exist there).
+- Upstream pre-commit (check-docstring-first, mixed-line-ending, end-of-file-fixer, ufmt, flake8, pyupgrade, codespell, autoflake, sphinx underline, forbid-version-file) passed on all 5 files; `jargon.py --port rl` clean; `prose.py` clean on the commit message.
+
+### Evidence on this host (MI300X, `HIP_VISIBLE_DEVICES=3`, `ulimit -c 0`)
+Environment: fresh job venv with the round-1 recipe (`torch[device-gfx942]==2.15.0+rocm10.2.0`, `rocm[libraries,devel]==10.2.0`, `rocm-sdk-device-gfx942==10.2.0` from `https://stable.repo.amd.com/rocm/whl-next/`, `rocm-sdk init`, test deps), `zz-base-links.pth` moved to `$FLEET_VENV/zz-base-links.pth.disabled`. `torch.version.hip` 7.17.26434.
+
+1. **Full devel SDK**: `PYTORCH_ROCM_ARCH=gfx942 MAX_JOBS=96 pip install -v --no-build-isolation --no-deps -e projects/rl/src` (wrapped in `timeit.sh rl compile`) rc=0; hipcc from `_rocm_sdk_devel/bin` compiled `hip_segment_tree.hip`, no `--rocm-device-lib-path` in the log; binding has `Cuda{Sum,Min}SegmentTreeFp{32,64}`; build info `"hip_version": "7.17.26434", "build_cuda": true`.
+
+   | command | result |
+   |---|---|
+   | `pytest -q -rs test/rb/test_prioritized.py` | 36 passed, 0 skipped |
+   | `pytest -q -rs test/rb/test_storages.py -k cuda` | 8 passed |
+   | `TORCHRL_SMOKE_REQUIRE_CUDA_EXT=1 pytest -q test/smoke_test.py` | 2 passed |
+   | `pytest -q -rs test/rb -m gpu` | 53 passed, 1 skipped (ray) |
+   | `pytest -q test/test_setup.py -k "not install_no_deps"` | 21 passed |
+2. **Core-only** (`_rocm_sdk_devel` moved out of site-packages; torch `ROCM_HOME` printed `.../_rocm_sdk_core`), `PYTORCH_ROCM_ARCH=gfx942 python setup.py build_ext --inplace` on a copy of the working tree: **rc=0**, warning x3 `Skipping TorchRL GPU extension build because hipcc from the ROCm installation at .../_rocm_sdk_core cannot compile it: .../torch/include/ATen/hip/HIPContextLight.h:11:10: fatal error: 'hipsparse/hipsparse.h' file not found. Set FORCE_CUDA=1 to build anyway.`, CPU `CppExtension` only (0 `CudaSumSegmentTree` symbols).
+3. **Core-only + `HIP_DEVICE_LIB_PATH=<core>/lib/llvm/amdgcn/bitcode`** (the case round 2 got wrong): **rc=0**, the same warning x3, CPU extension only.
+4. **`FORCE_CUDA=1` on core-only**: **rc=1**, hipcc (given `--rocm-device-lib-path=<core>/lib/llvm/amdgcn/bitcode`) stops at `HIPContextLight.h:11:10: fatal error: 'hipsparse/hipsparse.h' file not found`, `1 error generated when compiling for gfx942`. Loud, as forcing should be.
+5. **Windows-layout proxy** (devel restored, its `amdgcn` link moved aside, which leaves exactly the Windows devel arrangement): a plain `hipcc -c tiny.hip --offload-arch=gfx942` fails `cannot find ROCm device library`; `PYTORCH_ROCM_ARCH=gfx942 python setup.py build_ext --inplace` rc=0, no warning, hipcc got `--rocm-device-lib-path=<devel>/lib/llvm/amdgcn/bitcode`, `.so` has 28 `CudaSumSegmentTree` dynamic symbols. Link restored afterwards.
+
+Environment restored: devel back in site-packages with its `amdgcn` link, editable install from the fork at `845ee50d` has the GPU binding.
+
+### Not done
+- No nvcc on this host. The CUDA branch of `_should_build_cuda()` is byte-identical, the only shared-path change is `extra_compile_args["nvcc"] += _hip_device_lib_args()`, which is `[]` without `torch.version.hip` (the `cuda` debug-flag test asserts the exact nvcc list). The checkup's mi355 nvcc build before presenting is still owed.
+- The Windows build itself (MSVC environment, `hipcc.exe` through setuptools) is the Windows validator's; this round makes the documented recipe take the GPU path there instead of a certain CPU fallback.
+- Triton files and `.github/` untouched (questions 0 and 1 still unruled).
+
+### Correction for the final history
+At PR-prep squash time the commit message must describe the end state; these statements in earlier commit bodies are now wrong:
+- `c76657b0`: "the gate now builds the extension if PyTorch finds a ROCm installation (`ROCM_HOME`)". It builds only when hipcc under `ROCM_HOME` can preprocess the HIP headers (otherwise CPU plus a warning).
+- `123797f7`: "`hipcc` must exist under `ROCM_HOME`, and the device libraries must be where clang looks for them (`<ROCm>/amdgcn/bitcode` or clang's resource directory), unless `HIP_DEVICE_LIB_PATH` names them". Replaced by the preprocess probe; `HIP_DEVICE_LIB_PATH` alone no longer passes, the resource-directory check is gone, and `<ROCm>/lib/llvm/amdgcn/bitcode` is passed to hipcc when `<ROCm>/amdgcn` is absent.
+- `123797f7`'s Test Plan line "With `FORCE_CUDA=1` it fails in hipcc as before": it still fails, but now on the missing hipSPARSE header rather than the device libraries, because the build passes the device-lib path.
+- `123797f7` title "Fall back to the CPU build when hipcc cannot compile" stays accurate.
+
+## Lesson for cuda-to-rocm: ask hipcc whether a torch extension can build; do not list ROCm paths
+Belongs in `strategy-b-torch.md`, near "Keep compiler flags in the right command-line namespace". A `setup.py` that decides between a GPU and a CPU build under ROCm PyTorch is tempted to check files: `hipcc` exists, the device bitcode is in `<ROCm>/amdgcn/bitcode`. That misses what the build really needs, which is whatever torch's HIP headers include: `ATen/hip/HIPContext.h` pulls in the hipSPARSE, hipBLAS, hipBLASLt and hipSOLVER headers, which a core-only ROCm (the ROCm SDK `core` Python package, or a runtime-dev install without the hip* library dev packages) lacks. Ask the compiler instead: `hipcc -E` a two-line file (`#include <ATen/hip/HIPContext.h>`, `#include <c10/hip/HIPGuard.h>`) with `torch.utils.cpp_extension.include_paths(device_type="cuda")`, `COMMON_HIP_FLAGS` and `COMMON_HIPCC_FLAGS`. The driver refuses to start without the device libraries even for `-E`, and a missing header stops the preprocessor, so one call covers both in under half a second (a full `-c` is about 5 s), and its first error line tells the user what is missing. (rl)
+
+## Lesson for cuda-to-rocm: on Windows, the ROCm SDK packages' device libraries are only in lib/llvm/amdgcn/bitcode
+Belongs in `windows.md`. The Linux `rocm[devel]` tree links `<ROCm>/amdgcn -> lib/llvm/amdgcn`, and clang finds the device libraries at `<ROCm>/amdgcn/bitcode`. The Windows devel tree (`rocm_sdk_devel-*-win_amd64.whl`, 10.2.0 checked) has no such link and nothing under clang's resource directory (`lib/llvm/lib/clang/<N>/lib/` holds only `windows`), so plain hipcc fails with "cannot find ROCm device library". A build file can make the documented install work without user setup: when `<ROCm>/amdgcn/bitcode` is absent, `HIP_DEVICE_LIB_PATH` is unset and `<ROCm>/lib/llvm/amdgcn/bitcode/*.bc` exists, pass `--rocm-device-lib-path=<that directory>` to hipcc. The same layout is what the Linux core-only package has, so the flag is harmless there. (rl)
