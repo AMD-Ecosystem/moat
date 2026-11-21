@@ -336,3 +336,31 @@ No skip in the GPU runs says the extension was not built. Triton RNN tests were 
 CUDA gate: `cuda-not-validated: no nvcc on this host (no /opt/conda/envs/cuda-12.8) and the job venv carries ROCm torch only, which blocks a torch CUDAExtension compile`. The CUDA branch of `_should_build_cuda()` is unchanged and `_hip_device_lib_args()` is `[]` without `torch.version.hip` (see round 3 and review notes); the mi355 nvcc build before presenting remains owed.
 
 Finish checks: `python3 utils/jargon.py --port rl` clean; ROCm build documented in README.md, CONTRIBUTING.md and docs/source/index.rst (in the branch diff).
+
+## CUDA compile check (nvcc) at 845ee50d
+
+Validator role's CUDA compile check only (2026-11-21, linux-gfx950 fleet job, mi355 host: real CUDA 12.8 toolkit `/usr/local/cuda-12.8`, nvcc 12.8.93, no NVIDIA GPU, so compile and link only). Fork `moat-port` cloned fresh into the job directory, `HEAD` = `845ee50d3feb81e21555cfa61dfa871df7eb935e`; upstream base `1d94cfa5c` from the same clone. Each build ran on its own `git archive <rev>` tree. No state, platform record or fork source changed. Method as in the first review's check at `c76657b0`. Result: **PASS**, and the CUDA command lines are identical to upstream's.
+
+Environment (job-local, nothing shared modified):
+```
+$FLEET_VENV/bin/python -m venv --without-pip venv-cuda
+$FLEET_VENV/bin/python -m pip --python venv-cuda/bin/python install --index-url https://download.pytorch.org/whl/cu128 --extra-index-url https://pypi.org/simple "torch==2.11.0+cu128" "pybind11[global]" setuptools wheel ninja setuptools_scm numpy cmake
+$FLEET_VENV/bin/python -m pip --python venv-cuda/bin/python install pip pytest pytest-timeout pytest-instafail pytest-mock "pyvers>=0.2.3" "hoptorch>=0.1.4" "tensordict>=0.15.2,<0.16.0" pyyaml scipy psutil pytest-asyncio pytest-benchmark
+export PATH=$PWD/venv-cuda/bin:/usr/local/cuda-12.8/bin:$PATH CUDA_HOME=/usr/local/cuda-12.8
+unset FORCE_CUDA ROCM_HOME ROCM_PATH HIP_PATH; ulimit -c 0
+```
+torch 2.11.0+cu128 (`torch.version.cuda` 12.8, `torch.version.hip` None; the TorchRL floor), tensordict 0.15.6, Python 3.11.17. The fleet guard refused `venv-cuda/bin/python -m pip install ...` as a shared-environment write (venv-cuda is inside the job directory), so the test dependencies went in through the same `$FLEET_VENV/bin/python -m pip --python venv-cuda/bin/python` form as the torch install.
+
+1. **Wheel, as upstream's cu128 wheel job builds it but on the auto-detect path (no `FORCE_CUDA`), so the gate's CUDA branch decides**, on `git archive 845ee50d`:
+   ```
+   export TORCH_CUDA_ARCH_LIST="7.0;7.5;8.0;8.6;8.9;9.0;10.0+PTX" MAX_JOBS=64
+   python -m pip wheel -v --no-build-isolation --no-deps -w ../cuda-wheel .
+   ```
+   rc=0, 76 s. `cuda_segment_tree.cu` compiled by `/usr/local/cuda-12.8/bin/nvcc` with `-gencode` for sm_70, 75, 80, 86, 89, 90, 100 and compute_100, `-O3 -DWITH_CUDA`; the link line carries `-lcudart -lc10_cuda -ltorch_cuda`. No "Skipping TorchRL" warning. The wheel's `_torchrl.cpython-311-x86_64-linux-gnu.so` has 64 dynamic `CudaSegmentTree` symbols and NEEDS `libcudart.so.12` and `libc10_cuda.so`; `cuobjdump --list-elf` lists the 7 cubins and `--list-ptx` the sm_100 PTX. Build info: `{"torch_version": "2.11.0+cu128", "python_version": "3.11", "cuda_version": "12.8", "hip_version": null, "build_cuda_version": "12.8", "force_cuda": false, "build_cuda": true}`. Warnings are upstream's existing ones only (`-Wcomment` in `segment_tree.h`, libstdc++ `-Warray-bounds` on `__builtin_memmove`, setuptools_scm and `version.py` packaging notes).
+2. **Command lines against upstream**: `python setup.py build_ext --inplace` with the same environment and arch list on `git archive 1d94cfa5c` and on `git archive 845ee50d`, both rc=0 (72 s each). The nvcc line, both `c++` compile lines (`pybind.cpp`, `utils.cpp`) and the `x86_64-linux-gnu-g++ -shared` link line, extracted from the logs with the tree path normalized: **identical** (`diff` empty). The generated `build/temp.linux-x86_64-cpython-311/build.ninja` (normalized) is identical too, and both logs have the same 8 warning lines. The only difference in the build info is the new `"hip_version": null` key. So `_hip_device_lib_args()` adds nothing to the nvcc list and the `_hipcc_error()` probe never runs on CUDA torch, as the round-3 review argued from the source.
+3. **`DEBUG=1`**: `DEBUG=1 TORCH_CUDA_ARCH_LIST=9.0 MAX_JOBS=64 python setup.py build_ext --inplace` on both trees: rc=0 each, nvcc got `-O0 -G -DWITH_CUDA`, 112 `CudaSegmentTree` symbols in each (unstripped), compile and link command lines identical between upstream and head.
+4. **`test/test_setup.py` on the CUDA torch**:
+   - `python -m pytest -q -rs test/test_setup.py -k "not install_no_deps"` on `git archive 845ee50d`: **20 passed, 1 skipped** (`test_hipcc_probe_agrees_with_gpu_build`, "needs ROCm PyTorch", by design), 2 deselected. (The ROCm runs report 21 passed because that test runs there.)
+   - Whole file from a git checkout (`git clone` of the fork clone, detached at `845ee50d`, so `test_install_no_deps_has_nonzero_version` does not skip as "not a git checkout"), `TORCH_CUDA_ARCH_LIST=9.0 MAX_JOBS=64 python -m pytest -q -rs test/test_setup.py`: **22 passed, 1 skipped** (same ROCm-only test), 56 s. Both `install_no_deps` cases (editable and wheel) do a `pip install --no-deps --no-build-isolation` into `venv-cuda` and build the CUDA extension with nvcc: the installed `torchrl 0.15.0+g845ee50d` has 64 `CudaSegmentTree` symbols, build info `"build_cuda": true, "build_cuda_version": "12.8"`. The test uninstalls `setuptools_scm` from `venv-cuda` (its own behaviour, job-local env).
+
+Owed item from the round-3 review and the validation ("the mi355 nvcc build before presenting") is satisfied at `845ee50d`. Scratch trees and logs are in the job directory (`nvcc/`, container-local).
