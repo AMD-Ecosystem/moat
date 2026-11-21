@@ -15,3 +15,5 @@
 {"kind":"phase","ts":"2026-11-20T22:49:53Z","phase":"test","seconds":215.182,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi300b-20261120-143103-port-rl-prompt/moat/projects/rl/src && HIP_VISIBLE_DEVICES= CUDA_VISIBLE_DEVICES= python -m pytest test/rb -q -rs -p no:cacheprovider --timeout 900"}
 {"kind":"phase","ts":"2026-11-20T22:51:16Z","phase":"test","seconds":75.86,"exit":1,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi300b-20261120-143103-port-rl-prompt/moat/projects/rl/src && /var/lib/jenkins/fleet/jobs/mi300b-20261120-143103-port-rl-prompt/venv/bin/python -m pytest -m gpu test/modules/test_rnn.py -rs -q -p no:cacheprovider --timeout 1800"}
 {"kind":"session","ts":"2026-11-20T22:58:24Z","epoch":1795215504.786237,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-20T23:54:43Z","epoch":1795218883.762466,"event":"start","platform":"linux-gfx950"}
+{"kind":"session","ts":"2026-11-21T00:13:43Z","epoch":1795220023.829974,"event":"end","platform":"linux-gfx950"}
