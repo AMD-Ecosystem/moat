@@ -1177,3 +1177,47 @@ Checked, each against the code (Triton 3.9.0 in the job venv):
 - `## Lesson for cuda-to-rocm: Triton on AMD accepts input_precision='tf32' only on gfx942`: accurate for Triton 3.9. The `TRITON_F32_DEFAULT` remark is confirmed by `tl.dot` (`language/core.py:2267-2270`: `knobs.language.fp32_default` takes precedence when `input_precision` is None).
 
 Still open for later stages, not a review finding: no NVIDIA run of a Triton spconv conv with `allow_tf32 = True` at ab42455 yet (the CUDA value is the upstream expression by construction). The gfx1100 platform needs its revalidation at this head.
+
+## Validation 2026-11-21 (linux-gfx1100 fleet job, AMD Radeon Pro W7800 48GB, wave32; validated head ab4245582c7ecdbe9ed687577d00c39d14f9de39)
+
+**Result: completed on linux-gfx1100.** Full wave32 rerun at the reviewed head after porting round 4. The tf32 finding is fixed: all four `tests/submconv/{inf,train}_{ablation,benchmark}.py` scripts complete with `allow_tf32 = True` as written. Every other result matches the 8592d5f wave32 validation above. The three special investigations from that validation (`flexgemm-wave-barrier-syncwarp` on wave32, LDS limits of the Triton fp32 configs, the 2-D grid_sample launch) were not repeated. Their conclusions still hold, because the delta only changes the `input_precision` string the spconv `tl.dot` calls compile with, and on this GPU that string is `'ieee'` whichever way the knob is set, the same value 8592d5f compiled by default.
+
+Environment: GPU 0 (pin `HIP_VISIBLE_DEVICES=0`), the job venv with the TheRock ROCm 10.2.0a20261022 wheels (install command in "Porting round 4"), `spconv-triton 1.0.0`, `ulimit -c 0`, job-local `HOME` and `TRITON_CACHE_DIR`. The autotune cache was warm for the shapes the porter and reviewer runs had already used and cold for the rest. Clean build: `git clean -xdf` in the fork clone, then `utils/timeit.sh FlexGEMM compile -- pip install -v ./projects/FlexGEMM/src --no-build-isolation --no-deps --force-reinstall` (with `ROCM_HOME=$(python -m rocm_sdk path --root)` and `GPU_ARCHS=gfx1100`). It succeeded, with 6 hipcc compiles at `--offload-arch=gfx1100 -std=c++20` and no compiler warnings. `python -m rocm_sdk test`: OK. Each script ran from its own directory through `utils/timeit.sh FlexGEMM test -- timeout 5400 ...`. Third-party columns went through `run_tp.py` (text in "Porting round 4").
+
+### A. Asserting tests
+
+| Script | Result |
+|---|---|
+| `tests/hashmap.py` | rc 0, 7 s |
+| `tests/serialize.py` | rc 0, 204 s |
+| `tests/spconv/out_coords.py` | rc 0, 118 s |
+| `tests/spconv/neighbor_cache.py` | rc 0, 23 s |
+| `tests/submconv/neighbor_cache.py` | rc 0, 5 s |
+| `tests/grid_sample.py` | rc 0, 63 s; every err_max and err_mean row 0 per mille in both columns |
+
+### B. Conv correctness tables (fp16, per mille)
+
+- `tests/submconv/fwd.py` (spconv-triton kept, `MAX_RES=256`; RES=512 exceeds this card in the EXPLICIT_GEMM reference, as before): rc 0, 91 s. err_max: spconv-triton = igemm = igemmk = migemm = migemmk on every row (16, 15, 15, 16, 8, 3). err_mean 0. **Pass.**
+- `tests/submconv/bwd.py` (spconv-triton kept): rc 0, 310 s, 7 rows. err_mean 0 everywhere. err_max for spconv-triton / igemm / igemmk / migemm / migemmk: RES 8-64 all equal, 44-66. RES=128: 214 / 187 / 655 / 214 / 655. RES=256: 462 / 368 / 1198 / 462 / 1198. RES=512: 1734 / 2742 / 904 / 1778 / 940. Same pattern and magnitude as at 8592d5f, where the float64 check showed this is fp16 distance between equally accurate results. **Pass.**
+- `tests/spconv/fwd.py` (`DROP_SPCONV=1`): rc 0, 844 s, 14 rows RES 8..512. err_max for dense = igemm = igemmk = migemm = migemmk on every row (16 at K=3 through RES=64, 6-7 at K=2, 9/3 at RES=128; from RES=256 on, where dense is N/A by design, 3/2 and 2/2). err_mean 0. **Pass.**
+- `tests/spconv/bwd.py`:
+  - `MAX_RES=64`: rc 0, 1330 s, 8 rows. err_mean 0 for every FlexGEMM column. err_max: igemm 7-68, igemmk 7-68, migemm and migemmk 6-73, spconv-triton 6-73, dense 9-1313.
+  - `MIN_RES=128 MAX_RES=256 BATCH1=1 DROP_EXTRA=dense`: rc 0, 286 s. err_mean 0. RES=128 K=3: spconv-triton 72, igemm 67, igemmk 123, migemm 72, migemmk 122. RES=128 K=2: 8-11. RES=256 K=3: 385 / 296 / 1086 / 385 / 1102. RES=256 K=2: 35-51.
+  - RES=512 does not fit this card in the reference, as before. **Pass** for every row this GPU can hold.
+- Knob on vs off (porter's `tf32check.py`, RES=64, fp32 and fp16, forward and backward, submanifold and strided conv): 16/16 bitwise equal, and the fp32 results are within 1e-6 of a float64 reference ("Porting round 4"). The reviewer reran it at RES=32 with the same result.
+
+### C. Examples, ablations, benchmarks
+
+- `examples/submconv.py`: rc 0.
+- `examples/spconv.py`: rc 1, `ValueError: too many values to unpack (expected 2)`. This is the known upstream bug (round-1 question 1, still Jeff's call), unchanged.
+- `inf_ablation.py`: rc 0 (25 s), unmodified with `allow_tf32 = True`. RES=512 L=2: egemm 146.03 ms, igemm 36.18, igemm_splitk 36.15, migemm 21.32, migemm_splitk 21.25.
+- `train_ablation.py`: rc 0 (64 s), unmodified. RES=256: 200.64 / 102.95 / 94.74 / 58.91 / 54.73 ms. RES=512: migemm_splitk 60.13 ms.
+- `inf_benchmark.py` and `train_benchmark.py` with `DROP_SPCONV=1`: both rc 0. flex_gemm inference was 20.36 ms at RES=256 and 23.67 ms at RES=512; training was 54.72 ms at RES=256.
+- The same two scripts with the spconv-triton column kept: the tables complete, then the known plotting `ZeroDivisionError` (a driver artifact). Inference at RES=256 was 31.64 ms for spconv-triton and 19.99 ms for flex_gemm; at RES=512, 41.27 / 23.36. Training at RES=256 was 96.07 / 55.68.
+
+### Other gates
+
+- CUDA compile gate: no compiled source changed (`git diff --stat 8592d5f ab42455 -- '*.cu' '*.cuh' '*.cpp' '*.h' setup.py` is empty; the delta is Triton Python only), so the real-nvcc check at bcf7c6f still covers the compiled sources. This host has no CUDA toolkit. On CUDA, `TF32_PRECISION` is `'tf32'` by construction, so the kernels make upstream's request. No NVIDIA run of a Triton spconv conv with `allow_tf32 = True` has been done at this head (`cuda-not-validated` for that runtime path: no NVIDIA GPU here).
+- Documentation: README "AMD GPUs (ROCm)" is present and unchanged by the delta.
+- `python3 utils/jargon.py --port FlexGEMM`: clean (the porter checked before the push, the reviewer checked at this head).
+- `git -C projects/FlexGEMM/src status --porcelain`: clean after the run (benchmark PNGs removed).
