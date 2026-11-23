@@ -6,12 +6,53 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "unclaimed",
+  "stage": "awaiting-fork",
   "adopted_at": "2026-11-23T21:22:51Z",
-  "updated_at": "2026-11-23T21:22:51Z",
+  "updated_at": "2026-11-23T21:26:30Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-23T21:26:30Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    }
+  },
+  "license_spdx": "no licence file (unlicensed core; Apache-2.0 plugin and CMake files)",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "no licence file (unlicensed core; Apache-2.0 plugin and CMake files)",
+      "evidence": "https://github.com/LCH1238/bevdet-tensorrt-cpp/issues/16",
+      "at": "2026-11-23T21:25:22Z"
+    }
+  ],
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "none",
+    "viable": true,
+    "summary": "Autoware's BEVDet TensorRT inference lib (13 small kernels + 4 TRT plugins; ROCm needs the MIGraphX engine route); core code has NO licence (author promised one in 2023, never added), so it stops at jeff's licence clearance; else decline license-blocked",
+    "at": "2026-11-23T21:26:30Z"
+  }
 }
