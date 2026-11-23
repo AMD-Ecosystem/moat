@@ -2565,16 +2565,99 @@ output sets overlap. Also build both trees at the same absolute path,
 because nvcc's internal-linkage symbol names hash the path and the file
 content, and every such symbol then differs in the PTX. (GPU_IPC)
 
+## Validation 2026-11-23: linux-gfx1201 at 53d17e2 (first run on this arch)
+
+AMD Radeon AI PRO R9700, gfx1201 (RDNA4, wave32; `amd-smi static --asic`:
+64 CUs, HIP reports 32 multiprocessors), `HIP_VISIBLE_DEVICES=3` as pinned
+by the dispatcher (HIP sees one device, PCI 06:00.0; `amd-smi process` on it
+empty before the run). amdgpu 6.19.14. TheRock pip SDK 10.1.0 (hipcc
+7.16.26385, AMD clang 24.0.0git), cmake and Ninja from `/opt/python-3.11-venv`.
+No earlier record exists for this GPU family, so the run window is 300 s.
+
+### Sanity check before the project run
+
+A 64-thread HIP kernel (hipMalloc, hipMemset, launch, copy back, check)
+built with `hipcc --offload-arch=gfx1201`, under `ulimit -c 0` and
+`timeout 120`: `devices=1 name=AMD Radeon AI PRO R9700 arch=gfx1201 warp=32`,
+kernel result correct, exit 0 in about a second. The card is not wedged.
+
+### Build
+
+Fresh clone of the fork, `moat-port` at 53d17e2f0599 (tree clean). Eigen,
+GLEW, freeglut and xdotool are not in the image, so `apt-get download` with
+job-local `Dir::State::Lists`/`Dir::Cache` (no root) of `libeigen3-dev
+libglew-dev libglew2.2 libglut-dev libglut3.12 freeglut3-dev xdotool
+libxdo3`, each `dpkg -x` into `<job>/deps/root`. Mesa, GL, GLU and Xvfb with
+xkbcomp are in the image on this host, so the Xvfb namespace workaround of
+the gfx942 host was not needed.
+
+```bash
+cmake -S . -B build -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1201 \
+  -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=<SDK root>;<job>/deps/root/usr"
+cmake --build build -j 8
+```
+
+`timeit.sh GPU_IPC compile`: exit 0, 153 warnings (the known `[[nodiscard]]`
+pattern, same count as every gfx942 and gfx950 record), 0 errors.
+
+### Run
+
+Headless harness as in the gfx942 record: `Xvfb :177 -screen 0
+1024x1024x24`, `LIBGL_ALWAYS_SOFTWARE=1`, `AMD_LOG_LEVEL=1`, `stdbuf -o0`,
+`LD_LIBRARY_PATH` for the job-local GLEW/freeglut/libxdo, `xdotool key
+--window <FEM> space`, killed 300 s after the keypress (23:05:13Z to
+23:10:15Z), `ulimit -c 0`, `timeit.sh GPU_IPC test`. One run.
+
+- Scene 38386 vertices / 159870 tets / 41664 faces, 20836 surface vertices,
+  initial kappa 2824.037412 (unchanged).
+- 56 frames completed in 300 s, still running when stopped (exit 143 from
+  the kill). No "intersection happened" line, no wedge.
+- Newton iterations per frame 2 to 72, median 9.5. Frames 1-31 are exactly
+  the sequence of every gfx942 run this round (3, 2, 2, 3 x19, 4, 17, 18, 8,
+  5, 5, 5, 5, 11). The last 20 frames take 17 to 48 (the contact-heavy phase).
+- Kappa 2824.04 -> 2878.96.
+- Printed "average time cost" at the end: 312 ms (gfx942 38-CU partition:
+  136 ms).
+- `grep -ci nan` 0; no "error"/"fail" in stdout; stderr only GLEW's status
+  line; with `AMD_LOG_LEVEL=1` the HIP runtime logged nothing.
+
+Compared with the last record (linux-gfx942 at 04c121a; there is none for
+this family): same scene, same first 31 frames, no NaN or HIP error in
+either. Throughput is lower: 56 frames in 300 s against 116-129 in the
+gfx942 300 s runs on a 38-CU partition. The cause is the hardware, not the
+code: the solver is double precision throughout and the R9700 is a
+consumer-class RDNA4 part with a small fraction of the MI300X's FP64 rate,
+so each frame takes about 2.3 times as long (312 ms against 136 ms printed).
+At frame 56 the scene is still in its contact-heavy phase, so the median of
+9.5 Newton iterations is not comparable with the 1200 s gfx942 median of 4,
+which is dominated by the settled frames after about frame 300. The 53d17e2
+delta (one guarded message string in gl_main.cpp, a path not taken here)
+cannot change any of this.
+
+### Other gates
+
+- `jargon.py --port GPU_IPC`: clean.
+- Documentation: README documents the ROCm build beside the CUDA one
+  (unchanged since the last check).
+- `git -C projects/GPU_IPC/src status --porcelain`: empty (build dir
+  ignored).
+- CUDA no-regression compile at 53d17e2: already recorded (pass) in
+  "## CUDA no-regression compile at 53d17e2"; not repeated.
+
+linux-gfx1201 -> `completed` at 53d17e2. It carries the wave32 gate at the
+final head. Nothing pushed to the fork.
+
 ## Upstream PR draft
 
 Status (2026-11-23, head 53d17e2): replaces the earlier draft sections. The
-Testing paragraph names only GPUs with a completed validation at 53d17e2.
-There are none yet. linux-gfx942 completed at 04c121a, and the
+Testing paragraph names only GPUs with a completed validation at 53d17e2:
+so far the Radeon AI PRO R9700 (gfx1201, 56 frames in 300 s; see
+"## Validation 2026-11-23: linux-gfx1201"). linux-gfx942 completed at 04c121a, and the
 carry-forward to 53d17e2 was refused (`mixed` delta; see
 "## Carry-forward 2026-11-23"), so it reads `revalidate`. Once gfx942
 completes at the final head, put back the sentence "On an AMD Instinct
-MI300X (gfx942) the default scene ran headless for <N> frames in <time> with
-no HIP errors and no NaN." with that run's numbers, and add the Radeon PRO
+MI300X (gfx942) ..." beside the R9700 in the same sentence with that run's
+numbers, and add the Radeon PRO
 W7800 (gfx1100) only if it also completes there. The nvcc sentences describe
 "## CUDA no-regression compile at 53d17e2". The Windows sentence rests on the
 c44ed01 link: the delta since then is femEnergy.cu (HIP-only class) and
@@ -2609,7 +2692,7 @@ cmake --build build -j
 
 Use the architecture of your GPU (`rocminfo | grep gfx` lists it), for example gfx90a, gfx942 or gfx1100.
 
-Testing: the CUDA build was compiled with nvcc 12.8 (sm_80) on current main and with this change, but not run (no NVIDIA GPU). Every `.cu` file compiles on both with the same warnings, and the executable links on both. `load_mesh.cpp` fails identically on current main without this change, because load_mesh.h uses `uint32_t` without including `<cstdint>`; the link above was done with `-include cstdint` added to the C++ flags for that reason. On Windows the AMD build compiles and links with clang and Ninja, but it was not run on a GPU.
+Testing: on an AMD Radeon AI PRO R9700 (gfx1201) the default scene ran headless for 56 frames in 300 s with no HIP errors and no NaN. The CUDA build was compiled with nvcc 12.8 (sm_80) on current main and with this change, but not run (no NVIDIA GPU). Every `.cu` file compiles on both with the same warnings, and the executable links on both. `load_mesh.cpp` fails identically on current main without this change, because load_mesh.h uses `uint32_t` without including `<cstdint>`; the link above was done with `-include cstdint` added to the C++ flags for that reason. On Windows the AMD build compiles and links with clang and Ninja, but it was not run on a GPU.
 
 This work was done with the assistance of an AI coding agent and reviewed by me.
 ~~~~
@@ -2619,9 +2702,9 @@ This work was done with the assistance of an AI coding agent and reviewed by me.
 For jeff's squash of 21bce04..53d17e2 onto upstream main 4fb6019. Started
 from `git log -1 --format=%B 21bce04`. The PDSNK paragraph says the Jacobi
 solver is AMD-only and the CUDA build keeps Eigen. The Test Plan gives the
-literal build and run commands, and its result sentence names no GPU,
-because none has completed at 53d17e2. Put back the MI300X sentence (as in
-the PR draft status above) once gfx942 completes at the final head. The nvcc
+literal build and run commands for the GPU its result sentence names: the
+R9700 (gfx1201), the only GPU completed at 53d17e2 so far. Add the MI300X
+(as in the PR draft status above) once gfx942 completes at the final head. The nvcc
 sentence describes the 53d17e2 check. `utils/prose.py` and
 `utils/jargon.py -` clean.
 
@@ -2645,7 +2728,7 @@ This change was prepared with the assistance of an AI coding agent.
 Test Plan:
 
 ```bash
-cmake -S . -B build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_BUILD_TYPE=Release
+cmake -S . -B build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1201 -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 Xvfb :1 -screen 0 1024x1024x24 &
 DISPLAY=:1 LIBGL_ALWAYS_SOFTWARE=1 ./build/gipc &
@@ -2655,5 +2738,5 @@ cmake -S . -B build-cuda -DCMAKE_CUDA_ARCHITECTURES=80 -DCMAKE_BUILD_TYPE=Releas
 cmake --build build-cuda -j
 ```
 
-The space key starts the simulation. The CUDA build was compiled and linked with nvcc 12.8 (sm_80) before and after this change, with the same warnings, and not run; `-include cstdint` works around load_mesh.h using `uint32_t` without `<cstdint>`, which fails the same way without this change. On Windows the AMD build compiles and links with clang and Ninja; it was not run on a GPU there.
+The space key starts the simulation. On an AMD Radeon AI PRO R9700 (gfx1201) the default scene ran for 56 frames in 300 s with no HIP errors and no NaN. The CUDA build was compiled and linked with nvcc 12.8 (sm_80) before and after this change, with the same warnings, and not run; `-include cstdint` works around load_mesh.h using `uint32_t` without `<cstdint>`, which fails the same way without this change. On Windows the AMD build compiles and links with clang and Ninja; it was not run on a GPU there.
 ~~~~
