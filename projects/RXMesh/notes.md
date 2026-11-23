@@ -1063,3 +1063,48 @@ Request Changes (finding 1).
 ## Re-review 2026-11-23 (delta fd6cd893..091056d7, linux-gfx1100 reviewer)
 
 The fix covers every use site of tet_edges()/tet_faces() (subscripts, `.size()`, range-for: rxmesh.cpp, patcher.cu, rxmesh_queries.cuh t_e, rxmesh_test.h, test_queries.h, test_tet.cu); brace-elided aggregate init in util.h compiles; no reserved identifiers; CUDA include path untouched (hip_compat only under USE_HIP). jargon clean, commit title 64 chars, `[ROCm]`, disclosure and Test Plan present. No remaining findings from the 2026-11-23 review. Verdict: pass.
+
+## Validation 2026-11-23 (linux-gfx1100) -- moat-fix-73 at 091056d7, real GPU run
+
+Platform: linux-gfx1100, AMD Radeon Pro W7800 48GB (RDNA3, wave32), HIP_VISIBLE_DEVICES=1 (pinned by the dispatcher), ROCm pip SDK 10.1.0 (`_rocm_sdk_devel`; the earlier gfx1100 records used /opt/rocm 7.2.1). Fork: AMD-Ecosystem/RXMesh moat-fix-73 @ 091056d7eff6e385a2684be4aa6c9c1fcec55426, clean tree.
+
+Build: fresh directory `projects/RXMesh/build-val`, same cmake line as the porter section above (USE_HIP=ON, CMAKE_HIP_ARCHITECTURES=gfx1100, RX_USE_POLYSCOPE=OFF, RX_BUILD_APPS=OFF, RX_BUILD_TESTS=ON, Release); `ninja -j 10 RXMesh RXMesh_test`: 125/125, 0 errors. `llvm-objdump --offloading bin/RXMesh_test`: exactly one bundle, `hip-amdgcn-amd-amdhsa--gfx1100`.
+
+Tests (`ulimit -c 0`, full binary, no filter): run 1 30/30 PASSED, run 2 30/30 PASSED (4 DISABLED_ tests, as upstream). Against the last validated record (25/25 at df10bfe): +5 upstream tet tests (TetBoundaryVertex, ForEachTet, ForEachOnDeviceTet, TetQueries, TetVerticesOrientation), several upstream renames (BoundaryVertex, ForEach, ForEachOnDevice, Queries -> Triangle* variants; Util.Tet -> RXMeshStatic.Tet), nothing lost, nothing failed. PatchLock passed in both runs.
+
+CUDA no-regression gate at this head: PASS. Full nvcc 12.8 (arch 80) build at fd6cd893 (137/137, RXMesh_test linked), and the incremental rebuild for 091056d7 recompiled and linked RXMesh_test (091056d7 changes only a HIP-only header under hip_compat, not on the CUDA include path). Details in the porter section above.
+
+Docs: README keeps the one-line AMD support note (the README defers build steps to the external docs site); jargon.py --port RXMesh clean. A test-written `sphere3.obj` that appeared in the moat checkout root (the Export test writes to the cwd) was removed.
+
+Verdict: linux-gfx1100 completed at 091056d7. wave64 (gfx90a) and windows platforms read revalidate at this head and still need their own runs; the delta includes upstream's whole tet feature, so no carry-forward applies to them.
+
+## Fix review PR draft
+
+Title: Merge upstream main into the ROCm port (resolve #73 conflicts)
+
+Body:
+
+Upstream PR owensgroup/RXMesh#73 stopped merging into main: upstream landed 77 commits since the port's base (tet mesh support, CUDA device LTO, MshIO, attribute external buffers, dense-matrix changes, and inlined `__device__` implementations moved from `.cu` files into their headers). The maintainer asked for nothing; there are no comments or reviews on the PR. This round only absorbs the base. It merges, never rebases, so df10bfe (what the PR shows) stays an ancestor.
+
+Commits:
+
+- 3183c34d Merge upstream main (3990228e). Conflicts: upstream's CUDA device-LTO helpers kept on the CUDA branch only (they need numeric CUDA archs; HIP keeps `-fgpu-rdc`); MshIO include kept, OpenMesh still apps-only; code upstream moved from `.cu` into headers keeps the HIP device-pass guards (`__HIP_DEVICE_COMPILE__`, `__HIPCC__`); `patch_stash.h` keeps the wavefront-safe `critical_section()` insert; new tet explicit instantiations in `query.cu` carry `__device__`; `nd_permute.cuh`/`mgnd_permute.cuh` deleted with upstream. The HIP build at this commit alone does not compile (it needs the next commit); its Test Plan applies from fd6cd893.
+- fd6cd893 Adapt upstream's new code to HIP: a HIP-only `<cuda/std/array>` redirect, `cudaPointerAttributes`/`cudaPointerGetAttributes`/`cudaMemoryTypeDevice` and `cusparseOrder_t`/`CUSPARSE_ORDER_ROW` aliases, the `.type` branch in `attach_device_buffer()` on HIP, `.template` at the two new tet dispatch sites.
+- 091056d7 Review fix: the redirect is a self-contained `cuda::std::array` aggregate instead of an alias of `std::array`, so device code does not reach the host STL's debug index checks (MSVC Debug).
+
+Retested:
+
+- AMD Radeon Pro W7800 (gfx1100, Linux, ROCm 10.1): fresh build, full `RXMesh_test` 30/30 twice (the previous 25 plus 5 new upstream tet tests).
+- CUDA compile (nvcc 12.8, sm_80, no GPU): library and `RXMesh_test` build and link, with upstream's device LTO active.
+- Not yet at this head: gfx90a (wave64) and the Windows hosts. Windows could not be tested here. The round changes Windows-relevant code only through the merged upstream sources and the HIP-only headers above.
+
+Our own changes against upstream are the same file set as before, moved where upstream moved code.
+
+## Upstream reply
+
+Merged current main into the branch, so this should be mergeable again. The new tet code needed a few small HIP additions (a `cuda::std::array` stand-in, a couple of runtime/hipSPARSE aliases, two `.template` keywords); the CUDA path is unchanged and still builds with your new device LTO. Retested on an AMD Radeon Pro W7800 (gfx1100): all 30 tests in RXMesh_test pass, including the new tet tests.
+
+## Notes for us (not upstream)
+
+- Before the reply is posted, the reply text must name only GPUs completed at the merged head. Today that is the W7800 (linux-gfx1100). Add gfx90a and the Windows cards to the reply if they validate at 091056d7 before the review PR is opened.
+- Deferred registered this round: `rxmesh-hip-installed-package-config` (pre-existing CUDA-only RXMeshConfig.cmake.in).

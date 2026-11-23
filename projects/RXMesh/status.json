@@ -7,7 +7,7 @@
   "priority": 4.792,
   "ext_type": "unknown",
   "adopted_at": "2026-05-30T00:36:13Z",
-  "updated_at": "2026-11-23T21:03:37Z",
+  "updated_at": "2026-11-23T21:06:41Z",
   "head_sha": "091056d7eff6e385a2684be4aa6c9c1fcec55426",
   "depends_on": [
     "STRUMPACK"
@@ -49,10 +49,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "df10bfe",
+      "validated_sha": "091056d7eff6e385a2684be4aa6c9c1fcec55426",
       "started_at": "2026-05-30T21:08:00Z",
-      "completed_at": "2026-06-23T21:32:38Z",
-      "updated_at": "2026-11-23T21:03:37Z",
+      "completed_at": "2026-11-23T21:06:41Z",
+      "updated_at": "2026-11-23T21:06:41Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -66,13 +66,10 @@
         "first_session_at": "2026-05-30T21:08:00Z",
         "last_session_at": "2026-05-30T21:10:45Z"
       },
-      "last_agent": "reviewer",
-      "carry_forward": {
-        "to": "df10bfe",
-        "method": "source-class",
-        "detail": "CMake default-path change (drop gfx90a pin, rely on project(LANGUAGES HIP) auto-detect); explicit -D builds byte-identical",
-        "at": "2026-06-23T21:32:38Z"
-      }
+      "last_agent": "validator",
+      "validated_prior": [
+        "df10bfe"
+      ]
     },
     "windows-gfx1101": {
       "state": "completed",
