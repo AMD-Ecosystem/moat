@@ -73,3 +73,11 @@ Not blocking a porter: the licence is AGPL-3.0 (tier 3), so a person must record
 - Shared-code oddity to exercise, not to "fix for HIP" (R6): the koboldcpp pool allocator subtracts the requested `size` instead of the freed `b.size` from `pool_size` on the nommq largest-buffer free path in `ggml-cuda.cu`.
 - No GPU test suite upstream. The T1/T2 harnesses are validator-side only and are never committed to the fork. T1's overlay recipe is in plan.md.
 - `surface.json`: the generated floor (CMake-derived, from a file upstream marks unsupported) plus 27 planner-added components: the Makefile target per OS, GPU target list, ROCm discovery, packaging, the Python loader, the four CUDA areas, every modality, the tests and the README. CPU-ISA options are scoped out with reasons. The CMake `ggml-*-rocm` library entries stay unaccounted until Q1 is ruled.
+
+## Rulings on the planner's questions (Jeff Daily, 2026-11-23)
+
+- Q1 (Windows route): **not ruled yet** (Jeff asked a question about option a). Linux work proceeds; do not build a Windows route or assume a waiver until this is ruled.
+- Q2 (PR base): **a**, `concedo_experimental`. Upstream's branch was mirrored unmodified to the fork at 0382471c8b72474b45537280404606d29d5f2cae and `set-base-branch koboldcpp concedo_experimental --by jeffdaily` was run on 2026-11-23. `moat-port` is cut from it.
+- Q3 (validation depth): **a**. Gate on T1 and T2; one T3 smoke per platform for image, whisper, TTS, embeddings and vision; music and the two-GPU split recorded `owed` with a reason where the model or hardware is missing.
+- Standing ruling of the same day: Windows laptop GPU runs go last across all ports; they are queued, not started.
+- Still open for a person: the AGPL-3.0 licence clearance before anything is offered upstream.

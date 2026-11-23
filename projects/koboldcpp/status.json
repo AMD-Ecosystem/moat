@@ -3,12 +3,12 @@
   "name": "koboldcpp",
   "upstream_url": "https://github.com/LostRuins/koboldcpp",
   "fork_url": "https://github.com/AMD-Ecosystem/koboldcpp",
-  "fork_default_branch": "main",
+  "fork_default_branch": "concedo_experimental",
   "priority": 0.0,
   "ext_type": "make",
   "stage": "planned",
   "adopted_at": "2026-11-06T01:28:57Z",
-  "updated_at": "2026-11-20T21:42:21Z",
+  "updated_at": "2026-11-23T19:23:46Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
@@ -81,5 +81,11 @@
     "arch": "linux-gfx950",
     "since": "2026-11-20T21:33:29Z",
     "at": "2026-11-20T21:42:21Z"
+  },
+  "base_branch_ruling": {
+    "branch": "concedo_experimental",
+    "previous": "main",
+    "by": "jeffdaily",
+    "at": "2026-11-23T19:23:46Z"
   }
 }
