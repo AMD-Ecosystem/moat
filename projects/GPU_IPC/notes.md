@@ -2647,18 +2647,91 @@ cannot change any of this.
 linux-gfx1201 -> `completed` at 53d17e2. It carries the wave32 gate at the
 final head. Nothing pushed to the fork.
 
+## Validation 2026-11-23: linux-gfx942 at 53d17e2
+
+MI300X, `gfx942:sramecc+:xnack-`, `HIP_VISIBLE_DEVICES=5` as pinned by the
+dispatcher, the same 38-CU compute partition as the 04c121a record
+(`amd-smi static -g 5 --asic`: NUM_COMPUTE_UNITS 38; `amd-smi process -g 5`
+empty before and after). TheRock pip SDK 10.1.0 (hipcc 7.16.26385, AMD clang
+24.0.0git), cmake and Ninja from `/opt/python-3.11-venv`. Job-local
+dependencies and the Xvfb mount-namespace overlay rebuilt in this job's
+directory from the 2026-11-23 porter round's unpacked debs (same packages).
+
+### Sanity check before the project run
+
+A 64-thread HIP kernel (hipMalloc, launch, copy back, check), `hipcc
+--offload-arch=gfx942`, under `ulimit -c 0` and `timeout 60`: `devices=1
+name=AMD Instinct MI300X arch=gfx942:sramecc+:xnack- CUs=38 err=no error
+ok=1`, exit 0 at once. The partition is not wedged.
+
+### Build
+
+Fresh clone of the fork, `moat-port` at 53d17e2f0599 (tree clean), the
+recipe of "## Porter round 2026-11-23 (linux-gfx942)" (`-DUSE_HIP=ON
+-DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_BUILD_TYPE=Release`, `-j 56`),
+`timeit.sh GPU_IPC compile`: exit 0, 153 warnings (the known `[[nodiscard]]`
+pattern, same count as every record), 0 errors. `strings build/gipc | grep
+capable`: only the HIP message, so the 53d17e2 change is in the binary.
+
+### Run
+
+Same headless harness as the 04c121a record (Xvfb in its namespace,
+`LIBGL_ALWAYS_SOFTWARE=1`, `AMD_LOG_LEVEL=1`, `stdbuf -o0`, xdotool space),
+`ulimit -c 0`, 1200 s after the keypress (the length of the last gfx942
+record), `timeit.sh GPU_IPC test`. One run, no repeats.
+
+| | 04c121a (last record) | 53d17e2 (this run) |
+|---|---|---|
+| frames in 1200 s | 1393 | 1406 |
+| Newton k per frame min / median / max | 2 / 4 / 60 | 2 / 4 / 72 |
+| frames at k=4 (all; first 833) | 1078; 518 | 1076; 503 |
+| frames with k > 20 | 39 | 40 |
+| total Newton iterations | 7732 | 7824 |
+| max k after frame 300 | 7 | 8 |
+| last 30 frames | all 4 | all 4 |
+| kappa start -> end | 2824.04 -> 2960.40 | 2824.04 -> 2930.33 |
+| printed "average time cost" at end | 152.3 | 150.8 |
+| NaN / "intersection happened" | 0 / 0 | 0 / 0 |
+| HIP errors (`AMD_LOG_LEVEL=1`), stderr | none, GLEW line only | none, GLEW line only |
+
+Same scene (38386 vertices / 159870 tets / 41664 faces, 4 levels, initial
+kappa 2824.037412). Still running when stopped; no wedge. Frames 1-30 are
+identical to the 04c121a run; frame 31 takes 12 here against 11 there, and
+the sequences differ from frame 31 on. The maximum (72 against 60) is at
+frame 34 in both runs, inside the contact-heavy phase right after that
+divergence.
+
+Cause of the differences: run-to-run nondeterminism, not the code. The
+53d17e2 delta is one guarded message string in gl_main.cpp on the
+`hipSetDevice` failure path, which this run never takes, and it cannot touch
+device code. The porter round already showed two runs of ONE binary
+diverging at frame 31 (Newton k 11 against 12) from the order of
+floating-point atomic accumulations; this run is the k=12 branch of that.
+After divergence the per-frame counts, kappa path and frame count wander
+within that spread (+13 frames, +1.2 % total iterations, kappa end within
+1 %), while the shape is the same: settles to 4 iterations per frame, no
+frame after 300 needs more than 8.
+
+### Other gates
+
+- `jargon.py --port GPU_IPC`: clean.
+- Documentation: README documents the ROCm build beside the CUDA one.
+- `git -C projects/GPU_IPC/src status --porcelain`: empty.
+- CUDA no-regression compile at 53d17e2: already recorded (pass) in
+  "## CUDA no-regression compile at 53d17e2"; not repeated.
+
+linux-gfx942 -> `completed` at 53d17e2 (wave64 gate at the final head).
+Nothing pushed to the fork.
+
 ## Upstream PR draft
 
 Status (2026-11-23, head 53d17e2): replaces the earlier draft sections. The
 Testing paragraph names only GPUs with a completed validation at 53d17e2:
-so far the Radeon AI PRO R9700 (gfx1201, 56 frames in 300 s; see
-"## Validation 2026-11-23: linux-gfx1201"). linux-gfx942 completed at 04c121a, and the
-carry-forward to 53d17e2 was refused (`mixed` delta; see
-"## Carry-forward 2026-11-23"), so it reads `revalidate`. Once gfx942
-completes at the final head, put back the sentence "On an AMD Instinct
-MI300X (gfx942) ..." beside the R9700 in the same sentence with that run's
-numbers, and add the Radeon PRO
-W7800 (gfx1100) only if it also completes there. The nvcc sentences describe
+the AMD Instinct MI300X (gfx942, one 38-CU partition, 1406 frames in
+1200 s; see "## Validation 2026-11-23: linux-gfx942 at 53d17e2") and the
+Radeon AI PRO R9700 (gfx1201, 56 frames in 300 s; see
+"## Validation 2026-11-23: linux-gfx1201"). Add the Radeon PRO W7800
+(gfx1100) only if it also completes at the final head. The nvcc sentences describe
 "## CUDA no-regression compile at 53d17e2". The Windows sentence rests on the
 c44ed01 link: the delta since then is femEnergy.cu (HIP-only class) and
 gl_main.cpp (one guarded message), and it was not rebuilt on Windows.
@@ -2692,7 +2765,7 @@ cmake --build build -j
 
 Use the architecture of your GPU (`rocminfo | grep gfx` lists it), for example gfx90a, gfx942 or gfx1100.
 
-Testing: on an AMD Radeon AI PRO R9700 (gfx1201) the default scene ran headless for 56 frames in 300 s with no HIP errors and no NaN. The CUDA build was compiled with nvcc 12.8 (sm_80) on current main and with this change, but not run (no NVIDIA GPU). Every `.cu` file compiles on both with the same warnings, and the executable links on both. `load_mesh.cpp` fails identically on current main without this change, because load_mesh.h uses `uint32_t` without including `<cstdint>`; the link above was done with `-include cstdint` added to the C++ flags for that reason. On Windows the AMD build compiles and links with clang and Ninja, but it was not run on a GPU.
+Testing: the default scene ran headless with no HIP errors and no NaN on an AMD Instinct MI300X (gfx942, one 38-CU partition) for 1406 frames in 1200 s, and on an AMD Radeon AI PRO R9700 (gfx1201) for 56 frames in 300 s. The CUDA build was compiled with nvcc 12.8 (sm_80) on current main and with this change, but not run (no NVIDIA GPU). Every `.cu` file compiles on both with the same warnings, and the executable links on both. `load_mesh.cpp` fails identically on current main without this change, because load_mesh.h uses `uint32_t` without including `<cstdint>`; the link above was done with `-include cstdint` added to the C++ flags for that reason. On Windows the AMD build compiles and links with clang and Ninja, but it was not run on a GPU.
 
 This work was done with the assistance of an AI coding agent and reviewed by me.
 ~~~~
@@ -2702,9 +2775,9 @@ This work was done with the assistance of an AI coding agent and reviewed by me.
 For jeff's squash of 21bce04..53d17e2 onto upstream main 4fb6019. Started
 from `git log -1 --format=%B 21bce04`. The PDSNK paragraph says the Jacobi
 solver is AMD-only and the CUDA build keeps Eigen. The Test Plan gives the
-literal build and run commands for the GPU its result sentence names: the
-R9700 (gfx1201), the only GPU completed at 53d17e2 so far. Add the MI300X
-(as in the PR draft status above) once gfx942 completes at the final head. The nvcc
+literal build and run commands; its result sentence names the two GPUs
+completed at 53d17e2, the MI300X (gfx942, 1406 frames in 1200 s) and the
+R9700 (gfx1201, 56 frames in 300 s), as in the PR draft status above. The nvcc
 sentence describes the 53d17e2 check. `utils/prose.py` and
 `utils/jargon.py -` clean.
 
@@ -2738,5 +2811,5 @@ cmake -S . -B build-cuda -DCMAKE_CUDA_ARCHITECTURES=80 -DCMAKE_BUILD_TYPE=Releas
 cmake --build build-cuda -j
 ```
 
-The space key starts the simulation. On an AMD Radeon AI PRO R9700 (gfx1201) the default scene ran for 56 frames in 300 s with no HIP errors and no NaN. The CUDA build was compiled and linked with nvcc 12.8 (sm_80) before and after this change, with the same warnings, and not run; `-include cstdint` works around load_mesh.h using `uint32_t` without `<cstdint>`, which fails the same way without this change. On Windows the AMD build compiles and links with clang and Ninja; it was not run on a GPU there.
+The space key starts the simulation. The default scene ran with no HIP errors and no NaN on an AMD Radeon AI PRO R9700 (gfx1201) for 56 frames in 300 s, and, built with gfx942 in place of gfx1201, on an AMD Instinct MI300X (gfx942) for 1406 frames in 1200 s. The CUDA build was compiled and linked with nvcc 12.8 (sm_80) before and after this change, with the same warnings, and not run; `-include cstdint` works around load_mesh.h using `uint32_t` without `<cstdint>`, which fails the same way without this change. On Windows the AMD build compiles and links with clang and Ninja; it was not run on a GPU there.
 ~~~~
