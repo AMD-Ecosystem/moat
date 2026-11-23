@@ -552,3 +552,59 @@ No hang, crash or bugcheck. K_1/K_N checkpoint cases excluded by instruction, no
 CUDA no-regression gate: not run here (Windows host, no CUDA toolkit); it lands on a Linux arch. `python3 utils/jargon.py --port GOMC` clean.
 
 Result: completed for windows-gfx1151 at b8d1aa91.
+
+## Fix round moat-fix-562: absorb upstream development (2026-11-23, linux-gfx1100, porter)
+
+Requested by jeff. Upstream PR https://github.com/GOMC-WSU/GOMC/pull/562 reported `mergeable: CONFLICTING` / `mergeStateStatus: DIRTY` against `development`. Thread read in full (`gh pr view 562 --repo GOMC-WSU/GOMC --json comments,reviews`, `gh api repos/GOMC-WSU/GOMC/pulls/562/comments`): the only comment is the Codacy bot; no maintainer comment, review or line comment. PR head = b8d1aa91 = recorded `published_sha`, so no HEAD-MOVED. No code change was asked for; the round only absorbs the base.
+
+Records: `moatlib.py fix-branch GOMC` re-homed the trunk-resident folder onto `port/GOMC` and staged `moat-fix-562` (base b8d1aa91); `set-state GOMC linux-gfx1100 porting` took the lock afterwards on the port branch (the lock was taken after fix-branch, not before, so it would not commit to the trunk).
+
+Upstream delta 09ec304e..411b8a73 (3 commits): bf405292/ea5d308b binary-mode checkpoint streams (#560, jeff's own upstream PR, the Windows K_1/K_N fix noted in the 2026-10-30 windows-gfx1151 round), and 411b8a73 (#561) Ubuntu 26.04 workflow, CellList copy constructor plus pointer-to-reference members, reworded "No CUDA compiler found on this system" warning. No .cu/.cuh, kernel, CUDA runtime call or CUB use added, so no new CUDA code needed the port's pattern.
+
+Fork `moat-fix-562`: b8d1aa91 -> 25ba089d, one merge commit (`git merge --no-ff upstream/development`), nothing rewritten:
+- CMakeLists.txt conflict: kept the USE_HIP/CUDA selection and put upstream's new warning text in the CUDA `else()` branch.
+- src/CellList.cpp conflict: took upstream's version. Its copy constructor copies `neighbors`/`head` per box, the same fix as b8d1aa91's clang change, so the port no longer touches CellList.cpp (23 files vs development, was 24).
+- Checks: `git diff upstream/development 25ba089d` is exactly the port (23 files, +383/-51); `merge-base --is-ancestor` holds for both `upstream/development` and b8d1aa91.
+
+Build (gfx1100, AMD Radeon Pro W7800 48GB, HIP_VISIBLE_DEVICES=2 dispatcher pin, `ulimit -c 0`; TheRock ROCm SDK pip wheels at `rocm-sdk path --root`, g++ host):
+```bash
+R=$(rocm-sdk path --root)
+utils/timeit.sh GOMC compile -- bash -c "cmake -S $PWD/projects/GOMC/src -B $PWD/agent_space/gomc-hip -DUSE_HIP=ON -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_PREFIX_PATH=$R -DCMAKE_BUILD_TYPE=Release && cmake --build $PWD/agent_space/gomc-hip -j 16"
+```
+rc=0, all 8 executables, 0 errors, 5106 warnings (the known `hipError_t` nodiscard class; last record 5112).
+
+Tests: `utils/timeit.sh GOMC test -- bash -c "ulimit -c 0; python3 agent_space/gomc_val.py <build> <src> <work>"`, the same procedure as the 2026-10-31 gfx1100 round (the script was rewritten because agent_space does not survive between jobs), plus two new checkpoint chains (Base -> K_1 -> K_N, GEMC, GPU and CPU), added because upstream changed the checkpoint streams.
+
+| run | GPU / CPU exit | ENER rows | GPU vs CPU max rel diff | acceptance lines GPU = CPU | key acceptance | vs 2026-10-31 gfx1100 |
+|---|---|---|---|---|---|---|
+| GEMC AR_KR SingleRun 3000 | 0 / 0 | 62 | 0 | 6/6 | disp AR 48.30% / KR 19.04% | same |
+| GEMC ISOPEN_NEOPEN 3000 (MEMC) | 0 / 0 | 62 | 0 | 9/9 | MEMC NEO-ISB 61.76% | same |
+| GCMC PEN_HEX 200 (Ewald) | 0 / 0 | 12 | 0 | 12/12 | PEN disp 43.75% | same |
+| NVT AR_KR box 0, 1000 | 0 / 0 | 11 | 0 | 4/4 | disp AR 97.22% / KR 98.39% | same |
+| NPT AR_KR box 0, 1000 | 0 / 0 | 11 | 0 | 5/5 | disp 98.40/97.76%, volume 100.0% | DIFFERS (was 98.00/97.55%, volume 50.0%), cause below |
+| GEMC ISOPEN_NEOPEN 30000 | 0 / 0 | 62 | 0 | 9/9 | MEMC 54.05%, mol-transfer ISB 41.01% | same |
+| GCMC PEN_HEX 2000 | 0 / 0 | 42 | 0 | 12/12 | PEN disp 24.81%, mol-transfer PEN 19.05% | same |
+| checkpoint AR_KR Base/K_1/K_N (new) | 0,0,0 / 0,0,0 | 66 | 0 | 18/18 | - | new |
+| checkpoint ISOPEN_NEOPEN Base/K_1/K_N (new) | 0,0,0 / 0,0,0 | 66 | 0 | 27/27 | - | new |
+
+9/9 pass: GPU output identical to CPU at printed precision on every case.
+
+### NPT difference: caused by upstream 411b8a73, not by the port
+
+Same NPT input, CPU executable (GPU matches CPU in each build):
+- b8d1aa91 (previous head, HIP build): disp 98.00/97.55, volume 50.0%, last ENER total -4.9186e-01
+- upstream 09ec304e (CPU-only g++ build, no port): same as b8d1aa91
+- upstream 411b8a73 (CPU-only g++ build, no port): disp 98.40/97.76, volume 100.0%, last ENER total -3.7375e+00
+- 25ba089d (this head): same as 411b8a73
+- 411b8a73 with only src/CellList.{h,cpp} restored from b8d1aa91 (pointer members, per-box copy): back to 98.00/97.55, volume 50.0%
+
+So the change comes from #561's switch of `CellList::mols`/`dimensions` from pointers to references. Reading of the cause (not proven beyond this bisection): `GridAll`/`GridBox` still do `dimensions = dims;`, which used to re-point the pointer and now copy-assigns `dims` into the `BoxDimensions` object bound at construction (the system's `boxDimRef`). `VolumeTransfer::CalcEn` calls `GridBox(newDim, ...)` with the trial box, which overwrites the system's real box dimensions before acceptance; the reject path's `GridBox(boxDimRef, ...)` is then a self-assignment, so a rejected volume move is never undone (every volume move reads as accepted). This affects every NPT and GEMC-NPT run on upstream `development` for CPU and GPU alike. It is upstream behavior that this round was told to keep, so the port does not change it. jeff may want to tell upstream about it separately; nothing has been posted.
+
+### Other checks
+
+- `python3 utils/jargon.py --port GOMC`: clean (after `git -C projects/GOMC/src branch -f development upstream/development`; the fork's `development` mirror is still at 09ec304e, so a fresh clone needs that).
+- `moatlib.py audit-commits GOMC`: flags only upstream's own 411b8a7 (no AI disclosure, no Test Plan) and bf40529 (no Test Plan), because the fork mirror is stale; neither is ours.
+- `git -C projects/GOMC/src status --porcelain`: empty.
+- Pushed `moat-fix-562` only (`git push origin moat-fix-562`); `moat-port` untouched at b8d1aa91. `moatlib.py advance-head GOMC 25ba089d...`; `classify b8d1aa91 25ba089d` -> `mixed`, so the other platforms read `revalidate`.
+- Windows: not testable here. The delta has no Windows-specific code; the CellList copy constructor upstream wrote copies arrays per box (no array mem-initializer), so the clang error that b8d1aa91 fixed should not come back, but the windows gate still needs a real run at 25ba089d.
