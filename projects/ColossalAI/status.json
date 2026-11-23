@@ -6,16 +6,12 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "torch-extension",
-  "stage": "reviewing",
+  "stage": "review-passed",
   "adopted_at": "2026-11-05T22:44:55Z",
-  "updated_at": "2026-11-23T23:16:12Z",
+  "updated_at": "2026-11-23T23:21:44Z",
   "head_sha": "e2b767e85f8b83e0b83e3f6d4bcf61a19f63cbb0",
   "depends_on": [],
-  "porting": {
-    "arch": "linux-gfx942",
-    "since": "2026-11-23T23:16:12Z",
-    "holder": "cacf732e62b4"
-  },
+  "porting": null,
   "waivers": {
     "windows": {
       "reason": "Upstream setup.py refuses Windows and the stack is Linux/NCCL-only (fabric, ray, torch.distributed); Jeff approved the waiver on 2026-11-23.",
@@ -54,7 +50,7 @@
       "failed_sha": null,
       "started_at": "2026-11-23T20:53:55Z",
       "completed_at": null,
-      "updated_at": "2026-11-23T23:16:12Z",
+      "updated_at": "2026-11-23T23:21:44Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -90,7 +86,8 @@
   },
   "porting_released": {
     "arch": "linux-gfx942",
-    "since": "2026-11-23T20:53:55Z",
-    "at": "2026-11-23T23:12:36Z"
-  }
+    "since": "2026-11-23T23:16:12Z",
+    "at": "2026-11-23T23:21:44Z"
+  },
+  "reviewed_sha": "e2b767e85f8b83e0b83e3f6d4bcf61a19f63cbb0"
 }
