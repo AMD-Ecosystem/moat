@@ -52,6 +52,12 @@ Python binding: `-DPSZ_BUILD_PYBINDING=ON -DPython_EXECUTABLE=$FLEET_VENV/bin/py
 - CUDA no-regression compile: no nvcc on this host. The shared edits (template keyword, spline-y24 declarations, `__launch_bounds__` parens, lc_gen `#if`) need the nvcc 12.8 compile on the mi355 host before jeff approves. `cuda-not-validated: no nvcc on the gfx90a host`.
 - wave32 (gfx1100) and Windows (gfx1201): not built or run at 16623130. The shuffle-width change is a no-op on wave32 by construction, but LC is newly built on HIP and the cuda_fp8 shim, LC `-march=native -mno-fma` host flags and `__builtin_trap` are untested on Windows TheRock.
 
+## Porter fix + re-review 2026-11-23 (linux-gfx90a @ b61a885e -- review-passed)
+
+Porter: b61a885e `[ROCm] Parse HIP's bf16 header before the shuffle macros` -- psz_hip_compat.h and cuda_runtime.h include `<hip/hip_bf16.h>` right after hip_runtime.h; cuda_fp8.h drops its push/pop. Probes with the prelude force-included: `<rocprim/types.hpp>`, `<hipcub/hipcub.hpp>`, `<hip/hip_bf16.h>`, `<cuda_fp8.h>` all 0 errors (rocprim was failing before). Incremental build rc=0; ctest 68 PASS / 11 SKIP / 0 FAIL of 79; CLI sine CR=27.05 PSNR=70.8 max_error=1.000047e-03. jargon clean; pushed moat-fix-91 16623130..b61a885e; head_sha advanced.
+
+Re-review of 16623130..b61a885e (3 headers): no findings. Full round delta 11140547...b61a885e reviewed (see the review below for the merge and the first four commits). Open items carried to validation and to jeff: the nvcc compile (not run on this host) and the two Test Plan wording gaps listed below.
+
 ## Review 2026-11-23 (linux-gfx90a, fix round delta 11140547...16623130 -- changes-requested)
 
 Scope: merge 850f79bb (upstream master b63d8c68, 43 commits, reviewed as resolution only: port-vs-old-upstream `git diff e1c0135f 11140547` against port-vs-new-upstream `git diff b63d8c68 16623130`) and our four commits 6c9293a0, 6d1d4e21, 6695d762, 16623130. Independent read-only review pass plus inline fact-check of each finding. `rev-list --count moat-fix-91..upstream/master` = 0.
