@@ -6,9 +6,9 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "unclaimed",
+  "stage": "awaiting-fork",
   "adopted_at": "2026-11-23T21:19:35Z",
-  "updated_at": "2026-11-23T21:19:35Z",
+  "updated_at": "2026-11-23T21:22:39Z",
   "head_sha": null,
   "depends_on": [
     "spconv",
@@ -16,5 +16,46 @@
   ],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-23T21:22:39Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    }
+  },
+  "license_spdx": "Apache-2.0 AND BSD-3-Clause AND MIT AND BSL-1.0 AND Unlicense AND GPL-3.0-or-later WITH GCC-exception-3.1",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0 AND BSD-3-Clause AND MIT AND BSL-1.0 AND Unlicense AND GPL-3.0-or-later WITH GCC-exception-3.1",
+      "evidence": "https://github.com/autowarefoundation/spconv_cpp/blob/aa1021e686fd5dac91288a772ca8b1b76062a7e4/LICENSE",
+      "at": "2026-11-23T21:21:44Z"
+    }
+  ],
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "none at spconv_cpp level; spconv-level AMD work (ZJLi2013/spconv_rocm, HYGON-AI/spconv-das) already ruled on for spconv",
+    "viable": true,
+    "summary": "Autoware's pre-generated C++ snapshot of spconv 2.3.8 + cumm (22k generated CUDA files); regenerate with the HIP cumm/spconv generators, so it waits on MOAT spconv and cumm; tier 3 only via cumm's GPL-with-exception headers",
+    "at": "2026-11-23T21:22:39Z"
+  }
 }
