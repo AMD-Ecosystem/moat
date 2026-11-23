@@ -125,7 +125,7 @@ Scope, per Jeff's Q3 = i ruling and the dispatch: round 1 only. `autoware_cuda_d
 - `2290174` `[ROCm] Build autoware_cuda_utils with HIP when CUDA is not found`:
   - `CMakeLists.txt`: `option(AUTOWARE_CUDA_USE_HIP ...)` (default OFF) skips `find_package(CUDA)`. When CUDA is not found, `find_package(hip CONFIG)` + `find_package(rocthrust CONFIG)` (QUIET, `PATHS $ENV{ROCM_PATH} /opt/rocm`); if neither toolkit is found, upstream's warning and `return()`. The CUDA branch keeps upstream's `find_cccl.cmake` + `CCCL::CCCL autoware_cuda_utils::cccl_system CUDA::cudart` and `cuda_add_executable`. The HIP branch adds `hip/include` to the INTERFACE include dirs (BUILD and INSTALL as `include/autoware_cuda_utils/hip`), links `autoware_cuda_utils::rocthrust_system`, installs the shim directory, `enable_language(HIP)`, compiles the 5 test `.cu` as `LANGUAGE HIP`, and adds `-Wno-unused-value -Wno-unused-result` to HIP sources of the test target only (upstream's tests leave `cudaStreamCreate/Destroy/Synchronize` unchecked in `test_thrust_utils.cu`; on CUDA, FindCUDA never passes `-Werror` to `.cu`). `CONFIG_EXTRAS` is a variable chosen per branch.
   - `cmake/find_rocthrust.cmake` (new; HIP CONFIG_EXTRAS): `find_package(hip)` + `find_package(rocthrust)`, and a `autoware_cuda_utils::rocthrust_system` INTERFACE IMPORTED marker holding rocThrust/rocPRIM include dirs (normal and SYSTEM) plus `hip::host`. Deliberately not `roc::rocthrust`, which links `roc::rocprim_hip` -> `hip::device` and puts `--offload-arch` on g++ consumers (the cuda_blackboard lesson).
-  - `hip/include/cuda_runtime_api.h`, `cuda_runtime.h` (shim names, include `<hip/hip_runtime_api.h>` / `<hip/hip_runtime.h>`) and `cuda_runtime_hip_compat.h` (`#ifndef`/`#define` for exactly the 38 runtime names the package and its tests use; `cudaFreeHost` -> `hipHostFree`, `cudaHostAlloc` -> `hipHostAlloc`, which is not deprecated in HIP 7.17, `cudaPointerAttributes` -> `hipPointerAttribute_t`). The public headers are untouched apart from the two lines above.
+  - `hip/include/cuda_runtime_api.h`, `cuda_runtime.h` (shim names, include `<hip/hip_runtime_api.h>` / `<hip/hip_runtime.h>`) and `cuda_runtime_hip_compat.h` (`#ifndef`/`#define` for exactly the 34 runtime names the package and its tests use (corrected from 38 after review finding 4); `cudaFreeHost` -> `hipHostFree`, `cudaHostAlloc` -> `hipHostAlloc`, which is not deprecated in HIP 7.17, `cudaPointerAttributes` -> `hipPointerAttribute_t`). The public headers are untouched apart from the two lines above.
   - `thrust_utils.hpp`: `thrust::hip::par.on(stream)` under `#if defined(THRUST_DEVICE_SYSTEM_HIP) && THRUST_DEVICE_SYSTEM == THRUST_DEVICE_SYSTEM_HIP`, upstream line otherwise.
   - `README.md` of the package: an "AMD GPUs (ROCm)" section (the repository has no CUDA build doc; the package README is where the build is described).
 - `autoware_cuda_dependency_meta`: no change. Its extras add `-fno-lto` to C/C++ flags only (`CMAKE_HIP_FLAGS` untouched); the HIP test and the HIP consumer build and link with it. Whether HIP fat binaries need `-fno-lto` for the duplicate-`fatbinData` reason was not exercised (no LTO in this build).
@@ -189,7 +189,7 @@ autoware_universe builds against this repository as source in its colcon workspa
 colcon build --packages-up-to autoware_cuda_utils --cmake-args -DCMAKE_PREFIX_PATH=<rocm prefix> -DCMAKE_HIP_ARCHITECTURES=<gfx> [-DAUTOWARE_CUDA_USE_HIP=ON]
 ```
 
-`-DAUTOWARE_CUDA_USE_HIP=ON` is needed when a CUDA toolkit is also installed. Consumers configure with the same `CMAKE_PREFIX_PATH` (or `ROCM_PATH`), because the installed config extras (`find_rocthrust.cmake`) run `find_package(hip)` and `find_package(rocthrust)`. Linking `autoware_cuda_utils` (with ament_auto, `ament_target_dependencies` or `target_link_libraries(autoware_cuda_utils::autoware_cuda_utils)`) gives a consumer the shim `cuda_runtime_api.h`/`cuda_runtime.h` that map only the 38 runtime names this package uses. Each consumer brings its own compat header for the rest; the shim's macros are `#ifndef`-guarded, so identical definitions coexist. With a pip ROCm SDK, installed binaries need `$ROCM_SDK/lib` on `LD_LIBRARY_PATH`. As of round 1 (head 2290174), `autoware_tensorrt_common` is not ported yet (round 2, MIGraphX).
+`-DAUTOWARE_CUDA_USE_HIP=ON` is needed when a CUDA toolkit is also installed. Consumers configure with the same `CMAKE_PREFIX_PATH` (or `ROCM_PATH`), because the installed config extras (`find_rocthrust.cmake`) run `find_package(hip)` and `find_package(rocthrust)`. Linking `autoware_cuda_utils` (with ament_auto, `ament_target_dependencies` or `target_link_libraries(autoware_cuda_utils::autoware_cuda_utils)`) gives a consumer the shim `cuda_runtime_api.h`/`cuda_runtime.h` that map only the 34 runtime names this package uses. Each consumer brings its own compat header for the rest; the shim's macros are `#ifndef`-guarded, so identical definitions coexist. With a pip ROCm SDK, installed binaries need `$ROCM_SDK/lib` on `LD_LIBRARY_PATH`. The installed package records its backend: `share/autoware_cuda_utils/cmake/check_gpu_backend.cmake` sets `autoware_cuda_utils_USE_HIP` (TRUE for a HIP build, FALSE for CUDA) and stops a consumer's configure with a `FATAL_ERROR` when it is set up for the other backend (HIP build: the consumer found CUDA via `CUDA_FOUND`/`CUDAToolkit_FOUND` or enabled the CUDA language; CUDA build: the consumer set `AUTOWARE_CUDA_USE_HIP` or enabled HIP). The check runs at `find_package` and again at the end of the consumer's directory (`cmake_language(DEFER)`), since `autoware_package()` finds dependencies before consumers call `find_package(CUDA)`. So an autoware_universe consumer on a host with both toolkits must honor `-DAUTOWARE_CUDA_USE_HIP=ON` (skip `find_package(CUDA)` when it is ON) or key its backend off `autoware_cuda_utils_USE_HIP`. As of round 1 (head 0842236), `autoware_tensorrt_common` is not ported yet (round 2, MIGraphX).
 
 ## Review 2026-11-23 (reviewer, linux-gfx950 fleet job, round 1 at 2290174)
 
@@ -220,3 +220,51 @@ ROCm: TheRock `rocm[devel,device-gfx950]==10.2.0` installed into this job's venv
 ### For a person
 
 - Finding 3 needs the commit re-creation Jeff already has to rule on for the DCO sign-off (porter open item 1). Options: (a) reword the body when the branch is re-created with sign-off at PR prep (same tree, validation carries over); (b) leave the body as is and correct the Test Plan in the PR body only. Recommended: (a).
+
+## Porter round 1 fixes (2026-11-23, porter agent, linux-gfx950 fleet job; MI355X, HIP_VISIBLE_DEVICES=2)
+
+Answers "Review 2026-11-23". Still round 1 of Jeff's Q3 = i ruling: no MIGraphX work, `autoware_tensorrt_common` surface stays `owed`. New commits on `moat-port` (no amend/rebase/force): `20be73c`, `0842236`; head 2290174 -> 0842236.
+
+### Per finding
+
+1. **Mixed CUDA/HIP consumer** -> `0842236` `[ROCm] Record the GPU backend autoware_cuda_utils was built with`. New `cmake/check_gpu_backend.cmake.in` (ament configures `.cmake.in` extras with `@ONLY`), added to `ament_auto_package(CONFIG_EXTRAS ...)` on both backends; `CMakeLists.txt` sets `autoware_cuda_utils_USE_HIP` TRUE/FALSE in the branch. Installed file sets `autoware_cuda_utils_USE_HIP` and `FATAL_ERROR`s a consumer configured for the other backend (HIP build: `CUDA_FOUND`, `CUDAToolkit_FOUND` or CUDA in `ENABLED_LANGUAGES`; CUDA build: `AUTOWARE_CUDA_USE_HIP` or HIP in `ENABLED_LANGUAGES`). Checked immediately and deferred to the end of the calling directory (`cmake_language(DEFER CALL ...)`), because `autoware_package()` (autoware_cmake 9849ad2, `autoware_package.cmake:63`) runs `ament_auto_find_build_dependencies()` before a typical consumer's `find_package(CUDA)`, so an immediate check alone would miss the usual Autoware order. Not put in `find_rocthrust.cmake`/`find_cccl.cmake` because the package's own build `include()`s those; the new file only runs for consumers. README: consumers on a host with both toolkits need the option too, and what `autoware_cuda_utils_USE_HIP` means.
+2. **Option ON, no ROCm** -> `20be73c` `[ROCm] Fail configure when HIP is requested but not found`: `FATAL_ERROR` naming HIP, rocThrust, `CMAKE_PREFIX_PATH`, `ROCM_PATH` when `AUTOWARE_CUDA_USE_HIP` is ON; the option-OFF path keeps upstream's warn-and-return.
+3. **2290174 body overstates the Test Plan**: not reworded (needs a history rewrite, Jeff's call, listed under "For a person" in the review). The two new commit bodies state that ament_cppcheck skips with cppcheck 2.13 and name `-DAUTOWARE_CUDA_USE_HIP=ON` in the build command.
+4. **34, not 38**: corrected in "What changed on the fork" and "Install as a dependency" (`grep -o '#define cuda[A-Za-z_]*' hip/include/cuda_runtime_hip_compat.h` lists 34).
+
+### Environment (this job; nothing shared modified)
+
+TheRock `rocm[devel,device-gfx950]==10.2.0` into `$FLEET_VENV` (HIP 7.17.26434), ROS 2 Jazzy ament tooling from source (`<job>/deps/ros2`, same package list as round 1), cppcheck 2.13.0 and libxml2 2.9.14 xmllint into `<job>/deps/prefix`, autoware_cmake 9849ad2. Note for later jobs: `utils/timeit.sh` `cd`s to the moat root, so a wrapped `colcon build` without `--base-paths/--build-base/--install-base/--log-base` builds in the moat checkout; the job wraps colcon with explicit bases. A plain-`cmake` ament probe needs `-DPython3_EXECUTABLE=$FLEET_VENV/bin/python` (catkin_pkg lives there) and a maintainer email catkin_pkg accepts.
+
+### HIP build and tests at 0842236
+
+```
+colcon build --packages-up-to autoware_cuda_utils autoware_lint_common --cmake-args -DCMAKE_BUILD_TYPE=Release -DAUTOWARE_CUDA_USE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx950 -DCMAKE_PREFIX_PATH=$ROCM_SDK -DPython3_EXECUTABLE=$FLEET_VENV/bin/python
+timeout 1800 colcon test --packages-select autoware_cuda_dependency_meta autoware_cuda_utils --event-handlers console_direct+ --ctest-args --repeat until-fail:20 --timeout 300
+```
+rc 0; `-- cuda is not found, building autoware_cuda_utils with HIP 7.17.26434`; installed `check_gpu_backend.cmake` has `set(autoware_cuda_utils_USE_HIP TRUE)`. `[  PASSED  ] 17 tests.` on 20/20 runs, 0 skipped/failed. `colcon test-result`: 51 tests, 0 errors, 0 failures, 11 skipped (cppcheck 2.13 skips; 51 vs 50 is the copyright test counting the new file). (`autoware_cmake` must be named in `--packages-up-to` or listed through `autoware_lint_common`; colcon did not pull it in for `--packages-up-to autoware_cuda_utils` alone here.)
+
+### CUDA 12.8 compile check at 0842236 (nvcc V12.8.93, no NVIDIA GPU: compile/link only)
+
+`PATH=/usr/local/cuda/bin:$PATH colcon build --packages-up-to autoware_cuda_utils autoware_lint_common --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DCMAKE_VERBOSE_MAKEFILE=ON` in separate workspaces for 0842236 and 2290174: rc 0 both, `Found CUDA ... 12.8`, no HIP line, 10 nvcc invocations each, identical warning set (20 nvcc deprecated-target notes, 2 CMake dev warnings), no compiler warning, `test_autoware_cuda_utils` links. Install trees: sha256 identical except the workspace-path files, plus `share/autoware_cuda_utils/cmake/check_gpu_backend.cmake` (new, `set(autoware_cuda_utils_USE_HIP FALSE)`) and `autoware_cuda_utilsConfig.cmake` (lists the new extra).
+
+### Reviewer's mixed-toolkit reproducer, rerun (probe package with `autoware_package()`, so `-Werror`)
+
+Probe: `a.cpp` (makeCudaStream, `make_unique_host<float[]>`, calls `run(cudaStream_t, float*, int)`) + `k.cu` (iota kernel). nvcc 12.8 on PATH.
+
+| autoware_cuda_utils install | consumer | 2290174 | 0842236 |
+|---|---|---|---|
+| HIP | `find_package(CUDA)` before `autoware_package()`, `enable_language(CUDA)` | links fail: `undefined reference to run(ihipStream_t*, float*, int)` (with `--compile-no-warning-as-error`; with `-Werror` nvcc's `-Wpedantic` line-directive error hits first) | configure `FATAL_ERROR`: "autoware_cuda_utils was built with HIP, but probe_consumer is configured for CUDA. Configure probe_consumer with -DAUTOWARE_CUDA_USE_HIP=ON, or rebuild autoware_cuda_utils with CUDA." |
+| HIP | `autoware_package()` then `find_package(CUDA)`, `cuda_add_executable` (deferred path) | builds, links `cudart_static` and `amdhip64`, run aborts `cudaErrorInsufficientDriver` | same configure `FATAL_ERROR` |
+| HIP | honors `-DAUTOWARE_CUDA_USE_HIP=ON`, `k.cu` as HIP | -- | builds, links only `amdhip64`, runs on GPU: `probe ok 1000 1023`, rc 0 |
+| HIP | same probe without the option on this host (FindCUDA finds /usr/local/cuda) | -- | configure `FATAL_ERROR` (expected) |
+| CUDA | CUDA consumer | -- | builds and links `cudart_static` (run needs an NVIDIA GPU) |
+| CUDA | `-DAUTOWARE_CUDA_USE_HIP=ON`, HIP | builds to compile errors (`blockIdx` undeclared: real CUDA headers in a HIP TU) | configure `FATAL_ERROR`: "autoware_cuda_utils was built with CUDA, but probe_consumer is configured for HIP. ..." |
+
+Finding 2: `cmake -S autoware_cuda_utils -B <b> -DAUTOWARE_CUDA_USE_HIP=ON` with `ROCM_PATH` unset, no ROCm on `CMAKE_PREFIX_PATH`, no `/opt/rocm`: 2290174 rc 0 with the "cuda is not found ... won't be built" warning; 0842236 rc 1, `CMake Error at CMakeLists.txt:18: AUTOWARE_CUDA_USE_HIP is ON, but HIP or rocThrust is not found. Add the ROCm prefix to CMAKE_PREFIX_PATH or set ROCM_PATH.` Option OFF with `-DCUDA_TOOLKIT_ROOT_DIR=/nonexistent` and no ROCm: rc 0 with upstream's warning, as before.
+
+`utils/jargon.py --port autoware_cuda`: clean. `utils/prose.py` on both commit bodies: clean. `git -C projects/autoware_cuda/src status --porcelain`: clean.
+
+### Open for a person (carried, unchanged)
+
+Porter round 1 items 1-4 (DCO sign-off, copyright holder line, upstream defects, cspell) and the review's finding-3 choice (reword 2290174 at the same-tree re-creation, or correct it in the PR body only) still need Jeff. Nothing in this round depends on them.
