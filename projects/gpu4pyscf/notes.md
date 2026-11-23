@@ -5416,7 +5416,7 @@ None has the same idiom (a 32-bit value shifted by a count that reaches 32 on 64
 - **Correct:** the low-bit `constexpr` masks `(1u << n) - 1` with n <= 16 (`pbc/contract_ft_ao.cu:40, 42, 328, 330`, `gvhf-md/contract_int3c2e.cu:536`, `pbc/int3c2e_create_tasks.cuh:375`, `pbc/ft_ao.cu:297`), `WARP_FULL_MASK` in contract_int3c2e.cu, and the multigrid_v3 `__shfl_down_sync(__activemask(), ...)` calls (passed directly, not stored).
 
 ### (i) J-engine lane mask on 64-wide wavefronts (draft)
-- Branch `pr-1054-md-j-lane-mask`, tip **b04593e09c332833d5579d29b0f0668d08434502**, parent upstream master 61c2a1e4 (upstream's tip at the push). Stands alone: yes.
+- **Re-cut 2026-11-23 on upstream master 5f609f6a** (section "Open pull requests against upstream master 5f609f6a"): open the pull request from branch `pr-1054-md-j-lane-mask-5f609f6a`, tip **4a30918d87410c35f5555f58cdac9c7807291d1b**, parent 5f609f6a, with the include fixed to `"warp_size.h"` (#1066 moved the header). The numbers in the draft below are from that re-cut. The original `pr-1054-md-j-lane-mask` (b04593e, parent 61c2a1e4) is unchanged and no longer compiles for CUDA once merged with current master. Stands alone: yes.
 - Commit title has no prefix: shared kernel source, the CUDA code is unchanged, and the added lines name no HIP, ROCm or AMD target (the same reasoning as (g)). Commit body: problem, cause, change, "Authored with Claude.", fenced Test Plan; no trailer. `jargon.py --commits` and `--diff 61c2a1e4..pr-1054-md-j-lane-mask`: clean.
 - The placeholder paragraph in the draft below must be replaced by the V100 result before the pull request is opened.
 
@@ -5434,20 +5434,20 @@ Change: the mask type is `unsigned long long` when `WARP_SIZE` is 64 and stays `
 Test plan, MI300X (gfx942), ROCm 10.1.0, CuPy 14.2.0, PySCF 2.14.0, built with `-mllvm -disable-machine-licm` (see #1055) and the CI marker selection, one pytest process per test file:
 
 ```
-USE_HIP=1 CMAKE_CONFIGURE_ARGS="-DCMAKE_HIP_FLAGS=-mllvm=-disable-machine-licm -DCMAKE_SHARED_LINKER_FLAGS=-mllvm=-disable-machine-licm" python setup.py build_py
+GPU4PYSCF_BACKEND=hip CMAKE_CONFIGURE_ARGS="-DCMAKE_HIP_FLAGS=-mllvm=-disable-machine-licm -DCMAKE_SHARED_LINKER_FLAGS=-mllvm=-disable-machine-licm" python setup.py build_py
 python -m pytest gpu4pyscf/scf/tests/test_scf_j_engine.py -p no:xdist -m 'not slow and not benchmark and not special' -k 'not _high_cost'
 ```
 
 | | master | this branch |
 |---|---|---|
-| scf/tests, dft/tests, df/tests/test_df_int3c2e.py, pbc/scf/tests/test_pbc_scf_j_engine.py (passed/failed/skipped/errors) | 362/19/23/0 | 363/18/23/0 |
+| scf/tests, dft/tests, df/tests/test_df_int3c2e.py, pbc/scf/tests/test_pbc_scf_j_engine.py (passed/failed/skipped/errors) | 363/18/23/0 | 363/18/23/0 |
 | scf/tests/test_scf_j_engine.py | 8/0/0/0 | 8/0/0/0 |
 | J, two water molecules, def2-tzvp, md_contract_j.cu built without NDEBUG | hardware exception in both kernels | 1.5e-12 (one density matrix), 1.2e-12 (four) from PySCF |
-| one J build, vitamin C, def2-tzvp (nao 420), best of 10 | 0.869 s (one DM), 0.962 s (four) | 0.870 s, 0.961 s |
+| one J build, vitamin C, def2-tzvp (nao 420), best of 10 | 0.860 s (one DM), 0.960 s (four) | 0.860 s, 0.961 s |
 
-The failing tests are the same on both, apart from test_stability_rhf_unstable, which fails intermittently on unmodified master (1 run in 3 on each tree here). In a release build the gfx942 code of both kernels is the same instruction for instruction before and after (only 4 PC-relative data offsets move), which is why results and timing do not change.
+The failing tests are the same on both. In a release build the device code of md_contract_j.cu is the same instruction for instruction before and after (gfx942 and gfx90a), which is why results and timing do not change.
 
-CUDA: NVRTC 12.9 gives byte-identical PTX for the device code of md_contract_j.cu before and after at compute_70, compute_80 and compute_90, and the gfx1100 and gfx1201 (32-wide) device code is also identical. [PLACEHOLDER, to be replaced before opening: the result of building this branch with nvcc and running the J-engine, scf and dft tests on a V100.]
+CUDA: clang in CUDA mode gives identical device LLVM IR for md_contract_j.cu before and after for sm_70, sm_80 and sm_90, and the gfx1100 and gfx1201 (32-wide) device code is also identical. [PLACEHOLDER, to be replaced before opening: the result of building this branch with nvcc and running the J-engine, scf and dft tests on a V100.]
 
 Part of #1054.
 
@@ -5459,3 +5459,206 @@ Checklist line for the issue's Tracking section (draft; nothing posted):
 ```
 - [ ] 32-bit lane mask shifted by up to 63 bits in the MD J kernels (gvhf-md/md_contract_j.cu) on 64-wide wavefronts
 ```
+
+## Open pull requests against upstream master 5f609f6a (2026-11-23, fleet job, linux-gfx942 MI300X)
+
+Requested by jeff: maintenance of the open issue-1054 pull requests after upstream master moved, not a pipeline round. No stage, lock, head or platform record was changed (another job holds the lock), `moat-port` was not touched (06477124 before and after), and no branch behind an open pull request was pushed: every `pr-1054-*` tip is the one recorded above. The only GitHub writes were new staging branches on AMD-Ecosystem/gpu4pyscf (listed in the table) and this commit. Nothing was posted. GPU work ran under `ulimit -c 0` on the dispatcher's `HIP_VISIBLE_DEVICES=0`. Scratch under the job's `agent_space/` (`g/` scripts, `res/` junit, `logs/`), not durable.
+
+### What changed upstream, verified with read-only queries
+- At the start (about 17:20 UTC) upstream master was **5f609f6a** with the seven commits named in the request (5135bbb3 #1044 LNO-CCSD, 4d8962fe #1039 SYCL, cdbe95b1 #1063 backend selection, 6cd76af2 #1053 ECP, 6cf69ba3 #1059 ours, 5bbe06ac #1066 compat headers, 5f609f6a #1062 FT-AO batching). PR states were as the request said: #1055, #1056 and #1060 CONFLICTING (#1060 and #1061 approved by sunqm on 2026-11-20), #1057, #1058 and #1061 mergeable, #1059 merged.
+- **It moved again during this session.** sunqm approved #1061 a second time and **merged it at 18:23 UTC**: master is now **871a54a7** (#1061 on top of 5f609f6a, touching only mp/dfmp2_addons.py and pbc/df/rsdf_builder.py, no file of any other pull request). At 17:37 and 17:45 sunqm left one inline review comment each on **#1057** (cusolver.py:198) and **#1058** (__config__.py:45), the same text in both: "use `gpu4pyscf.BACKEND == 'hip'`". No other comment on any of them. Answering those two was not in the request; staging branches for them were prepared the same way (below) so jeff can decide.
+- **Build interface change (#1063):** `USE_HIP=1` no longer selects HIP. On current master `USE_HIP=1 python setup.py build_py` builds the CUDA backend; HIP is `GPU4PYSCF_BACKEND=hip`. `CMAKE_CONFIGURE_ARGS` is still forwarded to the CMake configure line, and lib/CMakeLists.txt still appends to `CMAKE_HIP_FLAGS` inside `if(USE_HIP)` (now set from `GPU4PYSCF_BACKEND`), so the flag build is unchanged: `GPU4PYSCF_BACKEND=hip CMAKE_CONFIGURE_ARGS="-DCMAKE_HIP_FLAGS=-mllvm=-disable-machine-licm -DCMAKE_SHARED_LINKER_FLAGS=-mllvm=-disable-machine-licm" python setup.py build_py`. The commit Test Plans of the open branches spell `USE_HIP=1`; on current master that line builds CUDA. The pull-request bodies do not quote the command (only (f)'s one-liner, which is a Python run).
+- **Include path change (#1066):** `warp_size.h` moved to `lib/compat/`, which is now on the include path; files include it as `"warp_size.h"`.
+
+### Environment and method
+MI300X (gfx942:sramecc+:xnack-), TheRock ROCm SDK 10.1.0 pip (AMD clang 24.0.0), cmake 3.28.3 (/usr/bin). Job venv, the set of the earlier rounds: numpy 2.2.6, scipy 1.17.1, cupy-rocm-7-0 14.2.0, pyscf 2.14.0, pyscf-dispersion 1.7.0, geometric 1.1.1, basis-set-exchange 0.12, MCFun 0.2.6, pytest 9.2.0, pytest-xdist 3.8.0, pytest-timeout 2.4.0. Builds: one git worktree per tree, in-tree `python setup.py build_py` with `GPU4PYSCF_BACKEND=hip` and `CMAKE_BUILD_ARGS="--verbose --parallel 18"`, plus the `CMAKE_CONFIGURE_ARGS` flag for every tree except master as is and the (f) staging tree. Every build exit 0 in 85-102 s, 11 libraries (12 at 61c2a1e), 96 HIP compile and 11 `--hip-link` lines, `--offload-arch=gfx942`; `-disable-machine-licm` on 96/96 and 11/11 in every flag build and in the (f) staging tree without any environment flag, on 0/0 in master as is. Tests: the method of the original preparation, CI marker selection (`-m 'not slow and not benchmark and not special' -k 'not _high_cost'`), one pytest process per test file (`-p no:xdist`), `OMP_NUM_THREADS=2`, `PYTHONPATH=<tree>`, counts passed/failed/skipped/errors from the junit files; usually two streams of three or four files shared the GPU.
+
+### New baseline: the whole upstream CI selection on master 5f609f6a as is (flag build)
+All 255 test files (`find gpu4pyscf -name 'test_*.py'`; 254 at 0647712, plus the new LNO test), four at a time, wall 1182 s: **1787 passed / 411 failed / 105 skipped / 39 errors**. No hang, no timeout, no abort (exit codes: 170 pass, 71 fail, 14 nothing selected). Failures and errors by signature (`g/classify.py`, one cause per test):
+
+| cause (letters of the 2026-11-19 evaluation) | tests on 5f609f6a | fixed by |
+|---|---|---|
+| A `ft_ao_scheme` nsp_max assert | 288 | #1056 |
+| B `syevd` assert (batched or float32 `eigh_std`) | 63 | #1060 |
+| C `rocblas_status_memory_error` after a hipSOLVER call on CuPy's handle | 55 | #1057 |
+| D `fill_int4c2e` shared-memory request | 13 | #1058 |
+| E g-shell ECP derivative kernels over 64 KB LDS, plus a `block_diag: invalid argument` follow-on | 6 in test_ecp.py (4 before; the new test_ecp_ipip_per_atom_non_leading_ecp_atoms from #1053 and one follow-on) | become skips with #1058 |
+| G CPU XC fallback for GKS (NumInt2C) | 7 | none |
+| I d-aug basis missing from this PySCF | 3 | none (environment) |
+| H j2c Cholesky detected from NaN | 2 | #1061, now merged |
+| other: margins, noise floor and the unresolved PBC tests of the earlier tables | 13 | none |
+
+**What is gone because of #1059 and the upstream changes:** only the hiprtc `cuComplex.h` failure. On gfx942 it is hidden behind cause A on master, so it shows only with A fixed: the #1056 staging tree (A fixed) has **0** tests at `HIPRTC_ERROR_COMPILATION ... 'cuComplex.h'` in pbc/{df,dft,grad,gw,scf,properties}, where master + (a) at 61c2a1e had 39. No other cause is fixed upstream: A, B, C, D, E and H are all still there at 5f609f6a in the same numbers (A 288 against the evaluation's 288, D 13 against 13, H 2 against 2; B and C slightly higher because new tests call those paths: B now also fails test_df_gks, test_df_tduhf_grad and test_df_tduks_grad, 4 tests, which pass with #1060), and the ROCm 10.1 LICM miscompile still breaks every build without the flag (below). The follow-on hipErrorIllegalAddress class (F) did not appear in this run. Since 18:23 #1061 removes H on master; the 871a54a7 runs below show it.
+
+### #1060 (approved, was conflicting): still needed
+- **Conflict:** one hunk in `eigh_std` (gpu4pyscf/lib/cusolver.py). #1063 replaced `cupy.cuda.runtime.is_hip` with `BACKEND == 'hip'` in the line this pull request changes. Nothing else in cusolver.py moved under #1063 (the import of `BACKEND`, the two module-level backend tests and this line). **Resolution:** `if (BACKEND == 'hip' and a.ndim == 2 and a.dtype in (np.float64, np.complex128)):`. The merge's diff against master is exactly the pull request's change with `BACKEND == 'hip'` in place of `is_hip` (+5/-2).
+- **Still needed:** yes. The batched and float32 callers still reach `syevd` on master and fail at its assert: 59 tests in the pull request's 15 files and 4 more elsewhere.
+- **Staging branch:** `pr-1054-eigh-std-fallback-merge-5f609f6a`, tip **4e2861dc**, a merge of 5f609f6a into 2e2d8a5c (the existing commit untouched). Merge message: title, the resolution in one paragraph, "Authored with Claude."; jargon and prose clean.
+- **Tests, staging tree against master 5f609f6a, both flag builds:**
+
+| tests (passed/failed/skipped/errors) | master 5f609f6a | staging 4e2861dc |
+|---|---|---|
+| the body's 15 files | 53/82/3/4 | 106/29/3/4 |
+| of which at the syevd assert | 59 | 0 |
+| test_df_gks, test_df_tduhf_grad, test_df_tduks_grad (syevd assert on master, not in the body) | 7/4/1/0 | 11/0/1/0 |
+| scf, dft (32 files) | 336/12/23/0 | 340/8/23/0 |
+
+No test that passes on master fails on the staging tree. Left in the 15 files: 25 cause A (test_pbc_df_derivatives), 6 cause C (test_df_jk test_jk_hermi0, four ALMO-EDA tests, test_sad_guess_rhf_pcm), the d-aug basis test, and test_krylov_eigenvalue (1.336e-5 against places=5, as before). test_ghf_get_jk_real, a follow-on of C at 61c2a1e, passes now. scf+dft: test_gdm_uks_spin_neq_0 and the three SAD-guess UHF/UKS tests now pass. test_init_guess.py: three reruns gave 23/1 each (only test_sad_guess_rhf_pcm, cause C); the first run, inside the 45-file stream, failed test_sad_guess_rks_vv10 after the cause-C error and then hung in test_sad_guess_uhf (stopped; the R9700 pattern of (b) without (c)). Master gave 20/4 in all four runs.
+- **#1057 and #1060 together:** they still apply together. A local tree of the #1060 staging merge plus pr-1054-hipsolver-handle merges without conflict (the two touch different functions of cusolver.py: `eigh` and the handle against `eigh_std`), builds, and test_init_guess.py gives **24/0 in three of three runs** (master 20/4, #1060 alone 23/1). The ordering advice in #1060's body stands: land after #1057 or together with it.
+- **Drafted comment for jeff to post when he fast-forwards the branch:**
+
+> I merged current master into this branch. The only conflict was the condition in `eigh_std`, where #1063 replaced `cupy.cuda.runtime.is_hip` with `BACKEND == 'hip'`; it now reads `BACKEND == 'hip'` plus this change's 2-D float64/complex128 check, and I updated the numbers in the description for the new master.
+
+- **Body: replacement lines** (the table and the two sentences after it; the R9700 paragraph is from 61c2a1e and was not rerun):
+
+```
+| 15 files with batched or float32 eigh (df, md, pbc/df, properties, scf, tdscf) | 53/82/3/4 | 106/29/3/4 |
+| of which at the syevd assert | 59 | 0 |
+| scf, dft | 336/12/23/0 | 340/8/23/0 |
+```
+
+```
+Most remaining failures are the separate `ft_ao_scheme` wave64 assert (25) and `rocblas_status_memory_error` after a hipSOLVER call on CuPy's handle (6). That second problem has its own pull request, and this one should go in after it: with this change alone, the SAD-guess UHF tests in test_init_guess.py get far enough to hit that error, and in one of four runs it then left test_sad_guess_rks_vv10 failing and the next test hanging. With both changes, test_init_guess.py passes in full (three of three runs). test_krylov_eigenvalue now runs and misses its eigenvector bound by 1.34e-5 against places=5; the miss is the same with numpy.linalg.eigh as the subspace solver. On current master three more files hit the same assert (test_df_gks.py, test_df_tduhf_grad.py, test_df_tduks_grad.py, 4 tests); all pass with this change.
+```
+
+### #1056 (was conflicting): still needed
+- **Conflict:** three hunks in gpu4pyscf/lib/pbc/ft_ao.cu, all from #1062 (and #1066 for the include): (1) the `#include "warp_size.h"` line, which this pull request deletes and #1066 rewrote from `"../warp_size.h"`; (2) the start of `ft_aopair_kernel`, which #1062 rewrote for the SYCL launch macros (`setup_context()`, `DECLARE_SHARED`, `threadIdx_x`); (3) `build_ft_ao`, which #1062 rewrote with new arguments, next to `PBC_warp_size`. pbc/df/ft_ao.py merged without conflict (#1062 added 13 lines in `ft_ao()`; the pull request's hunks there apply unchanged).
+- **Is the wave64 defect still there?** Yes. #1062 rewrote `ft_ao_bdiv_kernel` (now persistent, batched by angular momentum, `nGv_per_block = WARP_SIZE` with `FT_AO_THREADS`), but `ft_aopair_kernel` still has `constexpr int nGv_per_block = WARP_SIZE;` and `ft_ao_scheme` still defaults to the device's `PBC_warp_size()` (64 here). On master 5f609f6a as is (flag build) test_pbc_ft_ao.py gives 1/15/1/0 with 14 at `assert np.all(nsp_max > 0)` (ft_ao.py:759), and the 53 pbc files of the body have 294 failures and setup errors there (269 + 25, testcases counted once: 288). Not closable. The new `ft_ao_bdiv_kernel` is self-consistent on 64-wide wavefronts (its host side does not depend on the tile; shared size is fixed by `FT_AO_THREADS`), so the pull request does not need to touch it.
+- **Resolution (smallest):** take #1062's code in all three hunks and apply only this pull request's two edits to it: `constexpr int nGv_per_block = THREADS / WARPS;` with its two-line comment in `ft_aopair_kernel`, and the removal of `PBC_warp_size`. The `warp_size.h` include now **stays**, because #1062's `ft_ao_bdiv_kernel` uses `WARP_SIZE` (on CUDA ft_ao.cuh's fallback is also 32, but keeping master's line is the smaller change and keeps SYCL as master has it). Diff of the merge against master: ft_ao.cu +3/-10, ft_ao.py +1/-9, the pull request's change exactly minus the include removal.
+- **CUDA check:** clang 24 in CUDA mode with pip CUDA 12.9 headers (`-x cuda --cuda-gpu-arch=sm_70 --cuda-device-only -S -emit-llvm -O2`): the device LLVM IR of ft_ao.cu is identical for master 5f609f6a and the staging merge apart from the source path. No nvcc here.
+- **Staging branch:** `pr-1054-ft-ao-wave64-merge-5f609f6a`, tip **865dbb4d** (merge of 5f609f6a into 756fca85).
+- **Tests:**
+
+| tests (passed/failed/skipped/errors) | master 5f609f6a | staging 865dbb4d |
+|---|---|---|
+| pbc/{df,dft,grad,gw,scf,properties}, 53 files | 341/314/50/38 | 606/74/50/13 |
+| of which at the nsp_max assert | 294 | 0 |
+| of which at the hiprtc `cuComplex.h` error | hidden behind the assert | 0 (39 on 61c2a1e with this fix; gone with #1059) |
+| scf, dft | 336/12/23/0 | 336/12/23/0 (the same 12) |
+| test_pbc_ft_ao.py alone | 1/15/1/0 | 15/1/1/0 (test_ft_ao_strain_deriv 3.77e-8 against 3e-8, the known margin) |
+
+No newly failing test in the 53 files. The 87 left: 58 cause C, 8 cause B, 7 cause G, 14 margins and unresolved (test_ft_ao_strain_deriv, test_scf_2d_against_fft, the four RSH GDF gradients, slabdipole x2, slabgate, gdm krks_uniform_grid and kuhf, the two GDF GHF property tests).
+- **Drafted comment:**
+
+> I merged current master into this branch. #1062 rewrote the start of `ft_aopair_kernel` but kept `nGv_per_block = WARP_SIZE`, so the `nsp_max` assert still fails on 64-wide GPUs; the merge keeps #1062's code, sets `nGv_per_block = THREADS / WARPS` there and removes `PBC_warp_size`, and leaves the `warp_size.h` include that the new `ft_ao_bdiv_kernel` uses.
+
+- **Body: replacement lines** (first paragraph unchanged: still 269 failures and 25 setup errors):
+
+```
+| pbc/{df,dft,grad,gw,scf,properties} (passed/failed/skipped/errors) | 341/314/50/38 | 606/74/50/13 |
+| of which at the nsp_max assert | 294 | 0 |
+| scf, dft | 336/12/23/0 | 336/12/23/0 |
+```
+
+```
+The remaining pbc failures have other causes (solver calls after a hipSOLVER call, batched `eigh_std` input, the CPU XC fallback for GKS, tolerance misses).
+```
+
+(The second line drops "a RawKernel that includes cuComplex.h under hiprtc", fixed by #1059. The R9700 paragraph is from 61c2a1e and was not rerun.)
+
+### #1055 (was conflicting): still needed
+- **Conflict:** one hunk in gpu4pyscf/lib/CMakeLists.txt. #1066 changed the `set(CMAKE_HIP_FLAGS ... -include .../compat/hip/gpu_runtime.h -include .../compat/warp_size.h)` line directly above the pull request's option block. **Resolution:** #1066's line, then the option block unchanged. Diff against master: the pull request's 12 added lines exactly.
+- **Does #1063 move where the option belongs?** No. #1063 replaced the `USE_HIP` option by `GPU4PYSCF_BACKEND` (cache string; `USE_HIP` is now a plain variable set from it), moved architecture selection before `enable_language(HIP)`, and added the SYCL block, but HIP compile flags are still set in lib/CMakeLists.txt inside `if(USE_HIP)` by appending to `CMAKE_HIP_FLAGS`, in the same place. setup.py builds no HIP flags of its own (it adds the compiler, `-DCMAKE_BUILD_TYPE=Release`, `CMAKE_CONFIGURE_ARGS` and `-DGPU4PYSCF_BACKEND`). The option is in the right place, and the flag still reaches the 11 `--hip-link` lines.
+- **Does the miscompile still reproduce on new master without the flag?** Yes. Master 5f609f6a as is, RHF water: sto-3g 1.34e-12 from CPU PySCF; **def2-svp `HSA_STATUS_ERROR_MEMORY_APERTURE_VIOLATION` in `rys_k_kernel`, then a hang** (faulthandler dump after 240 s in multi_gpu.py:37 <- scf/jk.py:907 get_k). With the flag (master flag build) and on the staging branch with no environment flag: def2-svp -75.96097516696526, 1.72e-11 from CPU PySCF.
+- **Staging branch:** `pr-1054-hip-machine-licm-merge-5f609f6a`, tip **8be5c6f0** (merge of 5f609f6a into e647eb2f).
+- **Tests (staging built with no environment flag):**
+
+| | master 5f609f6a as is | staging 8be5c6f0 |
+|---|---|---|
+| RHF water, def2-svp | faults in rys_k_kernel, hangs | -75.96097516696526 (1.7e-11 from CPU PySCF) |
+| scf directory, 19 files | 7 files hang (stopped after 150 s each: test_hf_lowmem, test_init_guess, test_rhf, test_scf, test_scf_j_engine, test_scf_jk, test_uhf), 2 abort (test_ghf, test_scf_ecp, SIGABRT after the fault); the 12 that report give 83/18/8/0 | 203/9/14/0, all 19 files |
+| scf, dft | cannot finish | 336/12/23/0, the same 12 failing tests as master built with the flag from the environment |
+
+- **Drafted comment:**
+
+> I merged current master into this branch. #1066 moved the force-included headers to `compat/`, which changed the line just above the new option; the option block itself is unchanged and still belongs in lib/CMakeLists.txt after #1063, and on current master built without the flag RHF water/def2-svp still faults in `rys_k_kernel` on an MI300X.
+
+- **Body: replacement lines:**
+
+```
+Test plan, MI300X (gfx942), ROCm 10.1.0 (HIP 7.16), CuPy 14.2.0, PySCF 2.14.0, built as the README describes (`GPU4PYSCF_BACKEND=hip`) with no extra flags; CI marker selection, one pytest process per test file:
+```
+
+```
+| scf directory, 19 test files (passed/failed/skipped/errors) | 7 files hang (stopped after 150 s each), 2 abort after the fault; the 12 that report give 83/18/8/0 | 203/9/14/0, all 19 files |
+| scf, dft | cannot finish | 336/12/23/0 |
+```
+
+```
+The verbose build log shows the flag on 96/96 HIP compile lines and 11/11 `--hip-link` lines. The branch's scf/dft result matches master built with the flag passed from the environment (336/12/23/0, the same tests).
+```
+
+(The cc-pvtz row, the LICM cost paragraph and the R9700 paragraph are from 61c2a1e and were not rerun.)
+
+### #1057 and #1058 (mergeable; review comments arrived during this session)
+Both merge cleanly with master and needed no conflict work. sunqm asked on each to test `gpu4pyscf.BACKEND == 'hip'` instead of `cupy.cuda.runtime.is_hip`. `BACKEND` exists only since #1063, so each staging branch is a merge of master 871a54a7 (no conflict) plus one commit:
+- `pr-1054-hipsolver-handle-merge-871a54a7`, tip **ad31c137**: merge 30b9fe8f, then "[ROCm] Select eigh's solver handle with BACKEND == 'hip'" (cusolver.py already imports `BACKEND` on master; one line). No `is_hip` left in cusolver.py.
+- `pr-1054-hip-shm-size-merge-871a54a7`, tip **a0a39b6c**: merge d7804234, then "[ROCm] Select the HIP shm_size reserve with BACKEND == 'hip'" (`from gpu4pyscf import BACKEND` in __config__.py, which other modules use the same way; the package sets `BACKEND` before any submodule import).
+- Reproducer from #1057's body on master 871a54a7: `rocblas_status_memory_error`; on ad31c137: `ok`.
+**Tests** (flag builds; before = master 871a54a7, which differs from 5f609f6a only by #1061):
+
+| tests (passed/failed/skipped/errors) | master 871a54a7 | staging |
+|---|---|---|
+| #1057: the body's 14 files | 64/59/2/5 | 96/32/2/0 (ad31c137) |
+| of which rocblas_status_memory_error | 38 (no follow-on hipErrorIllegalAddress in this run) | 0 |
+| #1057: scf, dft | 335/13/23/0 | 339/9/23/0 |
+| #1058: cc/tests, mp/tests, test_int4c2e.py, test_ecp.py | 19/19/0/0 | 32/0/6/0 (a0a39b6c) |
+| of which fill_int4c2e | 13 | 0 |
+| #1058: scf, dft | 335/13/23/0 | 336/12/23/0 |
+
+#1057 scf/dft: the two DFT+U linear-response tests and test_sad_guess_rhf_pcm pass; the 13th on master is test_stability_rhf_unstable, the known intermittent failure. Remaining in the 14 files on ad31c137: 15 cause A, 6 cause B and the other known ones (no newly failing test). #1058: the 6 test_ecp.py skips are the 4 g-shell derivative tests of the body, its fifth, and the new test_ecp_ipip_per_atom_non_leading_ecp_atoms (#1053); the Cholesky failure the body mentions is gone because #1061 is merged. #1058 scf/dft: the three test_int4c2e.py tests pass; test_init_guess.py had two extra failures (test_sad_guess_rks_vv10, test_sad_hf_guess_rhf) after a rocblas_status_memory_error in that run, and 20/4 (master's four) in three reruns on the staging tree and on master each, so they are the intermittent cause-C pattern.
+
+**Body replacement lines** (only if jeff takes the staging branches; the R9700 paragraphs are from 61c2a1e):
+
+#1057:
+```
+| 14 files with solver calls after eigh (df, dft, pbc/dft, pbc/grad, pbc/scf, pbc/x2c, properties, scf) | 64/59/2/5 | 96/32/2/0 |
+| of which rocblas_status_memory_error | 38 | 0 |
+| scf, dft | 335/13/23/0 | 339/9/23/0 |
+```
+
+#1058:
+```
+| cc/tests, mp/tests, scf/tests/test_int4c2e.py, gto/tests/test_ecp.py | 19/19/0/0 | 32/0/6/0 |
+| of which fill_int4c2e | 13 | 0 |
+| scf, dft | 335/13/23/0 | 336/12/23/0 |
+```
+and in place of "The one failure left is test_get_j2c_decomp_linear_dependency (Cholesky failure detection, separate pull request)." and the scf/dft sentence: "No failure is left in these files; the six ECP derivative tests in test_ecp.py now skip. The scf/dft difference is the three test_int4c2e.py tests." (The side-effect sentence in the change paragraph should say six ECP derivative tests, not five.)
+- **Drafted comments:**
+
+> #1057: I merged current master to pick up `gpu4pyscf.BACKEND` and changed the check to `BACKEND == 'hip'` as you suggested.
+
+> #1058: I merged current master to pick up `gpu4pyscf.BACKEND` and changed the check to `BACKEND == 'hip'` as you suggested.
+
+### #1059 and #1061
+Merged by sunqm (2026-11-22 and 2026-11-23 18:23 UTC). Nothing to do. On 871a54a7, test_get_j2c_decomp_linear_dependency passes (mp/tests run above); the other Cholesky test (test_rsdf_builder.py) was not rerun.
+
+### Lane-mask fix (i) re-cut on master 5f609f6a
+- **Defect still there:** yes. #1039/#1063 reworked md_contract_j.cu for SYCL (launch macros, `rt2_off`/`efg_off` arguments in place of the `pRt2_kl_ij`/`efg_phase` pointers, dynamic shared memory through `DYNAMIC_SHARED_PTR`), but both kernels still compute `unsigned int mask = ((1 << threadsx) - 1) << group_id * threadsx;` from `lane_id = t_id % warpSize`, and the shuffles still pass it. The front-end IR on gfx942 is still `shl i32 1, ...` (branch: `shl i64`).
+- **Re-cut:** `git cherry-pick b04593e` onto 5f609f6a applies without conflict, but **the result does not compile on CUDA**: its `#include "../warp_size.h"` names the old location. On HIP it compiled only by accident (the quoted include is found relative to the `compat/hip` include directory, as `compat/hip/../warp_size.h`); in clang CUDA mode with the CUDA include directories (`lib`, `lib/compat`) it fails with `'../warp_size.h' file not found`. The re-cut uses `#include "warp_size.h"`, as contract_int3c2e.cu does since #1066. The SYCL shim's `__shfl_down_sync` ignores the mask, and the SYCL device pass defines no `__gfx9*__` macro, so `lane_mask_t` stays `unsigned int` there. Commit message: the original, with the build command changed to `GPU4PYSCF_BACKEND=hip`, the include named, the counts below, and the CUDA sentence stating the clang check made here in place of the NVRTC one made at 61c2a1e. Branch **`pr-1054-md-j-lane-mask-5f609f6a`**, tip **4a30918d**, parent 5f609f6a, one file +11/-2; jargon and prose clean. The old `pr-1054-md-j-lane-mask` (b04593e) is unchanged.
+- **Release build, identical code:** md_contract_j.cu compiled device-only with the build's flags (`g/ir.sh`, -O3 -DNDEBUG): the ISA is identical before and after for gfx942, gfx90a, gfx1100 and gfx1201 apart from the `__hip_cuid` symbol, with no `v_readfirstlane` in either. CUDA: clang CUDA-mode device IR identical for sm_70, sm_80 and sm_90; the re-cut also passes `-fsyntax-only` for sm_70. The linked `libgvhf_md.so` disassembly was not compared this time.
+- **Assert build** (`g/assert_build.sh`: release flags, md_contract_j.cu alone with `-UNDEBUG`): master traps in both kernels (`HSA_STATUS_ERROR_EXCEPTION ... code: 0x1016 ... kernel: md_j_1dm_kernel`, and the same for `md_j_4dm_kernel`, then hangs to the 300 s limit); the re-cut gives max |J - J(PySCF)| **1.508e-12** (one density matrix) and **1.163e-12** (four). Release builds of both trees: 1.508e-12 and 1.163e-12.
+- **Tests** (flag builds, the 34 files of (i)): master 5f609f6a **363/18/23/0**, re-cut **363/18/23/0**, the same 18 failing tests (the 12 scf/dft of the earlier sections, test_general_contraction for the missing basis, and 5 in test_pbc_scf_j_engine.py at the nsp_max assert). test_scf_j_engine.py 8/0/0/0 on both. test_init_guess.py 20/4 in three runs on each tree; its first run on the re-cut tree, inside the 34-file stream, hung in test_sad_hf_guess_rhf after the cause-C failures and was stopped by hand after 6 min (cause C, not this change: the three reruns and every master run finished). test_stability_rhf_unstable did not fail in this session.
+- **Timing** (`g/jtime.py`, vitamin C def2-tzvp, nao 420, best of 10, two repeats, GPU otherwise idle): one DM 0.8600/0.8593 s master, 0.8597/0.8603 s re-cut; four DMs 0.9605/0.9601 s master, 0.9611/0.9608 s re-cut; J sums identical to 11 digits.
+- Draft (i) above was updated in place to these numbers and the new base (marked there). The V100 placeholder is left for jeff's session.
+
+### Draft (h) (another job owns it; not touched)
+Of its three files, only gpu4pyscf/pbc/df/ft_ao.py changed upstream (#1062: +13 lines in `ft_ao()`, not near the FTOpt product (h) splits); pbc/df/grad/krhf.py and kuhf.py are unchanged since 61c2a1e. The three `contract('Lk,...')` lines (h) wraps are still at ft_ao.py:619, krhf.py:443/445 and kuhf.py:447/449, and the recorded diff (section "The change, exactly") applies to 5f609f6a with `git apply --check`. `pr-1054-gfx12-complex-gemm` does not exist on the fork.
+
+### Summary table
+
+| PR | still needed | staging branch, tip | test result on this GPU | drafted comment |
+|---|---|---|---|---|
+| #1060 eigh_std (approved) | yes: 59 + 4 syevd asserts on 5f609f6a | `pr-1054-eigh-std-fallback-merge-5f609f6a` 4e2861dc | 15 files 53/82/3/4 -> 106/29/3/4 (syevd 59 -> 0); scf+dft 336/12 -> 340/8; with #1057 test_init_guess 24/0 x3 | above (#1063's `BACKEND` condition kept) |
+| #1056 ft_aopair Gv tile | yes: 294 nsp_max failures on 5f609f6a | `pr-1054-ft-ao-wave64-merge-5f609f6a` 865dbb4d | 53 pbc files 341/314/50/38 -> 606/74/50/13 (nsp_max 294 -> 0); scf+dft 336/12 both | above (#1062 kept `WARP_SIZE`) |
+| #1055 machine LICM flag | yes: def2-svp RHF faults and hangs without it on 5f609f6a | `pr-1054-hip-machine-licm-merge-5f609f6a` 8be5c6f0 | scf as-is 7 hang + 2 abort + 83/18/8/0 -> 203/9/14/0; scf+dft 336/12 | above (#1066 header move) |
+| #1057 hipSOLVER handle | yes: reproducer fails on 871a54a7 | `pr-1054-hipsolver-handle-merge-871a54a7` ad31c137 (review request) | reproducer fails on master, ok here; 14 files 64/59/2/5 -> 96/32/2/0 (rocblas 38 -> 0); scf+dft 335/13 -> 339/9 | above |
+| #1058 HIP shm_size | yes: 13 fill_int4c2e failures on 5f609f6a | `pr-1054-hip-shm-size-merge-871a54a7` a0a39b6c (review request) | cc/mp/int4c2e/ecp 19/19/0/0 -> 32/0/6/0 (fill_int4c2e 13 -> 0); scf+dft 335/13 -> 336/12 | above |
+| #1061 Cholesky info | merged 2026-11-23 | none | test_get_j2c_decomp_linear_dependency passes on 871a54a7 | none |
+| #1059 hiprtc cuComplex.h | merged 2026-11-22 | none | its 39 tests have no hiprtc error with #1056 applied | none |
+| (i) lane mask, not opened | yes: 32-bit shift still in both kernels | `pr-1054-md-j-lane-mask-5f609f6a` 4a30918d | 363/18/23/0 both; assert build traps on master, 1.5e-12 on the re-cut | not opened yet; draft (i) updated |
+
+### For jeff
+- Fast-forward each real branch to its staging tip (`git push <fork> <staging-tip>:pr-1054-<name>`, a fast-forward since every staging tip descends from the current branch tip), then post the drafted comment and, where listed, edit the body lines. The three conflict merges are on 5f609f6a; master has since gained #1061, which touches none of their files, so GitHub should show them mergeable without another merge.
+- #1057 and #1058: the review request is answered only on the staging branches; whether to take it as is is jeff's call.
+- The open branches' commit Test Plans say `USE_HIP=1`, which builds CUDA on current master (#1063). They are pushed commits and were left alone (no amend, no force-push); the drafted body lines use `GPU4PYSCF_BACKEND=hip`.
