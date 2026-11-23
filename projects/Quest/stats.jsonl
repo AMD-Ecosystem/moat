@@ -192,3 +192,10 @@
 {"kind":"phase","ts":"2026-11-23T18:08:04Z","phase":"test","seconds":12.517,"exit":0,"cmd":"env PYTHONPATH=/var/lib/jenkins/fleet/jobs/rx7900-20261123-085824-quest-val5-prompt/moat/projects/Quest/src:/var/lib/jenkins/fleet/jobs/rx7900-20261123-085824-quest-val5-prompt/pylib-e2e python3 agent_space/quest/e2e/example_textgen.py --method quest --token_budget 1024"}
 {"kind":"phase","ts":"2026-11-23T18:08:17Z","phase":"test","seconds":12.482,"exit":0,"cmd":"env PYTHONPATH=/var/lib/jenkins/fleet/jobs/rx7900-20261123-085824-quest-val5-prompt/moat/projects/Quest/src:/var/lib/jenkins/fleet/jobs/rx7900-20261123-085824-quest-val5-prompt/pylib-e2e python3 agent_space/quest/e2e/example_textgen.py --method quest --token_budget 128"}
 {"kind":"session","ts":"2026-11-23T18:10:18Z","epoch":1795457418.762635,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-11-23T18:52:10Z","epoch":1795459930.923953,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-11-23T18:52:17Z","phase":"compile","seconds":0.407,"exit":1,"cmd":"powershell -NoProfile -File D:/Develop/moat/agent_space/quest_porter/val_9cb8bee/readme_build.ps1"}
+{"kind":"phase","ts":"2026-11-23T19:07:39Z","phase":"compile","seconds":897.823,"exit":0,"cmd":"powershell -NoProfile -ExecutionPolicy Bypass -File D:/Develop/moat/agent_space/quest_porter/val_9cb8bee/readme_build.ps1"}
+{"kind":"phase","ts":"2026-11-23T19:08:35Z","phase":"test","seconds":20.61,"exit":0,"cmd":"powershell -NoProfile -ExecutionPolicy Bypass -File D:/Develop/moat/agent_space/quest_porter/val_9cb8bee/test.ps1"}
+{"kind":"phase","ts":"2026-11-23T19:08:58Z","phase":"test","seconds":13.01,"exit":0,"cmd":"powershell -NoProfile -ExecutionPolicy Bypass -File D:/Develop/moat/agent_space/quest_porter/val_9cb8bee/time.ps1"}
+{"kind":"phase","ts":"2026-11-23T19:09:21Z","phase":"test","seconds":9.111,"exit":0,"cmd":"powershell -NoProfile -ExecutionPolicy Bypass -File D:/Develop/moat/agent_space/quest_porter/val_9cb8bee/e2e.ps1"}
+{"kind":"session","ts":"2026-11-23T19:09:56Z","epoch":1795460996.395494,"event":"end","platform":"windows-gfx1151"}

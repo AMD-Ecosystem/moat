@@ -4241,3 +4241,62 @@ Not run here: this host has no CUDA toolkit now (`/opt/conda/envs` absent, no `n
 1. linux-gfx1201 (RDNA4 gfx12 WMMA layout, first hardware run), windows-gfx1151 (gfx11 WMMA, Windows build), linux-gfx90a (MFMA `bf16_1k`).
 2. Real-nvcc compile of `9cb8bee` on the gfx950 host.
 3. Possible, not required: the gfx1100 build time (one 35-minute device LTO step) may be worth a look alongside the spill reduction, since every gfx11 user pays it.
+
+## Validation 2026-11-23 (windows-gfx1151, at `9cb8bee`) -- PASS
+
+AMD Radeon 8060S (gfx1151, RDNA3.5 APU, wave32, 20 CUs, shared memory), Windows 11. `torch312_venv`: torch 2.12.0+rocm7.14.0a20260519, ROCm SDK 7.14 devel (HIP 7.13.26190, AMD clang 23.0.0), Python 3.12, transformers 4.37.2. CMake 3.31.0, Ninja, VS 2022 BuildTools x64 environment loaded. Fork at `9cb8bee` == `head_sha`, `git status --porcelain` shows only the five untracked runtime DLLs staged in `quest/`; no fork edit, no push. Full revalidation (`mixed` delta, Windows has no binary-equivalence verdict). First run of the gfx11 WMMA prefill on gfx1151 (RDNA3.5). Scripts and logs: `agent_space/quest_porter/val_9cb8bee/`. Laptop limits kept: one GPU process at a time, no timing shape above 4096 x 4096, no 7B model.
+
+### Build (README Windows block as written, clean in-tree)
+
+Old `quest/ops/build` and `_kernels*.pyd` moved aside first. `powershell -NoProfile -ExecutionPolicy Bypass -File readme_build.ps1` (process-scope bypass because this host's policy refuses unsigned local scripts; the script removes `CC CXX HIPCXX PYTORCH_ROCM_ARCH CMAKE_BUILD_TYPE`, runs the venv `Activate.ps1`, then the README block verbatim plus `$LASTEXITCODE` checks), wrapped `utils/timeit.sh Quest compile`; the only change from the README is `ninja -j 16` (16 physical cores):
+
+```
+cd quest\ops
+mkdir build; cd build
+cmake -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151 `
+  "-DCMAKE_PREFIX_PATH=$(python -c 'import torch;print(torch.utils.cmake_prefix_path)')" ..
+ninja -j 16
+copy _kernels*.pyd ..\..\
+```
+
+rc 0, 8/8, **898 s** wall (15m). The expected 27-47 minute `batch_prefill.cu` wait did not occur here: no `-fgpu-rdc` on Windows, so no device LTO step (the Linux cost is the single-threaded `ld.lld` LTO). `CMAKE_BUILD_TYPE=Release`, `--offload-arch=gfx1151` on 8 of 8 compile lines, 0 errors, 18 nodiscard-`hipError_t` warnings (the known count), the link prints only the known unused `--ld-path` warning.
+
+### GPU tests (`utils/timeit.sh Quest test`)
+
+```
+PYTHONPATH=<fork> python -m pytest <fork>\quest\tests --rootdir <fork> -p no:cacheprovider -v -rs
+```
+
+**202 passed, 28 skipped, 0 failed** (18.4 s). rope 64, estimate 9, decode_attention 6, approx_attention 42, decode_launch_shape 3, topk 49 + 15 skipped (k >= kv_len), prefill_attention 29 + 13 skipped (qo_len > kv_len). Same as `2b938d8` here and as the four Linux GPUs at `9cb8bee`. Test files read first: no repeat or stress loops (the largest run is a parametrized sweep; whole suite 18 s), nothing skipped on safety grounds.
+
+### fp64 reference check of prefill (the harness of `notes-prefill-harness.md`)
+
+`prefill_harness.cu` and `prefill_time.py` extracted unchanged from `notes-prefill-harness.md`; `build.sh` adapted to Windows (SDK `clang++.exe -x hip` with the extension's compile line flags `-D_DLL -D_MT -Xclang --dependent-lib=msvcrt -fms-runtime-lib=dll -fms-extensions`, link `amdhip64.lib`, the five ROCm runtime DLLs beside the executables). Built one binary per configuration (about 5 s each) and run one at a time:
+
+```
+bash build.sh <n>        # n = 0..9
+./mc_<n>.exe             # prints the device mma shape: wave=32 op_elems=16
+```
+
+**100/100** cases pass (10 configurations x 10 shapes): fp16 hd128 nfx1 causal, nfx2 causal, nfx2 non-causal, hd64 nfx1, GQA4 nfx2, bf16 hd128 nfx2, bf16 hd64 GQA4 nfx1 non-causal, page size 1, 8, and 32 with GQA8. Largest errors seen: output 1.0e-3 (fp16, 16 x 16), LSE 5.5e-4 in the first configuration; every case within the harness tolerances. Negative control (`-DNEGCTRL=true`, reference uses the opposite causal flag, nfx2 causal): 1/10 cases pass, max |dO| 2.9, so the check discriminates. This is the same 100/100 as linux-gfx1100 (gfx11 WMMA layout), now on RDNA3.5.
+
+### Prefill time against SDPA (`prefill_time.py`, SHAPES cut to 1024 x 1024 and 4096 x 4096)
+
+`utils/timeit.sh Quest test -- powershell ... time.ps1`; causal, 32 heads x 128, fp16, page size 16, mean of 20 after 3 warmups; torch SDPA on this torch build falls to a slow path (Mem Efficient attention is experimental on this GPU and off):
+
+| qo x kv | Quest prefill_forward | torch SDPA | ratio | max abs diff vs SDPA |
+|---|---|---|---|---|
+| 1024 x 1024 | 2.031 ms | 17.224 ms | 0.12 | 2.0e-03 |
+| 4096 x 4096 | 17.761 ms | 270.908 ms | 0.07 | 2.0e-03 |
+
+Quest is 8.5x and 15x faster than SDPA here; not comparable with the discrete-GPU ratios (SDPA is the slow side on gfx1151). Not run: the kernel-only CFG 100 timing (it includes an 8192 x 8192 shape), 8192 and 16384 shapes.
+
+### End-to-end
+
+Llama-2-7b-chat was not run: the earlier Windows sections show it was never run on this laptop (13.5 GB fp16 on the shared-memory APU); covered on four Linux GPUs. The random-weight 0.96 GB Llama-architecture check of 2026-11-19 (`agent_space/quest_e2e/cmp.py 1024 30`, HF vs Quest, same weights) was rerun: step-0 (prefill) logits max |diff| 0.0093 at logit range 5.95, first greedy divergence at step 5 where the HF top1-top2 margin is 0.0039 (a one-ulp tie), steps before it max |diff| 0.0098. Same numbers as at `6e7d8db` (0.0098, step 5, 0.0039): prefill and dense decode agree to fp16 rounding. Weaker evidence than a real-model text match, as recorded before.
+
+### CUDA gate, content, integrity
+
+CUDA gate: not run here (Windows host); recorded at `9cb8bee` by the linux-gfx950 host (real nvcc, PASS). `python utils/jargon.py --port Quest` clean. The README documents the Windows ROCm build and it is the block above. No machine instability (no driver reset, no device loss) during any GPU run.
+
+State: windows-gfx1151 `completed` at `9cb8bee`.
