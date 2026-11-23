@@ -1138,3 +1138,22 @@ Merged current main into the branch, so this should be mergeable again. The new 
 
 - Before the reply is posted, the reply text must name only GPUs completed at the merged head. Today that is the W7800 (linux-gfx1100) and the MI300X (linux-gfx942). Add gfx90a and the Windows cards to the reply if they validate at 091056d7 before the review PR is opened.
 - Deferred registered this round: `rxmesh-hip-installed-package-config` (pre-existing CUDA-only RXMeshConfig.cmake.in).
+
+## CUDA compile check 2026-11-23 (mi355 host, nvcc 12.8.93): moat-fix-73 head 091056d7 vs upstream 3990228e
+
+Requested by jeff. Compile and link only (no NVIDIA GPU on the host; nothing run on any GPU). Toolkit: the host's CUDA 12.8 at `/usr/local/cuda-12.8` (nvcc V12.8.93, with cuBLAS/cuSPARSE/cuSOLVER), host gcc 13.3.0. The fd6cd893 record built only the port; this run builds the fork's `moat-fix-73` at 091056d7 (= recorded head_sha) and upstream `main` at 3990228e (the commit 3183c34d merged; still upstream's tip today) the same way, with the earlier gate's flags and `-j 16`:
+```bash
+C=/usr/local/cuda-12.8
+cmake -S <tree> -B <build> -G Ninja -DCMAKE_CUDA_COMPILER=$C/bin/nvcc -DCUDAToolkit_ROOT=$C \
+  -DCMAKE_CUDA_ARCHITECTURES=80 -DCMAKE_CXX_COMPILER=g++ -DCMAKE_C_COMPILER=gcc \
+  -DRX_USE_POLYSCOPE=OFF -DRX_BUILD_APPS=OFF -DRX_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release
+ninja -C <build> -k 0 -j 16 RXMesh RXMesh_test
+```
+Two procedural notes. (1) Each tree is a plain local clone, not a `git worktree`: upstream's cmake/GetGitRevisionDescription.cmake cannot read a worktree's `.git` file and configure fails on both trees. (2) Upstream fetches OpenMesh even with `RX_BUILD_APPS=OFF` (the gate is a port addition), and the clone from graphics.rwth-aachen.de:9000 failed again, so the upstream scratch clone got the same throwaway `return()` before `FetchContent_Declare` in cmake/openmesh.cmake as the df10bfe gate; reverted afterwards, never committed.
+
+| tree | rc | steps | RXMesh_test linked | errors | warning lines |
+|---|---|---|---|---|---|
+| 091056d7 (port) | 0 | 137/137 | yes | 0 | 227 |
+| 3990228e (upstream) | 0 | 137/137 | yes | 0 | 372 |
+
+The port's warnings are a strict subset of upstream's (multiset compare of every warning line, paths normalized, also with line numbers masked): nothing appears in the port's log that upstream lacks. The 145 lines only upstream shows are 144 nvcc `#20037-D` "a __device__ function (Query<128>::prologue [op=...]) redeclared without __device__" at include/rxmesh/query.cu(115) plus one "-diag-suppress" remark; the port's `__device__` on the explicit instantiations in query.cu (added for clang) removes them. The shared rest (gcc -Wreorder/-Wsign-compare, cuSOLVER deprecation, `#pragma unroll` ignored in host code, GLM_ENABLE_EXPERIMENTAL redefined, msh_io.cpp -Wreturn-type, nvcc resource-usage notes) is upstream's. Every `FLAGS`, `DEFINES` and `LINK_FLAGS` line in build.ninja is identical between the trees; device LTO is active on both (`lto_80` on 39 compiles, `-dlto` at the device link). Result: PASS, the port adds no nvcc error or warning on the CUDA path.
