@@ -6,12 +6,16 @@
   "fork_default_branch": "master",
   "priority": 0.0,
   "ext_type": "cmake",
-  "stage": "ported",
+  "stage": "reviewing",
   "adopted_at": "2026-11-06T02:27:16Z",
-  "updated_at": "2026-11-23T20:16:27Z",
+  "updated_at": "2026-11-23T20:21:40Z",
   "head_sha": "06bdc4c46ce3be658f25598f5af6db01febc78d8",
   "depends_on": [],
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx90a",
+    "since": "2026-11-23T20:21:40Z",
+    "holder": "8dc5266bddc5"
+  },
   "waivers": {},
   "platforms": {
     "linux-gfx942": {
@@ -43,7 +47,7 @@
       "failed_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-11-20T21:25:22Z",
+      "updated_at": "2026-11-23T20:21:40Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -57,7 +61,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "planner"
+      "last_agent": "reviewer"
     },
     "linux-gfx950": {
       "blocked": false,
