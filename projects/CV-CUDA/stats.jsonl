@@ -106,3 +106,4 @@
 {"kind":"phase","ts":"2026-11-23T21:53:28Z","phase":"test","seconds":1.228,"exit":0,"cmd":"projects/CV-CUDA/src/build-hip/bin/cvcuda_test_unit"}
 {"kind":"phase","ts":"2026-11-23T21:53:30Z","phase":"test","seconds":2.065,"exit":1,"cmd":"projects/CV-CUDA/src/build-hip/bin/nvcv_test_cudatools_system"}
 {"kind":"phase","ts":"2026-11-23T22:03:51Z","phase":"test","seconds":621.624,"exit":1,"cmd":"projects/CV-CUDA/src/build-hip/bin/cvcuda_test_system"}
+{"kind":"session","ts":"2026-11-23T22:13:09Z","epoch":1795471989.761558,"event":"end","platform":"linux-gfx90a"}

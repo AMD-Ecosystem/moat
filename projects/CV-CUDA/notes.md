@@ -1700,3 +1700,61 @@ Recorded, not acted on:
 - `triangle_cal` (OpThreshold.cu ~373-500) keeps upstream's barrier-free `localid < 32` tails over the non-volatile `__shared__ uchar idx[256]`, while the port hardened Otsu's equivalent tails with a barrier per step. Unchanged upstream code, identical in legacy/threshold_util.cu, which passed on both arches in earlier rounds, and no Triangle test fails at 8da17190. A consistency question for a future round, not a defect of this one.
 - The bit-exact failure count rose from 43-44 (of 3886) to 183-185 (of 7833); classified in the porter section above. The contraction-pin question (`on` vs per-site FMA spelling) is a decision for jeff with gfx1100 numbers. It is not a code defect in this delta.
 - CUDA nvcc compile of this round not yet run (see porter section).
+
+## Validation 2026-11-23 (linux-gfx90a, revalidate, fix round, tip `8da17190`)
+Host: 4x MI250X (gfx90a), ROCm 7.16 SDK (`/etc/rocm_env.sh`, `$ROCM_PATH` under the Python SDK, clang 24), GPU 3 pinned by the dispatcher (`HIP_VISIBLE_DEVICES=3`), all GPUs idle at start (`amd-smi process`), every GPU run under `ulimit -c 0`. Clone at `8da17190`, `git status --porcelain` shows no modified tracked file. The build is the porter section's build-hip recipe (same job, same tree; rebuilt at the committed head before the record run). `strings libcvcuda.so.0.19.0 | grep amdgcn` shows only `amdgcn-amd-amdhsa--gfx90a` (62 entries).
+
+Record run (full, no carry-forward: the delta is a functional merge):
+```
+utils/timeit.sh CV-CUDA test -- projects/CV-CUDA/src/build-hip/bin/cvcuda_test_unit            # 63 passed / 1 skipped / 0 failed
+utils/timeit.sh CV-CUDA test -- projects/CV-CUDA/src/build-hip/bin/nvcv_test_cudatools_system  # 1182 / 1188, 6 failed (documented non-port clusters)
+utils/timeit.sh CV-CUDA test -- projects/CV-CUDA/src/build-hip/bin/cvcuda_test_system          # 7630 passed / 18 skipped / 185 failed of 7833, 621 s
+```
+Against the last gfx90a record at `358edc33`: unit 27 -> 63 tests, still 0 failures; cudatools unchanged in character (5-7 per run in the same two clusters); system 3886 -> 7833 tests, failures 43-44 -> 185. Cause of the difference: upstream v0.18/v0.19 roughly doubled the suite, and most of the added tests are bit-exact (planar-vs-interleaved byte parity for nearly every operator, scalar-oracle and `std::fma` golds). Every failure falls into one of the three classes in "Fix round 2026-11-23" above: test-fixture async-copy races (ColorTwistPlanarVarShape, PadAndStack*; pass under `AMD_SERIALIZE_COPY=3`), contraction-sensitive bit-exactness (flip with `-ffp-contract=fast`), and 17 deterministic single-LSB cases (WarpAffine fractional LINEAR, max |diff| 1 on <=18 bytes per image; Pillow u8 scalar oracle; three planar/tensor parity cases). No FindHomography failure (19/19), no NaN, zero-fill, crash or hang, and nothing with a wave64 signature. The only differences between this run and the first full run are inside the copy-race families.
+
+CUDA no-regression gate: NOT RUN. No CUDA toolkit on this host; the conda env the validator definition names does not exist here, and installing one into the job directory was refused by this session's permission policy. validator.md says to skip on a host without the toolkit; the gate is still owed once at `8da17190`, on an nvcc host (mi355), before this round is presented.
+
+Docs: `docs/sphinx/installation.rst` "Building for AMD GPUs (ROCm)" present and current (top-level `build.sh`, `-DBUILD_PYTHON=0`), linked from README.md; the documented command was run and built (porter section).
+Jargon: this round's commits and the full diff against upstream are clean. `--port` reports one pre-existing hit in published commit `b623dffa` (June). That is not this round's content, and fixing it means rewriting the published history in front of the maintainer, so it is not sent back as a `--gate jargon` failure; it is listed for jeff.
+
+State: linux-gfx90a -> `completed` at `8da17190`. The bit-exact residual is far larger than the last record; whether the contraction setting or per-site FMA spelling should change before this goes to the maintainer is jeff's call (see the porter section's DECISION).
+
+## Fix review PR draft
+
+Title: [ROCm] Merge upstream v0.19.0 and port the new code to HIP
+
+Body (for `upstream.py --fix-review`; the section headed exactly `## Upstream reply` is the only upstream-visible part, ending at `## For jeff`):
+
+Upstream released v0.18.0 and v0.19.0 and CVCUDA/CV-CUDA#293 stopped merging into main. The maintainer has not commented; nothing was requested. This round only absorbs the base: it merges upstream main (3c06df7f, v0.19.0) into the branch and carries the HIP path over to the code the two releases added or rewrote. The published commits are untouched; everything is new commits on top.
+
+## What conflicted
+
+Twelve files. Upstream deleted src/cvcuda/priv/legacy/ and rewrote those operators as top-level files, so the eight legacy files the port had modified are deleted with it and their HIP fixes re-applied in the new homes (Otsu threshold, gaussian noise, resize accumulators); the histogram zeroing fix is now done upstream. The four content conflicts (MathWrappersImpl.hpp, OpBrightnessContrast.cu, OpCropFlipNormalizeReformat.cu, OpHQResizeKernel.cuh) keep upstream's new code on CUDA and the existing HIP guards.
+
+## Commits
+
+- 30096dfc Merge upstream main (v0.19.0): the conflict resolutions above. Its Test Plan says the commands are in the last commit of the series; they are in 5f91964a through 2c08d77c.
+- 5f91964a Runtime API mappings the new code needs (device and function attributes, CUDA arrays, graph inspection, host callbacks, __double2half, __vcmpgeu2/4, a 32-lane group vote).
+- 7cef6957 HIP handling for the new and rewritten operators: inline PTX alternatives, toolkit-version workarounds kept CUDA-only, half-precision operator overloads, the legacy fixes in their new files.
+- 7133a17b Warp-level code added by the releases kept in 32-lane groups on 64-lane wavefronts (ChannelCopy, Otsu, NMS, Posterize, AutoContrast, Inpaint).
+- 2c08d77c Half-precision tests compiled with the HIP compiler on ROCm, with three small test-side adjustments.
+- 8da17190 Installation guide: ci/build.sh moved to build.sh upstream; the ROCm command now also passes -DBUILD_PYTHON=0.
+
+The OSD, bounding box and box blur operators stay out of the ROCm build, as in the published PR.
+
+## Retested
+
+AMD Instinct MI250X (gfx90a), ROCm 7.16, at 8da17190: cvcuda_test_unit 63 passed, 1 skipped, 0 failed; nvcv_test_cudatools_system 1182 of 1188 (the same two known non-port clusters as before); cvcuda_test_system 7630 passed, 18 skipped, 185 failed of 7833 (was 43 or 44 failed of 3886 at the published tip). The suite doubled and most new tests are bit-exact. Every failure is a test-fixture async-copy race (passes under AMD_SERIALIZE_COPY=3), a floating-point contraction difference (flips with -ffp-contract=fast), or one of 17 deterministic single-LSB cases. None is a crash, NaN, or wave64 signature. The documented build command was also run and builds.
+
+Not yet run at this tip: a gfx1100 (wave32) re-test, and a CUDA compile with nvcc.
+
+## Upstream reply
+
+I merged main (v0.19.0) into this branch to resolve the conflicts and carried the HIP changes over to the operators that moved out of legacy/ and to the new code in v0.18 and v0.19. Retested on MI250X (gfx90a).
+
+## For jeff
+
+- Bit-exact failures on gfx90a rose from 43-44 to 185 because upstream doubled the bit-exact test surface. A large share depends on the contraction setting: the new golds (std::fma in TestOpConvertTo.cpp) show nvcc fusing across inlined operator calls, which -ffp-contract=on does not. Neither off (107 failures, 49 new gold breaks) nor fast (145, 39 new) is clean. Decide whether that is acceptable for the PR or needs per-site FMA work first; numbers in notes.md, Fix round 2026-11-23.
+- The CUDA nvcc compile of this round is owed (no toolkit on the gfx90a host; installing one was refused there).
+- jargon.py --port flags an in-house term in the body of published commit b623dffa from June; fixing it would rewrite what the maintainer has read.
+- Do not merge before gfx1100 is re-tested; the reply above names only gfx90a.
