@@ -33,6 +33,7 @@ exists. A row marked "not verified" states what the library is, not what a port 
 | cuSOLVER | hipSOLVER (rocSOLVER) | partly; not verified | hipSOLVER has a cuSOLVER-style dense API (`hipsolverDn*`). None of the ports behind this file exercised more than handle creation, so check every routine you call against hipSOLVER's function list, and its workspace-size and `info` conventions, before assuming a rename is enough. One gap is known: the low-level sparse factorization interface (`cusolverSpXcsrqr*` and `csrchol*`, with analysis, setup, factor and solve as separate calls), `csrlsvluHost` and `csrsymrcm` have no hipSOLVER counterpart (requested in ROCm/hipSOLVER issue 443), and cuDSS has none either; a sparse direct solve needs another library (RXMesh) |
 | cuDNN | MIOpen | NO | a different API (descriptors, find-then-run instead of fixed algorithm enums): the call layer is rewritten, and whole operations are missing ("MIOpen" below) |
 | Thrust, CUB | rocThrust, hipCUB (rocPRIM) | yes | `thrust/system/cuda/error.h`, temp-storage sizes, segmented `ArgMax` ("rocThrust, hipCUB and rocPRIM" below) |
+| libcu++ | libhipcxx | yes | `cuda::` spelling kept; ROCm 10.1 and later bundle CCCL 3.0.2 as `hipccl`; 1- and 2-byte CAS, under-aligned 8-byte `atomic_ref` ("rocThrust, hipCUB and rocPRIM" below) |
 | NCCL | RCCL | yes | same `nccl*` API under another soname (`librccl.so.1`); validation needs several GPUs ("RCCL" below) |
 | nvCOMP | hipCOMP (ROCm-DS) | not verified | ships inside the `amd-libhipdf` wheel; hipDF 3.0's Parquet writer still reports no Zstandard compressor, so do not assume codec parity |
 | NPP | RPP (`rpp.h`) | NO; not verified | AMD's image primitives have their own API, so calls are rewritten rather than renamed; coverage against NPP was not measured. `rpp.h` collides with `miopen.h` ("MIOpen" below) |
@@ -360,6 +361,26 @@ passes either way, because the colliding valid value is near 2^31. Read where ev
 written, sentinels included, before narrowing; otherwise sort the full width, which is correct
 whenever no caller depends on the order of keys equal in the selected bits (a 5-12% cost at up to
 2^20 64-bit keys on MI355X). (cuBQL)
+
+**libcu++ -> libhipcxx, and two atomic defects in it.** `ROCm/libhipcxx` keeps the
+`cuda::`/`cuda::std::` spelling, so CCCL-heavy code (`cuda::atomic_ref`, `cuda::stream_ref`,
+`cuda::std::span`) ports without renames. ROCm 10.1 and later bundle CCCL 3.0.2 as
+`/opt/rocm/core-<ver>/include/hipccl`; newer CCCL levels come from the `amd-develop` branch.
+Two defects in `cuda/std/__atomic/functions/atomic_hip_generated.h`, present in both
+(`amd-develop` at `832dc407f`, gfx942):
+- The block- and device-scope `__atomic_compare_exchange_cuda` ignores its weak flag and always
+  calls `__hip_atomic_compare_exchange_weak`. A 1- or 2-byte CAS is a 32-bit CAS on the
+  containing word, so the weak form also fails when a NEIGHBOURING byte changes. With each
+  thread flipping only its own byte, `compare_exchange_strong` failed 75% (1 byte) and 50%
+  (2 bytes) of the time, while the raw strong builtin failed 0 times. Code that reads a failed CAS
+  on an empty slot as "taken" loses or duplicates keys (cuCollections: 11 failing
+  `static_set<int8_t/int16_t>` cases).
+- `atomic_ref<T>` on an 8-byte type with 4-byte `alignof` (`struct {int a, b;}`, aligned to 8
+  by the caller as `atomic_ref` requires) fails to build with `unsupported cmpxchg: instruction
+  alignment 4 is smaller than the required 8-byte alignment`. NVIDIA's libcu++ compiles it.
+Both fixes are small header patches: honour the weak flag, and view the object through a
+`sizeof(T)`-aligned typedef. Carry them in the port and tell the user. Validate 1-, 2- and 8-byte
+atomic paths explicitly, because 4-byte tests pass either way. (cuCollections)
 
 ## CuPy on ROCm
 
