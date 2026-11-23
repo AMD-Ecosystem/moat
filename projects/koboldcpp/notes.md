@@ -299,3 +299,78 @@ make -j12 LLAMA_CUBLAS=1 LLAMA_ARCHES_CU12=1 CUDA_PATH=/usr/local/cuda
 - Device code of the edited files: `cuobjdump -ptx` of `ggml_v2-cuda.o` (8,668 lines) and `ggml_v2-cuda-legacy.o` (5,744 lines), and of the untouched `ggml_v3-cuda.o` (600,380 lines), with nvcc's per-invocation `_INTERNAL_<hash>_..._cu_<random>` names normalised: **identical** at base and head. `koboldcpp_default.so` (no CUDA) is byte-identical (md5 `dd0324d1...`).
 
 **Verdict: no CUDA regression at 0fff6ace6.** The CUDA variant compiles and links the same way as at `concedo_experimental` 0382471c, with the same nvcc commands, the same warnings and identical PTX for the two edited legacy files, which confirms the earlier preprocessor evidence with a full compile.
+
+## Validation 2026-11-23 (linux-gfx1100 fleet worker, fork `moat-port` 0fff6ace6)
+
+Depth (a) from Jeff's Q3 ruling, the same recipe as the linux-gfx942 validation above: T1 and T2 gate; one T3 smoke each for image, whisper, TTS, embeddings and vision; music also ran (public models). Result: **pass on linux-gfx1100 (wave32 gate)**. The CUDA no-regression compile is already recorded at this head (gfx942 validation and the mi355 nvcc run above), so it was not repeated.
+
+### Environment
+
+- AMD Radeon Pro W7800 48GB, gfx1100 (RDNA3, wave32), 46,064 MiB, `HIP_VISIBLE_DEVICES=0` as pinned by the dispatcher (HIP device 0 is PCI 0000:43:00.0 on this host); `ulimit -c 0` and `timeout` on every GPU run. The host CPU was heavily shared with other jobs (load about 38 on 64 threads), so CPU-side timings below are slow and not comparable with the gfx942 host.
+- TheRock ROCm 10.2.0 SDK in the job venv: `$FLEET_VENV/bin/python -m pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ "rocm[libraries,devel]==10.2.0" "rocm-sdk-device-gfx1100==10.2.0"` (HIP 7.17.26434), `R=$($FLEET_VENV/bin/rocm-sdk path --root)`, `PATH=$R/bin:$PATH` for the runs. No system ROCm. The venv's base-env links still carry the image's 10.1 device packages (pip warns about them); the installed 10.2 copy shadows them and `ldd` resolves every ROCm library from the 10.2 `_rocm_sdk_devel/lib`.
+- gcc 13.3.0, `MAX_JOBS=16`.
+
+### Build
+
+`make -C projects/koboldcpp/src -j16 LLAMA_HIPBLAS=1 ROCM_PATH=$R` at 0fff6ace6: rc 0, 0 errors, 153 hipcc steps with `--offload-arch=gfx1100` (auto-detected), 198 s, `koboldcpp_hipblas.so` 123 MB. `ldd`: libhipblas, libamdhip64, librocblas, librocsolver and libhipblaslt resolve from the SDK. `git -C projects/koboldcpp/src status --porcelain` shows no modified tracked files.
+
+### T1: `test-backend-ops` against koboldcpp's ggml (overlay)
+
+llama.cpp `a8f8294c4` worktree with the porter's overlay (koboldcpp's `ggml/include/`, `ggml/src/ggml-cuda/` with llama.cpp's `ggml-cuda/CMakeLists.txt` restored, `ggml/src/*.{c,cpp,h}` except `ggml-backend-reg.cpp`). `cmake -G Ninja -DGGML_HIP=ON -DGPU_TARGETS=gfx1100 -DGGML_HIP_NO_VMM=ON -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R -DROCM_PATH=$R -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA_FA_QUANTS=q4_0-q4_0,q5_1-q5_1,q8_0-q8_0,bf16-bf16 -DCMAKE_C_FLAGS=-I<ggml/src/ggml-cpu> -DCMAKE_CXX_FLAGS=-I<ggml/src/ggml-cpu> -DLLAMA_CURL=OFF`, targets `test-backend-ops llama-perplexity llama-quantize`, then `test-backend-ops test -b ROCm0`: **20806/20806 passed, 0 FAIL**, 7209 not supported (OUT_PROD 1472, FLASH_ATTN_EXT 1405, CONV_2D 1138, IM2COL_3D 1024, SET_ROWS 607, MUL_MAT 521, ...), 4714 s (CPU reference side slowed by the shared host). Same counts as gfx942.
+
+### T2: greedy HIP vs CPU
+
+Harness: a GPU server (`--usecuda <mmq|nommq> --gpulayers 99`) and a CPU server (`--usecpu --threads 16`) side by side per config, `--contextsize 2048`, `/api/v1/generate` with `temperature 0.01, top_k 1, rep_pen 1, sampler_seed 42, max_length 64, logprobs true`; p0 "The capital of France is", p1 a ~115-token paragraph on computing history. Models as on gfx942: Qwen/Qwen2.5-0.5B-Instruct-GGUF Q4_K_M, Q8_0, fp16, BF16 made from fp16 with the overlay's `llama-quantize ... BF16`; rustformers/pythia-ggml `pythia-160m-q4_0.bin`/`-q5_1.bin` (GGML v3); two GGML v2 files converted here from `pythia-160m-f16.bin` with the gfx942 recipe (qv1: par_res header, ftype 1002, low/high-half nibbles, detected "Legacy GPT-NEO-X (ver 403)"; qv0: no par_res, ftype 2, interleaved nibbles with roundf, detected "ver 401").
+
+| config | p0 | p1 |
+|---|---|---|
+| F16 nommq / Q8_0 mmq / Q8_0 nommq | identical | identical |
+| BF16 mmq / BF16 nommq | diverge@46 / @46 | identical / identical |
+| Q4_K_M mmq / nommq | diverge@29 / @29 | diverge@0 / @0 |
+| Q4_K_M FA off | diverge@19 | identical |
+| Q4_K_M `--quantkv` q8_0 / bf16 | diverge@51 / @13 | diverge@3 / identical |
+| Q4_K_M `--quantkv` q5_1 / q4_0 | diverge@1 / @5 | diverge@2 / @3 |
+| pythia GGML v3 Q4_0 / Q5_1 | identical / diverge@16 | diverge@0 / @0 |
+| pythia GGML v2 qv1 / qv0 | identical / identical | diverge@25 / @25 |
+
+Near-tie check at each divergence: both servers were asked for the next token at prompt + common prefix with `temperature 1, top_k 5, max_length 1` (log-probabilities are then the unscaled top-5). For a divergence after token 0 the probe reuses the cached context and evaluates only the divergent step, which is the same computation as the original decode step. For a divergence at token 0 that shortcut re-evaluates the last prompt token alone, while the original token came from the batched prompt pass, so those four cases were re-probed with `--nofastforward` (the probe then repeats the batched pass).
+
+- Near-ties, same two candidates on both backends, top-2 gap at most 0.38 nats on at least one side: BF16 p0@46 '.'/',' (GPU 0.005, CPU 0.012); Q4_K_M p0@29 ' coast'/' Ocean' (0.04/0.38); Q4_K_M p1@0 ' computing'/' ______' (batched re-probe: mmq 0.054, nommq 0.005, CPU 0.063); FA off p0@19 ' also'/' located' (0.13/0.02); q8_0 KV p0@51 (0.02/0.12) and p1@3 '.'/':' (0.02/0.09); bf16 KV p0@13 ' in'/' city' (0.33/0.006); v3 Q5_1 p0@16 ' the'/' also' (0.08/0.27); v2 qv1 and qv0 p1@25 ','/' is' (0.19/0.39 and 0.17/0.00). The legacy v2 path completed every run.
+- q5_1 and q4_0 KV are not ties (GPU gap up to 1.44 nats at q5_1 p1@2), so perplexity decided them, as on gfx942: `llama-perplexity` from the overlay build, `-c 512 -fa on -ctk/-ctv <kv>`, LICENSE.md+README.md at the head as corpus, `-ngl 99` vs `-ngl 0 --device none`: f16 5.8846/5.8954, q8_0 6.1931/6.2054, q5_1 26.58/26.86, q4_0 108.19/107.98 (GPU/CPU, +/- 0.18-5.1). The backends agree; q5_1/q4_0 KV wrecks this 2-KV-head model on either one. No `--quantkv` value aborted with FA on (R7).
+- **GGML v3 p1@0 is not a near-tie and comes from upstream's FP16 GEMM, not the port.** Batched re-probe: v3 Q4_0 GPU ',' -0.844 then ' time'/' if'/' the' all -1.844, CPU ' time' -1.246 / ' each' -1.36 / ' if' -1.40 / ',' -1.89; v3 Q5_1 GPU ' computers' -0.942 / ' we' -1.442, CPU ' the' -1.045 / ' computers' -1.507. The GPU log-probabilities fall on 0.5-nat steps, i.e. the logits are FP16. `ROCBLAS_LAYER=2` on a v3 Q4_0 GPU run of p1 (111 tokens, `--usecuda mmq`) shows every layer matmul and the output projection as `gemm_ex` f16_r in, `--compute_type f16_r` (2304/3072/768 x 111 x 768/3072, and 50304x111x768 for the logits), plus 288 f32 `gemm` attention calls: `otherarch/ggml_v3-cuda.cu:8315-8321` (unchanged by the port) runs FP16 x FP16 -> FP16 with `CUBLAS_COMPUTE_16F`, the same call as on CUDA. With `--blasbatchsize 16` the layer matmuls still run as the same FP16 GEMMs in 16-row chunks, but the final 15-row chunk is below the 32-row limit of `ggml_v3_cuda_can_mul_mat` (`ggml_v3-cuda.cu:9117-9129`), so the output projection makes no rocBLAS call, and the GPU then picks the CPU's token: Q4_0 ' time' -1.145 (CPU -0.985), Q5_1 ' the' -1.000 (CPU -0.983), same top-4 order. So the FP16 logits from the output-projection GEMM decide it. A standalone hipblasGemmEx reproducer on this GPU (OP_T/OP_N, FP16 in/out, N(0,1) x 0.05*N(0,1) data, FP64 host reference) also shows rocBLAS honours `HIPBLAS_COMPUTE_16F` with FP16 accumulation: m=4096 n=128 k=3072 max abs error 0.199 (mean 0.011) vs 0.004 (mean 0.0004) with `HIPBLAS_COMPUTE_32F`, where FP16 output rounding alone is 0.0039; k=768 0.060 vs 0.002. gfx942's p1 (a different paragraph) did not split at token 0; whether rocBLAS on gfx942 also accumulates COMPUTE_16F in FP16 was not measured. Decode steps make no rocBLAS call, so only the first token after a >=32-token prompt on a legacy GGML v3 model is affected. This is upstream's design; recorded here, no change proposed.
+
+GGML v2 compute-type fix exercised: with `ROCBLAS_LAYER=2`, a GPU-only v2 run of p1 (111 pythia tokens) logged, for both qv1 and qv0, 288 `gemm_ex --a_type f16_r --b_type f16_r --c_type f32_r --compute_type f32_r` calls (111x111x64 and 64x111x111, the attention matmuls) plus 49 f32 `gemm` weight matmuls, and generated 64 tokens.
+
+`--benchmark` (Q8_0, ctx 4096): nommq 28,957 T/s prompt / 227.8 T/s generation; mmq 27,000 / 228.8 T/s.
+
+R5 (BF16 compute revert on AMD without fast BF16) is not exercised here either: `fast_bf16_hardware_available()` (`ggml/src/ggml-cuda/common.cuh:359`) counts RDNA3 as fast BF16. A gfx90a or gfx1030 run is still needed for that path.
+
+### T3 modality smoke (one server with all modalities and music, GPU vs CPU)
+
+Server: `--model SmolVLM-256M-Instruct-Q8_0.gguf --mmproj mmproj-SmolVLM-256M-Instruct-Q8_0.gguf --sdmodel sdxs-512-tinySDdistilled_Q8_0.gguf --transcribemodel whisper-tiny.en-q5_1.bin --ttsmodel OuteTTS-0.2-500M-Q4_0.gguf --ttswavtokenizer WavTokenizer-Large-75-Q4_0.gguf --embeddingsmodel all-MiniLM-L6-v2-Q8_0.gguf --musicllm acestep-5Hz-lm-0.6B-BF16.gguf --musicembeddings Ace-Qwen3-Embedding-0.6B-Q8_0.gguf --musicdiffusion acestep-v15-sftturbo50-Q8_0.gguf --musicvae ace-vae-BF16.gguf --contextsize 4096 --debugmode 1`, GPU adds `--usecuda mmq --gpulayers 99 --ttsgpu --embeddingsgpu`, CPU `--usecpu --threads 16`.
+
+| modality | request | GPU | CPU | GPU evidence (log) |
+|---|---|---|---|---|
+| image | `/sdapi/v1/txt2img` "a red apple on a wooden table, photo", 1 step, 512x512, seed 42 | 453 KB PNG: a red apple with a small apple beside it on a wooden table (viewed) | 447 KB PNG | `diffusion_model 488.12MB(VRAM), vae 4.67MB(VRAM)`, `unet compute buffer size: 121.64 MB(VRAM) on ROCm0` (text encoder on CPU by default) |
+| whisper | `/api/extra/transcribe`, whisper.cpp `jfk.wav` | exact JFK quote | same text | `whisper_backend_init: using backend ROCm0` |
+| TTS | `/api/extra/tts` one sentence, voice kobo | 24 kHz WAV, 3.03 s, RMS 2769 | 3.06 s, RMS 2402 | OuteTTS 25/25 and WavTokenizer 13/13 layers offloaded |
+| embeddings | `/v1/embeddings`, 3 sentences | dim 384, cos(similar) 0.6533, cos(unrelated) 0.0496 | 0.6531 / 0.0514 | 7/7 layers offloaded |
+| vision | `/v1/chat/completions` with the GPU PNG | "A red apple and a small red fruit next to a wooden table." | identical text | `mtmd_backends: using ROCm0 backend`, 31/31 layers offloaded |
+| music | `/api/extra/music/prepare` then `/generate`, "calm acoustic guitar instrumental, slow tempo", instrumental, 10 s, seed 42 | 10.00 s stereo 48 kHz WAV, RMS 3398, generate 3.2 s (DiT 8 steps 546 ms) | 10.00 s, RMS 3350, generate 154 s | LM, DiT, TextEncoder, CondEncoder, VAE-Enc and VAE all `backend: ROCm0` |
+
+Audio was not listened to; level and duration are sane on both backends.
+
+Two-GPU split (`--tensor_split`): **owed**. This job was pinned to one GPU (`HIP_VISIBLE_DEVICES=0`) to stay clear of other jobs on the host; a run with two free GPUs is needed.
+
+### Non-GPU and content checks
+
+No upstream `tests/` at the base (porter round 1). The rocminfo fix is visible in every GPU run: `Detected AMD GPU VRAM from rocminfo: [('AMD Radeon Pro W7800 48GB', '46064'), ...]`. `python3 utils/jargon.py --port koboldcpp`: clean. The ROCm build is documented in the README build table and the sentence beneath it.
+
+### Owed after this platform
+
+- Windows gate (after the later CMake round, by Jeff's Q1 ruling; laptop runs last).
+- Two-GPU split; R5 BF16 revert path on an arch without fast BF16 (gfx90a or gfx1030).
+
+## Lesson for cuda-to-rocm: checking a greedy GPU-vs-CPU divergence for a near-tie
+
+For `references/validation.md` (end-to-end comparison) or `references/diagnosis.md`. When greedy text from the GPU and CPU builds of an LLM runtime splits, ask both for the top-k log-probabilities of the divergent step, but make the probe repeat the computation that produced the original token. A server with prompt caching re-evaluates only the last token of a re-sent prompt; for a split after the first generated token that is exactly the original decode step, but for a split at the first token it replaces the batched prompt pass (GEMM kernels) with a single-row pass (mat-vec kernels) and can show a different winner. Disable the cache for those probes (llama.cpp-style servers: no fast-forward / `cache_prompt: false`). Log-probabilities that fall on a coarse grid (here every 0.5 nat) mean the logits passed through FP16. A legacy code path that asks cuBLAS for an FP16 output with `CUBLAS_COMPUTE_16F` gets exactly that from rocBLAS, FP16 accumulation included: on gfx1100 (ROCm 10.2) an FP16 GEMM with k=3072 had a max error of 0.2 against 0.004 with `COMPUTE_32F`. That is the requested precision, not a HIP fault. To confirm, keep the suspect GEMM out of the path (in koboldcpp's legacy GGML v3 code, a batch size below its 32-row cuBLAS limit keeps the output projection off it), and the GPU agrees with the CPU again.
