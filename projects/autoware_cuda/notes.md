@@ -294,3 +294,57 @@ C. **0842236 Test Plan: "nvcc compiles the five test sources with no compiler wa
 - C joins the earlier finding 3 and the DCO sign-off question: options (a) reword both bodies at the same-tree re-creation for sign-off (recommended), or (b) correct them in the PR body only.
 
 Validator not run: the review requested changes. Per the dispatch, the job stops here; the next porter round fixes A and B on top of 0842236.
+
+## Porter round 1 fixes, second pass (2026-11-23, porter agent, linux-gfx950 fleet job; MI355X, HIP_VISIBLE_DEVICES=2)
+
+Answers "Review 2026-11-23b". Still round 1 of Jeff's Q3 = i ruling: no MIGraphX work, `autoware_tensorrt_common` surface stays `owed`. One new commit on `moat-port` (no amend/rebase/force): `992d703` `[ROCm] Check the recorded GPU backend from any consumer scope`; head 0842236 -> 992d703.
+
+### Per finding
+
+- **A (deferred check reads the variable from the wrong scope)**: the check function's branch is now `if(@autoware_cuda_utils_USE_HIP@)`, configured into the body (`if(TRUE)` in the HIP install, `if(FALSE)` in the CUDA install), so the deferred call does not depend on the scope that loaded the config. `set(autoware_cuda_utils_USE_HIP ...)` stays for consumers that read it.
+- **B (wrong remedy when the option is already set)**: the HIP-build message names what was detected (`CUDA_FOUND`, `CUDAToolkit_FOUND`, `the CUDA language`). With `AUTOWARE_CUDA_USE_HIP` ON it says to find the `find_package(CUDA)`, `find_package(CUDAToolkit)` or `enable_language(CUDA)` run by the package or a dependency and skip it; with the option OFF, the earlier advice (set the option or rebuild with CUDA). Round 2 must keep this in mind for `autoware_tensorrt_common/CMakeLists.txt:94-95` (exports `CUDA`/`CUDAToolkit`).
+- **C (0842236 Test Plan wording)**: not reworded (history rewrite, Jeff's call; see "For a person" below). 992d703's Test Plan says "no warnings beyond nvcc's deprecated-GPU-target notice, as on the unmodified package".
+
+### Environment (this job; nothing shared modified)
+
+TheRock `rocm[devel,device-gfx950]==10.2.0` into `$FLEET_VENV` (HIP 7.17.26434), ROS 2 Jazzy ament tooling from source in `<job>/deps/ros2` (45 packages, 12.4 s), cppcheck 2.13.0 and libxml2 2.9.14 xmllint into `<job>/deps/prefix`, autoware_cmake 9849ad2. Workspaces `<job>/ws` (HIP) and `<job>/ws-cuda` (CUDA) symlink the fork clone and autoware_cmake; colcon run with explicit `--base-paths/--build-base/--install-base/--log-base` (isolated install, so the extra lives at `install/autoware_cuda_utils/share/autoware_cuda_utils/cmake/check_gpu_backend.cmake`).
+
+### Builds at 992d703 (the committed tree; built before commit with the identical file)
+
+- HIP: `colcon build --packages-up-to autoware_cuda_utils autoware_lint_common --cmake-args -DCMAKE_BUILD_TYPE=Release -DAUTOWARE_CUDA_USE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx950 -DCMAKE_PREFIX_PATH=$ROCM_SDK -DPython3_EXECUTABLE=$FLEET_VENV/bin/python`: rc 0, `-- cuda is not found, building autoware_cuda_utils with HIP 7.17.26434`, 0 compiler warnings.
+- CUDA 12.8 (`PATH=/usr/local/cuda/bin:$PATH`, nvcc V12.8.93, no option, `-DBUILD_TESTING=ON -DCMAKE_VERBOSE_MAKEFILE=ON`): rc 0, `Found CUDA ... 12.8`, no HIP line, 10 nvcc invocations, 20 `nvcc warning` lines (deprecated pre-sm_75 targets, same as upstream), no compiler warning, test executable links. Compile/link only (no NVIDIA GPU).
+- Tests (`ulimit -c 0`, `HIP_VISIBLE_DEVICES=2`, `timeout 1800 colcon test --packages-select autoware_cuda_dependency_meta autoware_cuda_utils --ctest-args --repeat until-fail:20 --timeout 300`): `[  PASSED  ] 17 tests.` on 20/20 runs, 0 skipped/failed; `colcon test-result`: 51 tests, 0 errors, 0 failures, 11 skipped (cppcheck 2.13).
+
+### Reviewer's probes, rerun against the 992d703 installs (nvcc 12.8 on PATH)
+
+Configure-only probes (the review's `fn`, `fncuda`, `optcuda`, `fnmacro`, `ret`, plus `fnok`: find in a function, `find_package(CUDA)` only when the option is OFF):
+
+| install | probe | 0842236 (review) | 992d703 |
+|---|---|---|---|
+| HIP | `fn` + option ON (find in function, enable HIP) | rc 1, "built with CUDA" (false positive) | rc 0 |
+| HIP | `fncuda` (find in function, then `find_package(CUDA)`) | rc 0 (missed) | rc 1, "configured for CUDA (CUDA_FOUND). Configure probe_consumer with -DAUTOWARE_CUDA_USE_HIP=ON, or rebuild autoware_cuda_utils with CUDA." (deferred) |
+| HIP | `optcuda` + option ON (`find_package(CUDAToolkit)`) | rc 1, advice "set -DAUTOWARE_CUDA_USE_HIP=ON" | rc 1, "configured for CUDA (CUDAToolkit_FOUND). Find the find_package(CUDA), find_package(CUDAToolkit) or enable_language(CUDA) that runs for probe_consumer or one of its dependencies, and skip it when AUTOWARE_CUDA_USE_HIP is ON." |
+| HIP | `optcuda`, no option | rc 1 | rc 1, "(CUDAToolkit_FOUND). Configure ... with -DAUTOWARE_CUDA_USE_HIP=ON ..." |
+| HIP | `fnmacro` + option ON | rc 0 | rc 0 |
+| HIP | `ret` (CUDA then top-level `return()`) | rc 1 | rc 1 (deferred still runs) |
+| HIP | `fnok` + option ON / no option | -- | rc 0 / rc 1 (CUDA_FOUND) |
+| CUDA | `fn` + option ON | -- | rc 1, "built with CUDA, but probe_consumer is configured for HIP" |
+| CUDA | `fnok` no option / `fncuda` | -- | rc 0 / rc 0 |
+| CUDA | `fnok` + option ON | -- | rc 1, "built with CUDA" |
+
+Build-and-run probe (porter's `probe_consumer`, `autoware_package()` so `-Werror`):
+
+| install | mode | 992d703 |
+|---|---|---|
+| HIP | `cuda_lang_early` | configure rc 1, "(CUDA_FOUND)" |
+| HIP | `findcuda_late` | configure rc 1, "(CUDA_FOUND)" (deferred) |
+| HIP | `hip` + option ON | builds, links only `amdhip64`, runs on GPU: `probe ok 1000 1023`, rc 0 |
+| HIP | `hip`, no option | configure rc 1 (FindCUDA finds /usr/local/cuda; expected) |
+| CUDA | `cuda_plain` | builds, links `cudart_static`; run aborts `cudaErrorInsufficientDriver` (no NVIDIA GPU, expected) |
+| CUDA | `cuda_plain` + option ON | configure rc 1, "built with CUDA" |
+
+`utils/jargon.py --port autoware_cuda`: clean. `utils/prose.py` on the 992d703 body: clean. `git -C projects/autoware_cuda/src status --porcelain`: clean.
+
+### Open for a person (carried)
+
+Porter round 1 items 1-4 (DCO sign-off, copyright holder line, upstream defects, cspell) and the reword question for the 2290174 and 0842236 Test Plans (review finding 3 and finding C): options (a) reword both bodies at the same-tree re-creation for sign-off (recommended by the reviewer), (b) correct them in the PR body only. Nothing in this round depends on them.
