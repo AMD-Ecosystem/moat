@@ -258,3 +258,5 @@
 {"kind":"phase","ts":"2026-11-23T18:59:29Z","phase":"compile","seconds":159.787,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/gfx1201-20261123-105025-gpu4pyscf-eighth2-prompt/moat/projects/gpu4pyscf/src && USE_HIP=1 GPU_ARCHITECTURES=gfx1201 CMAKE_BUILD_ARGS='--parallel 24 --verbose' python setup.py build_py"}
 {"kind":"session","ts":"2026-11-23T20:16:10Z","epoch":1795464970.39478,"event":"start","platform":"linux-gfx1201"}
 {"kind":"session","ts":"2026-11-23T20:19:18Z","epoch":1795465158.825717,"event":"end","platform":"linux-gfx1201"}
+{"kind":"session","ts":"2026-11-23T21:10:16Z","epoch":1795468216.382368,"event":"start","platform":"linux-gfx1201"}
+{"kind":"session","ts":"2026-11-23T21:12:44Z","epoch":1795468364.019957,"event":"end","platform":"linux-gfx1201"}
