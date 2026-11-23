@@ -1400,6 +1400,65 @@ Confirmation (scratch worktree of the fork, built to a separate dir, removed aft
 
 Recorded: `set-state anari-visionaray linux-gfx1201 validation-failed` at 6f1e7937. The fork clone is clean; nothing pushed to the fork. The Upstream reply section is unchanged (no pass on this GPU). The fix review PR draft's linux-gfx1201 "Retested" bullet is stale and should be rewritten with the next round's result.
 
+## Fix round moat-fix-10 2026-11-23 round 4 (linux-gfx1201, porter, 3rd job) -- 6f1e7937 -> fd2375aa: pinned HIP device arrays; splat harness bug; raycast surface hang NOT fixed
+
+Lock taken with `set-state anari-visionaray linux-gfx1201 porting` (nobody held it). Fork clone at projects/anari-visionaray/src on moat-fix-10, protect-fork hook installed. GPU: AMD Radeon AI PRO R9700 (gfx1201), HIP_VISIBLE_DEVICES=2 (dispatcher pin, kept), ROCm 10.1.0 pip SDK (`rocm-sdk path --root`), gcc 13.3. Everything under `ulimit -c 0`.
+
+HIP device numbering on this host (rocminfo agent order, which HIP follows): HIP 0 = PCI e3:00.0, HIP 1 = c3:00.0, HIP 2 = 03:00.0, HIP 3 = 06:00.0. amd-smi numbers the same cards 3, 2, 0, 1. So `HIP_VISIBLE_DEVICES=2` is amd-smi GPU 0. Earlier notes that read amd-smi GPU 2 for "the pinned card" were looking at another card.
+
+Deps rebuilt in this job dir with the porter section's recipe (ANARI-SDK next_release @ 47b22af, visionaray master @ 99d4829c + the hip_bvh.h assign_indices patch, -j24); fork build recipe unchanged (gfx1201, NanoVDB ON), wrapped in `utils/timeit.sh anari-visionaray compile`. Harness: `projects/anari-visionaray/gpu_tests/` (new, see its README), run with `run_all.sh`.
+
+### Audit of the 139 merged upstream commits for CUDA-only changes
+
+30 of the 139 commits touch CUDA or HIP calls or guards (`git log 7edfca5..c1aa91b`, filtered on cuda*/hip*/WITH_*/__CUDA*). Instead of reading the history commit by commit, the result was audited on the merged tree: every `#if` chain that has a CUDA arm was extracted, the CUDA arm normalized (cuda->hip, CUDA->HIP) and diffed against the HIP arm (scratch script, agent_space/scratch/arms.py). The whole list of differences at 6f1e7937:
+
+| site | CUDA | HIP | verdict |
+|---|---|---|---|
+| DeviceArray.h, all 12 alloc/free calls | cudaHostAlloc / cudaFreeHost (d5339fc) | hipMalloc / hipFree | **bug** (surface crash), fixed in fd2375a |
+| DeviceBVH.h rebuildDeviceBVH2 staging buffer | cudaHostAlloc (d5339fc) | hipMalloc | fine: device builder input; HIP keeps device memory, freed after the build |
+| DeviceBVH.h pointer checks | `attributes.devicePointer` | `attributes.type == hipMemoryTypeDevice` | equivalent for every case the code meets: pinned memory takes the host branch on HIP (read directly / staged to device) and the device branch on CUDA (staged to host / read directly), both correct |
+| DeviceBVH.h rebuildHostBVH2 | async D2H to pageable | + hipStreamSynchronize | port's round-2 fix, keep |
+| dco/Volume.h (4 chains) | `__expf`, `__logf` under `__CUDA_ARCH__` | `expf`, `logf` | numeric only (fast intrinsics); not a correctness gap |
+| renderer/common.h:332, dco/SpatialField.h:478 | `static __noinline__` under `__CUDACC__` (7118070, e4c2142) | `inline` | CUDA 13.3 / driver 610 workarounds; not needed on HIP |
+| TransferFunction1D.cpp:141 | `transFuncTexture.reset(tex)` | `= hip_texture<float4,1>(tex)` | visionaray API difference between cuda_texture and hip_texture; pre-existing in the published port |
+| includes, `hipDeviceProp_t`, `hipPointerAttribute_t` | spelling | spelling | fine |
+
+So the only upstream CUDA-only change to host/device memory semantics left without a HIP counterpart was d5339fc's DeviceArray switch to pinned memory. With it, every DeviceArray (geometry, BVH-adjacent arrays, frame buffers, light lists) is host-readable on CUDA, and upstream host code relies on that (VisionarayScene.cpp:45-55 walks `group.lights`).
+
+### Symptom 1, surface crash: FIXED (fd2375a)
+
+Root cause as the 2nd job found: d5339fc. fd2375a "[ROCm] Use pinned host memory for HIP device arrays" changes the HIP arm of DeviceArray.h only: hipHostMalloc(..., hipHostMallocDefault) / hipHostFree, token for token where CUDA has cudaHostAlloc / cudaFreeHost. hipHostMalloc and hipHostFree, not hipHostAlloc / hipFreeHost, because they exist on every ROCm release and the Windows HIP SDK; neither pair is deprecated in ROCm 10.1. CUDA and CPU arms untouched.
+
+Result at fd2375a (exactly this tree, built and run before any debug edit), `TIMEOUT=120 RUNS=2 SCENES="surface gaussian-splat" run_all.sh`:
+- pathtrace surface: HIP nonzero=10584 distinct=10168, CPU 10581/10151, meanAbsDiff 0.469; at 6f1e7937 the same case segfaults (rc 139), reproduced here first.
+- pathtrace and raycast gaussian-splat: PASS (below).
+- raycast surface: hang, see symptom 2.
+Volumes and NanoVDB were not rerun on the pinned build before the card stopped (below).
+
+### Symptom 3, black pathtrace splat: harness bug, not a port bug (harness fixed)
+
+Device printf in the pathtrace kernel (centre pixel) showed the splat is hit (`hit type 1 t 0.0093 albedo 0.10 0.32 0.10`), the box hit has tnear = -5.3, i.e. the camera is inside the volume, and every AO ray is occluded. Cause: the harness passed `vertex.scale = log(0.08)` (-2.53) and `vertex.opacity = 2.0`, assuming 3DGS log-scale / logit inputs, but GaussianSplat.cpp copies scale and opacity raw (`m_gaussians[i].scale = scales[i]`, `alpha = opacities[i]`). A scale of -2.53 gives every splat a 3-sigma radius of 7.6, so 216 of them fill a box 17 units across around the camera; the path tracer finds no light and no unoccluded ambient and returns black, correctly. The harness now passes scale 0.05 and opacity 0.9 (linear). On the unmodified 6f1e7937 build and on fd2375a: pathtrace splat nonzero=9417 distinct=1804, raycast splat nonzero=25001 distinct=18125, both PASS. (Not caused by pinned memory: black at 6f1e7937 with hipMalloc too.)
+
+The CPU device still segfaults on splats with the corrected scene: `vmovdqa (%rbx,%rax,1),%ymm5` in `DeviceBVH<dco::Gaussian>::rebuildHostBVH2` (gdb). The CPU DeviceArray emulation allocates with `std::malloc` (16-byte aligned) and `dco::Gaussian` is `VSNRAY_ALIGN(64)`, so the AVX build's aligned load faults. Upstream's CPU device, unchanged by the port and outside the HIP scope; the HIP device does not hit it with pinned arrays (hipHostMalloc memory is page aligned, and rebuildHostBVH2 reads it in place). Worth telling the maintainer separately (jeff's call).
+
+### Symptom 2, raycast surface hang: NOT FIXED, root cause not found
+
+Reproduced at fd2375a: `raycast surface` exceeded `timeout 120` with no output (the first frame never completes), after `default surface`, `default gaussian-splat` passed in the same sweep; `raycast gaussian-splat` right after it passed, so that first timeout left the card usable (as in the 2nd job, whose card also kept working after its 600 s timeout).
+
+Then the card was lost. Two debug runs overlapped (a gdb attach that ptrace_scope refused, followed by `kill -9` of a hung run while another hung run was still alive under `timeout 90`). After that every HIP program on HIP device 2 hangs: the 64-thread smoke kernel (`$J/smoke/smoke.hip`) never returns, `AMD_LOG_LEVEL=3` stops right after the first `hipStreamCreate` (the blit kernel of the code-object load never completes; gdb: `hsa_executable_freeze -> BlitKernel::SubmitLinearCopyCommand -> hsa_signal_wait`), the same signature the first gfx1201 job recorded for HIP device 0. amd-smi showed GFX activity on that card (03:00.0) with no process attached. No root and no reset here; a poll with the smoke kernel every minute from 23:09 to 23:28 UTC never succeeded. All later instrumented runs (bounded transparency loop, printf) ran on the wedged card and taught nothing.
+
+What is known about the hang:
+- It is the raycast kernel, on the GPU. The host is blocked in frame wait; the wave never finishes (device printf is never flushed); and once processes were killed hard a wave stayed resident on the card. That a killed process's wave could not be torn down points at a wave stuck on a memory access that never completes, not an ALU loop (an ALU loop is preempted at queue teardown). That is a lead, not a finding.
+- Only raycast + a lit surface scene hangs. Raycast volumes, NanoVDB and splats pass (2nd job and here), pathtrace on the same surface scene passes. The raycast-with-light path has never run on HIP before this round: at 6f1e7937 it crashed on the host first, and the gfx90a surface scene (harness rewritten there) apparently had no light, since gfx90a never crashed in commit().
+- Ruled out by reading the code: the transparency loop (default material is Opaque, getOpacity returns 1, the loop exits after one hit); the light loop and directional-light sampling (no loops; the raycast ScreenSample's `Random` is default-constructed, i.e. uninitialized, but the LCG cannot loop, and in the IR the state stays in memory, nothing is folded to undef/unreachable on that path; the only `unreachable` in sampleLight is an enum-switch default in the geometry-light branch); stream callbacks or host deadlocks (none in the code).
+- Not ruled out: (a) a stale pointer read by the raycast kernel: with hipMalloc a stale device pointer reads leftover VRAM silently, with hipHostMalloc the pages are unpinned and unmapped and a GPU read can stall; (b) a HIP or driver problem with host-coherent memory on this card; (c) a raycast-only path (intersectVolumeBounds over a surface-only TLS, heat-map clock64) misbehaving on gfx1201.
+
+Next steps for whoever has a healthy gfx1201 (and the same applies on gfx90a, which must rerun this head anyway): (1) run `RENDERERS=raycast SCENES=surface RUNS=1 TIMEOUT=120` once; never kill it with `-9` and never overlap two HIP processes on the card; (2) bisect the scene: remove the light (if raycast surface then passes, the light path; if it still hangs, the surface path), using a copy of the harness; (3) try `HIP_HOST_COHERENT=0` and `=1` to test (b); (4) build with the old hipMalloc DeviceArray plus a HIP-only host staging copy of `group.lights` in VisionarayScene::commit() to test whether the hang is pinned-memory specific; (5) instrument with a per-pixel iteration cap that writes a sentinel colour instead of printf (device printf never flushes from a kernel that does not finish).
+
+### Harness committed: projects/anari-visionaray/gpu_tests/
+
+`anari_validate.cpp` is the 2nd job's harness (itself the first gfx1201 job's, plus RENDERER) with: the splat scene fixed (scale 0.05, opacity 0.9, linear), PPM output (`PPM_PREFIX`), per-case wall time, the header comment documenting every env var. `run_all.sh` builds it and runs each scene/renderer in its own process under `timeout -k 30 $TIMEOUT` (default 600) and `ulimit -c 0`, surface last so a hang or wedge costs nothing else. README.md explains the scenes, the PASS rule and the warning about killing hung cases. Counts from earlier harness versions are comparable for every scene except gaussian-splat (scene changed).
+
 ## Fix review PR draft
 
 Title: Merge upstream main into the HIP device PR (#10)

@@ -7,8 +7,8 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-23T14:02:30Z",
-  "updated_at": "2026-11-23T22:41:01Z",
-  "head_sha": "6f1e7937b823184cbc34a3296a65ca273a249861",
+  "updated_at": "2026-11-23T23:14:59Z",
+  "head_sha": "fd2375aa32bff0c6103f79ba5bb1ab4cff15840a",
   "depends_on": [
     "visionaray"
   ],
