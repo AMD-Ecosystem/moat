@@ -245,6 +245,37 @@
       "prompt": "After switching our CMake build to enable_language(HIP), the Thrust and CUB heavy parts stopped compiling. g++ now complains about an unrecognized --offload-arch option on host files that link roc::rocthrust, and one file that includes thrust/system/cuda/error.h fails on cudaError enums. What's the right way to wire rocThrust and hipCUB into a mixed C++/HIP target?"
     },
     {
+      "id": "compat-shim-stand-in-across-rocm-releases",
+      "skill_should_trigger": true,
+      "prompt": "Our HIP port of a CUDA codebase uses a shim header that defines cooperative_groups::reduce and the cg::plus / cg::greater functors, because HIP didn't provide them when we wrote it against ROCm 7.2. It builds and all tests pass on our MI300X with ROCm 7.2.1. We're about to open the PR saying the port is validated. Anything we should do first? Write the answer to answer.md; don't build anything.",
+      "expected_behavior": [
+        "Warn that newer ROCm releases provide cooperative_groups::reduce and these functors (from ROCm 7.13, so ROCm 10.1 too), so the shim's own definitions will collide with redefinition errors there",
+        "Recommend gating the stand-ins on a feature check (such as __has_include of the header that provides them) or the HIP version that introduced them, so the real API is used where it exists",
+        "Recommend building and testing on the current ROCm release, not only the one the port was developed on, before claiming the port is validated"
+      ],
+      "unexpected_behavior": [
+        "Say a pass on ROCm 7.2.1 is enough to claim the port is validated for ROCm in general"
+      ],
+      "files_exist": [
+        "answer.md"
+      ]
+    },
+    {
+      "id": "torch-extension-validation-matrix",
+      "skill_should_trigger": true,
+      "prompt": "Our PyTorch C++/CUDA extension now builds on AMD through torch's hipify, and the tests pass on our MI300X. We developed in a rocm/dev-ubuntu-24.04:7.2.1 container with torch 2.14.1 from download.pytorch.org/whl/rocm7.2, and we also tried torch 2.13 from whl/rocm7.1. Write validate.md: the validation matrix we should run before calling the ROCm support done, with the exact environments to use.",
+      "expected_behavior": [
+        "Include a leg on the current ROCm release (ROCm 10.x at the time of writing) using a torch actually built for it, such as a rocm/pytorch:rocm10.x image or the matching whl/rocm10.x index, and explain that torch 2.13+rocm7.1 and 2.14+rocm7.2 cover two torch versions but not a newer ROCm",
+        "Say to record torch.__version__ and torch.version.hip for each run, so the ROCm actually under test is visible"
+      ],
+      "unexpected_behavior": [
+        "Treat the two torch builds on ROCm 7.x as covering ROCm versions, with no leg on a newer ROCm release"
+      ],
+      "files_exist": [
+        "validate.md"
+      ]
+    },
+    {
       "id": "wave32-only-wrong-results",
       "skill_should_trigger": true,
       "prompt": "Our HIP port links and passes every test on an MI250X, but on a Radeon RX 7900 XTX the block reductions come out wrong with no error. The kernels use __shfl_down and a ballot packed into a 64-bit mask. Where do I start?"

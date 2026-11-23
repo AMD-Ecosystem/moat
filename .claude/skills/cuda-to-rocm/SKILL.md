@@ -122,10 +122,11 @@ the host and a compile-time constant in device code.
 ## Validation bar
 
 A real-GPU test run is the only evidence that counts. Lint is not validation, and a CPU-only
-build proves compilation and nothing else. Cover both wavefront widths and each OS the
-project supports: at least one wave64 (CDNA) GPU, one wave32 (RDNA) GPU, and Windows when
-the project builds there. Also compile the CUDA path with nvcc as a no-regression check: an
-additive ROCm port must leave the CUDA build a pure passthrough. `references/validation.md`.
+build proves only compilation. Cover both wavefront widths, each OS the project supports,
+the current ROCm release and the largest problem size: a wave64 (CDNA) and a wave32 (RDNA)
+GPU, and Windows when the project builds there. Also compile the CUDA path with nvcc as a
+no-regression check: an additive ROCm port must leave the CUDA build a pure passthrough.
+`references/validation.md`.
 
 ## Keeping an open PR mergeable
 
