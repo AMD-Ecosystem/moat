@@ -965,3 +965,65 @@ continues (RXMesh core does not use hipMallocManaged).
 0 FAILED on both. Matches gfx90a/gfx1100/gfx1151 (25/25). One fat binary ran on both GPUs.
 State: windows-gfx1101 + windows-gfx1201 port-ready -> completed (validated_sha e80e1a0,
 fork unchanged). All five platforms terminal -> PR-ready.
+
+## Fix round 2026-11-23 (moat-fix-73) -- absorb upstream main (porter, linux-gfx1100)
+
+Why: owensgroup/RXMesh#73 reported `mergeable=CONFLICTING`, `mergeStateStatus=DIRTY`. The upstream thread has no comments, no reviews and no line comments (read 2026-11-23 with `gh pr view 73 --json comments,reviews` and `gh api repos/owensgroup/RXMesh/pulls/73/comments`), so this round has no maintainer request; it only absorbs the base. PR head on GitHub = df10bfe27ccf = recorded `published_sha` (no HEAD-MOVED).
+
+Records: `fix-branch RXMesh` re-homed the trunk-resident folder onto `port/RXMesh` (cut from origin/main 6510c43b) and staged `moat-fix-73` with base df10bfe. The `porting` lock was taken by linux-gfx1100 after that (on the port branch, so nothing was written to the trunk).
+
+Upstream delta: 30a4137..upstream/main = 77 commits (tip 3990228e), 109 files. Main themes: tet mesh support (TetHandle, VT/ET/FT/TV/TE/TF queries, for_each_tet, MshIO loader replacing MshLoader/MshSaver), CUDA device LTO (`rxmesh_enable_cuda_device_lto`, numeric archs required), inlined `__device__` implementations moved from `lp_hashtable.cu`, `patch_lock.cu`, `patch_scheduler.cu`, `patch_stash.cu`, `hash_functions.cu`, `attribute.cu` into their headers, external device buffers for attributes, NDReorder app and nd/mgnd permute removed, a warmup kernel in kernels/util.cuh.
+
+### Fork commits (on moat-fix-73, published tip df10bfe untouched)
+
+- 3183c34d `[ROCm] Merge upstream main into the HIP port` (merge of 3990228e). 13 conflicts:
+  - CMakeLists.txt / RXMeshApp.cmake / RXMeshTarget.cmake: upstream's `rxmesh_resolve_cuda_architectures` + `rxmesh_enable_cuda_device_lto` kept on the CUDA branch only (it FATAL_ERRORs without numeric CUDA archs, and `-flto` does not survive a `-fgpu-rdc` device link on HIP). `include(cmake/RXMeshApp.cmake)` after `project()` in both branches.
+  - ThirdParty.cmake: upstream's new mshio include kept; OpenMesh still gated on RX_BUILD_APPS.
+  - attribute.cu, lp_hashtable.cu, patch_lock.cu, patch_scheduler.cu, patch_stash.cu: took upstream's deletions (code moved to headers); the port's `__CUDA_ARCH__` -> `|| __HIP_DEVICE_COMPILE__` and `__CUDACC__` -> `|| __HIPCC__` edits re-applied in attribute.h, lp_hashtable.h, patch_lock.h, patch_scheduler.h, plus context.h's new `tet_prefix()`.
+  - attribute.h ctor: upstream no longer mallocs `m_name` (took upstream).
+  - patch_stash.h: kept the port's `critical_section()` insert (the bare lock()/unlock() form deadlocks on CDNA wave64).
+  - query.cu: new tet prologue/get_iterator explicit instantiations carry `__device__` (clang target-attribute match).
+  - mgnd_permute.cuh / nd_permute.cuh: deleted upstream (the port only had include tweaks there) -> deleted.
+  - Closing check: the set of files differing from upstream/main is exactly the previous port file set, moved from .cu to .h where upstream moved code, minus the two deleted files.
+- fd6cd893 `[ROCm] Adapt upstream's new tet and attribute code to HIP`: HIP-only `<cuda/std/array>` redirect in hip_compat (aliases std::array; util.h's tet_edges/tet_faces), aliases cudaPointerAttributes/cudaPointerGetAttributes/cudaMemoryTypeDevice and cusparseOrder_t/CUSPARSE_ORDER_ROW, `CUDART_VERSION >= 10000 || defined(__HIP_PLATFORM_AMD__)` in Attribute::attach_device_buffer (hipPointerAttribute_t has `.type`, no `.memoryType`), `query.template dispatch<>` at the two new sites in identify_tet_boundary_vertices.
+
+Sweep of upstream's delta for port-changed surfaces: no new `__ballot*`, `__shfl*`, `WARP_SIZE`, `% 32`, lane masks, inline asm, `memcpy_async`/`cg::wait`, or `__shared__` LPPair arrays. New `for_each_tet(location, lambda)` uses the same `IS_HD_LAMBDA` gate as the other for_each_* (device branch off on HIP, as before); library calls are HOST only. New `load_async` calls go through loader.cuh's synchronous HIP path. Apps (TetHeat, TetDeformation, etc.) are not built on HIP, as before (`RX_BUILD_APPS=OFF`); their new `query.dispatch<>` sites were not touched.
+
+### Build + test (linux-gfx1100, AMD Radeon Pro W7800, HIP_VISIBLE_DEVICES=1 as pinned by the dispatcher)
+
+Toolchain differs from the last record: this host now has the pip ROCm SDK 10.1.0 (`rocm-sdk version`), root `/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel`, no `/opt/rocm`.
+
+```
+R=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+ROCM_PATH=$R cmake -S projects/RXMesh/src -B projects/RXMesh/build -G Ninja \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_HIP_COMPILER=$R/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R \
+  -DRX_USE_POLYSCOPE=OFF -DRX_BUILD_APPS=OFF -DRX_BUILD_TESTS=ON \
+  -DCMAKE_BUILD_TYPE=Release
+ninja -C projects/RXMesh/build -j 10 RXMesh RXMesh_test
+ulimit -c 0; projects/RXMesh/build/bin/RXMesh_test [--gtest_filter=<the 25-test filter recorded above>]
+```
+
+First build of the bare merge failed only on upstream's new code (cuda::std::array, cudaPointerAttributes, cusparseOrder_t, two missing `.template`); fd6cd893 fixes those, and then the build is clean.
+
+Results at fd6cd893:
+- Recorded filter (`RXMeshStatic.*:RXMesh.*:Util.*:RXMeshDynamic.{PatchScheduler,PatchLock,Validate,RandomFlips,RandomCollapse,TriangleRefinement,PatchSlicing}`): 30/30 PASSED, twice.
+- Full binary, no filter: 30/30 PASSED (4 DISABLED_ tests, as upstream). Re-run on the binary built from the committed tree: 30/30.
+- vs last record (25/25 at e80e1a0/df10bfe): +5 tests, all upstream additions: TetBoundaryVertex, ForEachTet, ForEachOnDeviceTet, TetQueries, TetVerticesOrientation. Upstream renamed BoundaryVertex -> TriangleBoundaryVertex, ForEach -> ForEachTriangle, ForEachOnDevice -> ForEachOnDeviceTriangle, Queries -> TriangleQueries; Util.Tet is now RXMeshStatic.Tet. No test lost, none failed. PatchLock passed every run (it has only ever flaked on gfx90a).
+
+### CUDA no-regression compile at fd6cd893
+
+No conda/nvcc on this host; assembled CUDA 12.8.1 from NVIDIA's redist archives (cuda_nvcc, cuda_cudart, cuda_cccl, libcusparse, libcusolver, libcublas, libnvjitlink, cuda_nvrtc, cuda_nvtx, cuda_profiler_api; sha256 checked) into the job directory, with `lib64 -> lib` (nvcc looks for libcudadevrt/libcudart_static in lib64). Host gcc 13.3.0.
+
+```
+cmake -S projects/RXMesh/src -B <job>/build-cuda -G Ninja -DCMAKE_CUDA_COMPILER=<cuda>/bin/nvcc \
+  -DCUDAToolkit_ROOT=<cuda> -DCMAKE_CUDA_ARCHITECTURES=80 -DCMAKE_CXX_COMPILER=g++ -DCMAKE_C_COMPILER=gcc \
+  -DRX_USE_POLYSCOPE=OFF -DRX_BUILD_APPS=OFF -DRX_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release
+ninja -C <job>/build-cuda -k 0 -j 10 RXMesh RXMesh_test
+```
+
+Result: PASS, 137/137 steps, 0 errors, RXMesh_test linked. Device LTO is active on the CUDA path (`code=[compute_80,lto_80]` on 39 compiles, `LINK_FLAGS = -dlto`). The pre-existing test_multiple_meshes.cu `get_polyscope_mesh` error recorded at df10bfe is gone (upstream 988fb50c fixed it).
+
+### Push
+
+`git push origin moat-fix-73` (new branch, fd6cd893). `moat-port` unchanged at df10bfe. `jargon.py --port RXMesh`: clean (local `main` set to upstream/main first so upstream's commits are not scanned as ours). advance-head -> fd6cd893; stage -> ported.

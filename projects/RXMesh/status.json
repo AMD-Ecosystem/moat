@@ -7,24 +7,20 @@
   "priority": 4.792,
   "ext_type": "unknown",
   "adopted_at": "2026-05-30T00:36:13Z",
-  "updated_at": "2026-11-23T20:28:20Z",
-  "head_sha": "df10bfe",
+  "updated_at": "2026-11-23T20:47:00Z",
+  "head_sha": "fd6cd893ef0d826a1022da59b9a63535bf66e1a2",
   "depends_on": [
     "STRUMPACK"
   ],
   "pr_url": "https://github.com/owensgroup/RXMesh/pull/73",
   "pr_number": 73,
   "pr_opened_at": "2026-06-05T20:34:20Z",
-  "porting": {
-    "arch": "linux-gfx1100",
-    "since": "2026-11-23T20:28:20Z",
-    "holder": "2f9baf6fb6f2"
-  },
+  "porting": null,
   "waivers": {},
   "pr_state": "open",
   "license_spdx": "BSD-2-Clause",
   "upstream_repo_id": 357954110,
-  "stage": "porting",
+  "stage": "ported",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -56,7 +52,7 @@
       "validated_sha": "df10bfe",
       "started_at": "2026-05-30T21:08:00Z",
       "completed_at": "2026-06-23T21:32:38Z",
-      "updated_at": "2026-11-23T20:28:20Z",
+      "updated_at": "2026-11-23T20:47:00Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -171,5 +167,10 @@
     "base_sha": "df10bfe27ccff8b7095b459a018417c22bdd093c",
     "review_pr": null,
     "opened_at": "2026-11-23T20:27:40Z"
+  },
+  "porting_released": {
+    "arch": "linux-gfx1100",
+    "since": "2026-11-23T20:28:20Z",
+    "at": "2026-11-23T20:47:00Z"
   }
 }
