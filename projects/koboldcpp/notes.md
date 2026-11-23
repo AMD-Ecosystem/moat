@@ -204,3 +204,83 @@ Checks made (so the next round need not redo them):
 
 - "hipblasGemmEx rejects HIPBLAS_COMPUTE_32F_FAST_16F for FP16 inputs": the cuBLAS documentation's `cublasGemmEx` type table (docs.nvidia.com/cuda/cublas, cublasComputeType_t and the GemmEx table, fetched 2026-11-23) lists `CUBLAS_COMPUTE_32F_FAST_16F` (and FAST_16BF, FAST_TF32) only with `CUDA_R_32F` A/B/C; `CUBLAS_COMPUTE_32F` is the documented compute type for FP16 inputs with FP32 output. So the koboldcpp CUDA code passes an undocumented combination that cuBLAS tolerates, and hipBLAS enforces the documented one: this is the CUDA-lenient/AMD-strict pattern, and the lesson should say so rather than "the CUDA build of the same code runs (not re-verified)". The fix advice then generalizes: map FAST_* compute types to `HIPBLAS_COMPUTE_32F` whenever the inputs are not FP32. Also repair the garbled clause "and the rocBLAS backend and does not take it with 16-bit inputs". The header quote is accurate (`hipblas-common.h:79`, `HIPBLAS_COMPUTE_32F_FAST_16F = 4, /**< 32-bit input can use 16-bit compute */`, ROCm 10.2 SDK).
 - The rocminfo lesson checks out as written.
+
+## Validation 2026-11-23 (linux-gfx942 fleet worker, fork `moat-port` 0fff6ace6)
+
+Depth (a) from Jeff's Q3 ruling: T1 and T2 gate; one T3 smoke each for image, whisper, TTS, embeddings and vision. Music also ran because its models are public; the two-GPU split is owed. Result: pass on linux-gfx942 (wave64).
+
+### Environment
+
+- AMD Instinct MI300X, CPX partition, 24,574 MiB, gfx942:sramecc+:xnack-, `HIP_VISIBLE_DEVICES=1` (the dispatcher's pin), `ulimit -c 0`, `timeout` on every GPU run.
+- TheRock ROCm 10.2.0 SDK in the job venv: `$FLEET_VENV/bin/python -m pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ "rocm[libraries,devel]==10.2.0" "rocm-sdk-device-gfx942==10.2.0"`, `R=$($FLEET_VENV/bin/rocm-sdk path --root)`, `PATH=$R/bin:$PATH` for the runs (so the launcher finds `rocminfo`). No system ROCm.
+- gcc 13.3.0, `MAX_JOBS=96`.
+
+### Build
+
+`make -j96 LLAMA_HIPBLAS=1 ROCM_PATH=$R` at 0fff6ace6: rc 0, 0 errors, 153 hipcc steps with `--offload-arch=gfx942` (auto-detected), `koboldcpp_hipblas.so` 117 MB. `ldd`: libhipblas, libamdhip64, librocblas and libhipblaslt all resolve from the SDK's `lib/`. `git -C projects/koboldcpp/src status --porcelain` shows no modified tracked files.
+
+### T1: `test-backend-ops` against koboldcpp's ggml (overlay)
+
+llama.cpp `a8f8294c4` (second parent of `8b5f12083`, the latest "Merge branch 'upstream'" under the base) as a worktree; overlay of koboldcpp's `ggml/include/`, `ggml/src/ggml-cuda/` (llama.cpp's `ggml-cuda/CMakeLists.txt` restored) and `ggml/src/*.{c,cpp,h}` except `ggml-backend-reg.cpp` (the porter's recipe). `cmake -G Ninja -DGGML_HIP=ON -DGPU_TARGETS=gfx942 -DGGML_HIP_NO_VMM=ON -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R -DROCM_PATH=$R -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA_FA_QUANTS=q4_0-q4_0,q5_1-q5_1,q8_0-q8_0,bf16-bf16 -DCMAKE_C_FLAGS=-I<ggml/src/ggml-cpu> -DCMAKE_CXX_FLAGS=-I<ggml/src/ggml-cpu>`, then `test-backend-ops test -b ROCm0`: **20806/20806 passed**, 7209 not supported, 607 s. Identical to the porter's count, so the pristine cross-check was not rerun.
+
+### T2: greedy HIP vs CPU
+
+Harness: one koboldcpp server per config (`--contextsize 2048`, GPU `--usecuda <mmq|nommq> --gpulayers 99`, CPU `--usecpu --threads 32`), `/api/v1/generate` with `temperature 0.01, top_k 1, rep_pen 1, sampler_seed 42, max_length 64, logprobs true`, two prompts (p0 "The capital of France is"; p1 a ~150-token paragraph on computing history, a different paragraph from the porter's). Models: Qwen/Qwen2.5-0.5B-Instruct-GGUF Q4_K_M, Q8_0, fp16; BF16 from fp16 with `llama-quantize ... BF16`; rustformers/pythia-ggml `pythia-160m-q4_0.bin`/`-q5_1.bin` (GGML v3 backend, file version 403/405 family); two GGML v2 files converted here from `pythia-160m-f16.bin` (all 2-D tensors to Q4_0 with float scale; qv1 = header with par_res, ftype 1002, low/high-half nibbles, detected as "Legacy GPT-NEO-X (ver 403)" = NEOX_4 -> `ggml_v2-cuda.cu`; qv0 = no par_res, ftype 2, interleaved nibbles with roundf = NEOX_2 -> `ggml_v2-cuda-legacy.cu`).
+
+| config | p0 | p1 |
+|---|---|---|
+| BF16 mmq / BF16 nommq / F16 nommq | identical | identical |
+| Q8_0 mmq / nommq | identical / identical | identical / diverge@26 |
+| Q4_K_M mmq / nommq | diverge@19 / @28 | diverge@36 / identical |
+| Q4_K_M FA off | diverge@19 | identical |
+| Q4_K_M `--quantkv` q8_0 / bf16 | diverge@19 / @19 | diverge@6 / @22 |
+| Q4_K_M `--quantkv` q5_1 / q4_0 | diverge@5 / @1 | diverge@1 / @2 |
+| pythia GGML v3 Q4_0 / Q5_1 | identical / diverge@13 | diverge@2 / @17 |
+| pythia GGML v2 qv1 / qv0 | identical / identical | diverge@2 / diverge@2 |
+
+Every divergence was checked by re-asking both backends for the next token at the divergence point (prompt + common prefix, `top_k 5`, `max_length 1`, top-5 logprobs). All but the q5_1/q4_0 KV cases are near-ties, with a top-2 gap of 0.01-0.32 nats on at least one backend and the same two candidates on both: e.g. Q4_K_M p0@19 ' also'/' located' (GPU gap 0.06, CPU 0.04), Q8_0 nommq p1@26 ' and'/' with' (0.07/0.10), v3 Q5_1 p0@13 ' with'/' and' (0.07/0.08). The legacy p1@2 split (',' vs ' written' after " written") is the same on v2 qv1 (GPU 0.15, CPU 0.24), v2 qv0 (0.11, 0.07) and the upstream-quantized v3 Q4_0 (0.32, 0.02), so it is the model's tie, not a v2 defect; the v2 GPU path converts activations to FP16 for the GEMM where the CPU uses Q4_0 x Q8 dot products, the same on CUDA. pythia-160m degenerates into repetition on both backends with this prompt. The q5_1/q4_0 KV cases are not ties, so perplexity decided them (`llama-perplexity` from the overlay build, `-c 512 -fa on -ctk/-ctv <kv> -t 32`, LICENSE.md+README.md at the head as corpus, `-ngl 99` vs `-ngl 0 --device none`): f16 5.8836/5.8992, q8_0 6.1701/6.1937, q5_1 26.35/27.15, q4_0 105.08/108.34 (GPU/CPU, +/- 0.18-5.1). The backends agree; q5_1/q4_0 KV wrecks this 2-KV-head model on either one, as the porter found. No `--quantkv` value aborted with FA on (R7).
+
+GGML v2 compute-type fix exercised: with `ROCBLAS_LAYER=2`, each v2 run (qv1 and qv0, p1) logged 288 `rocblas gemm_ex --a_type f16_r --b_type f16_r --c_type f32_r --compute_type f32_r` calls (m/n/k 64/114/114 and 114/114/64, the attention matmuls) plus 12 f32 `gemm` calls, and generation completed. Before the fix this call aborted with `cuBLAS error 7` (porter round 1).
+
+`--benchmark` (Q8_0, ctx 4096): nommq 26,640 T/s prompt / 326.8 T/s generation; mmq 22,449 / 324.7 T/s (porter: 27,184/331 and 22,834/327).
+
+R5 (BF16 compute revert on AMD without fast BF16) is not exercised on gfx942 (fast BF16); a gfx90a or gfx1030 run is still needed for that path.
+
+### T3 modality smoke (one server with all modalities, GPU vs CPU)
+
+Server: `--model SmolVLM-256M-Instruct-Q8_0.gguf --mmproj mmproj-SmolVLM-256M-Instruct-Q8_0.gguf --sdmodel sdxs-512-tinySDdistilled_Q8_0.gguf --transcribemodel whisper-tiny.en-q5_1.bin --ttsmodel OuteTTS-0.2-500M-Q4_0.gguf --ttswavtokenizer WavTokenizer-Large-75-Q4_0.gguf --embeddingsmodel all-MiniLM-L6-v2-Q8_0.gguf`, GPU adds `--usecuda mmq --gpulayers 99 --ttsgpu --embeddingsgpu`.
+
+| modality | request | GPU | CPU | GPU evidence (`--debugmode 1` log) |
+|---|---|---|---|---|
+| image | `/sdapi/v1/txt2img` "a red apple on a wooden table, photo", 1 step, 512x512, seed 42 | 444 KB PNG, a red apple and a small apple on a wooden table (viewed), 0.5 s | PNG, 4.0 s | `diffusion_model 488.12MB(VRAM), vae 4.67MB(VRAM)`, `unet compute buffer size: 121.64 MB(VRAM) on ROCm0` (text encoder on CPU by default) |
+| whisper | `/api/extra/transcribe`, whisper.cpp `jfk.wav` | exact JFK quote, 0.15 s | same text, 1.05 s | `whisper_backend_init: using backend ROCm0`, `whisper_model_load: ROCm0 total size = 31.58 MB` |
+| TTS | `/api/extra/tts` one sentence, voice kobo | 24 kHz WAV, 3.10 s, RMS 3085, 0.9 s | 2.98 s, RMS 3145, 2.3 s | OuteTTS 25/25 and WavTokenizer 13/13 layers offloaded to ROCm0 |
+| embeddings | `/v1/embeddings`, 3 sentences | dim 384, cos(similar) 0.6533, cos(unrelated) 0.0873 | 0.6535 / 0.0887 | 7/7 layers on ROCm0 |
+| vision | `/v1/chat/completions` with the GPU PNG | "A red apple sits next to a small red fruit, to the left of the apple." | "A red apple sits next to a small green apple on a table." | `mtmd_backends: using ROCm0 backend`, 31/31 layers on ROCm0 |
+
+The GPU run repeated with `--debugmode 1` gave byte-for-byte the same outputs (deterministic).
+
+Music (ACE-Step, koboldcpp/music: `acestep-5Hz-lm-0.6B-BF16`, `Ace-Qwen3-Embedding-0.6B-Q8_0`, `acestep-v15-sftturbo50-Q8_0`, `ace-vae-BF16`): `/api/extra/music/prepare` then `/api/extra/music/generate` with caption "calm acoustic guitar instrumental, slow tempo", instrumental, duration 10, seed 42. GPU: 10.00 s stereo 48 kHz WAV, RMS 0.090, prepare 1.2 s, generate 2.6 s (DiT 330 ms for 8 steps, VAE decode 2.1 s); LM, DiT, TextEncoder, CondEncoder, VAE-Enc and VAE all report `backend: ROCm0`. CPU: 10.00 s WAV, RMS 0.088, generate 53 s, all backends CPU. Not listened to; level and duration are sane.
+
+Two-GPU split (`--tensor_split`): **owed**. This job was pinned to one GPU (`HIP_VISIBLE_DEVICES=1`) to stay clear of other jobs on the host; a host run with two free GPUs is needed.
+
+### Non-GPU
+
+Upstream deleted `tests/` before the base (porter round 1), so there is no non-GPU suite at 0fff6ace6; `python -m py_compile koboldcpp.py` passes. The rocminfo fix is visible in every GPU run: `Detected AMD GPU VRAM from rocminfo: [('AMD Instinct MI300X', '24574'), ...]`.
+
+### CUDA no-regression compile: pass at 0fff6ace6
+
+No nvcc or conda on this host, and the pip wheel `nvidia-cuda-nvcc-cu12==12.8.93` ships only `ptxas` and `nvvm`, not the `nvcc` driver. So NVIDIA's CUDA 12.8.1 redistributable archives were unpacked into the job directory (`developer.download.nvidia.com/compute/cuda/redist/`, `redistrib_12.8.1.json`: cuda_nvcc 12.8.93, cuda_cudart, libcublas 12.8.4.1, cuda_cccl, cuda_nvml_dev, cuda_profiler_api, cuda_nvtx; `targets/x86_64-linux/{include,lib}` and `lib64` symlinked to the flat layout). In a separate worktree at 0fff6ace6: `make -j96 LLAMA_CUBLAS=1 LLAMA_ARCHES_CU12=1 CUDA_PATH=<redist> NVCC=<redist>/bin/nvcc koboldcpp_cublas` (compute_50/61/75/80): rc 0, 0 errors, 140 s, `koboldcpp_cublas.so` 307 MB, including `ggml_v2-cuda.o` and `ggml_v2-cuda-legacy.o`. Together with the byte-identical CUDA preprocessor output recorded in the review, this covers the standing nvcc rule for this head. Compile only; no NVIDIA runtime claim.
+
+### Content checks
+
+`python3 utils/jargon.py --port koboldcpp`: clean. The ROCm build is documented in the README build table and the new sentence beneath it (where the CUDA build is documented).
+
+### Owed after this platform
+
+- wave32 (Linux gfx1100/gfx1201) and Windows gates (Windows after the later CMake round, by Jeff's Q1 ruling; laptop runs last).
+- Two-GPU split; R5 BF16 revert path on an arch without fast BF16.
+
+## Lesson for moat-porting: compiling the CUDA gate on a host without a CUDA toolkit
+
+For the "Fleet hosts" section, beside the CUDA no-regression gate. A fleet host with no `nvcc` and no conda can still run the compile gate without touching shared paths: the pip wheel `nvidia-cuda-nvcc-cu12` contains only `ptxas` and `nvvm` (no `nvcc` driver), but NVIDIA's redistributable archives work. Read `https://developer.download.nvidia.com/compute/cuda/redist/redistrib_<ver>.json`, download the `linux-x86_64` archives for `cuda_nvcc`, `cuda_cudart`, `libcublas`, `cuda_cccl` (plus `cuda_nvml_dev`, `cuda_profiler_api`, `cuda_nvtx` if the project includes them; llama.cpp's backend includes `nvml.h`), and `tar -xJf --strip-components=1` them into one prefix in the job directory. Build files that expect the installer layout need `targets/x86_64-linux/{include,lib}` and `lib64` symlinked to the flat `include`/`lib`. The archives also carry `lib/stubs/libcuda.so`, so a full shared-library link succeeds without a driver. About 1 GB, most of it cuBLAS.

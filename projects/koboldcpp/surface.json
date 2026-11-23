@@ -741,6 +741,10 @@
   {
    "id": "docs:readme-rocm",
    "evidence": "README build section documents GPU_TARGETS, LLAMA_PORTABLE and ROCM_PATH incl. a pip ROCm SDK; --usecuda wording covers ROCm builds (0fff6ace6). Windows ROCm docs wait on the Windows route ruling"
+  },
+  {
+   "id": "capability:music-acestep",
+   "evidence": "linux-gfx942 validation at 0fff6ace6: ACE-Step (acestep-5Hz-lm-0.6B-BF16, Ace-Qwen3-Embedding-0.6B-Q8_0, acestep-v15-sftturbo50-Q8_0, ace-vae-BF16) prepare+generate, 10 s instrumental: GPU 10.00 s stereo 48 kHz WAV RMS 0.090 in 2.6 s with LM/DiT/encoders/VAE on ROCm0; CPU 10.00 s RMS 0.088 in 53 s"
   }
  ],
  "scoped_out": [
@@ -873,10 +877,6 @@
   {
    "id": "library:whisper_adapter",
    "reason": "Windows route ruled (a), fix the CMake LLAMA_HIPBLAS branch (notes.md rulings); that is a follow-up porter round, and Linux uses the Makefile"
-  },
-  {
-   "id": "capability:music-acestep",
-   "reason": "not run on linux-gfx942 this round: the ACE-Step model set was not downloaded (multi-GB); one smoke owed per the validation-depth ruling"
   },
   {
    "id": "capability:multi-gpu-split",
