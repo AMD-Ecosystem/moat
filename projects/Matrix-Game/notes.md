@@ -56,3 +56,10 @@ surface.json leaves the Q1/Q2 components unaccounted (notes say "PENDING Jeff ru
 - GPU gate: upstream ships no GPU tests. Use upstream's own release gate (docs/testing.md): the same clip of more than 21 latent chunks through `--dit-runtime native --no-vae-graph` and through `realtime`, compared frame-wise, plus `quality`, each with and without ROCm flash-attn; MG-3 single-GPU `generate.py` via ROCm FA2, PR #67 + AITER, and `--fa_version 0` as reference. Non-GPU regression: `python -m unittest discover -s tests -p 'test_*.py'` in Matrix-Game-4.
 - Windows gate waived (Jeff, 2026-11-12); no Windows plan.
 - No GPU was used by this planning run; nothing was built.
+
+## Rulings on the planner's questions (Jeff Daily, 2026-11-23)
+
+- Q1 (generations): **A**. Matrix-Game-4 and Matrix-Game-3; Matrix-Game-1 and Matrix-Game-2 scoped out as superseded legacy generations.
+- Q2 (RTX presets): **B**. Make the three non-Sage RTX presets run where the datatypes exist; the three `-sage` variants are scoped out with a registered deferral.
+- Q2 addition: the porter spends a bounded check (about 30 minutes, no porting) on SageAttention: does the 2024 community fork github.com/EmbeddedLLM/SageAttention-rocm (last pushed 2024-11-21, SageAttention 2.0.0 beta; the reason thu-ml/SageAttention was dispositioned `ported-elsewhere` on 2026-05-30) build on current ROCm, and what did SageAttention 2.2 add over what that fork covers. The answer goes in the notes for Jeff; it decides nothing by itself.
+- Standing ruling of the same day: Windows laptop GPU runs go last across all ports. The planner's suggested windows waiver is not approved or declined yet.
