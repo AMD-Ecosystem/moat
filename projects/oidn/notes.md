@@ -261,3 +261,48 @@ oidnDenoise -d cpu --hdr .. --alb .. --nrm .. -w smoke.tza -o ref.pfm; oidnDenoi
 
 ### Not run here, and why
 - CUDA no-regression compile: **cuda-not-validated: no CUDA toolkit on this host** (no `nvcc`, no `/usr/local/cuda`, no conda; `/opt/conda/envs/cuda-12.8` is absent). Fetching a package manager (micromamba) into the job directory to install `cuda-toolkit=12.8` was refused by this session's permission classifier, so the gate is still not recorded at 06bdc4c on any host. The diff touches no CUDA source (one `option()` line inside `if(NOT APPLE)` and pass-through lines inside `if(OIDN_DEVICE_HIP)`); a person or a session allowed to install the toolkit owes it before the port is presented.
+## Validation 2026-11-23 (linux-gfx942, AMD Instinct MI300X, fork moat-port 06bdc4c)
+
+First run of the MFMA path on gfx942 hardware. One GPU, `HIP_VISIBLE_DEVICES=3` (dispatcher pin), idle at start (0% GFX, 0.3 GB VRAM); other jobs were using other GPUs on the host. All GPU runs under `ulimit -c 0` and `timeout`. Additive evidence: the wave64 gate was already satisfied by linux-gfx90a at this head.
+
+### Toolchain (job directory only)
+- ROCm 10.2.0 TheRock SDK and ROCm PyTorch pip-installed into the job venv: `$FLEET_VENV/bin/python -m pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple "rocm[libraries,devel,device-gfx90a,device-gfx942,device-gfx950]==10.2.0" "torch[device-gfx942]==2.15.0+rocm10.2.0" OpenImageIO` (pip prints resolver conflicts against the base image's 10.1 `rocm-sdk-device-*` links; harmless). `rocm-sdk version` 10.2.0, `hipconfig --version` 7.17.26434, OpenImageIO 3.2.2.0, tensorboard 2.13.0 from the image. `ROCM_PATH=$(rocm-sdk path --root)`, `PATH` += `$ROCM_PATH/bin:$ROCM_PATH/lib/llvm/bin`, `LD_LIBRARY_PATH` += `$ROCM_PATH/lib`. No system ROCm used.
+- ISPC v1.32.0 and git-lfs v3.6.1 Linux release tarballs extracted under the job directory (the image has no git-lfs); oneTBB 2021.11 from the image.
+- Fork clone: `git clone https://github.com/AMD-Ecosystem/oidn projects/oidn/src`, `git checkout moat-port` (06bdc4c), `moatlib.py protect-fork oidn`. Weights (Q4 ruling): `git config submodule.weights.url https://github.com/RenderKit/oidn-weights.git`, `GIT_LFS_SKIP_SMUDGE=1 git submodule update --init --recursive external/composable_kernel weights`, then in `weights/` `git lfs install --local --skip-repo && git lfs pull` (rt_alb.tza 1830792 bytes). `.gitmodules` untouched.
+
+### Build (default target list, all targets)
+```
+cmake -G Ninja -S projects/oidn/src -B projects/oidn/src/build -DCMAKE_BUILD_TYPE=Release -DOIDN_DEVICE_HIP=ON -DOIDN_DEVICE_CPU=ON \
+      -DROCM_PATH=$ROCM_PATH -DHIP_CLANG_NUM_PARALLEL_JOBS=4 -DISPC_EXECUTABLE=<ispc>
+cmake --build projects/oidn/src/build -j 64
+```
+114 s (configure + build), 132 steps, 0 warnings. Code objects (`objcopy --dump-section=.hip_fatbin` + `clang-offload-bundler --list`): `ck_conv_mfma.cpp.o` = gfx90a, gfx942, gfx950 only; `ck_conv_wmma.cpp.o` and `ck_conv_dl.cpp.o` = the 19 RDNA/APU targets, no CDNA; `hip_engine.cpp.o` = all 22.
+
+### Results
+- `oidnDenoise --ld`: Device 0 "AMD Instinct MI300X", Type HIP (`getArch` matched the real `gcnArchName` for gfx942); Device 1 the EPYC 9654 CPU.
+- `timeout 1800 oidnTest --device hip`: **All tests passed (2361 assertions in 20 test cases)**, 29 s.
+- `timeout 3600 oidnTest --device cpu`: **All tests passed (1820 assertions in 20 test cases)**, 11 s.
+- CPU-reference image differential (`oidnDenoise -d cpu ... -o ref.pfm`, then `oidnDenoise -d hip ... -r ref.pfm`, default maxerror), deterministic numpy-generated PFM inputs at 1920x1080, 1023x577, 257x129 (seeds 1234-1236; hdr = albedo x shading x exponential noise, ldr clipped, normals normalised, directional in [-1,1]), the same 19 option sets as the gfx950 and gfx90a runs (RT hdr, hdr+alb+nrm, ldr+srgb+alb+nrm at -q high/balanced/fast; hdr+alb; hdr+alb+nrm --clean_aux; ldr+alb; RTLightmap hdr and dir; HIP-only -t half, --maxmem 256, --inplace, --buffer device, --buffer managed, compared with the CPU float output of the same inputs): **57/57, errors=0 in every case**, avgerror 1.86e-4 to 8.60e-4 (RTLightmap dir highest, as on gfx950).
+- MFMA path really runs: `rocprofv3 --kernel-trace --stats --output-format csv` on one 1023x577 RT hdr+alb+nrm run shows 20 `ck::...::kernel_grouped_conv_fwd_multiple_abd_xdl_cshuffle` dispatches (16 with AddRelu 0.99 ms total + 4 with Add 0.375 ms; tile 256 threads, 128x64x64, 32x32 XDL) on Agent 5 = gfx942 "AMD Instinct MI300X", wavefront 64, plus the OIDN input/output/pool/upsample/autoexposure kernels. Dispatch resources from the trace: LDS 25088 (allocation granule), scratch 0, workgroup 256. Disassembly of the gfx942 code object unbundled from `ck_conv_mfma.cpp.o`: 96x `v_mfma_f32_32x32x8_f16`, `.wavefront_size: 64`, `.group_segment_fixed_size` 24768, private segment 0, VGPR/SGPR spills 0, VGPRs max 124, SGPRs max 104, AGPRs 0, max workgroup 256. So CK's launch without `IsSupportedArgument` works on gfx942 and the single-rate MFMA numerics agree with CPU.
+- `oidnBenchmark -d hip` (information only, idle GPU): RT hdr_alb_nrm 1920x1080 4.94 ms, 3840x2160 19.52 ms, 1280x720 2.23 ms; RT hdr_calb_cnrm 1920x1080 8.59 ms; RTLightmap 2048x2048 9.39 ms. Between the MI250X GCD (17.16 ms at 1080p) and the shared MI355X (2.85 ms); whether a K1=8 tile is faster on gfx942 remains a tuning question.
+- Integrity: `git -C projects/oidn/src status --porcelain` empty at 06bdc4c; `jargon.py --port oidn` clean; `moatlib.py audit-clean` OK.
+
+### Training smoke run (Q5 ruling) on gfx942
+The porter's recipe (gfx950 section above) with `torch[device-gfx942]==2.15.0+rocm10.2.0`, `PYTHONPATH=$ROCM_PATH/share/amd_smi` on the training commands only (`torch.cuda.device_count()` 1, "AMD Instinct MI300X"). Synthetic dataset written with OpenImageIO (half EXR, 384x384): 16 train and 8 valid scenes, each `sceneNN_0004spp`/`_0016spp`/`_ref` x hdr/alb/nrm (procedural albedo/normals, ref = albedo x shading, noisy = ref x Gamma(spp, 1/spp) noise). Eight valid scenes give 16 validation images, one full batch, so validation ran this time (it never ran in the gfx950 smoke run). Run from a scratch directory with the training scripts by path:
+```
+python preprocess.py hdr alb nrm --filter RT -D data -P preproc -t train -v valid
+python train.py hdr alb nrm --filter RT -P preproc -t train -v valid -R results --epochs 20 --valid_epochs 5 --save_epochs 10 --seed 1 -r gpu_default
+python train.py ... --seed 1 -r gpu_fp32 -p fp32 --compile disable
+python train.py ... --seed 1 -r cpu_fp32 -d cpu
+python infer.py -D data -R results -r gpu_default -i valid -O infer_gpu --metric psnr ssim   (and -d cpu -O infer_cpu)
+python export.py -R results -r gpu_default -o smoke.tza
+oidnDenoise -d cpu --hdr ... --alb ... --nrm ... -w smoke.tza -o w.pfm; oidnDenoise -d hip ... -w smoke.tza -r w.pfm
+```
+- Every step exits 0. Nothing in `training/` needed changing; no fork commit.
+- Seeded loss, 20 epochs (train / valid at epoch 20): CPU fp32 0.567769 -> 0.493250 / 0.502625; GPU fp32 eager 0.567769 -> 0.493250 / 0.502625, max per-epoch difference from CPU 1e-6 over all 24 train and valid values; GPU defaults (mixed precision + `torch.compile(mode='reduce-overhead')`) 0.567756 -> 0.493245 / 0.502624, max difference from CPU 1.5e-5.
+- Epoch 1 took 22 min (defaults) and 21 min (fp32 eager) on the GPU: Inductor/Triton compile and MIOpen first-use find with a cold user find-db (`~/.config/miopen` was being written, GPU at 87-95% busy); later epochs 180-350 images/s. CPU epochs about 6 images/s. A slow first epoch is tuning, not a hang.
+- GPU vs CPU inference with the same checkpoint: PSNR 3.5656 vs 3.5654 dB, SSIM 0.2251 both (16 images); per-pixel max abs difference 4.3e-4 on outputs of mean magnitude 2.6e-2. Low PSNR = 40-step undertrained model, identical on CPU.
+- The weights trained on ROCm load into the HIP device: `oidnDenoise -d hip -w smoke.tza` vs `-d cpu -w smoke.tza`, errors=0, avgerror 7.98e-5 (1023x577) and 7.82e-5 (257x129). `smoke.tza` 7698439 bytes.
+
+### Not run here, and why
+- CUDA no-regression compile: no CUDA toolkit on this host; still owed by the mi355 host at this head (see the gfx90a section).

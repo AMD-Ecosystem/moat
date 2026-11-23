@@ -8,42 +8,19 @@
   "ext_type": "cmake",
   "stage": "review-passed",
   "adopted_at": "2026-11-06T02:27:16Z",
-  "updated_at": "2026-11-23T21:00:24Z",
+  "updated_at": "2026-11-23T21:32:02Z",
   "head_sha": "06bdc4c46ce3be658f25598f5af6db01febc78d8",
   "depends_on": [],
-  "porting": null,
   "waivers": {},
   "platforms": {
     "linux-gfx942": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": null,
-      "failed_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-11-10T18:16:24Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
-    },
-    "linux-gfx90a": {
-      "blocked": false,
-      "blocked_reason": null,
       "validated_sha": "06bdc4c46ce3be658f25598f5af6db01febc78d8",
       "failed_sha": null,
       "started_at": null,
-      "completed_at": "2026-11-23T20:32:35Z",
-      "updated_at": "2026-11-23T20:32:35Z",
+      "completed_at": "2026-11-23T21:32:02Z",
+      "updated_at": "2026-11-23T21:32:02Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -57,8 +34,8 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator",
-      "state": "completed"
+      "state": "completed",
+      "last_agent": "validator"
     },
     "linux-gfx950": {
       "blocked": false,
@@ -83,6 +60,30 @@
       },
       "state": "completed",
       "last_agent": "validator"
+    },
+    "linux-gfx90a": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "06bdc4c46ce3be658f25598f5af6db01febc78d8",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-11-23T20:32:35Z",
+      "updated_at": "2026-11-23T20:32:35Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "state": "completed"
     }
   },
   "license_spdx": "Apache-2.0",
