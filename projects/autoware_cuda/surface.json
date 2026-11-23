@@ -155,15 +155,115 @@
       "where": ".github/workflows/",
       "added_by": "planner",
       "note": "upstream NVIDIA CI; MOAT adds no fork Actions and leaves these unchanged"
+    },
+    {
+      "id": "build:cuda-path-nvcc-autoware_cuda_utils",
+      "kind": "build",
+      "where": "autoware_cuda_utils/CMakeLists.txt",
+      "added_by": "porter",
+      "note": "the autoware_cuda_utils half of build:cuda-path-nvcc-tensorrt (round 1 of the two-round staging)"
+    },
+    {
+      "id": "test:ament_lint_auto-autoware_cuda_utils",
+      "kind": "test",
+      "where": "autoware_cuda_utils/CMakeLists.txt",
+      "added_by": "porter",
+      "note": "the autoware_cuda_utils half of test:ament_lint_auto (round 1 of the two-round staging)"
     }
   ],
-  "covered": [],
+  "covered": [
+    {
+      "id": "library:autoware_cuda_dependency_meta",
+      "evidence": "unchanged; configures and installs in the HIP build, its -fno-lto extras apply to C/C++ flags only and the HIP test and a HIP consumer build and link with it; porter 2026-11-23 linux-gfx950 (MI355X, ROCm 10.2) at 2290174 (notes.md, Porter round 1 section)"
+    },
+    {
+      "id": "library:autoware_cuda_utils",
+      "evidence": "HIP branch (hip/include cuda_runtime*.h compat headers, thrust::hip::par in thrust_utils.hpp, rocThrust + hip::host); builds with 0 warnings under -Werror; scratch consumer (.cpp via ament_auto and ament_target_dependencies, .hip) builds with -Werror and runs pooled make_unique, clear_async, host alloc, pointer attributes and thrust_stream fill/fill_n/count correctly on the GPU; porter 2026-11-23 linux-gfx950 (MI355X, ROCm 10.2) at 2290174 (notes.md, Porter round 1 section)"
+    },
+    {
+      "id": "build:autoware_cuda_utils-config-extras",
+      "evidence": "HIP install exports cmake/find_rocthrust.cmake instead of find_cccl.cmake; scratch consumer configures with no CUDAToolkit lookup (FATAL_ERROR guard not hit) and gets only hip::host plus SYSTEM includes (no --offload-arch on g++ TUs); porter 2026-11-23 linux-gfx950 (MI355X, ROCm 10.2) at 2290174 (notes.md, Porter round 1 section)"
+    },
+    {
+      "id": "test:test_autoware_cuda_utils",
+      "evidence": "17/17 cases pass on each of 20 runs, 0 skipped, on gfx950 (AMD_LOG_LEVEL shows device 0x75a3 and hipLaunchKernel calls); porter 2026-11-23 linux-gfx950 (MI355X, ROCm 10.2) at 2290174 (notes.md, Porter round 1 section)"
+    },
+    {
+      "id": "build:cuda-path-nvcc-autoware_cuda_utils",
+      "evidence": "nvcc 12.8: CUDA branch taken, 5 test .cu compile with 0 warnings, test binary links; installed share/ CMake files byte-identical to upstream a5929dd; CUDA consumer TUs build with g++ -Werror (c++17/20) and nvcc; porter 2026-11-23 linux-gfx950 (MI355X, ROCm 10.2) at 2290174 (notes.md, Porter round 1 section)"
+    },
+    {
+      "id": "test:ament_lint_auto-autoware_cuda_utils",
+      "evidence": "copyright 13/13, lint_cmake 3/3, xmllint 1/1 pass; ament's cppcheck test skips cppcheck 2.13 by design, and cppcheck 2.13 run directly reports nothing on the port or on upstream; porter 2026-11-23 linux-gfx950 (MI355X, ROCm 10.2) at 2290174 (notes.md, Porter round 1 section)"
+    }
+  ],
   "scoped_out": [
     {
       "id": "ci:github-workflows",
       "reason": "MOAT adds no fork GitHub Actions (CPU-only CI cannot observe GPU correctness); upstream's NVIDIA workflows stay unchanged. Not a scope cut of the port."
+    },
+    {
+      "id": "feature:tensorrt-dla",
+      "reason": "Scoped out by Jeff Daily's ruling of 2026-11-23 on planner question Q4 (notes.md, 'Rulings on the planner's questions'): TensorRT DLA is Jetson hardware with no AMD counterpart; on the MIGraphX backend a dla_core_id != -1 request fails with an error."
+    },
+    {
+      "id": "feature:tensorrt-builtin-plugins",
+      "reason": "Scoped out by Jeff Daily's ruling of 2026-11-23 on planner question Q4 (notes.md, 'Rulings on the planner's questions'): TensorRT's built-in plugin library (initLibNvInferPlugins) has no MIGraphX counterpart; models that need it are handled per model in autoware_universe. The plugin_paths dlopen mechanism stays."
     }
   ],
-  "owed": [],
+  "owed": [
+    {
+      "id": "library:autoware_tensorrt_common",
+      "reason": "Round 2 of the two-round staging Jeff Daily ruled on 2026-11-23 (Q3 = i): the MIGraphX layer of autoware_tensorrt_common is ported on the same branch after round 1 is reviewed and validated, before the single upstream PR."
+    },
+    {
+      "id": "feature:tensorrt_common-onnx-build",
+      "reason": "Round 2 of the two-round staging Jeff Daily ruled on 2026-11-23 (Q3 = i): the MIGraphX layer of autoware_tensorrt_common is ported on the same branch after round 1 is reviewed and validated, before the single upstream PR."
+    },
+    {
+      "id": "feature:tensorrt_common-engine-cache",
+      "reason": "Round 2 of the two-round staging Jeff Daily ruled on 2026-11-23 (Q3 = i): the MIGraphX layer of autoware_tensorrt_common is ported on the same branch after round 1 is reviewed and validated, before the single upstream PR."
+    },
+    {
+      "id": "feature:tensorrt_common-dynamic-shapes",
+      "reason": "Round 2 of the two-round staging Jeff Daily ruled on 2026-11-23 (Q3 = i): the MIGraphX layer of autoware_tensorrt_common is ported on the same branch after round 1 is reviewed and validated, before the single upstream PR."
+    },
+    {
+      "id": "feature:tensorrt_common-precision-fp16",
+      "reason": "Round 2 of the two-round staging Jeff Daily ruled on 2026-11-23 (Q3 = i): the MIGraphX layer of autoware_tensorrt_common is ported on the same branch after round 1 is reviewed and validated, before the single upstream PR."
+    },
+    {
+      "id": "feature:tensorrt_common-int8-calibration",
+      "reason": "Round 2 of the two-round staging Jeff Daily ruled on 2026-11-23 (Q3 = i): the MIGraphX layer of autoware_tensorrt_common is ported on the same branch after round 1 is reviewed and validated, before the single upstream PR."
+    },
+    {
+      "id": "feature:tensorrt_common-io-binding-execution",
+      "reason": "Round 2 of the two-round staging Jeff Daily ruled on 2026-11-23 (Q3 = i): the MIGraphX layer of autoware_tensorrt_common is ported on the same branch after round 1 is reviewed and validated, before the single upstream PR."
+    },
+    {
+      "id": "feature:tensorrt_common-plugin-loading",
+      "reason": "Round 2 of the two-round staging Jeff Daily ruled on 2026-11-23 (Q3 = i): the MIGraphX layer of autoware_tensorrt_common is ported on the same branch after round 1 is reviewed and validated, before the single upstream PR."
+    },
+    {
+      "id": "feature:tensorrt_common-profiling",
+      "reason": "Round 2 of the two-round staging Jeff Daily ruled on 2026-11-23 (Q3 = i): the MIGraphX layer of autoware_tensorrt_common is ported on the same branch after round 1 is reviewed and validated, before the single upstream PR."
+    },
+    {
+      "id": "feature:tensorrt_common-public-types",
+      "reason": "Round 2 of the two-round staging Jeff Daily ruled on 2026-11-23 (Q3 = i): the MIGraphX layer of autoware_tensorrt_common is ported on the same branch after round 1 is reviewed and validated, before the single upstream PR."
+    },
+    {
+      "id": "test:autoware_tensorrt_common_test",
+      "reason": "Round 2 of the two-round staging Jeff Daily ruled on 2026-11-23 (Q3 = i): the MIGraphX layer of autoware_tensorrt_common is ported on the same branch after round 1 is reviewed and validated, before the single upstream PR."
+    },
+    {
+      "id": "test:ament_lint_auto",
+      "reason": "Round 2 of the two-round staging Jeff Daily ruled on 2026-11-23 (Q3 = i): the MIGraphX layer of autoware_tensorrt_common is ported on the same branch after round 1 is reviewed and validated, before the single upstream PR. The autoware_cuda_utils half is covered as test:ament_lint_auto-autoware_cuda_utils."
+    },
+    {
+      "id": "build:cuda-path-nvcc-tensorrt",
+      "reason": "Round 2 of the two-round staging Jeff Daily ruled on 2026-11-23 (Q3 = i): the MIGraphX layer of autoware_tensorrt_common is ported on the same branch after round 1 is reviewed and validated, before the single upstream PR. The autoware_cuda_utils half is covered as build:cuda-path-nvcc-autoware_cuda_utils."
+    }
+  ],
   "removed_from_floor": []
 }
