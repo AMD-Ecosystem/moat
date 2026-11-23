@@ -10,3 +10,4 @@
 {"kind":"phase","ts":"2026-11-23T20:14:02Z","phase":"test","seconds":0.003,"exit":127,"cmd":"bash scripts/t2_matrix.sh t2_matrix.txt"}
 {"kind":"phase","ts":"2026-11-23T20:16:36Z","phase":"test","seconds":145.145,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300c-20261123-112407-port-koboldcpp-prompt/moat/agent_space/scripts/t2_matrix.sh /var/lib/jenkins/fleet/jobs/mi300c-20261123-112407-port-koboldcpp-prompt/moat/agent_space/t2_matrix.txt"}
 {"kind":"session","ts":"2026-11-23T20:20:52Z","epoch":1795465252.950765,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-23T20:25:27Z","epoch":1795465527.983256,"event":"start","platform":"linux-gfx942"}
