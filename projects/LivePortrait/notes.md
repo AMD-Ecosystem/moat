@@ -280,3 +280,9 @@ ONNX provider parity (26 bundled `.jpg` sources, 24 with faces; MIGraphX vs CPU 
 ### Still for a person (unchanged by this run)
 
 Porter Question 1 (FP16 Animals workaround in code or docs; gfx950 needs none), the fork default branch (`moat-port`), `benchmark:speed` owed in surface.json (passes here), the draft MIOpen issue (add the gfx950 forced-solver rows from the review above), and Windows last.
+
+### Addendum: Jeff's ruling B arrived during this job (linux-gfx950, 2026-11-23)
+
+The ruling above (option B, guarded `MIOPEN_DEBUG_CONV_WINOGRAD=0` default in the Animals entry points) merged into `port/LivePortrait` while this job was validating. The review and the gfx950 validation describe `00f208c` (documentation only), as dispatched; this job did not port. Implementing B moves the head, so the change goes back through a porter, a delta review, and revalidation on each platform (a code delta in `inference_animals.py` / `app_animals.py`, not inert).
+
+Evidence for B from this card: what the workaround costs where it is not needed. Warm caches, 3 alternating reps each of `python inference_animals.py -s assets/examples/source/s39.jpg -d assets/examples/driving/wink.pkl --driving_multiplier 1.75 --no_flag_stitching` (FP16): default 15.5 / 15.9 / 16.4 s, with `MIOPEN_DEBUG_CONV_WINOGRAD=0` 15.6 / 15.5 / 15.3 s. No measurable cost end to end, though MIOpen picks `ConvWinoRageRxS<2-3>` for 16 conv configurations here by default; output vs FP32 is the same size either way (table above). For the porter: the FP16 `G_middle_5.conv_1` shape does not use Winograd on gfx950, so a gfx950 revalidation of B cannot show the fix working, only that it costs nothing; the wave32 gfx1100 run is the one that proves it.
