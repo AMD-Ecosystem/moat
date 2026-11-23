@@ -235,3 +235,6 @@
 {"kind":"phase","ts":"2026-11-23T20:07:01Z","phase":"test","seconds":581.448,"exit":0,"cmd":"bash agent_space/suite_wheel.sh"}
 {"kind":"session","ts":"2026-11-23T20:18:48Z","epoch":1795465128.72311,"event":"start","platform":"linux-gfx950"}
 {"kind":"session","ts":"2026-11-23T20:35:22Z","epoch":1795466122.067386,"event":"end","platform":"linux-gfx950"}
+{"kind":"phase","ts":"2026-11-23T20:49:48Z","phase":"build","seconds":28.298,"exit":0,"cmd":"bash agent_space/hipbuild.sh /var/lib/jenkins/fleet/jobs/mi355-20261119-154230-warp114-perf-porter-mi355-prompt/moat/projects/warp-1.14/src"}
+{"kind":"phase","ts":"2026-11-23T21:03:28Z","phase":"test","seconds":395.339,"exit":0,"cmd":"bash agent_space/s28/tests_after.sh"}
+{"kind":"phase","ts":"2026-11-23T21:26:23Z","phase":"build","seconds":32.072,"exit":0,"cmd":"bash agent_space/hipbuild.sh /var/lib/jenkins/fleet/jobs/mi355-20261119-154230-warp114-perf-porter-mi355-prompt/moat/projects/warp-1.14/src"}
