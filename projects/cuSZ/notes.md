@@ -1,5 +1,61 @@
 # cuSZ notes
 
+## Porter (fix round, base absorb) 2026-11-23 (linux-gfx90a @ 16623130 -- ported)
+
+Why: upstream PR szcompressor/cuSZ#91 reported `mergeable: CONFLICTING`, `mergeStateStatus: DIRTY`. The thread has no comments, no reviews and no line comments (read 2026-11-23 with `gh pr view 91 --repo szcompressor/cuSZ --json comments,reviews` and `gh api repos/szcompressor/cuSZ/pulls/91/comments`). PR head = 11140547 = recorded published_sha, so nobody moved the branch. No code change was asked for; the round absorbs upstream master.
+
+Setup: `moatlib.py fix-branch cuSZ` re-homed the folder onto `port/cuSZ` and staged `moat-fix-91` (base 11140547). `set-state cuSZ linux-gfx90a porting` took the lock on the port branch (fix-branch ran first so the lock was never written to the trunk).
+
+Upstream absorbed: master b63d8c68 (43 commits since merge-base e1c0135f, 2026-06-12 .. 2026-10-02, the 0.19 refactor: HF codec consolidated under codec/hf, histogram sources moved there, new HFR-PBKC/PBKGO/v4 kernels, hfd26 fused decoder, u4 spline variants, `_ptb` pool/plan buffers, LC components called unconditionally, nanobind `py_ext`, C API rev).
+
+### Commits on moat-fix-91 (11140547..16623130)
+
+1. 850f79bb `[ROCm] Merge master (0.19) into the HIP backend` -- merge commit. Conflicts: CMakeLists.txt (HIP project -> 0.19.0), README.md (master wording + HIP note), codec/hf/CMakeLists.txt (master list/indent + backend vars), psz/src/compressor.inl (master removed the CUDA guard; HIP alt dropped), utils/include/compare.hh + utils/src/extrema.cu.inl (master moved extrema to extrema.cuh/.hh; HIP edits to removed code dropped, assess_quality keeps HIP), utils/src/viewer.cc (keep PSZ_MAP_KEY), test/cmake/cuda-test.cmake (add test_hfd26_fused_vs_two_kernel to the backend-neutral GPU list). HIP mirrors of master's CUDA-side changes: cmake/hip.cmake source lists, FZG link, DRH LC sources, py_ext subdir, narrowed install; utils extrema-si/ui/fp; new tests use `${PSZ_TEST_GPU_RT}`/`${PSZ_TEST_GPU_LANG}`; HIP VERSION_TEXT 0.19; bin_pred2 comment dropped (master removed bin_pred2). Auto-merge carried the port's histsp wave32 fix into codec/hf/src/histsp.cu.inl (renamed) and the double atomicAdd fix into portable/include/mem/atomics.cuh (renamed) -- both verified in the merged tree.
+2. 6c9293a0 `Add template keyword to dependent ptr_of calls` (shared, no prefix) -- cxx_sp_gpu.h, hf_buf.cc, buf_comp.cc. Clang 24 rejects `data().ptr_of<T>` in a class template.
+3. 6d1d4e21 `Match the spline-y24 forward declarations to their definitions` (shared, no prefix) -- master's definitions grew params/defaults the forward decls lack; clang rejects a qualified definition with no matching declaration.
+4. 6695d762 `[ROCm] Default the HIP warp-shuffle width to 32 lanes` -- `__shfl*_sync` now map through `psz_shfl*` wrappers with width default 32 (CUDA semantics). Root cause of LC output corruption on gfx90a: `__shfl_sync(~0, v, lane / 2)` in LC's d_repetition_elimination.h WS=32 path read the lower half of a wave64 with HIP's default width 64.
+5. 16623130 `[ROCm] Build the LC codecs and master's new GPU code on HIP` -- master calls LC codecs unconditionally, so PSZ_ACTIVATE_LC=OFF no longer links (on CUDA too). LC default back to ON on HIP; lc_gen WS forced to 32 on `__HIP_PLATFORM_AMD__` (`__AMDGCN_WAVEFRONT_SIZE` is no longer defined by the ROCm 10.1 clang, verified with `-dM -E`); lc_gen.h/lc_impl.h `|| __HIPCC__`; `__any_sync`/`__all_sync` macros over the 32-lane half-ballot; `atomicOr_block`->`atomicOr`; `__trap`->`__builtin_trap`; new shims cmake/hip-compat/cuda_fp8.h (push/pop of shuffle macros around hip_fp8.h, whose bf16 header declares `__shfl_*_sync`) and vector_types.h; hfd26.cu `__launch_bounds__((...))` (HIP's variadic macro split on the template comma); test_pool and py_ext compile as HIP.
+
+Wave64 audit of master's new device code (all fine under the 32-lane logical warp): lrz_c.cuh `count_local_stat` (half-ballot + `threadIdx.x % 32` popc), `__shfl_up_sync(...,1,32)` / `(...,1,8)` explicit widths, hfr_encode/hfr-pbkc/hfr-pbkgo `__shfl_sync(.., p_incomp, 0)` broadcast of a block-uniform shared value, hfd26 `warp_incl_scan_u32` (lane&31 guards), extrema.cuh downward tree read at `lane&31==0`. `PBKGO_MIN_BLOCKS_PER_SM` under `__launch_bounds__` is a performance hint only.
+
+### Build (gfx90a, ROCm 10.1.0 pip SDK -- the June record used ROCm 7.2.1 /opt/rocm; this host has no /opt/rocm)
+
+```bash
+R=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel   # rocm-sdk path --root
+SRC=$PWD/projects/cuSZ/src; BUILD=$SRC/build-hip
+git -C $SRC submodule update --init third_party/lc     # LC headers, now required
+export CUSZ_TEST_DATA=<job dir>/cusz-test-data
+cmake -S $SRC -B $BUILD -G Ninja -DCMAKE_BUILD_TYPE=Release -DPSZ_BACKEND=HIP \
+  -DCMAKE_C_COMPILER=amdclang -DCMAKE_CXX_COMPILER=amdclang++ -DCMAKE_HIP_COMPILER=amdclang++ \
+  -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_PREFIX_PATH=$R \
+  -DBUILD_TESTING=ON -DPSZ_BUILD_EXAMPLES=ON -DCUSZ_TEST_DATA=$CUSZ_TEST_DATA
+cmake --build $BUILD -j42      # rc=0 clean from scratch at 16623130; warnings only (nodiscard hipError_t)
+```
+
+Datasets: the Globus host in the June notes now 404s and the current SDRBench Globus links run at ~0.8 MB/s. The Hugging Face mirror is per-file and fast (37 s for all three):
+`https://huggingface.co/datasets/sdrbench/{cesm-atm/resolve/main/1800x3600/CLDHGH_1_1800_3600.f32 -> CESM/CLDHGH.f4, hurricane-isabel/resolve/main/100x500x500/Uf48.bin.f32 -> HURR/Uf48.f4, nyx/resolve/main/512x512x512/velocity_x.f32 -> NYX/velocity_x.f32}`. RTM/0480.f32 is still not public.
+
+### Test (gfx90a, HIP_VISIBLE_DEVICES=2 pinned by the dispatcher, ulimit -c 0)
+
+```bash
+ctest --test-dir $BUILD --output-on-failure -j1
+```
+
+**68 PASS / 11 SKIP / 0 FAIL of 79.** Last record (11140547): 37 PASS / 3 SKIP / 1 FAIL of 41. Differences, all from master: +38 registered tests (new CESM CLDHGH round-trip matrix incl. 11 LC-codec cases, more RTM/HURR/NYX codec variants, test_module, test_iterative_reuse, test_single_symbol, test_hfd26_fused_vs_two_kernel, test_hf_cpu_serial_codebook, portable_mem_plan, portable_pool); SKIP 3 -> 11 because master added 8 more RTM cases (dataset absent); the old FAIL `hfr__cauchy_sharp__u2` now passes because master 535e4556 dropped its `--assert-brnum-le`. Before the shuffle-width fix the LC CESM/synthetic cases decompressed with max_error_rel ~7e3 (garbage); after it every LC codec is within bound.
+
+CLI round-trip gate (sine 1M): master's default pipeline is now `[Lorenzo, HFR-PBKC]` (was HF-fast2): **CR=27.05, PSNR=70.8, max_error=1.000047e-03** (CR 27.04 -> 27.05 from the codec change; error identical). Synthetic LC matrix (512x512x256 noisy sine, rel 1e-3; 64M random walk, rel 1e-4): lc-tcms, lc-drh, hf+lc-rtr, lc-tcms+lc-bitr all max_error_rel <= 1.0004*eb.
+
+Python binding: `-DPSZ_BUILD_PYBINDING=ON -DPython_EXECUTABLE=$FLEET_VENV/bin/python` builds `_psz_comp` (rc=0). Runtime NOT tested: cupy-rocm-7-0 14.2.0 needs `libamdhip64.so.7`, this host's SDK is ROCm 10.1 (environment limit, not a port result).
+
+### Not covered here (say so in the review PR)
+
+- CUDA no-regression compile: no nvcc on this host. The shared edits (template keyword, spline-y24 declarations, `__launch_bounds__` parens, lc_gen `#if`) need the nvcc 12.8 compile on the mi355 host before jeff approves. `cuda-not-validated: no nvcc on the gfx90a host`.
+- wave32 (gfx1100) and Windows (gfx1201): not built or run at 16623130. The shuffle-width change is a no-op on wave32 by construction, but LC is newly built on HIP and the cuda_fp8 shim, LC `-march=native -mno-fma` host flags and `__builtin_trap` are untested on Windows TheRock.
+
+## Lesson for cuda-to-rocm: default shuffle width must be 32 when the port treats the warp as 32 lanes
+
+For `faults-wavefront.md`. A translation layer that maps `__shfl_sync(mask, v, src)` to `__shfl(v, src)` inherits HIP's default width (the full wavefront, 64 on CDNA). Scans and xor/down reductions survive that, because their reads stay inside a 32-lane half when guarded by `lane % 32`. A call that names an absolute source lane (`__shfl_sync(~0, v, lane / 2)`, a lane-0 broadcast of per-warp data) silently reads the lower half on wave64. If the port's ballot translation already returns the caller's 32-bit half, make the shuffles default to width 32 too, through `__device__` wrappers with a default argument (`T psz_shfl(T v, int src, int w = 32)`), so explicit widths still pass through. Seen as LC-framework output that failed its error bound on gfx90a only (cuSZ, ROCm 10.1). Related: current ROCm clang no longer defines `__AMDGCN_WAVEFRONT_SIZE`, so code that picks a warp width from it at preprocessing time falls to its non-AMD default; check with `amdclang++ -x hip --offload-arch=gfx90a --cuda-device-only -nogpulib -dM -E`.
+
 ## CUDA compile check 2026-06-25 (@ 11140547 -- CUDA backend intact)
 
 Toolkit: nvcc 12.8.93 / CUDA 12.8 (conda env cuda-12.8), host gcc 13.4.0, sm_86 (-DCMAKE_CUDA_ARCHITECTURES=86).
