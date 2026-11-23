@@ -8575,3 +8575,504 @@ index 727148c7..808dd763 100644
 ## Ruling on the GL interop fix (jeff, 2026-11-23)
 
 (a): the porter takes the gfx1201 evidence session's `cuda_util.cpp` fix (promote an already loaded libGL to global scope before the first HIP GL registration) only if evidence session 2 shows map, kernel read and write, unmap and the renderer's frame capture give correct data with it. If they do not, no commit and the result goes back to jeff. Either way the release notes say that on Linux GL interop needs a windowed (GLX) context and headless rendering copies through the host on ROCm.
+## Evidence session 2 (2026-11-23, linux-gfx1201, evidence only): OpenGL interop map and renderer at `b51b1987`
+
+Requested by Jeff Daily, to finish the "Not done" list of the evidence session above. Evidence only: no lock, no state change, nothing pushed to the fork; the `cuda_util.cpp` fix stayed uncommitted in a scratch clone. `ulimit -c 0` for every GPU run; a few frames only. Processes stopped: only my own, by recorded PID (Weston 2621088 and its children Xwayland 2621132, weston-keyboard 2621103, weston-desktop-shell 2621104).
+
+**Summary.**
+1. Compute works on this job's GPU (dispatcher pin `HIP_VISIBLE_DEVICES=1`: PCI `0000:c3:00.0`, renderD129, amd-smi GPU 2, AMD Radeon AI PRO R9700, gfx1201).
+2. With the fix, under GLX on that GPU, `RegisteredGLBuffer(fallback_to_copy=False)` registers, maps, is read and written by Warp kernels, unmaps and reads back through GL, with 0 mismatches for flags NONE, READ_ONLY and WRITE_DISCARD and over 3 map/unmap cycles on one registration. Without the fix, on the same GPU and context, registration fails: `RuntimeError`, or the copy fallback when it is allowed.
+3. `OpenGLRenderer` in a hidden GLX window with the fix: all 8 buffer registrations succeed (instance buffers and the `get_pixels` PBO), and `get_pixels` into a `cuda:0` array shows the scene. The image is bit-identical to the run without the fix (8 of 8 registrations fail, copy fallback) and to headless EGL.
+4. The copy fallback is correct on every path where it is taken (GLX without the fix, EGL with or without the fix), with exactly one Python `UserWarning` per process. Each failed registration also prints one native `Warp CUDA error 1: invalid argument (... warp.cu:5626)` line (4 per `gl_buffer.py` run, 8 per renderer run).
+5. **Second port defect (textures):** `wp.GLTextureResource` registers and maps with the fix, but `map()` raises `ValueError: Invalid CUDA array dimensionality, expected 2, got 3`, because `hipArray3DGetDescriptor` reports `Depth 1` for the array mapped from a GL 2D texture. CUDA reports `Depth 0` for a 2D array, and HIP itself reports 0 for a `hipArray3DCreate(Depth=0)` array. A test-only Python shim that reports depth 1 as 2D shows that kernel `wp.texture_sample` through the mapped GL texture reads every texel exactly. `Texture.copy_to`/`copy_from` still fail: HIP returns `hipErrorInvalidValue` for every copy into or out of a GL-mapped array (`hipMemcpy3D`, `hipMemcpy2DFromArray`, `hipMemcpy2DToArray`, raw ctypes with no Warp). The same copies work on a `hipArray3DCreate` array. The copy failure is in the HIP runtime, not the port.
+6. Item 5 of the request: a real application path needs the variant **without** `RTLD_NOLOAD`. A GLFW application that does not import PyOpenGL leaves `glXGetProcAddress` out of the global scope and never loads `libGL.so.1`. There, both `b51b1987` and the proposed fix fail to register, and only the variant registers and passes. pyglet (Warp's renderer) is covered by either form. PyOpenGL applications work even without any fix, because PyOpenGL loads `libGLX.so.0` with `RTLD_GLOBAL`. The variant passes everything the proposed fix passes (pyglet GLX buffer test, renderer bit-identical, EGL fallback unchanged).
+
+### 1. Host and build
+
+- GPU: `hip_memset.py` (previous session's script, unchanged) on HIP device 0 of this job: `device 0 PCI 0000:c3:00.0`, `hipMalloc 0`, `hipMemset 0`, `hipDeviceSynchronize 0 0.189` s, `hipMemcpy D2H 0 [7, 7, 7, 7]`. Render nodes: renderD128 `e3:00.0` (the previous session's stalled GPU), renderD129 `c3:00.0` (this job's), renderD130 `03:00.0`, renderD131 `06:00.0`; EGL device 2 is renderD129.
+- ROCm: `"$FLEET_VENV/bin/python" -m pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple "rocm[devel,device-gfx1201]==10.2.0" numpy==1.26.4 pyglet`. Result: rocm and rocm-sdk-core 10.2.0, pyglet 2.1.19; HIP runtime 7.17. Later `"$FLEET_VENV/bin/python" -m pip install glfw PyOpenGL`: glfw 2.11.0 (bundled GLFW `3.4.0 X11 GLX Null EGL OSMesa`), PyOpenGL 3.1.10. Mesa 25.2.8, libglvnd 1.7.0, kernel 6.11.0-26-generic, as in the previous session.
+- Fork: fresh clone of `AMD-Ecosystem/warp`, `git checkout b51b1987`. The three builds all use `python build_lib.py --rocm-path "$(rocm-sdk path --root)" --hip-arch gfx1201 -j 12` (38 s wall, `-Werror`, no warning):
+  - `orig`: `b51b1987` as is, warp.so 6,449,992 bytes, sha256 `f0192293...`.
+  - `fix`: `b51b1987` plus the diff of the previous section, applied unchanged (`git apply`), warp.so 6,454,088 bytes, sha256 `3bd69045...`.
+  - `fixload`: the same diff with `RTLD_LAZY | RTLD_GLOBAL` (no `RTLD_NOLOAD`), sha256 `acd8939a...`.
+  
+  Each `warp` package was copied to its own tree (`pkg_orig`, `pkg_fix`, `pkg_fixload`) and selected with `PYTHONPATH`. The kernel cache was job-local (`WARP_CACHE_PATH`).
+- `wp.init()` and a trivial kernel (`trivial.py`): `Warp 1.14.0+rocm10.2.0 initialized: ROCm 10.2, HIP runtime 7.17`, `"cuda:0" : "AMD Radeon AI PRO R9700" (32 GiB, gfx1201, mempool enabled)`, `trivial kernel ok: True`.
+- Display: the previous session's unpacked Weston 13.0.0 / Xwayland 23.2.6 root, copied into this job. `start_weston.sh` is unchanged except for the job path and socket `wl-gl2`. Weston: `Using rendering device: /dev/dri/renderD131`, `GL renderer: AMD Radeon Graphics (radeonsi, gfx1201, ...)`, `xserver listening on display :0`. All clients ran with `DISPLAY=:0 DRI_PRIME=pci-0000_c3_00_0`.
+- Mesa's interop query (`mesa_interop_info.py glx`, unchanged): with `DRI_PRIME`, `ret 0 pci 0000:c3:00.0 vendor 1002 device 7551`, the PCI address HIP reports for its device 0. Without `DRI_PRIME`: `0000:06:00.0`.
+
+### 2. GL buffer interop under GLX (request item 1, and item 4)
+
+`PYTHONPATH=<job>/gl/pkg_<v> python gl_buffer.py glx interop` (`fallback_to_copy=False`; script unchanged from the previous section):
+
+- `fix`: `NONE: resource True`, `NONE: mapped ptr 0x753e2b880000 size 65536`, `NONE: kernel read mismatches 0 GL readback mismatches 0`, `READ_ONLY: kernel read mismatches 0 GL buffer changed 0`, `WRITE_DISCARD: GL readback mismatches 0`, `REMAP x3: GL readback mismatches 0`, `RESULT PASS`.
+- `fixload`: identical, `RESULT PASS`.
+- `orig` (item 4): `Warp CUDA error 1: invalid argument (in function wp_cuda_graphics_register_gl_buffer, warp/native/warp.cu:5626)`, then `RuntimeError: Failed to register OpenGL buffer 2 with CUDA` at the first `RegisteredGLBuffer`.
+
+### 3. Copy fallback and headless EGL (request item 3, and item 4)
+
+`gl_buffer.py <mode> fallback` (`fallback_to_copy=True`):
+
+- `glx`, `orig`: `NONE: resource False`, all four cases 0 mismatches, `RESULT PASS`; one `Warp UserWarning: Could not register GL buffer since CUDA/OpenGL interoperability is not available. Falling back to copy operations between the Warp array and the OpenGL buffer.`; 4 native error lines.
+- `glx`, `fix`: `NONE: resource True` (registration succeeds, so `fallback_to_copy=True` is the interop path), `RESULT PASS`, no warning. With the fix there is no forced fallback under GLX; the fallback is exercised by the next two lines and by `orig` above.
+- EGL device 2 (renderD129, the HIP device's GPU), `fix`, `orig` and `fixload`: `NONE: resource False`, `RESULT PASS`, one `UserWarning` each, 4 native error lines.
+- EGL device 2, `fix`, `interop`: `RuntimeError: Failed to register OpenGL buffer 2 with CUDA`. This is expected: HIP has no EGL interop path (previous section, item 3).
+
+### 4. OpenGLRenderer, hidden window (request item 2)
+
+`render.py glx|2 <out.npy>`: `OpenGLRenderer(screen_width=320, screen_height=240, headless=True, device="cuda:0", draw_grid=False, draw_axis=False, show_info=False)`. With `headless=True` and pyglet's own headless option off, the window is an `XlibWindow` with `visible False`, i.e. a GLX context. The script renders a sphere, a box and a capsule for 3 frames and calls `get_pixels(img, split_up_tiles=False, mode="rgb")` into a `(240, 320, 3)` float32 `cuda:0` array each frame. A wrapper counts the results of `wp_cuda_graphics_register_gl_buffer`.
+
+| run | GL window | registrations | frame 0 / 1 / 2 mean | distinct colours (frame 2) |
+|---|---|---|---|---|
+| GLX `fix` | XlibWindow, hidden, `AMD Radeon AI PRO R9700 (radeonsi, gfx1201, ...)` | 8 registered, 0 failed | 0.7862 / 0.7833 / 0.7839 | 605 |
+| GLX `fixload` | same | 8 registered, 0 failed | same | 605 |
+| GLX `orig` | same | 0 registered, 8 failed, one UserWarning | same | 605 |
+| EGL 2 `fix` | HeadlessWindow | 0 registered, 8 failed, one UserWarning | same | 605 |
+| EGL 2 `orig` | HeadlessWindow | 0 registered, 8 failed, one UserWarning | same | 605 |
+
+Comparison of the frame-2 images: GLX `fix` vs GLX `orig` identical (`np.array_equal` True, max abs diff 0); EGL `fix` vs EGL `orig` identical; GLX `fix` vs EGL `fix` identical; GLX `fixload` vs GLX `fix` identical. Neither image is blank: min 0.059, max 1.0, 62,220 of 76,800 pixels differ from the corner pixel, and the PNG (`img_glx_fix.png`, flipped upright) shows a red sphere, a green box and a blue capsule over the sky gradient. The renderer's interop path (instance transform buffers and the PBO in `get_pixels`) is therefore exercised and correct with the fix on HIP.
+
+### 5. GL textures: `wp.GLTextureResource` (request item 1, texture part)
+
+Warp maps a registered texture through `GLTextureResource.map()` (`texture.py:1260`): `wp_cuda_graphics_map`, then `wp_cuda_graphics_sub_resource_get_mapped_array`, then `Texture2D(cuda_array=...)`, which asks `wp_texture_descriptor_from_cuda_array` (`texture.cpp:286`, `cuArray3DGetDescriptor_f`, which is `hipArray3DGetDescriptor` on HIP) for the shape and requires `ndim == 2`. `gl_texture.py glx` (GL_TEXTURE_2D RGBA8 64x32, random texels):
+
+- `orig`: `RuntimeError: Failed to register GL texture resource: Warp CUDA error 1: invalid argument (in function wp_cuda_graphics_register_gl_image, warp/native/warp.cu:5640)`.
+- `fix`: `registered`, then in `map()`: `ValueError: Invalid CUDA array dimensionality, expected 2, got 3` (`texture.py:288`).
+- Cause (`hip_gl_image_desc.py`, raw ctypes, no Warp). For the GL-mapped array, `hipArray3DGetDescriptor` returns `W 64 H 32 D 1 Format 0x1 NumChannels 4`, `hipArrayGetDescriptor` returns `W 64 H 32`, and `hipArrayGetInfo` returns the extent `64 x 32 x 1`. For a `hipArray3DCreate(Depth=0)` array the same calls return `D 0` and `64 x 32 x 0`. In clr (`efc99e08`), `hipGraphicsSubResourceGetMappedArray` (`hip_gl.cpp:363-365`) copies `width/height/depth` from the rocclr image view, whose 2D depth is 1, and sets `textureType = 0`; `hipArray` is opaque in the public 10.2 headers. CUDA's `cuArray3DGetDescriptor` reports `Depth 0` for a 2D array, and Warp's `texture.cpp` depends on that.
+- With a test-only shim in the script (`TEX_DEPTH_SHIM=1`: wraps `wp_texture_descriptor_from_cuda_array` and turns `ndim 3, depth 1` into `ndim 2, depth 0`), `fix`: `descriptor from HIP: ndim 3 shape [64, 32, 1]`, `mapped: Texture2D w 64 h 32 channels 4 dtype uint8`, and `kernel texture_sample: min 0.0 max 1.0 max |sample*255 - texel| 0.0`: the kernel reads every texel of the GL texture exactly. But `copy_to failed: ... wp_texture_copy_device, warp/native/texture.cpp:271` and `copy_from failed` (same line), and so `copy_from + unmap, GL read-back mismatches 8192 of 8192`.
+- The copy failure is in HIP. `AMD_LOG_LEVEL=3` shows `hipMemcpy3DAsync: Returned hipErrorInvalidValue`. `hip_gl_image_copy.py` (raw ctypes, no Warp) on the GL-mapped array: `hipMemcpy3D array->device (extent 64x32x1) 1 hipErrorInvalidValue`, `hipMemcpy2DFromArray 1 hipErrorInvalidValue`, `hipMemcpy2DToArray 1 hipErrorInvalidValue`; GL read-back after unmap 8192 of 8192 mismatches. On a `hipArray3DCreate(Depth=0)` array the same three copies return `hipSuccess` with 0 mismatches.
+
+A port-side change that would make texture interop usable for sampling, **not built or measured natively** (the shim only emulates it in Python): in the HIP section of `cuda_util.cpp`, remember the arrays returned by `cuGraphicsSubResourceGetMappedArray_f` for resources registered with `GL_TEXTURE_2D` (the register wrapper sees the target), and have `cuArray3DGetDescriptor_f` report `Depth 0` for those arrays when HIP says 1. This would follow the existing `record_array_element_size` registry. Texture copies would still fail until HIP accepts GL-mapped arrays in its memcpy paths.
+
+### 6. Is the variant without `RTLD_NOLOAD` needed? (request item 5)
+
+Which GL libraries an application loads (`glx_scope.py`, which checks `ctypes.CDLL(None).glXGetProcAddress`, i.e. the global scope HIP's `dlsym(RTLD_DEFAULT, ...)` searches):
+
+- pyglet 2.1.19 (`pyglet/gl/lib_glx.py:12`, `load_library('GL')`, `RTLD_LOCAL`): `before: False`, `after context and GL call: False`. libGL.so.1 is loaded, so `RTLD_NOLOAD` is enough.
+- GLFW 3.4 (glfw 2.11.0 wheel; its `libglfw.so` lists `libGLX.so.0` before `libGL.so.1` and opens it locally): `after glfw context: False`. PyOpenGL 3.1.10 (`OpenGL/platform/glx.py`, loads `OpenGL` then `GL`, and `GLX` then `OpenGL` then `GL`, all `RTLD_GLOBAL`): `after PyOpenGL import: True`.
+
+Measured, `RegisteredGLBuffer(fallback_to_copy=False)` with register, map, kernel read/write, unmap and GL read-back:
+
+| application | libraries loaded at registration | `orig` | `fix` (RTLD_NOLOAD) | `fixload` |
+|---|---|---|---|---|
+| pyglet (`gl_buffer.py glx interop`) | libGL.so.1 (local) | fails | PASS | PASS |
+| GLFW + PyOpenGL (`glfw_buffer.py`) | libGLX.so.0, libGLX_mesa, libGLdispatch, libOpenGL.so.0; no libGL.so.1 | registered, 0 / 0 mismatches | same | same |
+| GLFW only, GL entry points from `glfw.get_proc_address` (`glfw_raw_buffer.py`) | `glXGetProcAddress global: False libGL.so.1 loaded: False` | `RuntimeError: Failed to register OpenGL buffer 1` | `RuntimeError` (same) | registered, kernel read 0, GL read-back 0 mismatches |
+
+So the form without `RTLD_NOLOAD` is the one that covers every measured application. It loads `libGL.so.1` (which HIP's `Context::create` loads anyway) with global scope, and that pulls in the vendor-neutral `libGLX.so.0`. In an EGL application it changes nothing measurable: `gl_buffer.py 2 fallback` with `fixload` gives `RESULT PASS` and one warning. The diff for the porter is the previous section's diff with the `dlopen` line reading:
+
+```cpp
+    std::call_once(once, []() { dlopen("libGL.so.1", RTLD_LAZY | RTLD_GLOBAL); });
+```
+
+The comment there would then say "Load libGL with global scope" rather than "Give an already loaded libGL global scope".
+
+### Questions for Jeff
+
+1. Whether the porter commits the GL fix in the form without `RTLD_NOLOAD` (item 6). It changes only the HIP build.
+2. Whether the porter also takes the texture descriptor change of item 5 (unmeasured natively; it makes `GLTextureResource.map()` and kernel sampling work), or the release notes say that GL texture interop is not supported on ROCm. Either way, `Texture.copy_to`/`copy_from` on a mapped GL texture fail in HIP.
+3. Whether to register a ROCm report for HIP (rocm-systems, clr) with two findings. First, `hipArray3DGetDescriptor` on an array from `hipGraphicsSubResourceGetMappedArray` for a GL 2D texture reports `Depth 1` (CUDA reports 0). Second, `hipMemcpy3D`/`hipMemcpy2DFromArray`/`hipMemcpy2DToArray` reject such arrays with `hipErrorInvalidValue`. `hip_gl_image_desc.py` and `hip_gl_image_copy.py` below are standalone reproducers (pyglet + ctypes). It could join the GL interop lookup report already registered as deferred.
+
+### Scripts (`<job>/gl/myscripts/`; `gl_buffer.py`, `hip_memset.py` and `mesa_interop_info.py` are the previous section's, unchanged)
+
+`start_weston.sh`:
+
+```bash
+#!/bin/bash
+# Headless Weston with the GL renderer and Xwayland, all from packages unpacked under $J/gl/root.
+J=/var/lib/jenkins/fleet/jobs/gfx1201-20261123-144858-warp114-gl2-evidence-prompt
+R=$J/gl/root; M=$R/usr/lib/x86_64-linux-gnu
+export XDG_RUNTIME_DIR=$J/gl/xdg
+export LD_LIBRARY_PATH=$M:$M/weston
+export WESTON_MODULE_MAP="headless-backend.so=$M/libweston-13/headless-backend.so;gl-renderer.so=$M/libweston-13/gl-renderer.so;xwayland.so=$M/libweston-13/xwayland.so;desktop-shell.so=$M/weston/desktop-shell.so;weston-desktop-shell=$R/usr/libexec/weston-desktop-shell;weston-keyboard=$R/usr/libexec/weston-keyboard"
+echo $$ > $J/gl/weston.pid
+exec $R/usr/bin/weston --config=$J/gl/weston.ini --backend=headless --renderer=gl --socket=wl-gl2 --width=640 --height=480 --log=$J/gl/weston.log
+```
+
+`trivial.py`:
+
+```python
+import warp as wp, numpy as np
+wp.init()
+d = wp.get_device("cuda:0"); print(d, d.name, d.arch, wp.__file__)
+@wp.kernel
+def k(a: wp.array(dtype=float)):
+    i = wp.tid(); a[i] = float(i) * 2.0
+a = wp.zeros(1024, dtype=float, device=d); wp.launch(k, dim=1024, inputs=[a], device=d)
+print("trivial kernel ok:", np.array_equal(a.numpy(), np.arange(1024, dtype=np.float32) * 2))
+```
+
+`gl_texture.py`:
+
+```python
+# GL texture <-> Warp: GLTextureResource register, map to Texture2D, read (copy_to, kernel
+# texture_sample), write (copy_from), unmap, GL read-back. Usage: gl_texture.py <egl_device|glx>
+import sys, ctypes
+import numpy as np
+import pyglet
+if sys.argv[1] != "glx":
+    pyglet.options["headless"] = True
+    pyglet.options["headless_device"] = int(sys.argv[1])
+from pyglet import gl
+import warp as wp
+
+win = pyglet.window.Window(width=64, height=64, visible=False)
+win.switch_to()
+wp.init()
+dev = wp.get_device("cuda:0")
+W, H = 64, 32
+rng = np.random.default_rng(1)
+src = rng.integers(0, 256, size=(H, W, 4), dtype=np.uint8)
+tex = gl.GLuint(); gl.glGenTextures(1, ctypes.byref(tex))
+gl.glBindTexture(gl.GL_TEXTURE_2D, tex)
+gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MIN_FILTER, gl.GL_NEAREST)
+gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MAG_FILTER, gl.GL_NEAREST)
+gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RGBA8, W, H, 0, gl.GL_RGBA, gl.GL_UNSIGNED_BYTE, src.ctypes.data)
+gl.glBindTexture(gl.GL_TEXTURE_2D, 0); gl.glFinish()
+
+import os
+if os.environ.get("TEX_DEPTH_SHIM"):
+    # Experiment only: report a depth-1 array as 2D, as CUDA's cuArray3DGetDescriptor does for 2D arrays.
+    core = wp._src.context.runtime.core
+    orig = core.wp_texture_descriptor_from_cuda_array
+    def shim(ctx, handle, desc_ref):
+        ok = orig(ctx, handle, desc_ref)
+        d = desc_ref._obj
+        print("descriptor from HIP: ndim", d.ndim, "shape", list(d.shape))
+        if ok and d.ndim == 3 and d.shape[2] == 1:
+            d.ndim = 2; d.shape[2] = 0
+        return ok
+    core.wp_texture_descriptor_from_cuda_array = shim
+res = wp.GLTextureResource(tex.value, gl.GL_TEXTURE_2D, device=dev)
+print("registered")
+t = res.map()
+print("mapped:", type(t).__name__, "w", t.width, "h", t.height, "channels", t.num_channels, "dtype", t.dtype)
+
+out = wp.zeros((H, W, 4), dtype=wp.uint8, device=dev)
+try:
+    t.copy_to(out)
+    print("copy_to mismatches", int((out.numpy() != src).sum()), "of", src.size)
+except RuntimeError as e:
+    print("copy_to failed:", e)
+
+@wp.kernel
+def sample(tex: wp.Texture2D, out: wp.array(dtype=wp.vec4f, ndim=2)):
+    y, x = wp.tid()
+    uv = wp.vec2f((float(x) + 0.5) / float(tex.width), (float(y) + 0.5) / float(tex.height))
+    out[y, x] = wp.texture_sample(tex, uv, dtype=wp.vec4f)
+
+s = wp.zeros((H, W), dtype=wp.vec4f, device=dev)
+wp.launch(sample, dim=(H, W), inputs=[t, s], device=dev)
+sv = s.numpy()
+print("kernel texture_sample: min", float(sv.min()), "max", float(sv.max()),
+      "max |sample*255 - texel|", float(np.abs(sv * 255.0 - src).max()),
+      "max |sample - texel|", float(np.abs(sv - src).max()))
+
+new = (255 - src).copy()
+try:
+    t.copy_from(wp.array(new, dtype=wp.uint8, device=dev))
+except RuntimeError as e:
+    print("copy_from failed:", e)
+res.unmap()
+wp.synchronize_device(dev)
+back = np.empty_like(src)
+gl.glBindTexture(gl.GL_TEXTURE_2D, tex)
+gl.glGetTexImage(gl.GL_TEXTURE_2D, 0, gl.GL_RGBA, gl.GL_UNSIGNED_BYTE, back.ctypes.data)
+gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
+print("copy_from + unmap, GL read-back mismatches", int((back != new).sum()), "of", new.size)
+del t, res
+win.close()
+```
+
+`hip_gl_image_desc.py`:
+
+```python
+# hipGraphicsGLRegisterImage on a GL_TEXTURE_2D (RGBA8 64x32), map, get the mapped array and
+# print hipArray3DGetDescriptor / hipArrayGetDescriptor / hipArrayGetInfo; compare with a
+# hipArray3DCreate(Depth=0) array. libGL promoted to global scope as the fix does.
+import ctypes, faulthandler
+faulthandler.dump_traceback_later(60, exit=True)
+import pyglet
+from pyglet import gl
+win = pyglet.window.Window(width=64, height=64, visible=False); win.switch_to()
+ctypes.CDLL("libGL.so.1", mode=ctypes.RTLD_GLOBAL | 4)
+import rocm_sdk
+rocm_sdk.initialize_process(preload_shortnames=["amdhip64"])
+hip = ctypes.CDLL("libamdhip64.so.7")
+hip.hipGetErrorName.restype = ctypes.c_char_p
+class D3(ctypes.Structure):
+    _fields_ = [("Width", ctypes.c_size_t), ("Height", ctypes.c_size_t), ("Depth", ctypes.c_size_t),
+                ("Format", ctypes.c_int), ("NumChannels", ctypes.c_uint), ("Flags", ctypes.c_uint)]
+class D2(ctypes.Structure):
+    _fields_ = [("Width", ctypes.c_size_t), ("Height", ctypes.c_size_t), ("Format", ctypes.c_int), ("NumChannels", ctypes.c_uint)]
+class Ext(ctypes.Structure):
+    _fields_ = [("width", ctypes.c_size_t), ("height", ctypes.c_size_t), ("depth", ctypes.c_size_t)]
+def chk(n, r): print(n, r, hip.hipGetErrorName(r).decode(), flush=True); return r
+def show(tag, arr):
+    d = D3(); chk(f"{tag} hipArray3DGetDescriptor", hip.hipArray3DGetDescriptor(ctypes.byref(d), arr))
+    print(f"  {tag} 3D desc: W {d.Width} H {d.Height} D {d.Depth} Format {d.Format:#x} NumChannels {d.NumChannels} Flags {d.Flags}")
+    d2 = D2(); chk(f"{tag} hipArrayGetDescriptor", hip.hipArrayGetDescriptor(ctypes.byref(d2), arr))
+    print(f"  {tag} 2D desc: W {d2.Width} H {d2.Height} Format {d2.Format:#x} NumChannels {d2.NumChannels}")
+    e = Ext(); fl = ctypes.c_uint()
+    class CD(ctypes.Structure): _fields_ = [("x", ctypes.c_int), ("y", ctypes.c_int), ("z", ctypes.c_int), ("w", ctypes.c_int), ("f", ctypes.c_int)]
+    cd = CD(); chk(f"{tag} hipArrayGetInfo", hip.hipArrayGetInfo(ctypes.byref(cd), ctypes.byref(e), ctypes.byref(fl), arr))
+    print(f"  {tag} info extent: {e.width} x {e.height} x {e.depth}")
+chk("hipSetDevice", hip.hipSetDevice(0))
+tex = gl.GLuint(); gl.glGenTextures(1, ctypes.byref(tex))
+gl.glBindTexture(gl.GL_TEXTURE_2D, tex)
+gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RGBA8, 64, 32, 0, gl.GL_RGBA, gl.GL_UNSIGNED_BYTE, None)
+gl.glBindTexture(gl.GL_TEXTURE_2D, 0); gl.glFinish()
+res = ctypes.c_void_p()
+chk("hipGraphicsGLRegisterImage", hip.hipGraphicsGLRegisterImage(ctypes.byref(res), tex.value, gl.GL_TEXTURE_2D, 0))
+chk("hipGraphicsMapResources", hip.hipGraphicsMapResources(1, ctypes.byref(res), None))
+arr = ctypes.c_void_p()
+chk("hipGraphicsSubResourceGetMappedArray", hip.hipGraphicsSubResourceGetMappedArray(ctypes.byref(arr), res, 0, 0))
+show("GL-mapped", arr)
+chk("hipGraphicsUnmapResources", hip.hipGraphicsUnmapResources(1, ctypes.byref(res), None))
+chk("hipGraphicsUnregisterResource", hip.hipGraphicsUnregisterResource(res))
+own = ctypes.c_void_p(); d = D3(64, 32, 0, 0x01, 4, 0)
+chk("hipArray3DCreate(D=0)", hip.hipArray3DCreate(ctypes.byref(own), ctypes.byref(d)))
+show("hipArray3DCreate", own)
+```
+
+`hip_gl_image_copy.py`:
+
+```python
+# Copies out of a GL_TEXTURE_2D (RGBA8 64x32) mapped as a HIP array, and into it, with
+# hipMemcpy3D (extent depth 1, as Warp issues) and hipMemcpy2DFromArray / hipMemcpy2DToArray;
+# the same on a hipArray3DCreate(Depth=0) array for comparison. Verifies the bytes.
+import ctypes, faulthandler
+import numpy as np
+faulthandler.dump_traceback_later(60, exit=True)
+import pyglet
+from pyglet import gl
+win = pyglet.window.Window(width=64, height=64, visible=False); win.switch_to()
+ctypes.CDLL("libGL.so.1", mode=ctypes.RTLD_GLOBAL | 4)
+import rocm_sdk
+rocm_sdk.initialize_process(preload_shortnames=["amdhip64"])
+hip = ctypes.CDLL("libamdhip64.so.7")
+hip.hipGetErrorName.restype = ctypes.c_char_p
+def chk(n, r): print(n, r, hip.hipGetErrorName(r).decode(), flush=True); return r
+class Pitched(ctypes.Structure):
+    _fields_ = [("ptr", ctypes.c_void_p), ("pitch", ctypes.c_size_t), ("xsize", ctypes.c_size_t), ("ysize", ctypes.c_size_t)]
+class Ext(ctypes.Structure):
+    _fields_ = [("width", ctypes.c_size_t), ("height", ctypes.c_size_t), ("depth", ctypes.c_size_t)]
+class Pos(ctypes.Structure):
+    _fields_ = [("x", ctypes.c_size_t), ("y", ctypes.c_size_t), ("z", ctypes.c_size_t)]
+class P3(ctypes.Structure):
+    _fields_ = [("srcArray", ctypes.c_void_p), ("srcPos", Pos), ("srcPtr", Pitched),
+                ("dstArray", ctypes.c_void_p), ("dstPos", Pos), ("dstPtr", Pitched),
+                ("extent", Ext), ("kind", ctypes.c_int)]
+class D3(ctypes.Structure):
+    _fields_ = [("Width", ctypes.c_size_t), ("Height", ctypes.c_size_t), ("Depth", ctypes.c_size_t),
+                ("Format", ctypes.c_int), ("NumChannels", ctypes.c_uint), ("Flags", ctypes.c_uint)]
+W, H = 64, 32
+src = np.random.default_rng(2).integers(0, 256, size=(H, W, 4), dtype=np.uint8)
+chk("hipSetDevice", hip.hipSetDevice(0))
+dptr = ctypes.c_void_p(); chk("hipMalloc", hip.hipMalloc(ctypes.byref(dptr), ctypes.c_size_t(src.nbytes)))
+def readback(tag, expect):
+    out = np.zeros_like(src); hip.hipDeviceSynchronize()
+    chk(f"{tag} hipMemcpy DtoH", hip.hipMemcpy(out.ctypes.data_as(ctypes.c_void_p), dptr, ctypes.c_size_t(src.nbytes), 2))
+    print(f"  {tag} mismatches", int((out != expect).sum()), "of", out.size)
+def from_array(tag, arr, expect):
+    hip.hipMemset(dptr, 0, ctypes.c_size_t(src.nbytes)); hip.hipDeviceSynchronize()
+    p = P3(); p.srcArray = arr; p.dstPtr = Pitched(dptr.value, W * 4, W, H); p.extent = Ext(W, H, 1); p.kind = 4
+    if chk(f"{tag} hipMemcpy3D array->device (extent {W}x{H}x1)", hip.hipMemcpy3D(ctypes.byref(p))) == 0: readback(tag + " 3D", expect)
+    hip.hipMemset(dptr, 0, ctypes.c_size_t(src.nbytes)); hip.hipDeviceSynchronize()
+    if chk(f"{tag} hipMemcpy2DFromArray", hip.hipMemcpy2DFromArray(dptr, ctypes.c_size_t(W * 4), arr, ctypes.c_size_t(0), ctypes.c_size_t(0), ctypes.c_size_t(W * 4), ctypes.c_size_t(H), 4)) == 0: readback(tag + " 2D", expect)
+tex = gl.GLuint(); gl.glGenTextures(1, ctypes.byref(tex))
+gl.glBindTexture(gl.GL_TEXTURE_2D, tex)
+gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RGBA8, W, H, 0, gl.GL_RGBA, gl.GL_UNSIGNED_BYTE, src.ctypes.data)
+gl.glBindTexture(gl.GL_TEXTURE_2D, 0); gl.glFinish()
+res = ctypes.c_void_p()
+chk("hipGraphicsGLRegisterImage", hip.hipGraphicsGLRegisterImage(ctypes.byref(res), tex.value, gl.GL_TEXTURE_2D, 0))
+chk("hipGraphicsMapResources", hip.hipGraphicsMapResources(1, ctypes.byref(res), None))
+arr = ctypes.c_void_p(); chk("hipGraphicsSubResourceGetMappedArray", hip.hipGraphicsSubResourceGetMappedArray(ctypes.byref(arr), res, 0, 0))
+from_array("GL-mapped", arr, src)
+# write into the GL texture through the mapped array
+new = (255 - src).copy()
+chk("hipMemcpy HtoD", hip.hipMemcpy(dptr, new.ctypes.data_as(ctypes.c_void_p), ctypes.c_size_t(new.nbytes), 1))
+chk("GL-mapped hipMemcpy2DToArray", hip.hipMemcpy2DToArray(arr, ctypes.c_size_t(0), ctypes.c_size_t(0), dptr, ctypes.c_size_t(W * 4), ctypes.c_size_t(W * 4), ctypes.c_size_t(H), 3))
+hip.hipDeviceSynchronize()
+chk("hipGraphicsUnmapResources", hip.hipGraphicsUnmapResources(1, ctypes.byref(res), None))
+back = np.zeros_like(src)
+gl.glBindTexture(gl.GL_TEXTURE_2D, tex); gl.glGetTexImage(gl.GL_TEXTURE_2D, 0, gl.GL_RGBA, gl.GL_UNSIGNED_BYTE, back.ctypes.data)
+print("  GL read-back after hipMemcpy2DToArray + unmap: mismatches", int((back != new).sum()), "of", new.size)
+chk("hipGraphicsUnregisterResource", hip.hipGraphicsUnregisterResource(res))
+own = ctypes.c_void_p(); d = D3(W, H, 0, 0x01, 4, 0)
+chk("hipArray3DCreate(D=0)", hip.hipArray3DCreate(ctypes.byref(own), ctypes.byref(d)))
+chk("hipMemcpy HtoD", hip.hipMemcpy(dptr, src.ctypes.data_as(ctypes.c_void_p), ctypes.c_size_t(src.nbytes), 1))
+chk("own hipMemcpy2DToArray", hip.hipMemcpy2DToArray(own, ctypes.c_size_t(0), ctypes.c_size_t(0), dptr, ctypes.c_size_t(W * 4), ctypes.c_size_t(W * 4), ctypes.c_size_t(H), 3))
+from_array("own", own, src)
+```
+
+`render.py`:
+
+```python
+# OpenGLRenderer, hidden window (headless=True renderer argument), GLX under Xwayland when
+# argv[1] == "glx", else pyglet headless EGL on device argv[1]. A sphere, a box and a capsule,
+# three frames, get_pixels into a float32 cuda:0 array; saves the last image to argv[2] (.npy).
+# Counts wp_cuda_graphics_register_gl_buffer results to show interop vs copy fallback.
+import sys
+import numpy as np
+import pyglet
+if sys.argv[1] != "glx":
+    pyglet.options["headless"] = True
+    pyglet.options["headless_device"] = int(sys.argv[1])
+import warp as wp
+import warp.render
+
+wp.init()
+core = wp._src.context.runtime.core
+reg = core.wp_cuda_graphics_register_gl_buffer
+counts = {"registered": 0, "failed": 0}
+def counted(ctx, buf, flags):
+    r = reg(ctx, buf, flags)
+    counts["registered" if r else "failed"] += 1
+    return r
+core.wp_cuda_graphics_register_gl_buffer = counted
+
+W, H = 320, 240
+r = wp.render.OpenGLRenderer(screen_width=W, screen_height=H, headless=True, vsync=False, device="cuda:0",
+                             draw_grid=False, draw_axis=False, show_info=False, camera_pos=(0.0, 1.5, 8.0))
+from pyglet import gl
+import ctypes
+print("GL_RENDERER", ctypes.cast(gl.glGetString(gl.GL_RENDERER), ctypes.c_char_p).value.decode(),
+      "window", type(r.window).__name__, "visible", r.window.visible)
+img = wp.zeros((H, W, 3), dtype=wp.float32, device="cuda:0")
+for f in range(3):
+    t = f / 60.0
+    r.begin_frame(t)
+    r.render_sphere("sphere", (-2.0, 1.0 + 0.1 * f, 0.0), (0.0, 0.0, 0.0, 1.0), 0.8, color=(0.9, 0.2, 0.2))
+    r.render_box("box", (0.0, 1.0, 0.0), wp.quat_rpy(0.3 * f, 0.5, 0.0), (0.6, 0.6, 0.6), color=(0.2, 0.8, 0.2))
+    r.render_capsule("capsule", (2.0, 1.0, 0.0), (0.0, 0.0, 0.0, 1.0), 0.4, 0.7, color=(0.2, 0.3, 0.9))
+    r.end_frame()
+    ok = r.get_pixels(img, split_up_tiles=False, mode="rgb")
+    a = img.numpy()
+    print(f"frame {f}: get_pixels {ok} mean {a.mean():.4f} min {a.min():.3f} max {a.max():.3f} "
+          f"distinct colours {len(np.unique((a * 255).astype(np.uint8).reshape(-1, 3), axis=0))}")
+np.save(sys.argv[2], a)
+print("register_gl_buffer:", counts, "img device", img.device)
+r.clear()
+```
+
+`glx_scope.py`:
+
+```python
+# Is glXGetProcAddress in the global symbol scope (what HIP's dlsym(RTLD_DEFAULT) sees)?
+# argv[1]: "pyglet" (window from pyglet) or "glfw" (hidden GLFW window + PyOpenGL import and a GL call).
+import ctypes, sys
+def visible():
+    try:
+        ctypes.CDLL(None).glXGetProcAddress; return True
+    except AttributeError:
+        return False
+print("before:", visible())
+if sys.argv[1] == "pyglet":
+    import pyglet; from pyglet import gl
+    w = pyglet.window.Window(width=64, height=64, visible=False); w.switch_to()
+else:
+    import glfw; glfw.init(); glfw.window_hint(glfw.VISIBLE, glfw.FALSE)
+    w = glfw.create_window(64, 64, "x", None, None); glfw.make_context_current(w)
+    print("after glfw context:", visible())
+    from OpenGL import GL; print("after PyOpenGL import:", visible())
+    GL.glGenBuffers(1)
+print("after context and GL call:", visible())
+```
+
+`glfw_buffer.py`:
+
+```python
+# A GLFW + PyOpenGL application (no pyglet): hidden GLFW window (GLX under X11), GL buffer from
+# PyOpenGL, wp.RegisteredGLBuffer(fallback_to_copy=False): register, map, kernel read/write,
+# unmap, GL read-back. Prints which GL libraries are loaded before registration.
+import ctypes, sys
+import numpy as np
+import glfw
+from OpenGL import GL as gl
+import warp as wp
+
+def gl_libs():
+    return sorted({l.split()[-1].rsplit("/", 1)[-1] for l in open("/proc/self/maps")
+                   if any(s in l for s in ("libGL.so", "libGLX.so", "libOpenGL.so", "libGLX_mesa", "libGLdispatch"))})
+
+assert glfw.init(), "glfw.init failed"
+glfw.window_hint(glfw.VISIBLE, glfw.FALSE)
+win = glfw.create_window(64, 64, "warp", None, None)
+glfw.make_context_current(win)
+print("GL_RENDERER", gl.glGetString(gl.GL_RENDERER).decode(), "platform", glfw.get_platform() if hasattr(glfw, "get_platform") else "?")
+wp.init()
+dev = wp.get_device("cuda:0")
+N = 1 << 16
+src = np.arange(N, dtype=np.float32) * 0.5
+buf = gl.glGenBuffers(1)
+gl.glBindBuffer(gl.GL_ARRAY_BUFFER, buf)
+gl.glBufferData(gl.GL_ARRAY_BUFFER, src.nbytes, src, gl.GL_DYNAMIC_DRAW)
+gl.glBindBuffer(gl.GL_ARRAY_BUFFER, 0); gl.glFinish()
+print("GL libraries loaded before registration:", gl_libs())
+
+@wp.kernel
+def check_and_write(a: wp.array(dtype=float), bad: wp.array(dtype=int)):
+    i = wp.tid()
+    if a[i] != float(i) * 0.5:
+        wp.atomic_add(bad, 0, 1)
+    a[i] = float(i) * 2.0 + 1.0
+
+try:
+    r = wp.RegisteredGLBuffer(int(buf), dev, fallback_to_copy=False)
+except RuntimeError as e:
+    print("registration:", e)
+    sys.exit(0)
+a = r.map(dtype=float, shape=(N,))
+bad = wp.zeros(1, dtype=int, device=dev)
+wp.launch(check_and_write, dim=N, inputs=[a, bad], device=dev)
+r.unmap(); wp.synchronize_device(dev)
+gl.glBindBuffer(gl.GL_ARRAY_BUFFER, buf)
+back = np.frombuffer(gl.glGetBufferSubData(gl.GL_ARRAY_BUFFER, 0, src.nbytes), dtype=np.float32)
+gl.glBindBuffer(gl.GL_ARRAY_BUFFER, 0)
+print("registered; kernel read mismatches", int(bad.numpy()[0]), "GL read-back mismatches", int((back != src * 4.0 + 1.0).sum()))
+del r
+glfw.terminate()
+```
+
+`glfw_raw_buffer.py`:
+
+```python
+# GLFW only (no PyOpenGL, no pyglet): GL entry points from glfw.get_proc_address; libGLX.so.0 is
+# loaded RTLD_LOCAL by GLFW. wp.RegisteredGLBuffer(fallback_to_copy=False) register, map,
+# kernel read/write, unmap, GL read-back.
+import ctypes, sys
+import numpy as np
+import glfw
+import warp as wp
+glfw.init(); glfw.window_hint(glfw.VISIBLE, glfw.FALSE)
+w = glfw.create_window(64, 64, "x", None, None); glfw.make_context_current(w)
+def fn(name, *sig):
+    return ctypes.CFUNCTYPE(None, *sig)(glfw.get_proc_address(name))
+u, i, sz, vp = ctypes.c_uint, ctypes.c_int, ctypes.c_ssize_t, ctypes.c_void_p
+glGenBuffers = fn("glGenBuffers", i, ctypes.POINTER(u)); glBindBuffer = fn("glBindBuffer", u, u)
+glBufferData = fn("glBufferData", u, sz, vp, u); glGetBufferSubData = fn("glGetBufferSubData", u, ctypes.c_ssize_t, sz, vp)
+glFinish = fn("glFinish")
+ARRAY, DYN = 0x8892, 0x88E8
+print("glXGetProcAddress global:", hasattr(ctypes.CDLL(None), "glXGetProcAddress"),
+      "libGL.so.1 loaded:", any("libGL.so" in l for l in open("/proc/self/maps")))
+wp.init(); dev = wp.get_device("cuda:0")
+N = 1 << 16; src = np.arange(N, dtype=np.float32) * 0.5
+b = u(); glGenBuffers(1, ctypes.byref(b)); glBindBuffer(ARRAY, b)
+glBufferData(ARRAY, src.nbytes, src.ctypes.data, DYN); glBindBuffer(ARRAY, 0); glFinish()
+@wp.kernel
+def k(a: wp.array(dtype=float), bad: wp.array(dtype=int)):
+    t = wp.tid()
+    if a[t] != float(t) * 0.5:
+        wp.atomic_add(bad, 0, 1)
+    a[t] = float(t) * 2.0 + 1.0
+try:
+    r = wp.RegisteredGLBuffer(b.value, dev, fallback_to_copy=False)
+except RuntimeError as e:
+    print("registration:", e); sys.exit(0)
+a = r.map(dtype=float, shape=(N,)); bad = wp.zeros(1, dtype=int, device=dev)
+wp.launch(k, dim=N, inputs=[a, bad], device=dev); r.unmap(); wp.synchronize_device(dev)
+out = np.empty_like(src); glBindBuffer(ARRAY, b); glGetBufferSubData(ARRAY, 0, out.nbytes, out.ctypes.data); glBindBuffer(ARRAY, 0)
+print("registered; kernel read mismatches", int(bad.numpy()[0]), "GL read-back mismatches", int((out != src * 4.0 + 1.0).sum()))
+del r; glfw.terminate()
+```
