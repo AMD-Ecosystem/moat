@@ -34,3 +34,7 @@ Validation project (lane `validate`, seed `amd-gap-matrix`, NVIDIA-owned upstrea
 
 - The one `scan-nvidia` hit, `ATTRIBUTIONS.md` (the reproduced NVIDIA TensorRT Software License Agreement for the TensorRT pip dependency), is classed benign: it licenses a dependency, not a file in this repo, the same class as the dependency licence docs in PhysX, warp and IsaacLab. No licence clearance is involved.
 - Kept as a fork-only validation project (NVIDIA owns upstream; no upstream PR). The work is packaging (flash-attn cu12 wheel pins, `tensorrt-cu12` on every x86_64 install, cu128 torch index) plus validation; TensorRT deployment (`scripts/deployment`) stays out of scope.
+
+## Decision 2026-11-23 (Jeff Daily): adopt, fork-only
+
+Asked to adopt or decline, jeff answered "Option A": adopt Isaac-GR00T as a fork-only project and add it to the admin fork request. It is NVIDIA-owned, so nothing is sent upstream (no pull request, issue or comment); the AMD-Ecosystem fork is the deliverable and is kept in sync by us. The fork itself is an admin's act and is still outstanding. How the delivery is recorded once the fork exists (`set-delivery`, `set-maintained` or a release line) is jeff's ruling at that point.
