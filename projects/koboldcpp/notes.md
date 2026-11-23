@@ -284,3 +284,18 @@ No nvcc or conda on this host, and the pip wheel `nvidia-cuda-nvcc-cu12==12.8.93
 ## Lesson for moat-porting: compiling the CUDA gate on a host without a CUDA toolkit
 
 For the "Fleet hosts" section, beside the CUDA no-regression gate. A fleet host with no `nvcc` and no conda can still run the compile gate without touching shared paths: the pip wheel `nvidia-cuda-nvcc-cu12` contains only `ptxas` and `nvvm` (no `nvcc` driver), but NVIDIA's redistributable archives work. Read `https://developer.download.nvidia.com/compute/cuda/redist/redistrib_<ver>.json`, download the `linux-x86_64` archives for `cuda_nvcc`, `cuda_cudart`, `libcublas`, `cuda_cccl` (plus `cuda_nvml_dev`, `cuda_profiler_api`, `cuda_nvtx` if the project includes them; llama.cpp's backend includes `nvml.h`), and `tar -xJf --strip-components=1` them into one prefix in the job directory. Build files that expect the installer layout need `targets/x86_64-linux/{include,lib}` and `lib64` symlinked to the flat `include`/`lib`. The archives also carry `lib/stubs/libcuda.so`, so a full shared-library link succeeds without a driver. About 1 GB, most of it cuBLAS.
+
+## CUDA no-regression compile, head 0fff6ace6 vs base 0382471c (linux mi355 host, system nvcc 12.8, 2026-11-23)
+
+Compile and link only; no GPU used. CUDA run-time behaviour: **cuda-not-validated**.
+
+Toolchain: the host's installed CUDA 12.8 (`/usr/local/cuda-12.8`, nvcc V12.8.93, libcublas 12.8.5.5), host gcc/g++ 13.3.0 (Ubuntu 24.04), GNU make. Two worktrees of a fresh fork clone, one per commit, built side by side with the documented command plus the CU12 arch list that `koboldcpp.sh` uses (plain `LLAMA_CUBLAS=1` means `-arch=native`, which needs a GPU):
+```
+make -j12 LLAMA_CUBLAS=1 LLAMA_ARCHES_CU12=1 CUDA_PATH=/usr/local/cuda
+```
+- First attempt without `CUDA_PATH` compiled everything at both commits but failed the final `koboldcpp_cublas` link identically at both: `/usr/bin/ld: cannot find -lcuda` (the Makefile adds the driver stub directory only as `$(CUDA_PATH)/lib64/stubs`, and this host has no driver). Re-running with `CUDA_PATH=/usr/local/cuda` linked: **rc 0 at both**. Outputs at both: `koboldcpp_default.so`, `koboldcpp_common.so`, `koboldcpp_cublas.so` (307,268,864 bytes at both), 5m18s wall each at -j12.
+- nvcc: 153 invocations at each commit (gencode compute_50/61/75/80 PTX, `-DKCPP_LIMIT_CUDA_MAX_ARCH=800`), the sorted command lines **identical** between base and head; this includes `ggml_v2-cuda.o`, `ggml_v2-cuda-legacy.o`, `ggml_v3-cuda.o` and the whole vendored `ggml/src/ggml-cuda/`.
+- Warnings: 43 warning lines (32 unique) at each, the sorted lists **identical** (pre-existing: nvcc #177-D unused functions in `ggml-cuda.cu` and `ggml_v3-cuda.cu`, gcc `-Wstringop-overread` from `string_fortified.h`, `-Wsubobject-linkage` in `src/llama-moe-cache.cpp`, and similar). No new warning at head.
+- Device code of the edited files: `cuobjdump -ptx` of `ggml_v2-cuda.o` (8,668 lines) and `ggml_v2-cuda-legacy.o` (5,744 lines), and of the untouched `ggml_v3-cuda.o` (600,380 lines), with nvcc's per-invocation `_INTERNAL_<hash>_..._cu_<random>` names normalised: **identical** at base and head. `koboldcpp_default.so` (no CUDA) is byte-identical (md5 `dd0324d1...`).
+
+**Verdict: no CUDA regression at 0fff6ace6.** The CUDA variant compiles and links the same way as at `concedo_experimental` 0382471c, with the same nvcc commands, the same warnings and identical PTX for the two edited legacy files, which confirms the earlier preprocessor evidence with a full compile.
