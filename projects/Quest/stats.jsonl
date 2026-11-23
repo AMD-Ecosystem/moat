@@ -177,3 +177,10 @@
 {"kind":"phase","ts":"2026-11-23T17:14:39Z","phase":"cuda-compile","seconds":315.636,"exit":0,"cmd":"ninja -C /var/lib/jenkins/fleet/jobs/mi355-20261123-085829-quest-val5-prompt/nvcc/build-port -j64 -k 0 _kernels"}
 {"kind":"phase","ts":"2026-11-23T17:14:39Z","phase":"cuda-compile","seconds":316.248,"exit":0,"cmd":"ninja -C /var/lib/jenkins/fleet/jobs/mi355-20261123-085829-quest-val5-prompt/nvcc/build-base -j64 -k 0 _kernels"}
 {"kind":"session","ts":"2026-11-23T17:36:43Z","epoch":1795455403.968634,"event":"end","platform":"linux-gfx950"}
+{"kind":"session","ts":"2026-11-23T17:02:49Z","epoch":1795453369.405857,"event":"start","platform":"linux-gfx1201"}
+{"kind":"phase","ts":"2026-11-23T17:32:23Z","phase":"compile","seconds":1633.74,"exit":0,"cmd":"bash agent_space/build.sh /var/lib/jenkins/fleet/jobs/gfx1201-20261123-085826-quest-val5-prompt/moat/projects/Quest/src"}
+{"kind":"phase","ts":"2026-11-23T17:33:08Z","phase":"test","seconds":17.206,"exit":0,"cmd":"bash agent_space/test.sh"}
+{"kind":"phase","ts":"2026-11-23T17:34:33Z","phase":"test","seconds":12.012,"exit":0,"cmd":"bash agent_space/e2e/run.sh --method hg"}
+{"kind":"phase","ts":"2026-11-23T17:34:45Z","phase":"test","seconds":11.303,"exit":0,"cmd":"bash agent_space/e2e/run.sh --method quest --token_budget 1024"}
+{"kind":"phase","ts":"2026-11-23T17:34:56Z","phase":"test","seconds":11.384,"exit":0,"cmd":"bash agent_space/e2e/run.sh --method quest --token_budget 128"}
+{"kind":"session","ts":"2026-11-23T17:37:05Z","epoch":1795455425.249199,"event":"end","platform":"linux-gfx1201"}

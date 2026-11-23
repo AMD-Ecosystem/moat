@@ -3637,6 +3637,13 @@ Host: AMD Instinct MI355X (`gfx950:sramecc+:xnack-`, 256 CUs, 288 GiB), wave64, 
 ### Build
 
 `agent_space/quest/build_readme.sh`, the README Linux block verbatim with `-DCMAKE_HIP_ARCHITECTURES=gfx950`, after `rm -rf build`, `ninja -j $MAX_JOBS`, wrapped `utils/timeit.sh Quest compile`:
+## Validation 2026-11-23 (linux-gfx1201, at `9cb8bee`) -- PASS
+
+AMD Radeon AI PRO R9700, `gcnArchName` `gfx1201`, wave32, 31.9 GiB, `HIP_VISIBLE_DEVICES=1` (pinned by the job; idle before every timed run, 0 % busy, 0.1 GiB used). PyTorch 2.16.0a0+git6c3af02 (`torch.version.hip` 7.16.26385) on the pip ROCm SDK (HIP compiler `_rocm_sdk_devel/lib/llvm/bin/clang++`), image Python 3.11.17 (`/opt/python-3.11-venv`, read-only; the job venv has no torch), CMake 3.31.6. All GPU runs under `ulimit -c 0`. Fork cloned fresh, checked out `9cb8bee` == `origin/moat-port` == `head_sha`, `git submodule update --init --depth 1`. Full revalidation (not a carry-forward): `classify 2b938d8 9cb8bee` is `mixed` and the delta adds the matrix-core prefill. This is the first run of the gfx12 WMMA tile code on real hardware.
+
+### Build (README Linux command)
+
+`agent_space/build.sh <fork>`, wrapped `utils/timeit.sh Quest compile -- bash agent_space/build.sh <fork>`: the README block with the architecture changed and ninja capped at the job's `MAX_JOBS` (24), after `rm -rf build`, `CMAKE_BUILD_TYPE` and `PYTORCH_ROCM_ARCH` unset, image Python first on `PATH`:
 
 ```
 cd quest/ops
@@ -3679,6 +3686,106 @@ The porter's harness was not recorded in these notes (its container is gone), so
 ### End-to-end (transformers 4.45.2, tokenizers 0.20.3, accelerate 1.0.1, sentencepiece 0.2.0 in `<job>/pylib-e2e`)
 
 The model fits (13 GB of 288 GB). `NousResearch/Llama-2-7b-chat-hf` at `351844e75ed0bcbbe3f10671b3c808d2b83894ee`, downloaded into `<job>/models` (safetensors, json, tokenizer), `do_sample` set to false in `generation_config.json` (original kept as `.orig`), `scripts/example_textgen.py` with only `MODEL_PATH` changed (`agent_space/quest/e2e/example_textgen.py`):
+cmake -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1201 \
+  -DCMAKE_PREFIX_PATH=`python -c 'import torch;print(torch.utils.cmake_prefix_path)'` ..
+ninja -j 24
+ln -sf $PWD/_kernels*.so ../../
+```
+
+rc 0, 8/8, 0 errors, **27m14s wall**. `CMAKE_BUILD_TYPE:STRING=Release` by default; all 8 compile lines `--offload-arch=gfx1201` only. Warnings: 18 nodiscard-`hipError_t`, and 0 `-Wpass-failed` (1536 at `2b938d8`: the emulated tile loops are gone). Build time from `.ninja_log`: `batch_prefill.cu.o` **1628 s** on its own, every other file 21-28 s. At `2b938d8` the whole build on this GPU took 615 s, and at `9cb8bee` on gfx942 555 s. So the gfx12 WMMA instantiations take about 3x longer to compile than the emulation they replace. This is consistent with the register pressure below (the allocator works hard on the 256-VGPR spilling kernels). It is not a failure. It does matter for anyone building several Radeon targets in one go: the porter round's five-target build already ran past an hour.
+
+### GPU tests (transformers 4.37.2, tokenizers 0.15.2, huggingface-hub 0.24.7, pytest 7.3.2 in `<job>/pylib-test`, installed with `$FLEET_VENV/bin/pip install --no-deps --target`)
+
+Wrapped `utils/timeit.sh Quest test -- bash agent_space/test.sh`:
+
+```
+cd <fork> && PYTHONPATH=<fork>:<job>/pylib-test python -m pytest quest/tests -p no:cacheprovider -q -rs
+```
+
+**202 passed, 28 skipped, 0 failed** (16.3 s), the same as the MI300X record at this head. Per suite (each run on its own): approx_attention 42, decode_attention 6, decode_launch_shape 3, estimate 9, prefill_attention 29 + 13 skipped (`qo_len > kv_len`), rope 64, topk 49 + 15 skipped (`k >= kv_len`). These counts are identical to `2b938d8` on this GPU.
+
+### fp64 reference check of prefill (100 cases)
+
+The porter's harness (`agent_space/quest/harness/prefill_harness.cu`) is not recorded in these notes, so I wrote an equivalent with the same grid. It is reproduced in full below so the Radeon validators that follow can run it. It calls `BatchPrefillWithPagedKVCacheDispatched` directly with `num_frags_x` forced, on the NHD layout with shuffled pages (3 spare pages), and checks the output and the LSE against an fp64 CPU reference (bottom-right causal rule). Tolerances are the porter's: fp16 5e-3 + 5e-3|ref|, bf16 2e-2 + 3e-2|ref|, LSE 2e-2 + 2e-3|ref|. It is needed because the Python operator dispatches fp16 only (`DISPATCH_PYTORCH_DTYPE_TO_CTYPE`), so the bf16 WMMA builtins are unreachable through the tests. The grid is 10 shapes (qo x kv in 1x17, 13x33, 16x16, 51x400, 63x700, 77x129, 128x129, 244x1110, 311x311, 502x1110) times 10 configurations: fp16 hd128 nfx1 causal; fp16 hd128 nfx2 causal; fp16 hd128 nfx2 non-causal; fp16 hd64 nfx2 causal; fp16 hd128 nfx2 causal GQA 4; bf16 hd128 nfx2 causal; bf16 hd64 nfx1 non-causal GQA 4; fp16 hd128 page size 1; fp16 hd128 nfx1 page size 8; bf16 hd128 nfx2 non-causal page size 32 GQA 8. All other cases use page size 16.
+
+```
+bash agent_space/harness/build.sh <fork> agent_space/harness/ref_9cb8bee     # 28 s
+agent_space/harness/ref_9cb8bee check                                        # 13 s
+```
+
+| build | result |
+|---|---|
+| `9cb8bee` (gfx12 WMMA; the binary prints `prefill_mma_shape {32, 8}`) | **100/100** |
+| `2b938d8` tree (`git archive 2b938d8 kernels/include`, emulated path), same harness | 100/100 (validates the harness on this GPU) |
+| negative control: scratch copy of the `9cb8bee` header with the gfx12 `acc_row` replaced by the gfx11 formula `2 * i + lane / 16` | **0/100** (every case fails) |
+
+Largest error per configuration over the 10 shapes:
+
+| config | max dO WMMA | max dO emulated | max dLSE WMMA | max dLSE emulated |
+|---|---|---|---|---|
+| fp16 hd128 nfx1 causal ps16 | 1.08e-03 | 1.61e-03 | 5.24e-04 | 1.68e-03 |
+| fp16 hd128 nfx2 causal ps16 | 8.04e-04 | 1.36e-03 | 5.48e-04 | 1.51e-03 |
+| fp16 hd128 nfx2 noncausal ps16 | 6.75e-04 | 1.28e-03 | 4.06e-04 | 1.30e-03 |
+| fp16 hd64 nfx2 causal ps16 | 1.09e-03 | 1.01e-03 | 5.90e-04 | 1.08e-03 |
+| fp16 hd128 nfx2 causal ps16 g4 | 1.01e-03 | 1.64e-03 | 5.79e-04 | 1.94e-03 |
+| bf16 hd128 nfx2 causal ps16 | 7.72e-03 | 8.82e-03 | 3.85e-03 | 1.17e-02 |
+| bf16 hd64 nfx1 noncausal ps16 g4 | 5.87e-03 | 6.58e-03 | 3.59e-03 | 8.13e-03 |
+| fp16 hd128 nfx2 causal ps1 | 1.07e-03 | 1.27e-03 | 7.46e-04 | 1.53e-03 |
+| fp16 hd128 nfx1 causal ps8 | 1.06e-03 | 1.16e-03 | 6.37e-04 | 2.33e-03 |
+| bf16 hd128 nfx2 noncausal ps32 g8 | 6.36e-03 | 9.63e-03 | 3.41e-03 | 1.43e-02 |
+
+WMMA is at or below the emulation's error in 9 of 10 configurations, and within 8 % of it in the tenth (fp16 hd64). Only 1 of 100 cases has an identical max error (on MI300X it was 59 of 60). That is expected: the emulation rounds P to 16 bits and accumulates in a different order.
+
+### The review's list for a real Radeon run (review 2026-11-20), answered for gfx1201
+
+1. **Does the hardware match the documented gfx12 layout?** Yes. Real `v_wmma_f32_16x16x16_{f16,bf16}` (`_w32_gfx12`) give 100/100 for output and LSE across fp16 and bf16, head 64 and 128, GQA 1/4/8, page sizes 1/8/16/32, causal and not, nfx 1 and 2. The tests (202 passed) and the end-to-end text agree. The negative control fails all 100 cases, so the check does tell layouts apart. On gfx12 that means A/B k = 8(l/16)..+7 and D rows 8(l/16)+i.
+2. **The `_w32` builtins when lanes 16-31 replicate:** not testable here. Replicated halves exist only in the gfx11 layout (`QUEST_PREFILL_MMA == 11`), and gfx1201 has neither those builtins nor that operand form. Still owed on linux-gfx1100 and windows-gfx1151.
+3. **The xor-16 P exchange on a real wave32:** gfx11 only (gfx12 feeds P to the second product from registers with no exchange), so it was not exercised here and is still owed on gfx11. What gfx12 does exercise on a real wave32 is the xor-16 `column_max`/`column_sum` softmax reduction (one step at `kWaveSize` 32). It is correct.
+4. **Speed with the spills:** see the next two sections. In short, the spilling configuration is still the fastest of the three measured, and capping `num_frags_z` at 2 on wave32 would gain about 15 % more.
+
+Q in LDS is never taken on gfx12: `q_in_registers` holds for every instantiation (`nfx * nfy * 8 / 2 <= 64` for head 64/128, nfx <= 2). The harness's resource remarks show `LDS 0` static on all of them.
+
+### Prefill time against SDPA, through the operator
+
+`agent_space/prefill_time.py` (method of the MI300X table: `quest.utils.prefill_forward` against `F.scaled_dot_product_attention` with `is_causal` where qo = kv and `causal_lower_right` where qo < kv; causal, 32 heads x 128, fp16, page size 16, `InferenceController(1 layer, budget 1024, max_seq_len = kv)`; CUDA-event mean of 20 calls, 5 for qo >= 8192, after 3 warmup calls). Run twice; second run in brackets:
+
+```
+PYTHONPATH=<fork>:<job>/pylib-test python agent_space/prefill_time.py
+```
+
+| qo x kv | Quest prefill_forward | torch SDPA | ratio | max abs diff vs SDPA | MI300X ratio at `9cb8bee` |
+|---|---|---|---|---|---|
+| 1 x 4096 | 0.348 (0.362) ms | 0.128 (0.117) ms | 2.71 (3.09) | 6.1e-05 | 2.61 |
+| 128 x 4096 | 0.540 (0.541) ms | 0.127 (0.126) ms | 4.25 (4.31) | 1.2e-04 | 2.91 |
+| 1024 x 1024 | 0.349 (0.354) ms | 0.118 (0.118) ms | 2.95 (2.99) | 2.0e-03 | 2.77 |
+| 1024 x 4096 | 1.129 (1.135) ms | 0.692 (0.689) ms | 1.63 (1.65) | 1.2e-04 | 2.24 |
+| 4096 x 4096 | 2.428 (2.430) ms | 1.518 (1.522) ms | **1.60** | 2.0e-03 | 1.85 |
+| 8192 x 8192 | 8.970 (8.988) ms | 6.849 (6.860) ms | 1.31 | 2.0e-03 | 1.53 |
+| 16384 x 16384 | 35.567 (35.442) ms | 27.490 (27.482) ms | 1.29 | 2.0e-03 | 1.34 |
+
+The plan's bar (4096 x 4096 within 2x of SDPA) holds on this Radeon too: 1.60x. Long prompts are closer than on MI300X. Short shapes are dominated by the operator's fixed host work per call (index tensors, a device-to-host copy, two async mallocs), and 128 x 4096 is the worst ratio here (4.3x).
+
+Kernel alone (harness `time` mode, same shapes, dispatcher's nfx, hipEvent mean of 20/5): 0.254, 0.463, 0.294, 1.089, 2.439, 8.996, 34.895 ms (a repeat run was within 2 %).
+
+**Old emulated path, one shape.** No build switch selects it at `9cb8bee` (`QUEST_PREFILL_MMA` is set per target inside `prefill_matrix_core.cuh`), so the same harness was built from the `2b938d8` tree: 4096 x 4096 causal **107.5 ms**, against **2.44 ms** for WMMA (44x).
+
+### Spills: what they cost here
+
+Resource use per instantiation (`bash agent_space/harness/build.sh <fork> /tmp/x.o --cuda-device-only -c -Rpass-analysis=kernel-resource-usage`; tuple G, page size, causal, nfx, nfy, nfz): every nfx=2 head-128 instantiation sits at 256 VGPR with scratch 144-540 B/lane (G1 PS16 causal nfz4: 512; nfz2: 176), occupancy 5. nfx=1 has 0 scratch (235-245 VGPR). bf16 is the same as fp16. This matches the review's table.
+
+Times for the kernel alone, 4096 x 4096 causal (and 16384^2):
+
+| configuration | spill (B/lane) | 4096^2 | 16384^2 |
+|---|---|---|---|
+| as shipped: nfx2, nfz4 (dispatcher's choice) | 512 | 2.44 ms | 34.9 ms |
+| nfx1 forced (harness `time1`) | 0 | 2.98 ms | 41.8 ms |
+| nfx2 with nfz capped at 2 (scratch copy of `prefill.cuh`: `max_num_frags_z_reg` = 2 whenever head 128 and nfx 2) | 176 | **2.07 ms** | **27.8 ms** |
+
+The nfz=2 variant also passes 100/100 in the reference check. So the spills are not a correctness issue and do not make the shipped choice the slowest. A wave32-only cap of `num_frags_z` at 2 for head 128 nfx 2 would make prefill 15-20 % faster on gfx12 (and might cut the 27-minute compile). The scratch edit capped it for every target, which an upstream change must not do to CUDA or MFMA. This is a suggestion for the porter, not a finding: the bar is met as shipped.
+
+### End-to-end (transformers 4.45.2, tokenizers 0.20.3, accelerate 1.0.1, sentencepiece 0.2.0, huggingface-hub 0.26.2 in `<job>/pylib-e2e`)
+
+The model fits easily (13.5 GB fp16 on a 31.9 GiB card). `NousResearch/Llama-2-7b-chat-hf` at `351844e75ed0bcbbe3f10671b3c808d2b83894ee` was copied from the 2026-11-19 gfx1201 job on this host (`do_sample` false in `generation_config.json`, original kept as `.orig`). `scripts/example_textgen.py` with only `MODEL_PATH` changed, each wrapped in `utils/timeit.sh Quest test`:
 
 ```
 PYTHONPATH=<fork>:<job>/pylib-e2e python example_textgen.py --method hg
@@ -3756,3 +3863,292 @@ ninja -C <job>/nvcc/build-<tree> -j64 -k 0 _kernels
 - The ROCm build is documented in the README (Linux and Windows blocks), and the command above is that documentation.
 - `audit-commits` reports only the known `6e7d8db` gap.
 - `git -C projects/Quest/src status --porcelain` is empty: the `_kernels` link and `build/` are ignored.
+All rc 0, prompt 103 tokens. The text from "Input Sequence Length" on is byte-identical across the three: md5 `b900af27eeb4170a5c47bc5940a2ca60`, the same digest as this GPU at `6e7d8db` and as gfx942 at `6e7d8db` ("Reason: The rabbit is the only one who is not working hard. ... can also mean \"lazy.\""). `rocprofv3 --kernel-trace --stats -d prof -o run -- ... --method quest --token_budget 128` (generated text identical again) read from `run_results.db`: `BatchPrefillWithPagedKVCacheKernel<1,16,true,kNone,2,8,4,4,...>` 32 calls at **24.4 us** (433 us at `6e7d8db` on this GPU, 18x), `quest_radix_topk_one_block_kernel` 2130 (11.2 us), `MaxPossibleSampleWithPagedKVCacheKernel` 2130 (4.9 us), `BatchDecodeWithPagedKVCacheKernel` 3072 (12.9 us), `VariableLengthMergeStatesKernel` 3072, `AppendPagedKVCacheDecodeKernel` 3072, `AppendPagedKVCachePrefillKernel` 32. The call counts equal the earlier traces.
+
+### CUDA path
+
+Not compiled with nvcc: this host has no CUDA toolkit (no `nvcc`, no `/usr/local/cuda`, no `/opt/conda/envs`); `cuda-not-validated: no toolkit on this host`. The real-nvcc compile of `9cb8bee` is still owed on the gfx950 host. Preprocessor check repeated here: `git show <sha>:kernels/include/prefill/prefill.cuh | grep -v '^\s*#\s*include' | cpp -P -undef -nostdinc [-D__CUDACC__ -D__CUDA_ARCH__=900] -`. Both `2b938d8` and `9cb8bee`, with and without the CUDA defines, give md5 `02d6a90c0d2eea0259c7a25b34a3f580` (970 lines), so the CUDA view of the prefill header is unchanged.
+
+### Content checks and integrity
+
+`jargon.py --port Quest` clean (after `git fetch origin main:main moat-port:moat-port` in the clone). `audit-commits Quest` reports only the known `6e7d8db` fenced-Test-Plan gap. The ROCm build is documented in `README.md` (Linux and Windows blocks). `git -C projects/Quest/src status --porcelain` is empty. No fork edit, no push to the fork, no GitHub write besides this project branch.
+
+State: linux-gfx1201 `completed` at `9cb8bee` (wave32 gate).
+
+### Owed next (Quest at `9cb8bee`)
+
+1. linux-gfx1100 and windows-gfx1151: the gfx11 layout (replicated A/B halves, xor-16 P exchange, Q in LDS at head 128 nfx 2) still has had no hardware run. The harness below takes `--offload-arch=gfx1100` / `gfx1151` in `build.sh`. Its negative control for gfx11 is the gfx12 row formula.
+2. linux-gfx90a (MFMA `bf16_1k` form) and the real-nvcc compile on the gfx950 host.
+3. For the porter, optional: the wave32 `num_frags_z` cap (15-20 % on gfx12, measured above).
+
+<details><summary>Harness used above: <code>agent_space/harness/build.sh</code> and <code>prefill_ref.cu</code></summary>
+
+```
+#!/bin/bash
+# build.sh <fork tree> <out binary> [extra flags]: the extension's HIP flags, gfx1201
+set -e
+T=$1; OUT=$2; shift 2
+SDK=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+CXX=$SDK/lib/llvm/bin/clang++
+H=$T/kernels/include
+exec $CXX -x hip -O3 -DNDEBUG -std=gnu++20 --offload-arch=gfx1201 -ffp-contract=on \
+  -include $H/hip_compat/flashinfer/math.cuh -include $H/hip_compat/flashinfer/mma.cuh -include $H/hip_compat/flashinfer/vec_dtypes.cuh \
+  -DUSE_HIP -D__HIP_PLATFORM_AMD__=1 -DCUDA_HAS_FP16=1 -DUSE_ROCM -D__HIP_NO_HALF_OPERATORS__=1 -D__HIP_NO_HALF_CONVERSIONS__=1 \
+  -DHIP_ENABLE_WARP_SYNC_BUILTINS -Wno-unused-result -Wno-pass-failed \
+  -I$H/hip_compat -I$H -I$T/kernels/3rdparty/flashinfer/include \
+  --rocm-path=$SDK "$@" $(dirname $0)/prefill_ref.cu -o $OUT
+```
+
+```cpp
+// fp64 reference check and timing of Quest's BatchPrefillWithPagedKVCacheDispatched.
+// Validator harness (not part of the fork). Usage: prefill_ref check | time
+#include <hip/hip_runtime.h>
+#include "prefill/prefill.cuh"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <random>
+#include <string>
+#include <vector>
+
+using namespace flashinfer;
+
+#define CK(x)                                                                     \
+  do {                                                                            \
+    hipError_t e_ = (x);                                                          \
+    if (e_ != hipSuccess) {                                                       \
+      fprintf(stderr, "%s:%d %s: %s\n", __FILE__, __LINE__, #x, hipGetErrorString(e_)); \
+      exit(2);                                                                    \
+    }                                                                             \
+  } while (0)
+
+template <typename T> float to_f(T x);
+template <> float to_f<half>(half x) { return __half2float(x); }
+template <> float to_f<nv_bfloat16>(nv_bfloat16 x) { return __bfloat162float(x); }
+template <typename T> T from_f(float x);
+template <> half from_f<half>(float x) { return __float2half(x); }
+template <> nv_bfloat16 from_f<nv_bfloat16>(float x) { return __float2bfloat16(x); }
+
+struct Case {
+  uint32_t qo, kv;
+};
+
+struct Result {
+  double max_err_o, max_err_lse;
+  size_t bad_o, bad_lse;
+  float ms;
+};
+
+// Runs one configuration. num_kv_heads KV heads, GROUP query heads per KV head, NHD paged
+// layout with shuffled pages (plus spare pages so the indices are not the identity).
+template <typename DT, uint32_t NFX, uint32_t PS, uint32_t GROUP, uint32_t HD, bool CAUSAL>
+Result run(uint32_t qo_len, uint32_t kv_len, uint32_t num_kv_heads, bool check, int iters,
+           uint64_t seed) {
+  constexpr QKVLayout L = QKVLayout::kNHD;
+  const uint32_t nqh = num_kv_heads * GROUP;
+  const uint32_t num_pages = (kv_len + PS - 1) / PS;
+  const uint32_t total_pages = num_pages + 3;
+  const uint32_t last_page_len = kv_len - (num_pages - 1) * PS;
+
+  std::mt19937_64 rng(seed);
+  std::normal_distribution<float> nd(0.f, 1.f);
+  std::vector<DT> hq(size_t(qo_len) * nqh * HD);
+  std::vector<DT> hkv(size_t(total_pages) * 2 * PS * num_kv_heads * HD, from_f<DT>(0.f));
+  for (auto& x : hq) x = from_f<DT>(nd(rng));
+  std::vector<int32_t> perm(total_pages);
+  for (uint32_t i = 0; i < total_pages; ++i) perm[i] = i;
+  std::shuffle(perm.begin(), perm.end(), rng);
+  std::vector<int32_t> indices(perm.begin(), perm.begin() + num_pages);
+  // K and V as dense [kv_len][heads][HD], scattered into pages.
+  std::vector<float> K(size_t(kv_len) * num_kv_heads * HD), V(K.size());
+  for (uint32_t t = 0; t < kv_len; ++t)
+    for (uint32_t h = 0; h < num_kv_heads; ++h)
+      for (uint32_t d = 0; d < HD; ++d) {
+        DT k = from_f<DT>(nd(rng)), v = from_f<DT>(nd(rng));
+        size_t i = (size_t(t) * num_kv_heads + h) * HD + d;
+        K[i] = to_f(k);
+        V[i] = to_f(v);
+        uint32_t p = indices[t / PS], e = t % PS;
+        hkv[((size_t(p) * 2 * PS + e) * num_kv_heads + h) * HD + d] = k;
+        hkv[((size_t(p) * 2 * PS + PS + e) * num_kv_heads + h) * HD + d] = v;
+      }
+
+  DT *dq, *dkv, *dout;
+  float* dlse;
+  int32_t *dind, *dindptr, *dqoindptr, *dreq, *dtile;
+  CK(hipMalloc(&dq, hq.size() * sizeof(DT)));
+  CK(hipMalloc(&dkv, hkv.size() * sizeof(DT)));
+  CK(hipMalloc(&dout, hq.size() * sizeof(DT)));
+  CK(hipMalloc(&dlse, size_t(qo_len) * nqh * sizeof(float)));
+  CK(hipMalloc(&dind, num_pages * sizeof(int32_t)));
+  CK(hipMalloc(&dindptr, 2 * sizeof(int32_t)));
+  CK(hipMalloc(&dqoindptr, 2 * sizeof(int32_t)));
+  CK(hipMemcpy(dq, hq.data(), hq.size() * sizeof(DT), hipMemcpyHostToDevice));
+  CK(hipMemcpy(dkv, hkv.data(), hkv.size() * sizeof(DT), hipMemcpyHostToDevice));
+  CK(hipMemset(dout, 0xff, hq.size() * sizeof(DT)));
+  CK(hipMemcpy(dind, indices.data(), num_pages * sizeof(int32_t), hipMemcpyHostToDevice));
+  int32_t indptr[2] = {0, int32_t(num_pages)}, qoindptr[2] = {0, int32_t(qo_len)};
+  CK(hipMemcpy(dindptr, indptr, sizeof(indptr), hipMemcpyHostToDevice));
+  CK(hipMemcpy(dqoindptr, qoindptr, sizeof(qoindptr), hipMemcpyHostToDevice));
+  // Same tiling as split_qo_indptr, with num_frags_x forced.
+  const uint32_t rows_per_cta = NFX * 4 * 16;
+  std::vector<int32_t> req, tile;
+  for (uint32_t j = 0; j < qo_len * GROUP; j += rows_per_cta) {
+    req.push_back(0);
+    tile.push_back(j / rows_per_cta);
+  }
+  CK(hipMalloc(&dreq, req.size() * sizeof(int32_t)));
+  CK(hipMalloc(&dtile, tile.size() * sizeof(int32_t)));
+  CK(hipMemcpy(dreq, req.data(), req.size() * sizeof(int32_t), hipMemcpyHostToDevice));
+  CK(hipMemcpy(dtile, tile.data(), tile.size() * sizeof(int32_t), hipMemcpyHostToDevice));
+
+  paged_kv_t<PageStorage::kIndices, L, DT, int32_t> paged_kv(
+      num_kv_heads, PS, HD, 1, 0, last_page_len, indices.back(), dkv, dind, dindptr);
+  auto launch = [&]() {
+    hipError_t st = BatchPrefillWithPagedKVCacheDispatched<PageStorage::kIndices, L, NFX, PS, GROUP, HD,
+                                              RotaryMode::kNone, false, CAUSAL, DT, DT, int32_t>(
+        dq, dreq, dtile, dqoindptr, paged_kv, dout, nullptr, dlse, uint32_t(req.size()), 1.f,
+        1e4f, nullptr);
+    CK(st);
+  };
+  launch();
+  CK(hipDeviceSynchronize());
+
+  Result r{0, 0, 0, 0, 0.f};
+  if (check) {
+    std::vector<DT> ho(hq.size());
+    std::vector<float> hlse(size_t(qo_len) * nqh);
+    CK(hipMemcpy(ho.data(), dout, ho.size() * sizeof(DT), hipMemcpyDeviceToHost));
+    CK(hipMemcpy(hlse.data(), dlse, hlse.size() * sizeof(float), hipMemcpyDeviceToHost));
+    const bool bf = std::is_same<DT, nv_bfloat16>::value;
+    const double atol = bf ? 2e-2 : 5e-3, rtol = bf ? 3e-2 : 5e-3;
+    const double scale = 1.0 / std::sqrt(double(HD));
+    std::vector<double> s(kv_len), o(HD);
+    for (uint32_t i = 0; i < qo_len; ++i)
+      for (uint32_t qh = 0; qh < nqh; ++qh) {
+        const uint32_t kh = qh / GROUP;
+        uint32_t n = kv_len;
+        if (CAUSAL) n = kv_len - qo_len + i + 1;  // bottom-right: j <= kv_len - qo_len + i
+        double m = -INFINITY;
+        for (uint32_t j = 0; j < n; ++j) {
+          double acc = 0;
+          for (uint32_t d = 0; d < HD; ++d)
+            acc += double(to_f(hq[(size_t(i) * nqh + qh) * HD + d])) *
+                   K[(size_t(j) * num_kv_heads + kh) * HD + d];
+          s[j] = acc * scale;
+          m = std::max(m, s[j]);
+        }
+        double den = 0;
+        std::fill(o.begin(), o.end(), 0.0);
+        for (uint32_t j = 0; j < n; ++j) {
+          double p = std::exp(s[j] - m);
+          den += p;
+          for (uint32_t d = 0; d < HD; ++d) o[d] += p * V[(size_t(j) * num_kv_heads + kh) * HD + d];
+        }
+        for (uint32_t d = 0; d < HD; ++d) {
+          double ref = o[d] / den;
+          double got = to_f(ho[(size_t(i) * nqh + qh) * HD + d]);
+          double err = std::fabs(got - ref);
+          if (!(err <= atol + rtol * std::fabs(ref))) ++r.bad_o;
+          if (!(err <= r.max_err_o)) r.max_err_o = std::isnan(err) ? INFINITY : std::max(r.max_err_o, err);
+        }
+        double lse_ref = (m + std::log(den)) / std::log(2.0);
+        double lerr = std::fabs(hlse[size_t(i) * nqh + qh] - lse_ref);
+        if (!(lerr <= 2e-2 + 2e-3 * std::fabs(lse_ref))) ++r.bad_lse;
+        if (!(lerr <= r.max_err_lse)) r.max_err_lse = std::isnan(lerr) ? INFINITY : std::max(r.max_err_lse, lerr);
+      }
+  }
+  if (iters > 0) {
+    for (int w = 0; w < 3; ++w) launch();
+    hipEvent_t a, b;
+    CK(hipEventCreate(&a));
+    CK(hipEventCreate(&b));
+    CK(hipEventRecord(a));
+    for (int it = 0; it < iters; ++it) launch();
+    CK(hipEventRecord(b));
+    CK(hipEventSynchronize(b));
+    CK(hipEventElapsedTime(&r.ms, a, b));
+    r.ms /= iters;
+  }
+  hipFree(dq); hipFree(dkv); hipFree(dout); hipFree(dlse); hipFree(dind);
+  hipFree(dindptr); hipFree(dqoindptr); hipFree(dreq); hipFree(dtile);
+  return r;
+}
+
+static const Case kCases[] = {{1, 17},    {13, 33},   {16, 16},   {51, 400},   {63, 700},
+                              {77, 129},  {128, 129}, {244, 1110}, {311, 311}, {502, 1110}};
+
+template <typename F>
+int sweep(const char* name, F f, int& pass, int& total) {
+  int fails = 0;
+  for (const Case& c : kCases) {
+    Result r = f(c.qo, c.kv);
+    bool ok = r.bad_o == 0 && r.bad_lse == 0;
+    ++total;
+    if (ok) ++pass; else ++fails;
+    printf("%-34s qo=%4u kv=%5u  %s  max|dO|=%.3e max|dLSE|=%.3e bad_o=%zu bad_lse=%zu\n", name,
+           c.qo, c.kv, ok ? "PASS" : "FAIL", r.max_err_o, r.max_err_lse, r.bad_o, r.bad_lse);
+  }
+  return fails;
+}
+
+int main(int argc, char** argv) {
+  const char* mode = argc > 1 ? argv[1] : "check";
+  hipDeviceProp_t prop;
+  CK(hipGetDeviceProperties(&prop, 0));
+#ifdef FLASHINFER_PREFILL_MATRIX_CORE_CUH_
+  matrix_core::mma_shape_t shape;
+  CK(matrix_core::get_prefill_mma_shape(&shape));
+  printf("device %s %s, prefill_mma_shape {%u, %u}\n", prop.name, prop.gcnArchName,
+         shape.wave_size, shape.op_elems);
+#else
+  printf("device %s %s, no matrix-core header (emulated prefill)\n", prop.name, prop.gcnArchName);
+#endif
+  if (std::string(mode) == "check") {
+    int pass = 0, total = 0;
+    uint64_t seed = 1;
+    // 10 configurations x 10 shapes, the grid of the porter's 2026-11-20 sweep.
+    sweep("fp16 hd128 nfx1 causal ps16", [&](uint32_t q, uint32_t k) {
+      return run<half, 1, 16, 1, 128, true>(q, k, 2, true, 0, seed++); }, pass, total);
+    sweep("fp16 hd128 nfx2 causal ps16", [&](uint32_t q, uint32_t k) {
+      return run<half, 2, 16, 1, 128, true>(q, k, 2, true, 0, seed++); }, pass, total);
+    sweep("fp16 hd128 nfx2 noncausal ps16", [&](uint32_t q, uint32_t k) {
+      return run<half, 2, 16, 1, 128, false>(q, k, 2, true, 0, seed++); }, pass, total);
+    sweep("fp16 hd64 nfx2 causal ps16", [&](uint32_t q, uint32_t k) {
+      return run<half, 2, 16, 1, 64, true>(q, k, 2, true, 0, seed++); }, pass, total);
+    sweep("fp16 hd128 nfx2 causal ps16 g4", [&](uint32_t q, uint32_t k) {
+      return run<half, 2, 16, 4, 128, true>(q, k, 2, true, 0, seed++); }, pass, total);
+    sweep("bf16 hd128 nfx2 causal ps16", [&](uint32_t q, uint32_t k) {
+      return run<nv_bfloat16, 2, 16, 1, 128, true>(q, k, 2, true, 0, seed++); }, pass, total);
+    sweep("bf16 hd64 nfx1 noncausal ps16 g4", [&](uint32_t q, uint32_t k) {
+      return run<nv_bfloat16, 1, 16, 4, 64, false>(q, k, 2, true, 0, seed++); }, pass, total);
+    sweep("fp16 hd128 nfx2 causal ps1", [&](uint32_t q, uint32_t k) {
+      return run<half, 2, 1, 1, 128, true>(q, k, 2, true, 0, seed++); }, pass, total);
+    sweep("fp16 hd128 nfx1 causal ps8", [&](uint32_t q, uint32_t k) {
+      return run<half, 1, 8, 1, 128, true>(q, k, 2, true, 0, seed++); }, pass, total);
+    sweep("bf16 hd128 nfx2 noncausal ps32 g8", [&](uint32_t q, uint32_t k) {
+      return run<nv_bfloat16, 2, 32, 8, 128, false>(q, k, 1, true, 0, seed++); }, pass, total);
+    printf("TOTAL %d/%d passed\n", pass, total);
+    return pass == total ? 0 : 1;
+  }
+  // time: 32 heads x 128, fp16, page 16, causal, num_frags_x as the dispatcher picks it.
+  const Case shapes[] = {{1, 4096}, {128, 4096}, {1024, 1024}, {1024, 4096}, {4096, 4096},
+                         {8192, 8192}, {16384, 16384}};
+  int only = argc > 2 ? atoi(argv[2]) : -1;
+  for (int i = 0; i < 7; ++i) {
+    if (only >= 0 && i != only) continue;
+    const Case c = shapes[i];
+    int iters = c.qo >= 8192 ? 5 : 20;
+    // "time1" forces num_frags_x = 1 for every shape.
+    const bool nfx2 = c.qo > 64 && std::string(mode) != "time1";
+    Result r = nfx2 ? run<half, 2, 16, 1, 128, true>(c.qo, c.kv, 32, false, iters, 7)
+                    : run<half, 1, 16, 1, 128, true>(c.qo, c.kv, 32, false, iters, 7);
+    printf("time qo=%5u kv=%5u nfx=%d  %.3f ms\n", c.qo, c.kv, nfx2 ? 2 : 1, r.ms);
+  }
+  return 0;
+}
+```
+
+</details>
