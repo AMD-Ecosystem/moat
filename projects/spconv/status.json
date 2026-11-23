@@ -6,9 +6,9 @@
   "fork_default_branch": "master",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "unclaimed",
+  "stage": "awaiting-fork",
   "adopted_at": "2026-11-23T17:18:16Z",
-  "updated_at": "2026-11-23T17:18:16Z",
+  "updated_at": "2026-11-23T17:18:59Z",
   "head_sha": null,
   "depends_on": [
     "cumm",
@@ -16,5 +16,46 @@
   ],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-23T17:18:59Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    }
+  },
+  "license_spdx": "Apache-2.0 AND BSD-3-Clause",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0 AND BSD-3-Clause",
+      "evidence": "https://github.com/traveller59/spconv/blob/263d6b474/LICENSE",
+      "at": "2026-11-23T17:18:59Z"
+    }
+  ],
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "No upstream AMD PR/branch; #780 got only a third-party pointer to spconv-triton. Replacements, not ports: spconv-triton, FlexGEMM, ZJLi2013/spconv_rocm (branch rocm, FlyDSL rewrite) and its Hygon downstream",
+    "viable": true,
+    "summary": "Sparse convolution library (adopted by jeff 2026-11-20); HIP port via a cumm backend, fp32 SubM/SparseConv3d already match CPU on gfx942 in the study; fp16 needs tensor-op descriptors gated off; upstream dormant",
+    "at": "2026-11-23T17:18:59Z"
+  }
 }
