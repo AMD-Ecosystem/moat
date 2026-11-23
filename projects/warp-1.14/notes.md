@@ -8468,3 +8468,102 @@ xwayland=true
 [xwayland]
 path=$R/usr/bin/Xwayland
 ```
+## Porting session 29 (2026-11-23, linux-gfx950 MI355X, porter): second-round review fix; question 12 measured and stopped
+
+Took the lock with `set-state warp-1.14 linux-gfx950 porting` (from `changes-requested`). Fork `release/1.14.0.amd0` `3c6714b8..b51b1987`: one commit (item 1), pushed; `advance-head` recorded. Item 2 (question 12) is **not committed**: two `fast_math` kernels got slower by more than noise, so per the instruction the table is below for jeff. `HIP_VISIBLE_DEVICES=1` (amd-smi GPU 0) only, `ulimit -c 0`; no process was stopped.
+
+### Item 1: `b51b1987` [ROCm] Keep the ROCm RUNPATH in source builds; drop it with an option (`build_lib.py` +8, `build_dll.py` +1/-8)
+
+- Route chosen: an explicit build option (`--rocm-rpath`, default on; `--no-rocm-rpath` drops `-Wl,-rpath,<root>/lib`), passed by the release build recipe (`agent_space/relbuild.sh` now runs `python build_lib.py --rocm-path "$(python -m rocm_sdk path --root)" -j 64 --no-rocm-rpath`). It is the smaller of the reviewer's two routes: rewriting or checking RUNPATH at packaging time would need an ELF editor (patchelf) in the wheel step. `is_rocm_sdk_root` removed (its only use was the regression). `-fmacro-prefix-map` and the wheel marker change from `90d2ea90` are untouched.
+- Default source build (gfx950, `python build_lib.py --rocm-path <rocm-sdk root> --hip-arch gfx950`): RUNPATH `$ORIGIN:<job>/venv/.../_rocm_sdk_devel/lib`; `ldd` resolves `libamdhip64.so.7` and `libhiprtc.so.7` to `_rocm_sdk_devel/lib`.
+- Session 19's load check without `rocm_sdk`, re-run (`agent_space/s29/smoke/no_rocm_sdk.py` and `smoke.py`, recreated from session 19's listing: `importlib.util.find_spec` reports no `rocm_sdk`, then a hipRTC kernel and `array_sum` from the precompiled library): loads, `version 1.14.0+rocm10.2.0 sum 1000.0`, maps `libamd_comgr.so.3`, `libamdhip64.so.7`, `libhiprtc.so.7` from `_rocm_sdk_devel/lib`, `rocm_sdk imported: False`.
+- C++ examples under CTest on the default build (prebuild scripts with the job venv and `PYTHONPATH=<clone>`, then `cmake -S warp/examples/cpp -B <scratch> -DWARP_NATIVE_DIR=<clone>/warp/native -DWARP_USE_HIP=ON -DPython_EXECUTABLE=<venv python>` with `ROCM_PATH`/`HIPCXX` set, `cmake --build -j 16`, `ctest` with `LD_LIBRARY_PATH` unset): **100% tests passed, 0 tests failed out of 4** (cubin_launch_test 0.25 s, source_include_test 0.23 s, apic_visualization_smoke 0.25 s, apic_visualization_cpu_smoke 0.17 s).
+- The same tree linked with `--no-rocm-rpath`: RUNPATH `$ORIGIN`, no build-machine string in warp.so; the release wheel below is the same.
+- `load_hip_runtime`'s docstring ("elsewhere the dynamic loader finds it") is correct again for source builds and true for wheels through `rocm_sdk`: unchanged.
+- nvcc check: no native file changed (`build_lib.py`, `build_dll.py` only); CUDA build of `b51b1987` (worktree `agent_space/wcuda_s24`, nvcc 12.8, no libmathdx): "Warp build succeeded", RUNPATH `$ORIGIN` as before. jargon and prose: clean.
+
+### Item 2 (question 12): measured, stopped for jeff, not committed
+
+The change (patch at the end of this section; saved as `agent_space/s29/item2_fastmath.patch`): in the hipRTC options, `fast_math` passes `-fapprox-func -freciprocal-math -fgpu-flush-denormals-to-zero` in place of `-ffast-math -fno-finite-math-only`.
+
+Compiler check (ROCm 10.2 clang, gfx950, `agent_space/s29/flags/probe.hip`, one kernel per operation, `-S`):
+- denormals: `.amdhsa_float_denorm_mode_32` 0 (flush) with the three flags, 3 (preserve) with none and with `-ffast-math`.
+- division: `v_rcp_f32` + `v_mul_f32` (9 instructions) with the three flags, as with `-ffast-math`; the correctly rounded sequence (17, `v_div_scale`/`v_div_fmas`/`v_div_fixup`) without.
+- sqrt, exp, log: the bare `v_sqrt_f32`/`v_exp_f32`/`v_log_f32` forms with the three flags (6 to 8 instructions; 23 to 28 without).
+- no reassociation (`(a + 1e8) - 1e8` keeps both adds) and signed zeros kept (`a + 0.0` keeps the add); `-ffast-math` folds both.
+- sinf, cosf: full-precision routines with the three flags (152/147 instructions). The HIP headers pick the fast `__sinf`/`__cosf` only under `__CLANG_GPU_APPROX_TRANSCENDENTALS__`, which Clang defines for `-ffast-math` or `-fgpu-approx-transcendentals` (that spelling gives `v_sin_f32`/`v_cos_f32` offline). Under hipRTC neither changes Warp's sin, cos or tan (measured, below: 0 of 2^20 values change with fast_math, before and after), apparently because hipRTC's built-in headers fix the choice; so `-fgpu-approx-transcendentals` was tried and left out (it had no effect). NVRTC's option maps them to `__sinf`/`__cosf`; on HIP they stay full precision with fast_math, as they already were with `-ffast-math`.
+
+Probes (`agent_space/s28/fastmath_probe.py`, `agent_space/s29/fastmath_probe2.py`), before = installed wheel at `3c6714b8` (`-ffast-math -fno-finite-math-only`), after = the three flags:
+- reassociation `(x + 1e8) - 1e8`: 1.0 before, **0.0 after**; signed zeros `1/(-0 + 0)`: -inf before, **+inf after**; denormals `d + d` with d = 1e-40: 2e-40 before, **0 after** (`d * 1` stays 1e-40 in both: the multiply by one is folded).
+- NaN/Inf checks: kept (test_fast_math_nan_inf passes).
+- division: approximate in both, 300,713 of 2^20 quotients differ from the correctly rounded value, at most 2 ulp (identical before and after).
+- per function, fast_math on against off, before and after alike: exp 957,451 of 2^20 change (max 55 ulp), log 38,908 (1 ulp), sqrt 163,370 (1 ulp), sin/cos/tan 0.
+- `pow(-2, 2)` with fast_math: 4.0 before and after. HIP's `powf` stays the full routine under either flag set (`-ffast-math` gives a 66-instruction log/exp form that also returns 4.0); NVRTC's `__powf` computes `exp2(y * log2(x))`, NaN for a negative base. test_fast_math: **14 tests OK (1 skipped)** after.
+
+Performance, `fast_math=True` (`agent_space/s29/fm_perf.py`, `perf_rounds.sh`): GPU wall time per call, before (`3c6714b8` wheel) against after (fork tree with the three flags), 7 interleaved rounds, GPU otherwise idle (amd-smi: no other process), two independent sets:
+
+| kernel (fast_math=True) | before us (min / median) | after us (min / median) | after/before (min) | after/before (median) | per-round after/before |
+|---|---|---|---|---|---|
+| sph_step | 24942.9 / 25078.9 | 11601.1 / 11679.1 | 0.465 | 0.466 | 0.47 / 0.47 / 0.44 / 0.44 / 0.47 / 0.47 / 0.44 |
+| dem_step | 77978.2 / 79046.5 | 80038.7 / 81138.6 | 1.026 | 1.026 | 1.00 / 1.06 / 1.03 / 1.03 / 1.03 / 1.04 / 1.01 |
+| cloth_simulate_16substeps | 1685.7 / 1691.7 | 1676.8 / 1694.7 | 0.995 | 1.002 | 1.00 / 0.99 / 0.99 / 1.00 / 1.00 / 1.02 / 1.01 |
+| raycast_render | 642.5 / 643.7 | 653.5 / 655.1 | 1.017 | 1.018 | 1.02 / 1.02 / 1.02 / 1.02 / 1.02 / 1.01 / 1.02 |
+| tile_matmul_exp_sqrt_div | 85.2 / 85.6 | 82.2 / 82.5 | 0.966 | 0.964 | 0.96 / 0.97 / 0.97 / 0.95 / 0.97 / 0.97 / 0.96 |
+| noise_floor | 29.3 / 29.4 | 29.1 / 29.4 | 0.995 | 1.001 | 1.00 / 1.00 / 1.00 / 0.98 / 1.01 / 1.00 / 1.00 |
+
+Second set:
+
+| kernel (fast_math=True) | before us (min / median) | after us (min / median) | after/before (min) | after/before (median) | per-round after/before |
+|---|---|---|---|---|---|
+| sph_step | 24799.8 / 25183.2 | 11618.8 / 11735.6 | 0.469 | 0.466 | 0.47 / 0.44 / 0.47 / 0.46 / 0.47 / 0.49 / 0.47 |
+| dem_step | 78046.8 / 79079.8 | 79790.0 / 81277.5 | 1.022 | 1.028 | 1.03 / 1.04 / 1.01 / 1.03 / 1.04 / 1.00 / 1.02 |
+| cloth_simulate_16substeps | 1680.3 / 1694.1 | 1683.3 / 1686.6 | 1.002 | 0.996 | 0.99 / 1.02 / 1.00 / 0.99 / 0.99 / 1.00 / 1.01 |
+| raycast_render | 642.5 / 644.9 | 654.1 / 655.1 | 1.018 | 1.016 | 1.02 / 1.02 / 1.01 / 1.02 / 1.01 / 1.01 / 1.02 |
+| tile_matmul_exp_sqrt_div | 85.1 / 85.6 | 81.5 / 82.4 | 0.958 | 0.963 | 0.93 / 0.96 / 0.97 / 0.96 / 0.96 / 0.97 / 0.97 |
+| noise_floor | 29.3 / 29.4 | 29.3 / 29.4 | 1.000 | 0.999 | 0.99 / 1.00 / 1.00 / 1.00 / 1.00 / 1.00 / 1.00 |
+
+- **Slower by more than noise: `example_dem` step (1.022x to 1.028x, every round 1.00 to 1.06) and `example_raycast` render (BVH mesh ray queries, 1.016x to 1.018x, every round 1.01 to 1.02), against a noise floor of 0.98 to 1.01 per round.** Faster: `example_sph` step 0.466x (2.1x faster), the tile kernel 0.96x; cloth substeps unchanged.
+- Attribution (one 5-round set; the three flags plus `-fassociative-math -fno-signed-zeros`, i.e. the old set minus finite-math, plus denormal flushing): every kernel back to parity with the old set (sph 0.985, dem 0.995, raycast 0.992, cloth 1.005, noise 1.001) except the tile kernel (0.969). So both effects come from reassociation and signed-zero folding: dropping them costs DEM and raycast about 2% and halves SPH's step time; denormal flushing and the rest give the tile kernel its 3 to 4%.
+
+### Question for Jeff (no decision taken; item 2 not committed)
+
+13. Ruling (b) measured: semantics as ruled (above), but two `fast_math=True` kernels are slower by more than noise: example_dem +2.2% to +2.8%, example_raycast +1.6% to +1.8%; example_sph is 2.1x faster and the tile kernel 4% faster. Options: (a) commit (b) as ruled (patch below); (b') commit it and also pass `-fgpu-approx-transcendentals` (no effect under hipRTC today, measured; not recommended); (c) keep the current `-ffast-math -fno-finite-math-only` and say in the release notes that fast_math on AMD GPUs also reassociates and ignores signed zeros. Release-notes sentence, either way (not yet added to the draft): for (a): "`fast_math` enables approximate division, square root, exponential and logarithm and flushes denormals to zero, as NVRTC's `--use_fast_math` does; `sin`, `cos`, `tan` and `pow` keep their full-precision forms on AMD GPUs." For (c): "`fast_math` on AMD GPUs uses Clang's fast-math mode: besides approximate functions and division it lets the compiler reassociate floating-point operations and ignore the sign of zero, which NVRTC's `--use_fast_math` does not; NaN and Inf checks are kept."
+
+Patch (item 2, against `b51b1987`):
+
+```diff
+diff --git a/warp/native/warp.cu b/warp/native/warp.cu
+index 727148c7..808dd763 100644
+--- a/warp/native/warp.cu
++++ b/warp/native/warp.cu
+@@ -4565,9 +4565,11 @@ size_t wp_hip_compile_program(
+     stored_options.push_back("-DWP_ENABLE_MATHDX=0");
+ 
+     if (fast_math) {
+-        stored_options.push_back("-ffast-math");
+-        // NVRTC's --use_fast_math keeps NaN and Inf semantics; Clang's -ffast-math would assume finite values
+-        stored_options.push_back("-fno-finite-math-only");
++        // what NVRTC's --use_fast_math enables (approximate functions and division, denormals flushed to zero);
++        // Clang's -ffast-math would also reassociate, ignore signed zeros and assume finite values
++        stored_options.push_back("-fapprox-func");
++        stored_options.push_back("-freciprocal-math");
++        stored_options.push_back("-fgpu-flush-denormals-to-zero");
+     }
+ 
+     // NVRTC's default --fmad=true contracts across statements; Clang's HIP default does too and honors pragmas
+```
+
+### Final step (head `b51b1987`)
+
+- Release build: `agent_space/relbuild.sh <clone> 64` (25 targets, `--offload-compress`, `--no-rocm-rpath`), wall 177 s; warp.so 10,922,824 bytes, RUNPATH `$ORIGIN`, no build-path string.
+- Wheel: `python -m build --wheel -C--build-option=-Plinux-x86_64 -o <job>/wheel` in the clean clone at `b51b1987`. **Kept at `/var/lib/jenkins/fleet/jobs/mi355-20261119-154230-warp114-perf-porter-mi355-prompt/wheel/warp_lang-1.14.0+rocm10.2.0-py3-none-manylinux_2_28_x86_64.whl`: 37,192,948 bytes, sha256 `3e6769f5aca2b88c151929b4212cc3d32c65751851d6d98c0484e1c6e31d2a37`.** Contents: warp.so 10,922,824 (RUNPATH `$ORIGIN`), warp-clang.so 67,136,896, warp.so.rocm 8 (`'\n10.2.0\n'`); 548 entries; no member contains the job path. METADATA `Version: 1.14.0+rocm10.2.0`, `Requires-Dist: rocm<10.3,>=10.2`. Session 28's wheel moved to `<job>/wheel/old_3c6714b8/`.
+- Installed into the job venv with the job's pip (force-reinstall, no deps; dependency check clean): **installed size 106,363,470 bytes**; installed warp.so sha256 equals the build's (and session 28's: no native source changed).
+- Full default suite from the installed wheel (`agent_space/suite_wheel.sh`, outside the tree, fresh cache, `HIP_VISIBLE_DEVICES=1`): **Ran 7562 tests in 517.0 s, OK (skipped=81)**, wall 522 s; no other process on the GPU, load average 15 to 23.
+- Tile tests in debug mode from the installed wheel: **Ran 599 tests in 139.4 s, OK (skipped=9)**, no device assertion, no error 700.
+- Every result clean: stage moved to `ported` (lock released). Item 2 waits on jeff's answer to question 13.
+
+### Next step
+
+- Jeff rules question 13 (item 2). If (a): one commit of the patch above plus the release-notes sentence, nvcc check, and a wheel rebuild; the stage would go back through review as a delta.
+- A gfx1250 fp32 WMMA measurement (deferral `warp-hip-gfx1250-fp32-wmma`, ruled "now") is still running on another host and may add one more small commit after this round, which also means a wheel rebuild.
+- Validators revalidate at `b51b1987`.
