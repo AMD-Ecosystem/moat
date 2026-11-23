@@ -3,12 +3,12 @@
   "name": "HierarchicalKV",
   "upstream_url": "https://github.com/NVIDIA-Merlin/HierarchicalKV",
   "fork_url": "https://github.com/AMD-Ecosystem/HierarchicalKV",
-  "fork_default_branch": "main",
+  "fork_default_branch": "master",
   "priority": 0.0,
   "ext_type": "cmake",
   "stage": "planned",
   "adopted_at": "2026-11-11T15:46:07Z",
-  "updated_at": "2026-11-20T21:20:44Z",
+  "updated_at": "2026-11-23T19:02:22Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
@@ -82,5 +82,11 @@
     "arch": "linux-gfx942",
     "since": "2026-11-20T21:12:20Z",
     "at": "2026-11-20T21:20:44Z"
+  },
+  "base_branch_ruling": {
+    "branch": "master",
+    "previous": "main",
+    "by": "jeffdaily",
+    "at": "2026-11-23T19:02:22Z"
   }
 }

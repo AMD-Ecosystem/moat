@@ -97,3 +97,9 @@ Options:
 - The CMake HIP Debug flags (`-O0`) would compile kernels unoptimised where nvcc's Debug (`-g`) does not, so the HIP branch sets `CMAKE_HIP_FLAGS_DEBUG` optimised.
 - Full inventory, risks, change list, build and test commands are in `plan.md`. `surface.json` was generated (76 CUDA files, 34 components), and 6 planner-added components cover what the scan cannot see: the 19 foreach-built repro benchmarks, `native_tbe`, Bazel, the inline-PTX timer, hybrid host-memory values and the libcu++ atomics.
 - No GPU was used and nothing was built in this run.
+
+## Rulings on the planner's questions (Jeff Daily, 2026-11-23)
+
+- Decision 1 (scope): **C**. Port the header library, every default CMake target (the gtest executables and the 3 default benchmarks), the opt-in research benchmarks (`-DHKV_BUILD_REPRO_BENCHMARKS=ON`), and a ROCm Bazel path (a `rocm_configure` equivalent beside `cuda_configure`). `benchmark/native_tbe` and `baselines/` stay out (outside every option the planner offered).
+- Decision 2 (windows gate): **not ruled yet**. Jeff asked what a waiver would cost; the Linux port proceeds meanwhile. Do not assume a waiver or a Windows filter.
+- Decision 3 (base branch): **yes**. `set-base-branch HierarchicalKV master --by jeffdaily` was run on 2026-11-23.
