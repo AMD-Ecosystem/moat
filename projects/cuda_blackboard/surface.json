@@ -176,16 +176,16 @@
       "evidence": "ros2 launch with a 64x48 PNG: 3/3 /output_image messages bgr8 and byte-identical to input; porter 2026-11-20 linux-gfx942 at 9e0fb86 (notes.md, Porter section)"
     }
   ],
-  "scoped_out": [],
-  "owed": [
+  "scoped_out": [
     {
       "id": "feature:agnocast",
-      "reason": "awaiting Jeff's ruling on the Agnocast build variant (planner Question 1 in notes.md); the HIP port changes no Agnocast code"
+      "reason": "Jeff Daily, 2026-11-23: default build only; the optional Agnocast variant has no GPU code and the HIP port changes none of it"
     },
     {
       "id": "test:test_start_worker_thread",
-      "reason": "awaiting Jeff's ruling on the Agnocast build variant (planner Question 1 in notes.md); the HIP port changes no Agnocast code"
+      "reason": "Jeff Daily, 2026-11-23: default build only; the optional Agnocast variant has no GPU code and the HIP port changes none of it"
     }
   ],
+  "owed": [],
   "removed_from_floor": []
 }
