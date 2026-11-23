@@ -1320,6 +1320,45 @@ Recorded: `set-blocked anari-visionaray linux-gfx942 "<reason above>"` (this car
 
 Still owed at 6f1e7937: the first GPU pass. linux-gfx90a (wave64, has texture hardware), linux-gfx1100 and windows-gfx1201 runs, plus the nvcc compile check. wave64 must come from gfx90a, not from an MI300 or MI355 host.
 
+## Validation 2026-11-23 (linux-gfx90a, validator) -- PASS at 6f1e7937 (first GPU pass of fix round moat-fix-10)
+
+Head 6f1e7937 on moat-fix-10 (fork clone at projects/anari-visionaray/src, `git rev-parse HEAD` = 6f1e7937b823184cbc34a3296a65ca273a249861, `git status --porcelain` empty), stage review-passed, platform revalidate. GPU: AMD Instinct MI250X / MI250 (gfx90a:sramecc+:xnack-), HIP_VISIBLE_DEVICES=1 (dispatcher pin, kept), ROCm 10.1.0 pip SDK, gcc 13.3.0. Everything under `ulimit -c 0`.
+
+Device check first: a 64-thread smoke kernel on the pinned GPU passes (`timeout 60 ./smoke` -> `h[63]=126`, rc 0).
+
+Build: the porter section's recipe with `-DCMAKE_HIP_ARCHITECTURES=gfx90a` and `-j42`, deps in the job dir: ANARI-SDK next_release @ 47b22af (rc 0), visionaray master @ 99d4829c plus the hip_bvh.h assign_indices fix (rc 0). Fork configure + `utils/timeit.sh anari-visionaray compile -- cmake --build $J/build -j42` + install: rc 0, 0 errors. libanari_library_visionaray_hip.so: 8 offload bundles (`.hip_fatbin` 6.0 MB), exports `anari_library_visionaray_hip_new_library` only. CPU library built too.
+
+Harness: the gfx1201 job's anari_validate.cpp lives on another host, so it was rewritten here from the porter section's description (agent_space/anari_validate.cpp; env SCENES, RENDERER, RUNS): triangle surface, 32^3 structuredRegular radial blob (nearest, linear), NanoVDB createFogVolumeSphere(50) (nearest, linear), 216-splat gaussianSplat; 256x256 FLOAT32_VEC4, RUNS=8 per device; PASS = every run nonzero and with more than one distinct colour; also prints run-to-run identity and the HIP vs CPU mean/max abs diff. One scene per process, because a GPU fault leaves the process's HIP device dead for every later scene (the first all-scenes run showed exactly that after structured-linear):
+```
+c++ -O2 -std=c++17 anari_validate.cpp -I$J/deps/anari-install/include -I<src>/external \
+  -L$J/deps/anari-install/lib -lanari -Wl,-rpath,$J/deps/anari-install/lib -o anari_validate
+ulimit -c 0
+for r in default raycast; do for sc in triangle-surface structured-nearest structured-linear nanovdb-nearest nanovdb-linear gaussian-splat; do
+  RENDERER=$r SCENES=$sc RUNS=8 ANARI_LIBRARY_PATH=$J/build/install/lib \
+    LD_LIBRARY_PATH=$J/build/install/lib:$J/deps/anari-install/lib \
+    timeout 600 ./anari_validate visionaray_hip visionaray
+done; done
+```
+
+Results, HIP device (visionaray_hip), min over 8 runs (`default` = pathtrace renderer, accumulates so runs are not identical; raycast runs are identical):
+
+| scene | pathtrace nonzero/distinct | raycast nonzero/distinct | result |
+|---|---|---|---|
+| triangle-surface | 48781 / 28838 | 48806 / 29797 (pixel-identical to CPU) | PASS |
+| structured-nearest | 4324 / 733 | 21266 / 1382 | PASS |
+| structured-linear | fault | fault | known limitation, see below |
+| nanovdb-nearest | 10064 / 1641 | 24673 / 5630 | PASS |
+| nanovdb-linear | 10125 / 1871 | 24395 / 8296 | PASS |
+| gaussian-splat (new) | 26803 / 1185 | 65536 / 23777 | PASS |
+
+CPU device (visionaray) cross-check: surface, structured nearest/linear, NanoVDB nearest/linear PASS with both renderers (raycast nonzero 48806 / 21266 / 20709 / 24674 / 24399). HIP vs CPU mean abs diff (raycast): surface 0.00000, structured-nearest 0.0078, NanoVDB 0.094/0.089 (same coverage, nonzero 24673 vs 24674; the volume integration differs in sampling detail, colour-level not coverage-level).
+
+Against the last linux-gfx90a record (c7ac989c, 2026-06-25, older harness that counted passing runs out of 8): surface, structured-nearest, NanoVDB nearest and linear were PASS there and are PASS here; the gaussian-splat scene is new (upstream feature) and passes on the HIP CWBVH path. Differences, each with its cause:
+- structured-linear on HIP: HSA_STATUS_ERROR_MEMORY_FAULT (faulting addr 0x0) in the render kernel, both renderers. The known CDNA2 limitation, deferred as `visionaray-hip-texture-linear-float-cdna` (linear-filtered float hip_texture faults on gfx90a). Every earlier gfx90a record tested structured volumes with nearest only (VOL_NEAREST=1) for this reason; not a regression and not in this round's delta.
+- gaussian-splat on the CPU device: segfault in `DeviceBVH<dco::Gaussian>::rebuildHostBVH2` called from `GaussianSplat::finalize` (gdb). The CPU branch of that function is upstream's code, unchanged by the port, and upstream c1aa91b built CPU-only here (HIP/CUDA OFF, same deps) segfaults on the same scene (rc 139) while passing the surface scene. Upstream CPU-device behaviour with this input, not a port issue; there is no CPU splat image to diff the HIP one against.
+
+Content checks: `jargon.py --port anari-visionaray` clean (after creating a local `main` branch from origin/main in the fork clone so the range resolves); README documents the HIP device build. Recorded: `set-state anari-visionaray linux-gfx90a completed` (validated_sha 6f1e7937). wave64 gate satisfied at this head. Still owed at 6f1e7937: linux-gfx1100 and windows-gfx1201 GPU runs (and linux-gfx1201 once a healthy GPU is pinned).
+
 ## Fix review PR draft
 
 Title: Merge upstream main into the HIP device PR (#10)
@@ -1343,17 +1382,18 @@ Retested:
 
 - linux-gfx1201 (ROCm 10.1): CPU and HIP libraries build at 6f1e793 (8 gfx1201 code objects), against visionaray master with the hip_bvh.h fix. The CPU device renders the surface scene. GPU run not done on this host: the GPU the job was pinned to hangs at HIP runtime init for any program (a 64-thread smoke kernel too), so the HIP render tests are owed.
 - CUDA compile check of 6f1e793: owed (no nvcc on this host).
-- Owed before approval: GPU runs on gfx90a, gfx1100 and Windows gfx1201 at 6f1e793; nvcc compile check.
+- linux gfx90a (MI250X, ROCm 10.1): HIP device at 6f1e793 renders the surface, nearest-filtered structured volume, NanoVDB (nearest and linear) and Gaussian splat scenes on the GPU, with the CPU device as cross-check. Linear-filtered structured volumes fault on this GPU, as before this round (no hardware linear filtering of float textures on gfx90a).
+- Owed before approval: GPU runs on gfx1100 and Windows gfx1201 at 6f1e793; nvcc compile check.
 
 ## Upstream reply
 
-I merged main into this branch and resolved the conflicts. Main's HIP code needed a few fixes to build and run against visionaray master: the HIP device now uses CWBVHs like the CUDA device, the HIP library exports its entry point under the configured name again, the TAA history copy runs on the device, the cudaDevice selection works on HIP too, and two HIP-only host staging paths now wait for their data.
+I merged main into this branch and resolved the conflicts. Main's HIP code needed a few fixes to build and run against visionaray master: the HIP device now uses CWBVHs like the CUDA device, the HIP library exports its entry point under the configured name again, the TAA history copy runs on the device, the cudaDevice selection works on HIP too, and two HIP-only host staging paths now wait for their data. I tested it on an MI250X (gfx90a) with ROCm 10.1: surface, nearest-filtered structured volume, NanoVDB and Gaussian splat scenes render on the GPU. Linear-filtered structured volumes still fault on that GPU, as they did before this merge, because it has no hardware linear filtering of float textures.
 
 The HIP device also needs a small fix in visionaray: in include/visionaray/detail/bvh/hip_bvh.h, the two assign_indices() overloads take cuda_index_bvh<P>& and cuda_bvh<P>& and should take hip_index_bvh<P>& and hip_bvh<P>&. Nothing in visionaray includes that header, so its CI doesn't catch it.
 
 ## Notes for us (not posted)
 
-- The reply names no GPU because no platform has a completed validation at 6f1e793. When validations land, add one sentence naming exactly those GPUs before opening the fix review PR.
+- The reply names only the GPUs with a completed validation at 6f1e793 (so far MI250X/gfx90a). When more validations land, extend that sentence before opening the fix review PR.
 - Whether to send the visionaray hip_bvh.h fix as a PR to szellmann/visionaray (a follow-up round on the visionaray project) or leave it to the maintainer from this reply is jeff's call (deferral visionaray-hip-lbvh-assign-indices).
 - gfx942/gfx950 (MI300 class) cannot run the HIP device (no texture API; see Validation 2026-11-23 linux-gfx942). Do not list MI300 among the retested GPUs.
 - Windows risk: visionaray's intersect_ray1_cwbvh.inl uses __lzcnt under _WIN32 in code that is now compiled for the HIP device; untested here.
