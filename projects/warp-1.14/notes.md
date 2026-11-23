@@ -7582,3 +7582,46 @@ Surface item `feature:gl-interop`: try a headless (EGL) run on a Linux Radeon fl
 ## Ruling on session 28's question 12 (jeff, 2026-11-23)
 
 (b), conditional on a measurement: on HIP, `fast_math` gets only what NVRTC's `--use_fast_math` has (approximate functions, reciprocal division, denormal flushing: `-fapprox-func -freciprocal-math -fgpu-flush-denormals-to-zero`, with `-fno-finite-math-only` no longer needed), not Clang's whole `-ffast-math` (no reassociation; signed zeros kept). Same principle as the contraction ruling: match what CUDA does. The porter measures fast-math kernels before and after; if any is slower by more than noise the number goes to jeff before the commit. The release notes get one sentence either way.
+## Review 2026-11-23, second round (linux-gfx950 MI355X, reviewer): fix round `26be6725..3c6714b8`
+
+Scope: the 14 commits of porting session 28 on `release/1.14.0.amd0`, reviewed with the pr-review skill. For each of findings 1 to 13 I checked that the fix is in place and correct, and that it changes no CUDA path and adds no defect. I also reviewed `60051d5e` (dynamic shared memory alignment) and the finding 3 design (overflow into gridDim.y) on their merits, for wave64, wave32 and Windows. Every finding was re-read against the code. Out of scope, as ruled: finding 14, finding 17, question 12 and the earlier "Ruling ..." sections. Tools: ROCm 10.2 clang from the porter job's `_rocm_sdk_devel` and nvcc 12.8. Nothing ran on a GPU.
+
+### Summary
+
+The round fixes findings 1 to 13. Verdict: **Request Changes**, for one regression introduced by the finding 11 fix.
+
+### Build System
+
+1. **`warp/_src/build_dll.py:941-944` (`90d2ea90`): every build against the ROCm Python packages now loses the ROCm RUNPATH, not only the wheel (verified).** Finding 11 asked to drop the build machine's paths from the release wheel. `is_rocm_sdk_root` instead drops `-Wl,-rpath,<root>/lib` from every library linked against `_rocm_sdk_devel`. That root is also what `build_lib.py` picks by default (`build_lib.py:142`, "found through 'rocm-sdk path --root'") and what every Test Plan in the branch uses. Measured on the porter's tree build at `3c6714b8` (`<porter job>/moat/projects/warp-1.14/src/warp/bin/warp.so`): RUNPATH is `[$ORIGIN]`, `ldd` gives `libamdhip64.so.7 => not found` and `libhiprtc.so.7 => not found`, and `ctypes.CDLL` of it fails with `OSError: libamdhip64.so.7: cannot open shared object file`. Builds from before the round (for example `agent_space/wbase`) resolve both libraries through `<root>/lib`. So a source build now loads only in a Python process that imports `rocm_sdk` first. Two things that worked before break:
+   - Loading without `rocm_sdk`, which session 19 tested and recorded ("Source build without `rocm_sdk` ... libraries from `_rocm_sdk_devel/lib` through warp.so's RUNPATH"). `load_hip_runtime`'s docstring still promises it (`warp/_src/context.py:4611-4612`: "elsewhere the dynamic loader finds it").
+   - The C++ examples that link `warp.so` into a non-Python executable: `03_apic_visualization_cpu` links no HIP runtime, and `02_apic_visualization` links no hiprtc. Session 19 passed them 4 of 4 under CTest. Inferred from the `ldd` result, not run: they now fail to start unless `LD_LIBRARY_PATH` names the ROCm `lib` directory.
+
+   Fix: keep the rpath in the default build and drop it only for the release wheel. One way is an explicit `build_lib.py` option that only the release build recipe passes. Another is for wheel packaging to rewrite or check `warp.so`'s RUNPATH. Then re-run session 19's no-`rocm_sdk` load check and the C++ examples CTest on a default source build. The wheel's marker change and `-fmacro-prefix-map` in the same commit are fine as they are.
+
+### Checked, not findings
+
+- Finding 1: the cap is now `min(unsigned(max_blocks), min(0xFFFFFFFF / block_dim, 0x7FFFFFFF))`. `max_blocks` is positive at that point (`<= 0` becomes INT_MAX just above), and `block_dim` 1 gives 2^31 - 1.
+- Finding 3, the design. `wp_launch_grid` keeps gridDim.x at most `0xFFFFFFFF / 256` blocks and puts the rest in gridDim.y. Each dimension is then within HIP's 2^32 - 1 threads, and nothing depends on the wavefront width or on Windows. I checked all 67 `wp_launch_device` sites, the two direct launches and the Windows captured memset:
+  - Every kernel whose element count is 64-bit takes `WP_GRID_THREAD_INDEX`, and every one bounds-checks (`tid < n`, or `i < shape[0]` plus the inner dimensions for 2D to 4D). The overshoot of up to one gridDim.x row is therefore harmless.
+  - The kernels left on the 1-D index (`bvh.cu`, `mesh.cu`, `hashgrid.cu`, `volume.cu`, `sparse.cu`) all take `int` counts, so they never reach a second row.
+  - No built-in kernel strides over the grid, so gridDim.y > 1 cannot duplicate work.
+  - The CUDA expansion is the old grid text, and the index has the same value as before.
+
+  A capped grid with a grid-stride loop, or split launches, would each have touched every kernel body or signature. This is the smaller change.
+- Finding 2: nvcc 12.8 `-use_fast_math` keeps all three of `isnan`/`isinf`/`isfinite` (`setp.gtu`/`setp.eq`/`setp.lt` against 0f7F800000), so the new `test_fast_math_nan_inf` holds on CUDA as well as on the CPU and on HIP. `test_pow` only prints on a mismatch (`print`, `wp.expect_eq`), so `test_fast_math_cuda` cannot fail on any device. That makes the commit body's "passed on HIP only because its isnan check was folded away" inexact. The 4.0 expectation is harmless, and the body is published history, so there is nothing to change.
+- Finding 4: ROCm 10.2 clang `__has_builtin` gives f32 MFMA 1, f64 MFMA 0 and bf16_1k 0 on gfx908, and 1/1/1 on gfx90a, gfx942 and gfx950. The primary `op<T>` template has `available = false`, so gfx908 falls back to the scalar path for fp64 and bf16.
+- Finding 5: in ROCm 10.2's `amd_warp_sync_functions.h`, `__ballot_sync` returns `__ballot(p) & mask`, and the shuffles ignore the mask after `__hip_check_mask`. `__activemask()` is the EXEC mask on wave64 and on wave32 (64-bit, upper half zero on wave32). All `*_sync` call sites in `warp/native` now pass `WP_TILE_SYNC_MASK` or a ballot-derived mask, and `__syncwarp()` without a mask does no check. The CUDA mask is still `0xFFFFFFFF`.
+- `60051d5e` on its merits: a ROCm 10.2 clang test kernel with 12 bytes of static LDS has `.amdhsa_group_segment_fixed_size` 12 without the attribute and 16 with it. So the window does start after the static variables, the attribute pads the start to 16, and the runtime accounts for the padding. Other points:
+  - `alignas(16)` after `__shared__` does fail to compile ("an attribute list cannot appear here"), as the lesson says.
+  - It is the only `extern __shared__` declaration that tiles use (nanovdb's `smem_buf` is separate).
+  - At most 15 bytes of padding per kernel, with no dependence on the wavefront width.
+  - Windows uses the same clang.
+  - The CUDA declaration is unchanged.
+- Findings 6 to 10 and 12: correct as described. `wp_memcpy_h2d` returns bool. No reference to `wp_cuda_device_get_warp_size` or `warp_size` remains. `requires-python >= 3.10`, so `write_text(newline=)` is fine. Finding 9's rewritten term equals the old one for `BD >= kWave`, and `supported()` checks `BD % kWave == 0` before calling it.
+- Finding 13, on the shapes: `(16,32,16)` reaches `group` 2 and `(32,64,32)` reaches `group` 4 on wave64 at 64 threads. On wave32, 96 threads gives `group` 2 with 3 waves. bf16 is covered on MFMA and on WMMA. The new block sizes and the bf16 case are also registered for NVIDIA devices, where they exercise cuBLASDx at 16 and 48 threads, sizes no upstream `tile_matmul` test uses. No NVIDIA GPU has run them. Recorded as a gap, not a finding.
+- The two new lessons (dynamic shared memory alignment, `*_sync` mask check) match the headers and the compiler output above. The lesson edit for finding 15 and the session-26 release notes text for finding 16 are fixed. The superseded session-21 draft (line ~5342) still has the old Textures sentence; the session-26 draft is the current one.
+- Commit hygiene across the 14 commits:
+  - Titles are at most 72 characters, and `[ROCm]` is on the 13 ROCm-specific commits; the shared test commit `3c6714b8` has none.
+  - Every commit has the AI disclosure and a Test Plan, with no Co-Authored-By trailer and no non-ASCII characters.
+  - `jargon.py --port warp-1.14`: clean.
+  - The branch is 0 commits behind `release-1.14`.
