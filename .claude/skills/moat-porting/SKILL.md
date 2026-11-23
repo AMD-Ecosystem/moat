@@ -72,8 +72,8 @@ what passes and what does not).
   and a rough cost, and a person decides.
 - NATTEN and mirage are recorded `cant-port` on CUTLASS/CuTe grounds from before FlyDSL was
   available. Revisiting them is a person's call, not an agent's. (This line used to name
-  FlashKDA and spconv too; their recorded dispositions are `ported-elsewhere` and
-  `already-supported`. Read `data/dispositions.json`, not a list in prose.)
+  FlashKDA and spconv too, which was never their disposition. Read
+  `data/dispositions.json`, not a list in prose.)
 - MOAT ported OpenCV's CUDA modules (opencv/opencv_contrib#4147). A project blocked on
   "OpenCV CUDA has no ROCm build" records `depends_on: [opencv_contrib]` rather than a
   decline.
@@ -319,6 +319,12 @@ This is a docs, diff, and review checkout, not a build checkout -- a compile nee
 
 ## Fleet hosts
 
+- A fleet worker's background shell command is stopped at 2 hours, whatever `timeout` it
+  asked for. A cold Triton run was killed that way at 120 of its 150 allowed minutes. For
+  a GPU run that may go longer, start it with `setsid nohup <wrapper> &`, have the wrapper
+  write an exit marker, and wait on the marker in foreground polls of under 10 minutes.
+  Keep whatever makes the work resumable outside the process (there, a persistent
+  `TRITON_CACHE_DIR`, so the killed run's compiles were not lost). (Pointcept)
 - Host and toolchain diagnostics specific to MOAT's machines (the gfx1151 laptop's System32
   runtime, TheRock layouts per host) belong in project notes or memory, not in
   `cuda-to-rocm`. Its `windows.md`, `linux-host-setup.md` and `platform-limits.md` are
