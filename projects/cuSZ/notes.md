@@ -1,5 +1,28 @@
 # cuSZ notes
 
+## CUDA compile check 2026-11-23 (@ b61a885e, moat-fix-91 -- CUDA backend intact, identical to upstream b63d8c68)
+
+Closes the `cuda-not-validated` item from the gfx90a validation. Host: mi355 fleet host, no NVIDIA GPU (compile and link only; nothing run). nvcc 12.8.93 (`/usr/local/cuda-12.8`), gcc 13.3.0, CMake from `/opt/python-3.11-venv`, Ninja, `-j16`. Trees: fork `moat-fix-91` at b61a885e (= recorded head_sha) and upstream master b63d8c68 (the second parent of merge 850f79bb), each a detached worktree of `projects/cuSZ/src` under the job directory, `third_party/lc` submodule at 1cac09c9 in both. Unlike the June check, LC is ON (the default): master calls the LC codecs unconditionally, so `PSZ_ACTIVATE_LC=OFF` no longer links on CUDA either.
+
+```bash
+for t in up port; do   # up = b63d8c68, port = b61a885e
+  cmake -S $t -B build-$t -G Ninja -DCMAKE_BUILD_TYPE=Release -DPSZ_BACKEND=CUDA \
+    -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.8/bin/nvcc -DCMAKE_CUDA_ARCHITECTURES=86 \
+    -DBUILD_TESTING=ON -DPSZ_BUILD_EXAMPLES=ON
+  cmake --build build-$t -j16 -- -k 0
+done
+```
+
+Result: both trees configure and build rc=0, 163/163 Ninja steps, 0 errors. Warnings are the same 6 in both: 3x `-Wdeprecated-declarations` `clear_buffer()` in codec/hf/src/hf_buf.cc (line 532 upstream, 539 port; the port's `template` keyword hunks shift it 7 lines), 1x the same in codec/fzg/src/fzg_buf.cc:176, and nvcc `#177-D` unused `DenseShift` in codec/hf/hfr_concat.cuh:52. No new warning from the port.
+
+Equivalence, not just success:
+- `ninja -t targets all`: identical target lists. `ctest -N`: identical 92 registered tests (nothing run).
+- `ninja -t commands` with the tree paths normalized: every compile and link command is byte-identical (same flags, sources, link lines).
+- Device code: `cuobjdump -elf` (this toolkit has no `nvdisasm`, so `-sass` prints nothing) of all 69 nvcc objects (67 `.cu.o` plus test_iterative_reuse and test_single_symbol, compiled as CUDA) is identical once nvcc's per-TU `_INTERNAL_<hash>` / `_GLOBAL__N__<hash>` / `_cu_<hash>` name mangling, which hashes the source path, is normalized. That includes hfd26.cu (the `__launch_bounds__((...))` parens), the 8 lc_gen comp/decomp TUs (the `__HIP_PLATFORM_AMD__` WS branch), the spl_y24 TUs (the forward-declaration change) and the histsp/atomics files.
+- Host code: `objdump -d -r` of all 123 objects is identical under the same normalization plus `.LC` label offsets. Those offsets come from `__FILE__` strings that contain the worktree name `up` or `port`. That covers hf_buf.cc, buf_comp.cc and cxx_sp_gpu.h users (the `template ptr_of` change).
+
+Verdict: the port changes nothing nvcc compiles. The shared C++ edits in 6c9293a0 and 6d1d4e21, the hfd26 parens and the lc_gen `#if` give the same CUDA objects as upstream master. All other port changes are HIP-only (hip-compat shims, `PSZ_BACKEND STREQUAL HIP` CMake branches, `__HIP_*` guards). Fork clone clean (`git status --porcelain` empty); nothing pushed, no platform state touched.
+
 ## Porter (fix round, base absorb) 2026-11-23 (linux-gfx90a @ 16623130 -- ported)
 
 Why: upstream PR szcompressor/cuSZ#91 reported `mergeable: CONFLICTING`, `mergeStateStatus: DIRTY`. The thread has no comments, no reviews and no line comments (read 2026-11-23 with `gh pr view 91 --repo szcompressor/cuSZ --json comments,reviews` and `gh api repos/szcompressor/cuSZ/pulls/91/comments`). PR head = 11140547 = recorded published_sha, so nobody moved the branch. No code change was asked for; the round absorbs upstream master.
