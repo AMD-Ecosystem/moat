@@ -7931,3 +7931,25 @@ echo "suite rc=$?"
 >     print(f"| {key[0]} | {key[1]}x{key[1]} | {key[2]} | {m['scalar_fwd']:.3f} | {m['wmma_fwd']:.3f} | {m['scalar_fwd'] / m['wmma_fwd']:.2f}x | {adj} | {'/'.join(c.split(':')[1] for c in ck if c.startswith('wmma'))} |")
 ```
 
+
+### Addendum: the head moved to `3c6714b8` during this session
+
+The porter's fix round advanced `head_sha` to `3c6714b8` while these runs were in progress. Everything above ran at `26be6725`, as requested; nothing ran at `3c6714b8`. The fix round rewrote the WMMA comment in `tile_matmul_mma.h`, so the item 3 diff no longer applies verbatim (`patch --dry-run`: 1 of 1 hunk failed). Here is the same change against `3c6714b8`, with the same condition and the comment adapted to the new wording:
+```diff
+--- a/warp/native/tile_matmul_mma.h
++++ b/warp/native/tile_matmul_mma.h
+@@ -90,9 +90,9 @@
+ #endif
+ 
+ #elif (defined(WP_TILE_WMMA) && WP_TILE_WMMA) || __has_builtin(__builtin_amdgcn_wmma_f32_16x16x16_f16_w32_gfx12)       \
+-    || __has_builtin(__builtin_amdgcn_wmma_f32_16x16x16_f16_w32)
+-// 32-lane WMMA. The gfx11 and gfx12 fp16 and bf16 layouts are measured and on; the gfx1250 path stays off unless
+-// WP_TILE_WMMA is defined to 1 (each WMMA builtin exists on exactly one target family).
++    || __has_builtin(__builtin_amdgcn_wmma_f32_16x16x16_f16_w32) || __has_builtin(__builtin_amdgcn_wmma_f32_16x16x4_f32)
++// 32-lane WMMA. The gfx11 and gfx12 fp16 and bf16 layouts and the gfx1250 fp32 layout are measured and on (each
++// WMMA builtin exists on exactly one target family).
+ #define WP_TILE_MMA 1
+ constexpr int kWave = 32;
+ 
+```
+The fix round's other changes to that header leave the gfx1250 fp32 path alone. They guard the MFMA `op<float64>`/`op<bfloat16>` for gfx908, change a comment on gfx12 bf16, and change `amortizes_operand_loads`' non-`k_split` branch (gfx11 only; gfx1250's `op<float32>` has `k_split = true`). `op<float32>` for gfx1250 is unchanged. The new term is true on gfx1250 only: ROCm 10.2 clang `--cuda-device-only -E` on `__has_builtin(__builtin_amdgcn_wmma_f32_16x16x4_f32)` is 1 for gfx1250 and 0 for gfx1201, gfx1100 and gfx950. Whether these results carry to `3c6714b8` is the validator's call; no record was changed here.
