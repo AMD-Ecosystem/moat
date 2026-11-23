@@ -43,3 +43,10 @@ Nothing in `surface.json` that depends on Q1/Q2 has been marked covered or scope
 - Environment risk, not ROCm: torchaudio 2.9+ (maintenance mode) removed APIs deprecated in 2.8 and routes `load`/`save` through TorchCodec; RNNT loss and `forced_align` were on the keep-or-drop list. wenet uses `torchaudio.info`, `sox_effects`, `rnnt_loss`, `forced_align`. The newest ROCm wheels are torch/torchaudio 2.11 (`rocm7.1`). The fleet host's shared torch is a 2.16 dev build with no torchaudio, so validation needs its own venv. Plan rule: check the APIs first; fall back to the newest ROCm pair that still has them and register the break as a deferral rather than fixing it in the ROCm PR.
 - k2 ROCm support is merged upstream (k2-fsa/k2#1353, 2026-07-02); optional for wenet, so no `depends_on`.
 - Sources checked: torchaudio 2.9 notes (https://newreleases.io/project/github/pytorch/audio/release/v2.9.0, https://github.com/pytorch/audio/issues/3902); onnxruntime ROCm provider removal and MIGraphX provider (https://onnxruntime.ai/docs/execution-providers/MIGraphX-ExecutionProvider.html, https://rocm.docs.amd.com/projects/ai-ecosystem/en/latest/inference/onnxruntime.html).
+
+## Rulings on the planner's questions (Jeff Daily, 2026-11-23)
+
+- Q1 (NVIDIA-only deployment layer): **b**. `runtime/gpu/` (Triton, TensorRT, FasterTransformer, the Riva decoder) is scoped out and the docs mark it NVIDIA-only; the two onnxruntime scripts (`wenet/bin/export_onnx_gpu.py`, `recognize_onnx_gpu.py`) select `MIGraphXExecutionProvider` on AMD and are validated.
+- Q2 (LibTorch C++ runtime GPU option): **a**. Yes, Linux only like upstream, by letting `runtime/core/cmake/libtorch.cmake` use a local LibTorch.
+- Q3 (upstream PR with no Python source change): **a**. Yes: ROCm install docs plus the Q1 script change and the Q2 CMake option, backed by GPU validation.
+- Standing ruling of the same day: Windows laptop GPU runs go last across all ports; they are queued, not started.
