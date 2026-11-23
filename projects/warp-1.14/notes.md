@@ -6721,7 +6721,7 @@ Tested on hardware with Warp's test suite: AMD Instinct MI355X (gfx950), MI300X 
 - `wp.get_runtime().toolkit_version` and `driver_version` (the CUDA Toolkit and CUDA driver versions) are `None`, as in a CPU-only build. The new `rocm_version` is the ROCm release the library was built with, for example `(10, 2)`, and `hip_version` is the version of the HIP runtime loaded in the process, for example `(7, 17)`; both are `None` in CUDA and CPU builds. Code that compares `toolkit_version` with a tuple without checking for `None` fails on AMD GPUs; use the capability functions (for example `wp.is_conditional_graph_supported()`) instead.
 - Conditional graph nodes are not available in HIP: `wp.capture_if` and `wp.capture_while` cannot be captured into a graph on AMD GPUs (`wp.is_conditional_graph_supported()` returns False), as with CUDA before 12.4.
 - MathDx (cuBLASDx, cuFFTDx, cuSOLVERDx) is NVIDIA-only and not included. Tile operations use Warp's built-in implementations, as in a CUDA build without MathDx; 2D and 3D `tile_fft`/`tile_ifft` of `vec2f`/`vec2d` tiles, which have no built-in implementation, are not available.
-- `tile_matmul` uses AMD matrix instructions (MFMA on Instinct GPUs, WMMA on gfx11 and gfx12 for fp16 and bf16) where the tile shapes allow it. They accumulate fp16 and bf16 products in fp32, so results can differ from the scalar path in the last bits (they are closer to the exact product).
+- `tile_matmul` uses AMD matrix instructions (MFMA on Instinct GPUs, WMMA on gfx11 and gfx12 for fp16 and bf16) where the tile shapes allow it. They accumulate fp16 and bf16 products in fp32, so results can differ from the scalar path in the last bits (they are closer to the exact product). On gfx1250 GPUs, fp32 `tile_matmul` uses WMMA as well, with results identical to the scalar path; fp16, bf16 and fp64 stay on the scalar path there.
 - Shared-memory tiles are limited to 64 KiB per block (tiles plus Warp's small static allocation) on MI250X, MI300X and Radeon GPUs and to 160 KiB on MI355X, less than on recent NVIDIA GPUs; Warp warns when a kernel's request does not fit.
 - Textures: MI300X and MI355X have no texture sampling hardware. Textures there are sampled in software on the GPU, with the same results as Warp's CPU textures and slower than hardware sampling. On MI250X, 3D textures are also sampled in software, because HIP does not support linear filtering of 3D textures on that GPU. The CUDA interop handles (`cuda_array`, `cuda_texture`, `cuda_surface`) are not available for textures sampled in software.
 - Spin locks contended within one wavefront do not make progress on AMD GPUs (no independent thread scheduling within a wavefront); `warp/examples/core/example_spin_lock.py` reports this instead of hanging.
@@ -9140,3 +9140,47 @@ With `GL_GLOBAL=1`, all four calls return `hipSuccess`: `hipGraphicsGLRegisterBu
 - The condition of the GL fix ruling is met (evidence session 2). The porter commits the form without `RTLD_NOLOAD` (it also covers GLFW-only applications); jeff was told and may ask for the narrower form.
 - Deferred item `hip-gl-interop-rtld-default-lookup`: file now on ROCm/rocm-systems (labels `bug`, `project: clr`), from the draft jeff saw, once the trimmed reproducer is confirmed to run as written.
 - GL texture interop: (a), no workaround. `wp.GLTextureResource` is not supported on ROCm in this release and the release notes say so. The two HIP findings are deferred item `hip-gl-mapped-texture-array-depth-and-copy`.
+## Porting session 30 (2026-11-23, linux-gfx950 MI355X, porter): gfx1250 fp32 WMMA on; tile_matmul fragment tests on NVIDIA
+
+Fork `release/1.14.0.amd0` `b51b1987..2ce30148`: two commits, pushed; `advance-head` recorded. Question 13 (fast_math) is with jeff; its patch was not committed. `HIP_VISIBLE_DEVICES=1` (amd-smi GPU 0) only, `ulimit -c 0`; no process stopped.
+
+Lock: the stage was `ported` and the state machine allows only `ported -> reviewing`, so `set-state ... porting` was refused ("illegal transition ported -> porting"). As instructed to take the lock, I took the free fork-write lock with `moatlib.py port-lock warp-1.14 --take linux-gfx950` (nobody held it; this also keeps a review from starting while the branch moves) and released it at the end with `port-lock --release`. The stage stayed `ported` throughout.
+
+### Item 1: `e9644bf1` [ROCm] Use fp32 WMMA for tile_matmul on gfx1250 (`tile_matmul_mma.h` +4/-3)
+
+The gfx1250 evidence session's item 3 diff, applied to the current header (session 28 had already reworded the comment; the new text says the gfx11/gfx12 fp16 and bf16 layouts and the gfx1250 fp32 layout are measured and on). clang-format split the `#elif` over one more line.
+
+Compile check through hipRTC (`agent_space/s30/wmma_targets.py`: fp32, fp64 and fp16 with adjoints, bf16 in / fp32 out forward only; 16^3, 32^3, 64^3 at block_dim 32, 64, 96, 128, 256; each module compiled for gfx1250, gfx1201, gfx1100 and gfx950 with the parent's headers (installed wheel at `b51b1987`) and with this commit's):
+- gfx1250: fp32 0 of 15 objects identical (all now hold `v_wmma_f32_16x16x4_f32`); fp64, fp16, bf16 15/15 identical each.
+- gfx1201 and gfx950: 60/60 identical.
+- gfx1100: 59/60 identical. The one difference (fp32 32^3 block_dim 32, scalar path both times, same size, different instruction scheduling) is deterministic (three recompiles each side give the same hashes) and comes from the shifted line numbers: the parent's header with only a blank line inserted at that place gives the identical object (`agent_space/s30/recompile.py`).
+- gfx1250 fp32 WMMA counts, the evidence session's own module (`mma_check.py`'s fp32 kernel, `agent_space/s30/mma_check_objs.py`), block_dim 32/64/96/128/256: 16^3 32/32/32/32/32; 32^3 256/128/128/64/64; 64^3 416/416/672/416/256; 16x48x32 88/96/64/64/64; 48x16x64 120/184/144/104/96; 32x64x16 256/128/128/80/64; 64x32x48 176/240/272/144/96; 24x16x16 and 16x16x12 12 each; 8^3 and 17x33x15 0: **identical to the evidence session's table in all 55 cells**.
+- gfx950 (unchanged code): test_tile_matmul 26 OK.
+- The 16x16 block_dim 256 fp32 adjoint at 0.99x is accepted as ruled (explanation in the commit body); no special case.
+- Release notes draft (session 26 copy and `agent_space/release_notes_draft.md`): the tile_matmul bullet gains "On gfx1250 GPUs, fp32 `tile_matmul` uses WMMA as well, with results identical to the scalar path; fp16, bf16 and fp64 stay on the scalar path there." prose clean; no mention of the 1.13 port.
+
+### Item 2: `2ce30148` Run tile_matmul fragment tests below 32 threads only on AMD GPUs (`test_tile_matmul.py` +6/-2)
+
+A helper `fragment_block_dims(device)` returns `FRAGMENT_BLOCK_DIMS` (16, 32, 48, 64, 96) on HIP devices and drops sizes below 32 elsewhere; both fragment loops (fp16/fp32/fp64 and bf16) use it. Test names unchanged (the block sizes are a loop inside each test). **NVIDIA devices now get block_dim 32, 48, 64 and 96; AMD devices keep all five.** Checked: on the MI355X the helper returns (16, 32, 48, 64, 96), for a non-HIP device (32, 48, 64, 96); test_tile_matmul 26 OK. No prefix: shared test code (the commit audit accepts it).
+
+Other tests this port added or changed that only a CUDA build with libmathdx would exercise (the nvcc check here builds without libmathdx), for the coordinator's NVIDIA re-run:
+- `test_tile_matmul.py`, `test_tile_matmul_fragment_shapes_float16/_float32/_float64`: through cuBLASDx at block_dim 48 (not a multiple of 32) and 96, and the shapes 17x33x15, 24x16x16 (dimensions not multiples of 16) with adjoints: none of these ran on NVIDIA with MathDx; the V100 run stopped at block_dim 16.
+- `test_tile_matmul_fragment_shapes_bfloat16`: bf16 inputs, float32 out tile, forward, registered for CUDA devices with compute capability 8.0 or newer, so a V100 skips it; never run on NVIDIA.
+- Nothing else: the port changed no tile cholesky, solve or fft test. Its other tile-test edits (`test_tile_reduce.py` axis_tier1, `test_tile_shared_memory.py` two tests, `test_tile_view.py` assign_2d) only add `skip_if_shared_memory_exceeded`, which on CUDA compares with the opt-in per-block maximum (`CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK_OPTIN`), so it skips only where the kernel could not launch; worth confirming on the V100 (96 KiB) that these four still run there as upstream.
+
+nvcc check (both commits): `cuda_pp.sh` (nvcc 12.8) of `b51b1987` against `2ce30148`: 24 of 24 translation units identical. CUDA build of `2ce30148` (worktree `agent_space/wcuda_s24`, no libmathdx): "Warp build succeeded". jargon and prose clean; `audit-commits` OK.
+
+### Final step (head `2ce30148`)
+
+- Release build (release recipe, `agent_space/relbuild.sh <clone> 64`: 25 targets, `--offload-compress`, `--no-rocm-rpath`), wall 183 s; warp.so 10,922,824 bytes, RUNPATH `$ORIGIN`, no build-path string.
+- Wheel (`python -m build --wheel -C--build-option=-Plinux-x86_64 -o <job>/wheel`, clean clone at `2ce30148`): **`/var/lib/jenkins/fleet/jobs/mi355-20261119-154230-warp114-perf-porter-mi355-prompt/wheel/warp_lang-1.14.0+rocm10.2.0-py3-none-manylinux_2_28_x86_64.whl`, 37,193,021 bytes, sha256 `4e5488fdf3d1699916aa4ca151652ec68aa5467ee8f383cb4720234e13024923`.** warp.so 10,922,824 (RUNPATH `$ORIGIN`), warp-clang.so 67,136,896, warp.so.rocm 8 (`'\n10.2.0\n'`); 548 entries; no member contains the job path; `Version: 1.14.0+rocm10.2.0`, `Requires-Dist: rocm<10.3,>=10.2`. Session 29's wheel moved to `<job>/wheel/old_b51b1987/`.
+- Installed into the job venv with the job's pip (force-reinstall, no deps; dependency check clean): **installed size 106,364,443 bytes**; installed warp.so sha256 equals the build's.
+- Full default suite from the installed wheel (outside the tree, fresh cache): **Ran 7562 tests in 570.6 s, OK (skipped=81)**, wall 575 s; no other process on the GPU, host load average 16 to 59.
+- Tile tests in debug mode from the installed wheel: **Ran 599 tests in 163.1 s, OK (skipped=9)**, no device assertion, no error 700.
+- Every result clean: the stage stays `ported` (it never left), and the fork-write lock is released.
+
+### Next step
+
+- Coordinator: re-run `test_tile_matmul.py` on the V100 with libmathdx (expected: block_dim 32, 48, 64, 96 for the three float fragment tests; bf16 skipped there).
+- Jeff: question 13 (fast_math, session 29) and closing deferred item `warp-hip-gfx1250-fp32-wmma`.
+- Validators revalidate at `2ce30148`.
