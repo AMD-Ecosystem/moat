@@ -3282,7 +3282,7 @@ Merge upstream `master` at b11d70079 (6 commits past 64c88d932, the last upstrea
 - 09708a04f oneapi: split sort by key objects (oneAPI backend only).
 - 077b8b1d9 oneapi, opencl: apply array offsets when indexing with views (oneAPI and OpenCL backends only).
 - eec2ada1a opencl: avoid rect copies to mapped memory in qr and svd (OpenCL backend only).
-- efea5c054 installer: bundle Level Zero adapters for oneAPI (`CMakeLists.txt`, inside `if(WIN32 AND AF_INSTALL_STANDALONE)`).
+- efea5c054 installer: bundle Level Zero adapters for oneAPI (`CMakeLists.txt`, inside `if(WIN32 AND AF_INSTALL_STANDALONE)`; also `docs/CMakeLists.txt` and `docs/doxygen.mk`, which hide git errors from the docs build).
 - b11d70079 fix getDevice before init and NUL bytes in CPU name (`src/api/c/device.cpp`, `src/backend/cpu/device_manager.cpp`).
 
 ## What overlapped
@@ -3312,3 +3312,29 @@ Not tested here: the Windows installer and standalone-install changes, and the C
 
 Delivery: arrayfire/arrayfire#3741 (base `experimental/hip`, head this branch's target on the fork) is open and approved at 83be19781 but not merged. Merging this round adds these commits to that pull request.
 ~~~
+
+
+## Review 2026-11-23 (reviewer, linux-gfx942, /pr-review, delta 83be19781..539d4be10 on moat-sync-b11d700) -- VERDICT: APPROVE
+
+Same job as the porter (no second session was available), so every claim below was re-derived with fresh commands rather than taken from the porter entry. Scope split as asked: upstream's merged commits (64c88d932..b11d70079, via merge 78ed7b348) and our one commit 539d4be10.
+
+### Upstream's commits, as merged
+- `git diff 83be19781 78ed7b348 | git patch-id --stable` equals `git diff 64c88d932 b11d70079 | git patch-id --stable` (e68107311809). The merge commit's parents are exactly 83be19781 and b11d70079. So the merge is upstream's delta and nothing else; `git rev-list --count 539d4be10..upstream/master` is 0.
+- Per-commit file scope (`git show --stat`): f85374a1f NSIS template only; 09708a04f and 077b8b1d9 oneAPI/OpenCL only; eec2ada1a OpenCL only; efea5c054 CMakeLists.txt plus docs/CMakeLists.txt and docs/doxygen.mk; b11d70079 src/api/c/device.cpp and the CPU device manager. Nothing in src/backend/cuda or src/backend/hip, no test changes.
+- Sync-shape checks (cuda-to-rocm upstream-sync.md): no new vendor-runtime entry point, no new GPU code or tests behind a predicate the port replaced, no caller of a helper the port changed. `af_get_device` now calls `init()`; the HIP backend's `init()` (src/backend/hip/platform.cpp:375) is the CUDA one with HIP names: `getDeviceNativeId` instantiates the DeviceManager, which applies `AF_CUDA_DEFAULT_DEVICE` (device_manager.cpp:660). Behavior matches CUDA.
+- CMakeLists.txt read at 539d4be10: upstream's hunk sits inside `if(WIN32 AND AF_INSTALL_STANDALONE)`, the new block is gated on `AF_BUILD_ONEAPI`, and the REALPATH install loop is backend-neutral. HIP option (:98), HIP block (:215-239) and `conditional_directory(AF_BUILD_HIP ...)` (:447) unchanged. `git diff upstream/master 539d4be10 -- src/backend/cuda` is empty; the port's non-HIP files (CMakeLists.txt, boost_package.cmake, README.md, ArrayFireTypesIO.hpp, half.hpp, test/CMakeLists.txt, cholesky_dense.cpp) are the set earlier reviews passed.
+
+### Our commit 539d4be10
+- Comments only: 6 lines removed from src/backend/hip/CMakeLists.txt, 2 reworded in compile_module.cpp with the line count kept. Single parent 78ed7b348. The remaining CMakeLists header paragraph is accurate. Title 60 chars, `[ROCm]` correct (HIP backend only), AI disclosure present, Test Plan present, no Co-Authored-By.
+- `jargon.py --port arrayfire`: only the standing published `6800d5586` 'MOAT' commit-message hit.
+
+### Findings
+None on the fork. Two record items, neither blocking:
+1. Draft body inaccuracy (fixed below): the efea5c054 bullet said CMakeLists.txt only; it also changes docs/CMakeLists.txt and docs/doxygen.mk.
+2. The merge commit 78ed7b348 has a body (no conflicts, where CMakeLists.txt changed) but no AI-disclosure line and no Test Plan, unlike our other commits; the previous round's merge had a subject only. It is pushed on the staging branch and fixing it needs a history rewrite, which is jeff's call; leave it unless he wants it.
+
+### CUDA path
+No nvcc here. Owed: nvcc 12.8 comparison at 539d4be10 (porter entry). No CUDA-side change in the round besides upstream's own code.
+
+Finding 1 is corrected in place in the `## Sync review PR draft` section above (the efea5c054 bullet only); re-checked `prose.py` clean and `jargon.py -` clean after the edit.
+

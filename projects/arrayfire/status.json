@@ -7,7 +7,7 @@
   "priority": 6.146,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T00:04:57Z",
-  "updated_at": "2026-11-23T22:18:40Z",
+  "updated_at": "2026-11-23T22:19:51Z",
   "head_sha": "539d4be1021cbb78dcd2c19b951aabefa940844d",
   "pr_url": "https://github.com/arrayfire/arrayfire/pull/3708",
   "pr_number": 3708,
@@ -16,7 +16,7 @@
   "pr_state": "closed",
   "license_spdx": "BSD-3-Clause",
   "upstream_repo_id": 25889802,
-  "stage": "reviewing",
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx942": {
       "blocked": false,
@@ -25,7 +25,7 @@
       "failed_sha": "a70f74f6d653955832909c434e77abfb6e207048",
       "started_at": "2026-08-11T21:02:53Z",
       "completed_at": "2026-11-04T21:44:50Z",
-      "updated_at": "2026-11-23T22:18:40Z",
+      "updated_at": "2026-11-23T22:19:51Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -195,8 +195,8 @@
   },
   "porting_released": {
     "arch": "linux-gfx942",
-    "since": "2026-11-23T21:45:04Z",
-    "at": "2026-11-23T22:18:25Z"
+    "since": "2026-11-23T22:18:40Z",
+    "at": "2026-11-23T22:19:51Z"
   },
   "pr_approval": {
     "approved_by": "jeffdaily",
@@ -206,9 +206,6 @@
     "review_pr": "https://github.com/AMD-Ecosystem/arrayfire/pull/1"
   },
   "fix_merged_at": "2026-11-05T07:12:24Z",
-  "porting": {
-    "arch": "linux-gfx942",
-    "since": "2026-11-23T22:18:40Z",
-    "holder": "9d44a316aa4a"
-  }
+  "porting": null,
+  "reviewed_sha": "539d4be1021cbb78dcd2c19b951aabefa940844d"
 }
