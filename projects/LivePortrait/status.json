@@ -6,16 +6,12 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "torch-extension",
-  "stage": "reviewing",
+  "stage": "review-passed",
   "adopted_at": "2026-11-06T01:06:45Z",
-  "updated_at": "2026-11-23T22:05:25Z",
+  "updated_at": "2026-11-23T22:05:58Z",
   "head_sha": "874215c43af680314e21b8f893d010ce9e1ad1f6",
   "depends_on": [],
-  "porting": {
-    "arch": "linux-gfx942",
-    "since": "2026-11-23T22:05:25Z",
-    "holder": "5647a2d73906"
-  },
+  "porting": null,
   "waivers": {},
   "platforms": {
     "windows-gfx1151": {
@@ -94,7 +90,7 @@
       "failed_sha": null,
       "started_at": "2026-11-23T21:56:09Z",
       "completed_at": null,
-      "updated_at": "2026-11-23T22:05:25Z",
+      "updated_at": "2026-11-23T22:05:58Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -130,8 +126,8 @@
   },
   "porting_released": {
     "arch": "linux-gfx942",
-    "since": "2026-11-23T21:56:09Z",
-    "at": "2026-11-23T22:05:12Z"
+    "since": "2026-11-23T22:05:25Z",
+    "at": "2026-11-23T22:05:58Z"
   },
-  "reviewed_sha": "00f208cdf0e710f4b52601fdbc18c4c442574124"
+  "reviewed_sha": "874215c43af680314e21b8f893d010ce9e1ad1f6"
 }
