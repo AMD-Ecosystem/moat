@@ -64,9 +64,9 @@ What the three non-Sage presets need, measured on gfx950 with torch 2.12.0+rocm1
 | Piece | Used by | gfx950 as written | Change on ROCm |
 |---|---|---|---|
 | FP8 per-tensor `torch._scaled_mm`, BF16 out with bias (`FP8Linear`) | rtx5090 all linears; rtx5070ti `fp8` roles | works | none on gfx950/gfx12; gfx942 selects `float8_e4m3fnuz` with max 240 |
-| FP8 `_scaled_mm` FP32 out, no bias, rows padded to 16 (`PaddedFP8Linear`, `TransposedFFN`) | rtx5080 | to be run | as above, plus whatever the run shows |
+| FP8 `_scaled_mm` FP32 out, no bias, rows padded to 16 (`PaddedFP8Linear`, `TransposedFFN`) | rtx5080 | works (rel err 0.037 / 0.054) | as above |
 | Triton FP8 quantize (`tl.float8e4nv`, 448 literals) | rtx5090, rtx5080 | works, bit-exact vs torch cast | quantize to the output tensor's element type and pass the format's max, so FNUZ follows the dtype |
-| `tl.extra.cuda.libdevice.tanh` in the rtx5080 epilogue | rtx5080 FFN | to be run | the portable `triton.language.extra.libdevice` (as rtx5070ti already uses) if the CUDA-namespaced one fails |
+| `tl.extra.cuda.libdevice.tanh` in the rtx5080 epilogue | rtx5080 FFN | refused by Triton's AMD backend | the portable `triton.language.extra.libdevice` (as rtx5070ti already uses) |
 | Triton INT8 `tl.dot` GEMM with GELU epilogue, fixed NVIDIA tiles | rtx5070ti | works (rel err 0.010) | none expected; LDS fit of the 64x256x64/3-stage tile on gfx12 unproven |
 | MXFP8 `scaled_mm` (`MXFP8Linear`) | rtx5070ti `cross_q` | refused: torch 2.12 ROCm requires `NO_SWIZZLE` | ROCm-only branch: scales row-major `[M, K/32]`, `NO_SWIZZLE`, activation rows padded to 32, bias added after the GEMM; BF16 fallback for the role on AMD GPUs without MX (all but gfx950) |
 | SageAttention (`-sage` presets) | scoped out | no ROCm build | none; deferral registered |
@@ -88,7 +88,7 @@ No `__global__`/`__device__`, warp intrinsics, textures, or CUDA libraries in th
 - RTX presets (pending Q2): `rtx5090/` (FP8 `torch._scaled_mm`, Triton FP8 quantize with `tl.float8e4nv`, SDPA attention, block-stack graphs), `rtx5080/` (FP8 GEMMs, imports `rtx5090_sage.SageWindow` for its Sage path), `rtx5070ti/` (Triton INT8 GEMM with fused GELU, MXFP8 `scaled_mm` with `SWIZZLE_32_4_4` and `float8_e8m0fnu` scales), `rtx5090_sage/` (SageAttention CUDA kernels).
 
 **Matrix-Game-3 (`Matrix-Game-3/`)**
-- `wan/modules/attention.py`: FA3 if `flash_attn_interface` imports and `WAN_FA_VERSION` is "3" -> FA2 (bare `assert`) ; `--fa_version 0` selects SDPA. PR #67 inserts AITER before FA2.
+- `wan/modules/attention.py`: FA3 if `flash_attn_interface` imports and `WAN_FA_VERSION` is "3" -> FA2 (bare `assert`). PR #67 inserts AITER before FA2. `--fa_version 0` does NOT give an SDPA run: only the `attention()` wrapper honours it, while `wan/modules/model.py` self- and cross-attention call `flash_attention()` directly (porter run 2026-11-23: `AssertionError` at `attention.py:114`). MG-3 therefore needs flash-attn or AITER on every platform.
 - `wan/modules/action_module.py`: `flash_attn_interface` or `flash_attn` `flash_attn_func`, else a fallback; plus `flex_attention`.
 - `wan/triton_kernels.py`: Triton INT8 quantize and autotuned INT8 GEMM with bias/GELU (`--use_int8`), FP8 quantize helper (`torch.float8_e4m3fn`, unused by the default int8 path).
 - `wan/modules/vae2_2.py`: `torch.compile` of the VAE decoder (`--compile_vae`).
@@ -174,7 +174,7 @@ Upstream has no GPU tests. The gate is end-to-end inference plus upstream's own 
 8. Q2-B: `--preset rtx5090`, `--preset rtx5080`, `--preset rtx5070ti` on the same clip (gfx950), with the checks in "Q2-B: RTX presets on ROCm".
 
 **GPU gate, Matrix-Game-3 (wave64 required; wave32 if memory allows):**
-1. Single GPU: `python generate.py --size 704*1280 --ckpt_dir Matrix-Game-3.0 --fa_version 2 --use_int8 --num_iterations 4 --num_inference_steps 3 --image demo_images/001/image.png --prompt "<README prompt>" --seed 42 --vae_type mg_lightvae --lightvae_pruning_rate 0.5 --output_dir out --save_name rocm_fa2` on: (a) upstream `main` + ROCm flash-attention; (b) PR #67 head `9ad32b1d` + AITER; (c) `--fa_version 0` (SDPA) as the in-tree reference. Compare (a)/(b) against (c) frame-wise.
+1. Single GPU: `python generate.py --size 704*1280 --ckpt_dir Matrix-Game-3.0 --fa_version 2 --use_int8 --num_iterations 4 --num_inference_steps 3 --image demo_images/001/image.png --prompt "<README prompt>" --seed 42 --vae_type mg_lightvae --lightvae_pruning_rate 0.5 --output_dir out --save_name rocm_fa2` on: (a) upstream `main` + ROCm flash-attention (CK, and the Triton AMD backend); (b) PR #67 head `9ad32b1d` + AITER. (c) `--fa_version 0` cannot serve as an SDPA reference (see the inventory above); compare (a) and (b) with each other frame-wise instead.
 2. Once with `--compile_vae` and once without.
 3. Multi-GPU torchrun (`--dit_fsdp --t5_fsdp --ulysses_size N`) only if the validating host can give the job several GPUs without disturbing other jobs; otherwise record it as not run.
 

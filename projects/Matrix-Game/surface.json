@@ -223,7 +223,56 @@
    "note": "12 .cu files of vendored third-party torch extensions (evaluation benchmark, not inference); excluded from the census. Scoped out (Q1 = A, ruled 2026-11-23)."
   }
  ],
- "covered": [],
+ "covered": [
+  {
+   "id": "package:matrix_game.inference",
+   "evidence": "all MG-4 inference paths rendered on gfx950 (SDPA, FA2 CK, FA2 Triton); porter linux-gfx950 2026-11-23 at moat-port 6d94b2f; notes.md 'Porting (linux-gfx950, 2026-11-23, porter job 144930)'"
+  },
+  {
+   "id": "preset:mg4-realtime",
+   "evidence": "120/120 frames, SDPA/FA2 CK/FA2 Triton, CUDA graphs; porter linux-gfx950 2026-11-23 at moat-port 6d94b2f; notes.md 'Porting (linux-gfx950, 2026-11-23, porter job 144930)'"
+  },
+  {
+   "id": "preset:mg4-quality",
+   "evidence": "120/120 frames, SDPA/FA2 CK/FA2 Triton; porter linux-gfx950 2026-11-23 at moat-port 6d94b2f; notes.md 'Porting (linux-gfx950, 2026-11-23, porter job 144930)'"
+  },
+  {
+   "id": "preset:mg4-baseline",
+   "evidence": "120/120 frames, SDPA; porter linux-gfx950 2026-11-23 at moat-port 6d94b2f; notes.md 'Porting (linux-gfx950, 2026-11-23, porter job 144930)'"
+  },
+  {
+   "id": "cli:matrix-game",
+   "evidence": "render used for every MG-4 run; porter linux-gfx950 2026-11-23 at moat-port 6d94b2f; notes.md 'Porting (linux-gfx950, 2026-11-23, porter job 144930)'"
+  },
+  {
+   "id": "test:mg4-python-unittest",
+   "evidence": "81 OK on upstream main and moat-port; porter linux-gfx950 2026-11-23 at moat-port 6d94b2f; notes.md 'Porting (linux-gfx950, 2026-11-23, porter job 144930)'"
+  },
+  {
+   "id": "test:mg4-browser-js",
+   "evidence": "test_audio.cjs and test_hud.cjs pass (the plan's optional pure-JS pair); the four Playwright/live-server tests not run; porter linux-gfx950 2026-11-23 at moat-port 6d94b2f; notes.md 'Porting (linux-gfx950, 2026-11-23, porter job 144930)'"
+  },
+  {
+   "id": "doc:mg4-rocm-install",
+   "evidence": "README 'AMD ROCm' subsection + docs/installation.md pointer, commit 6d94b2f"
+  },
+  {
+   "id": "preset:mg4-rtx5090",
+   "evidence": "FP8 per-tensor (e4m3 chosen per arch), 120/120 frames on gfx950; gfx942/gfx12 unproven (notes); porter linux-gfx950 2026-11-23 at moat-port 6d94b2f; notes.md 'Porting (linux-gfx950, 2026-11-23, porter job 144930)'"
+  },
+  {
+   "id": "preset:mg4-rtx5080",
+   "evidence": "FP8 + portable libdevice tanh, 120/120 frames on gfx950; gfx942/gfx12 unproven (notes); porter linux-gfx950 2026-11-23 at moat-port 6d94b2f; notes.md 'Porting (linux-gfx950, 2026-11-23, porter job 144930)'"
+  },
+  {
+   "id": "preset:mg4-rtx5070ti",
+   "evidence": "INT8 Triton + ROCm MXFP8 branch (NO_SWIZZLE, rows padded to 32, bias after GEMM), BF16 fallback exercised; 120/120 frames on gfx950; porter linux-gfx950 2026-11-23 at moat-port 6d94b2f; notes.md 'Porting (linux-gfx950, 2026-11-23, porter job 144930)'"
+  },
+  {
+   "id": "model:mg3-generate",
+   "evidence": "upstream main with FA2 CK/Triton and PR #67 head + AITER, 177 frames each, with and without --compile_vae; no fork change (PR #67 route); porter linux-gfx950 2026-11-23 at moat-port 6d94b2f; notes.md 'Porting (linux-gfx950, 2026-11-23, porter job 144930)'"
+  }
+ ],
  "scoped_out": [
   {
    "id": "example:CitySampleBBoxGame",
@@ -326,6 +375,15 @@
    "reason": "Jeff Daily ruling 2026-11-23 (Q2 = B): the three -sage presets need SageAttention 2.2's CUDA kernels (sm89 PTX mma, wgmma), which have no ROCm build; scoped out with deferral matrix-game-sageattention-rocm (projects/Matrix-Game/deferred.json). On ROCm they fail at their existing sageattention import with upstream's own message."
   }
  ],
- "owed": [],
+ "owed": [
+  {
+   "id": "server:matrix_game.server",
+   "reason": "not run: an end-to-end session needs the C++ SDL2/OpenGL/FFmpeg game build and GStreamer; its GPU work is the same model path the render runs cover. Validator or a later round may smoke it with --reference-only plus one model session."
+  },
+  {
+   "id": "model:mg3-distributed",
+   "reason": "not run: torchrun FSDP/Ulysses needs several GPUs and this job was pinned to one. NCCL->RCCL is transparent in torch; run on a host that can give the job several GPUs without disturbing others."
+  }
+ ],
  "removed_from_floor": []
 }
