@@ -8,13 +8,13 @@
   "ext_type": "cmake",
   "stage": "porting",
   "adopted_at": "2026-11-11T18:07:23Z",
-  "updated_at": "2026-11-23T20:45:01Z",
+  "updated_at": "2026-11-23T21:57:15Z",
   "head_sha": "992d7034b5396900593126e8f19a1982ae7bc682",
   "depends_on": [],
   "porting": {
     "arch": "linux-gfx950",
-    "since": "2026-11-23T20:45:01Z",
-    "holder": "0502d12e82fd"
+    "since": "2026-11-23T21:57:15Z",
+    "holder": "370c81fb0bf1"
   },
   "waivers": {
     "windows": {
@@ -55,7 +55,7 @@
       "failed_sha": null,
       "started_at": "2026-11-23T19:02:15Z",
       "completed_at": "2026-11-23T20:27:54Z",
-      "updated_at": "2026-11-23T20:45:01Z",
+      "updated_at": "2026-11-23T21:57:15Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
