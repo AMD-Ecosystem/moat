@@ -8,13 +8,13 @@
   "ext_type": "cmake",
   "stage": "porting",
   "adopted_at": "2026-11-11T18:07:23Z",
-  "updated_at": "2026-11-23T22:48:51Z",
+  "updated_at": "2026-11-23T22:51:19Z",
   "head_sha": "992d7034b5396900593126e8f19a1982ae7bc682",
   "depends_on": [],
   "porting": {
     "arch": "linux-gfx942",
-    "since": "2026-11-23T22:48:51Z",
-    "holder": "2e86842d8592"
+    "since": "2026-11-23T22:51:19Z",
+    "holder": "d3b80cca3e9d"
   },
   "waivers": {
     "windows": {
@@ -71,6 +71,29 @@
       },
       "last_agent": "porter",
       "state": "completed"
+    },
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": "2026-11-23T22:51:19Z",
+      "completed_at": null,
+      "updated_at": "2026-11-23T22:51:19Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "porter"
     }
   },
   "license_spdx": "Apache-2.0",
