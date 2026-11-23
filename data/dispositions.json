@@ -670,6 +670,32 @@
     "reason": "cant-port",
     "repo_id": 1614410
   },
+  "finddefinition/ccimport": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-23T18:52:51Z",
+    "disposition": "skip",
+    "full_name": "FindDefinition/ccimport",
+    "note": "Ruled 2026-11-23: decline as already supported, no fork. ccimport is a pure-Python build helper with no CUDA code (MIT AND Apache-2.0, full intake scan on port/ccimport 42585f3f); cumm and spconv install it from PyPI unchanged.",
+    "reason": "already-supported",
+    "recorded_as": {
+      "gh_host": "github.com",
+      "login": "jeffdaily"
+    },
+    "repo_id": 309310122
+  },
+  "flamegpu/flamegpu2": {
+    "by": "jeffdaily",
+    "decided": "2026-11-19T05:27:44Z",
+    "disposition": "skip",
+    "full_name": "FLAMEGPU/FLAMEGPU2",
+    "note": "Upstream merged its own AMD support (FLAMEGPU/FLAMEGPU2 PR 1379, 2026-11-11) for Linux C++ ahead-of-time models. Two of our three fixes are in it; the third (NOMINMAX for non-MSVC Windows compilers) was reported on issue 1370. moat-port has nothing else upstream lacks. Upstream does not cover Windows, runtime-compiled models or Python (issues 1370, 1368).",
+    "reason": "already-supported",
+    "recorded_as": {
+      "gh_host": "github.com",
+      "login": "jeffdaily"
+    },
+    "repo_id": 34064755
+  },
   "flashinfer-ai/flashinfer": {
     "decided": "2026-06-03T23:31:16Z",
     "disposition": "skip",
@@ -1167,6 +1193,24 @@
     "reason": "already-supported",
     "repo_id": 64991887
   },
+  "lightricks/ltx-2": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T21:38:03Z",
+    "disposition": "skip",
+    "full_name": "Lightricks/LTX-2",
+    "note": "gap-matrix intake follow-up 2026-11-12: maintainer ruled ROCm not planned (LTX-2 #141); default path is pure PyTorch needing only packaging, no test suite; a fork would only hold the opt-in ltx-kernels perf package; LTX-Video is superseded by LTX-2",
+    "reason": "not-a-target",
+    "repo_id": 1127234517
+  },
+  "lightricks/ltx-video": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T21:38:04Z",
+    "disposition": "skip",
+    "full_name": "Lightricks/LTX-Video",
+    "note": "gap-matrix intake follow-up 2026-11-12: maintainer ruled ROCm not planned (LTX-2 #141); default path is pure PyTorch needing only packaging, no test suite; a fork would only hold the opt-in ltx-kernels perf package; LTX-Video is superseded by LTX-2",
+    "reason": "not-a-target",
+    "repo_id": 891705470
+  },
   "linkedin/liger-kernel": {
     "by": "Jeff Daily",
     "decided": "2026-11-10T18:02:42Z",
@@ -1215,6 +1259,19 @@
     "note": "NVIDIA video codec (NVDEC/DeepStream) locked; AMD needs VA-API/AMF rewrite",
     "reason": "cant-port",
     "repo_id": 1137545832
+  },
+  "lssfau/walberla": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-20T20:14:30Z",
+    "disposition": "skip",
+    "full_name": "lssfau/walberla",
+    "note": "Ruled 2026-11-20: decline as already supported, no fork and no port. waLBerla has had an upstream HIP backend since 2023; on ROCm 10.1 it builds and its GPU lattice-Boltzmann kernels agree with the CPU to round-off on gfx942 and gfx1201 (intake and wave32 check, notes on port/walberla). ESPResSo's pinned waLBerla needs no change. Seven small arch-independent upstream fixes are drafted in those notes and go to waLBerla's GitLab (gitos.rrze.fau.de) as merge requests jeff approves, after account onboarding; keep port/walberla until they are sent.",
+    "reason": "already-supported",
+    "recorded_as": {
+      "gh_host": "github.com",
+      "login": "jeffdaily"
+    },
+    "repo_id": 86795775
   },
   "lucasdelimanogueira/pynorch": {
     "decided": "2026-06-05T01:24:38Z",
@@ -1362,11 +1419,12 @@
     "repo_id": 797553215
   },
   "mitsuba-renderer/drjit-core": {
-    "decided": "2026-06-05T01:19:01Z",
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T16:41:44Z",
     "disposition": "skip",
     "full_name": "mitsuba-renderer/drjit-core",
-    "note": "Dr.Jit JIT compiler has HIP/LLVM backend (see ext/drjit-core)",
-    "reason": "already-supported",
+    "note": "corrected 2026-11-12 (was already-supported, 'has HIP backend', which is wrong): Dr.Jit has CUDA (PTX) and LLVM (CPU) backends only, no HIP/AMD GPU backend; AMD's attempts drjit-core#203 and drjit#520 were closed upstream. A HIP backend is a new JIT backend, beyond a port; see deferred item mitsuba3-drjit-amd-backend",
+    "reason": "cant-port",
     "repo_id": 245897378
   },
   "mni-ml/framework": {
@@ -1533,6 +1591,15 @@
     "reason": "not-a-target",
     "repo_id": 876545970
   },
+  "nvidia-bionemo/bionemo-recipes": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T21:23:00Z",
+    "disposition": "skip",
+    "full_name": "NVIDIA-BioNeMo/bionemo-recipes",
+    "note": "gap-matrix intake follow-up 2026-11-12: out of scope for MOAT; recipe outcomes decided by ROCm TransformerEngine parity, Megatron/Evo2 recipes need binary-only/FA4-cu13 kernels; belongs with the ROCm TE team",
+    "reason": "not-a-target",
+    "repo_id": 705428944
+  },
   "nvidia-bionemo/nvmolkit": {
     "decided": "2026-05-29T23:57:04Z",
     "disposition": "skip",
@@ -1575,6 +1642,15 @@
     "note": "gap-matrix intake 2026-11-10: NVIDIA proprietary licence",
     "reason": "license-blocked",
     "repo_id": 920294381
+  },
+  "nvidia/cosmos": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T18:55:42Z",
+    "disposition": "skip",
+    "full_name": "NVIDIA/Cosmos",
+    "note": "gap-matrix intake follow-up 2026-11-12: docs-only landing repo (no code); Cosmos 3 runs through diffusers and vLLM, which already support ROCm; cosmos-framework not taken up (MOAT scope); OpenMDW-1.1 stays tier 4",
+    "reason": "not-a-target",
+    "repo_id": 910176789
   },
   "nvidia/cucollections": {
     "decided": "2026-08-06T04:28:48Z",
@@ -1644,6 +1720,15 @@
     "note": "gap-matrix intake 2026-11-10: RDC, AMD SMI, RVS, device metrics exporter",
     "reason": "ported-elsewhere",
     "repo_id": 321811880
+  },
+  "nvidia/earth2studio": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T20:36:29Z",
+    "disposition": "skip",
+    "full_name": "NVIDIA/earth2studio",
+    "note": "gap-matrix intake follow-up 2026-11-12: out of scope for MOAT; two LicenseRef-NvidiaProprietary files, NATTEN DiT and cuDF model gaps, per-model validation",
+    "reason": "not-a-target",
+    "repo_id": 782634112
   },
   "nvidia/megatron-lm": {
     "by": "Jeff Daily",
@@ -1831,6 +1916,15 @@
     "note": "benchmark suite / build or tuning tool, not a port target",
     "reason": "not-a-target",
     "repo_id": 285634219
+  },
+  "overworldai/world_engine": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T19:46:18Z",
+    "disposition": "skip",
+    "full_name": "Overworldai/world_engine",
+    "note": "gap-matrix intake follow-up 2026-11-12: GPL-3.0 (tier 3) needs licence clearance; README AMD claim has no ROCm code; NVIDIA-specific stack (gemlite, NVFP4/FlashInfer)",
+    "reason": "license-blocked",
+    "repo_id": 1100875802
   },
   "packtpublishing/gpu-programming-with-cpp-and-cuda": {
     "decided": "2026-06-05T01:25:52Z",
@@ -2345,6 +2439,24 @@
     "reason": "not-a-target",
     "repo_id": 956357429
   },
+  "tencent-hunyuan/hunyuanvideo": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T18:33:34Z",
+    "disposition": "skip",
+    "full_name": "Tencent-Hunyuan/HunyuanVideo",
+    "note": "gap-matrix intake follow-up 2026-11-12: Tencent Hunyuan Community Licence (tier 4, same family as HY-WorldPlay) excludes the EU, UK and South Korea and requires a separate Tencent licence above 100M MAU; Wan2.2 and LTX-2 (Apache-2.0) cover the same ground",
+    "reason": "license-blocked",
+    "repo_id": 895453957
+  },
+  "tencent-hunyuan/hunyuanvideo-1.5": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-12T18:33:43Z",
+    "disposition": "skip",
+    "full_name": "Tencent-Hunyuan/HunyuanVideo-1.5",
+    "note": "gap-matrix intake follow-up 2026-11-12: Tencent Hunyuan Community Licence (tier 4, same family as HY-WorldPlay) excludes the EU, UK and South Korea and requires a separate Tencent licence above 100M MAU; Wan2.2 and LTX-2 (Apache-2.0) cover the same ground",
+    "reason": "license-blocked",
+    "repo_id": 1100328089
+  },
   "tencent-hunyuan/hy-worldplay": {
     "by": "Jeff Daily",
     "decided": "2026-11-12T16:18:21Z",
@@ -2419,15 +2531,6 @@
     "note": "real/current HIP backend (research-confirmed; cubecl-hip crate, ROCm 7.1.1 bindings)",
     "reason": "already-supported",
     "repo_id": 815155760
-  },
-  "traveller59/spconv": {
-    "by": "Jeff Daily",
-    "decided": "2026-08-20T19:23:39Z",
-    "disposition": "skip",
-    "full_name": "traveller59/spconv",
-    "note": "Decided in-session 2026-08-20: decline as already supported. spconv-triton (Apache-2.0, PyPI, MI300X-verified) is a drop-in replacement for spconv 2.x on ROCm, and upstream is not a viable PR destination (no merged PR since 2022-12-27; the one AMD request, #780, was answered by pointing at spconv-triton). A port would mean an unbounded AMD backend for the cumm codegen rather than work on spconv itself. Screened seven times on four platforms, all agreeing. Analysis retained in history: `git show 2cc3927f97db:projects/spconv/notes.md` (notes.md).",
-    "reason": "already-supported",
-    "repo_id": 166499614
   },
   "triton-lang/triton": {
     "by": "Jeff Daily",
@@ -2591,6 +2694,15 @@
     "note": "Video denoiser plugin; consumer app, not a library",
     "reason": "not-a-target",
     "repo_id": 365500737
+  },
+  "xbillowy/diff-surfel-rasterizations": {
+    "by": "jeffdaily",
+    "decided": "2026-11-12T16:21:11Z",
+    "disposition": "skip",
+    "full_name": "xbillowy/diff-surfel-rasterizations",
+    "note": "Non-commercial licence; contributing needs written permission from the Inria/MPII GRAPHDECO copyright holders. The ported fork is the deliverable.",
+    "reason": "license-blocked",
+    "repo_id": 826182513
   },
   "xgbj/sparse-mask-attention": {
     "decided": "2026-06-05T01:25:52Z",
