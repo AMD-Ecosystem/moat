@@ -8,7 +8,7 @@
   "ext_type": "cmake",
   "stage": "planned",
   "adopted_at": "2026-11-06T11:13:50Z",
-  "updated_at": "2026-11-20T21:44:19Z",
+  "updated_at": "2026-11-23T23:27:36Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
@@ -60,13 +60,19 @@
       "last_agent": "planner"
     }
   },
-  "license_spdx": "BSD-3-Clause",
+  "license_spdx": "Apache-2.0 AND BSD-3-Clause",
   "license_spdx_history": [
     {
       "from": null,
       "to": "BSD-3-Clause",
       "evidence": "https://github.com/NVIDIA-Omniverse/PhysX/blob/main/LICENSE.md",
       "at": "2026-11-06T11:23:35Z"
+    },
+    {
+      "from": "BSD-3-Clause",
+      "to": "Apache-2.0 AND BSD-3-Clause",
+      "evidence": "https://github.com/NVIDIA-Omniverse/PhysX/blob/main/physx/LICENSE.md",
+      "at": "2026-11-23T23:27:36Z"
     }
   ],
   "intake": {

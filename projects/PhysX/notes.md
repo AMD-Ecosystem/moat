@@ -64,3 +64,10 @@ Until ruled, the 70 ovphysx components are `owed` in surface.json (in scope, not
 - `__hipRegisterFatBinary` interposition can lose to the runtime's own symbol when the HIP runtime is already loaded globally; Windows needs its own forwarding.
 - `__syncwarp` maps to a bare `wave_barrier` with no memory fence.
 - The `bar.sync N` -> `__syncthreads()` mapping is exact (upstream's comments say each is a whole-block barrier).
+
+## Rulings on the planner's questions (Jeff Daily, 2026-11-23)
+
+- Question 1 (ovphysx): **A**. Port the `physx/` SDK only (CPU SDK, the GPU library, snippets, pvddom); ovphysx is deferred for a later round and its components are recorded `scoped_out` for this round with a registered deferral (`deferred.py add` against PhysX).
+- Question 2 (licence record): moved to `Apache-2.0 AND BSD-3-Clause` (every `physx/` source file and `physx/LICENSE.md` are Apache-2.0; the root `LICENSE.md` is BSD-3-Clause). The headers of the AMD-added files are left as they are.
+- Question 3 (parity harness): not ruled; Jeff asked whether upstreaming it has value. It ships on `moat-port` as its own commit either way.
+- Standing ruling of the same day: Windows laptop GPU runs go last across all ports; they are queued, not started.
