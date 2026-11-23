@@ -360,7 +360,12 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-11-23T22:48:03Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-11-23T23:07:06Z",
+        "note": "2026-11-23: file now, after the second GL job reported"
+      }
     },
     {
       "id": "hip-gl-mapped-texture-array-depth-and-copy",

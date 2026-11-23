@@ -9076,3 +9076,9 @@ out = np.empty_like(src); glBindBuffer(ARRAY, b); glGetBufferSubData(ARRAY, 0, o
 print("registered; kernel read mismatches", int(bad.numpy()[0]), "GL read-back mismatches", int((out != src * 4.0 + 1.0).sum()))
 del r; glfw.terminate()
 ```
+
+## Rulings on GL interop follow-ups (jeff, 2026-11-23)
+
+- The condition of the GL fix ruling is met (evidence session 2). The porter commits the form without `RTLD_NOLOAD` (it also covers GLFW-only applications); jeff was told and may ask for the narrower form.
+- Deferred item `hip-gl-interop-rtld-default-lookup`: file now on ROCm/rocm-systems (labels `bug`, `project: clr`), from the draft jeff saw, once the trimmed reproducer is confirmed to run as written.
+- GL texture interop: (a), no workaround. `wp.GLTextureResource` is not supported on ROCm in this release and the release notes say so. The two HIP findings are deferred item `hip-gl-mapped-texture-array-depth-and-copy`.
