@@ -85,16 +85,6 @@
       "where": "warp\\examples\\cpp\\03_apic_visualization_cpu\\CMakeLists.txt"
     },
     {
-      "id": "library:cuBQL_${device}_${T}${D}",
-      "kind": "library",
-      "where": "warp\\native\\cuBQL\\CMakeLists.txt"
-    },
-    {
-      "id": "library:cuBQL_${device}_${T}${D}_static",
-      "kind": "library",
-      "where": "warp\\native\\cuBQL\\CMakeLists.txt"
-    },
-    {
       "id": "library:glad",
       "kind": "library",
       "where": "warp\\examples\\cpp\\02_apic_visualization\\CMakeLists.txt"
@@ -355,8 +345,248 @@
       "where": "windows-gfx1151"
     }
   ],
-  "covered": [],
-  "scoped_out": [],
-  "owed": [],
-  "removed_from_floor": []
+  "covered": [
+    {
+      "id": "example:00_cubin_launch",
+      "evidence": "porting session 19, 9882f005 [ROCm] Build and run the C++ examples with HIP: CTest 4 of 4 passed on gfx950 (cubin_launch_test, source_include_test, apic_visualization_smoke, apic_visualization_cpu_smoke); CUDA configuration builds with nvcc 12.8"
+    },
+    {
+      "id": "example:01_source_include",
+      "evidence": "porting session 19, 9882f005 [ROCm] Build and run the C++ examples with HIP: CTest 4 of 4 passed on gfx950 (cubin_launch_test, source_include_test, apic_visualization_smoke, apic_visualization_cpu_smoke); CUDA configuration builds with nvcc 12.8"
+    },
+    {
+      "id": "example:02_apic_visualization",
+      "evidence": "porting session 19, 9882f005 [ROCm] Build and run the C++ examples with HIP: CTest 4 of 4 passed on gfx950 (cubin_launch_test, source_include_test, apic_visualization_smoke, apic_visualization_cpu_smoke); CUDA configuration builds with nvcc 12.8"
+    },
+    {
+      "id": "example:03_apic_visualization_cpu",
+      "evidence": "porting session 19, 9882f005 [ROCm] Build and run the C++ examples with HIP: CTest 4 of 4 passed on gfx950 (cubin_launch_test, source_include_test, apic_visualization_smoke, apic_visualization_cpu_smoke); CUDA configuration builds with nvcc 12.8"
+    },
+    {
+      "id": "library:glad",
+      "evidence": "built by example 02's CMake (GLAD generator) in the session 19 HIP and CUDA configurations: porting session 19, 9882f005 [ROCm] Build and run the C++ examples with HIP: CTest 4 of 4 passed on gfx950 (cubin_launch_test, source_include_test, apic_visualization_smoke, apic_visualization_cpu_smoke); CUDA configuration builds with nvcc 12.8"
+    },
+    {
+      "id": "test:apic_visualization_cpu_smoke",
+      "evidence": "porting session 19, 9882f005 [ROCm] Build and run the C++ examples with HIP: CTest 4 of 4 passed on gfx950 (cubin_launch_test, source_include_test, apic_visualization_smoke, apic_visualization_cpu_smoke); CUDA configuration builds with nvcc 12.8"
+    },
+    {
+      "id": "test:apic_visualization_smoke",
+      "evidence": "porting session 19, 9882f005 [ROCm] Build and run the C++ examples with HIP: CTest 4 of 4 passed on gfx950 (cubin_launch_test, source_include_test, apic_visualization_smoke, apic_visualization_cpu_smoke); CUDA configuration builds with nvcc 12.8"
+    },
+    {
+      "id": "test:cubin_launch_test",
+      "evidence": "porting session 19, 9882f005 [ROCm] Build and run the C++ examples with HIP: CTest 4 of 4 passed on gfx950 (cubin_launch_test, source_include_test, apic_visualization_smoke, apic_visualization_cpu_smoke); CUDA configuration builds with nvcc 12.8"
+    },
+    {
+      "id": "test:source_include_test",
+      "evidence": "porting session 19, 9882f005 [ROCm] Build and run the C++ examples with HIP: CTest 4 of 4 passed on gfx950 (cubin_launch_test, source_include_test, apic_visualization_smoke, apic_visualization_cpu_smoke); CUDA configuration builds with nvcc 12.8"
+    },
+    {
+      "id": "library:warp-native-aot",
+      "evidence": "3f731039 and later; porting session 27 at 26be6725: release build (25 targets, compressed), wheel, full default suite from the installed wheel 7558 tests OK (81 skipped)"
+    },
+    {
+      "id": "build_path:build_lib-hip-linux",
+      "evidence": "3f731039, auto-detection per Q6; porting session 27 at 26be6725: release build (25 targets, compressed), wheel, full default suite from the installed wheel 7558 tests OK (81 skipped)"
+    },
+    {
+      "id": "build_path:build_lib-hip-windows",
+      "evidence": "Phase 6, porting sessions 13-14 on windows-gfx1151 (clang-cl HIP build, suite runs)"
+    },
+    {
+      "id": "runtime:driver-api-dynamic-load",
+      "evidence": "3f731039 HIP driver wrappers in cuda_util.cpp; porting session 27 at 26be6725: release build (25 targets, compressed), wheel, full default suite from the installed wheel 7558 tests OK (81 skipped)"
+    },
+    {
+      "id": "runtime:nvrtc-to-hiprtc",
+      "evidence": "Phase 0-1 (porting sessions 1-2): hipRTC branch of wp_cuda_compile_program; porting session 27 at 26be6725: release build (25 targets, compressed), wheel, full default suite from the installed wheel 7558 tests OK (81 skipped)"
+    },
+    {
+      "id": "runtime:device-arch-selection",
+      "evidence": "Phase 0 (porting session 1): gcnArchName export, arch_name; evidence sessions on gfx942, gfx90a, gfx1100, gfx1201"
+    },
+    {
+      "id": "runtime:device-compile-predicate",
+      "evidence": "Q2 ruling audit, HIP-first gates (porting sessions 1-2); porting session 27 at 26be6725: release build (25 targets, compressed), wheel, full default suite from the installed wheel 7558 tests OK (81 skipped)"
+    },
+    {
+      "id": "runtime:cuda-crt-header",
+      "evidence": "Phase 1 (porting session 2); porting session 27 at 26be6725: release build (25 targets, compressed), wheel, full default suite from the installed wheel 7558 tests OK (81 skipped)"
+    },
+    {
+      "id": "device:ptx-inline-asm",
+      "evidence": "HIP branches for every asm block (porting sessions 1-2, Q2 audit); porting session 27 at 26be6725: release build (25 targets, compressed), wheel, full default suite from the installed wheel 7558 tests OK (81 skipped)"
+    },
+    {
+      "id": "device:tile-wavefront-width",
+      "evidence": "wave64 (gfx950, gfx942, gfx90a) and wave32 (gfx1100, gfx1201) evidence sessions, tile set 639 run 0 failures; porting session 27 at 26be6725: release build (25 targets, compressed), wheel, full default suite from the installed wheel 7558 tests OK (81 skipped)"
+    },
+    {
+      "id": "feature:libmathdx-replacement",
+      "evidence": "WP_ENABLE_MATHDX=0 on HIP with upstream's cooperative GPU paths (ruling 4); the non-power-of-two GPU tile_fft gap is the Q1 deferral warp-tile-fft-non-pow2-gpu; porting session 27 at 26be6725: release build (25 targets, compressed), wheel, full default suite from the installed wheel 7558 tests OK (81 skipped)"
+    },
+    {
+      "id": "feature:cub-to-hipcub",
+      "evidence": "Phase 2 (porting session 2); porting session 27 at 26be6725: release build (25 targets, compressed), wheel, full default suite from the installed wheel 7558 tests OK (81 skipped)"
+    },
+    {
+      "id": "feature:bvh-mesh-hashgrid",
+      "evidence": "Phase 2; LBVH builder 43c348ea, depth-level refits f6ada527 and 26be6725; porting session 27 at 26be6725: release build (25 targets, compressed), wheel, full default suite from the installed wheel 7558 tests OK (81 skipped)"
+    },
+    {
+      "id": "feature:cubql-backend",
+      "evidence": "Q5 ruling (upstream cuBQL PRs backported); Phase 2; porting session 27 at 26be6725: release build (25 targets, compressed), wheel, full default suite from the installed wheel 7558 tests OK (81 skipped)"
+    },
+    {
+      "id": "feature:nanovdb-volume",
+      "evidence": "Phase 2; porting session 27 at 26be6725: release build (25 targets, compressed), wheel, full default suite from the installed wheel 7558 tests OK (81 skipped)"
+    },
+    {
+      "id": "feature:sparse",
+      "evidence": "Phase 2; porting session 27 at 26be6725: release build (25 targets, compressed), wheel, full default suite from the installed wheel 7558 tests OK (81 skipped)"
+    },
+    {
+      "id": "feature:apic",
+      "evidence": "Phase 2; porting session 27 at 26be6725: release build (25 targets, compressed), wheel, full default suite from the installed wheel 7558 tests OK (81 skipped)"
+    },
+    {
+      "id": "feature:graph-capture",
+      "evidence": "Phase 3 (porting session 3), capture pause/resume via hipStreamBeginCaptureToGraph; porting session 27 at 26be6725: release build (25 targets, compressed), wheel, full default suite from the installed wheel 7558 tests OK (81 skipped)"
+    },
+    {
+      "id": "feature:mempools",
+      "evidence": "Phase 3; porting session 27 at 26be6725: release build (25 targets, compressed), wheel, full default suite from the installed wheel 7558 tests OK (81 skipped)"
+    },
+    {
+      "id": "feature:ipc-peer-pinned-managed",
+      "evidence": "Phase 3; two-GPU evidence sessions on 2x MI300X (gfx942); porting session 27 at 26be6725: release build (25 targets, compressed), wheel, full default suite from the installed wheel 7558 tests OK (81 skipped)"
+    },
+    {
+      "id": "feature:streams-events",
+      "evidence": "Phase 3; free-ordering test e88cf857; porting session 27 at 26be6725: release build (25 targets, compressed), wheel, full default suite from the installed wheel 7558 tests OK (81 skipped)"
+    },
+    {
+      "id": "feature:device-textures",
+      "evidence": "Phase 5: hardware textures where present, software sampling on gfx942/gfx950 (and gfx90a 3D); test_texture 118 OK; porting session 27 at 26be6725: release build (25 targets, compressed), wheel, full default suite from the installed wheel 7558 tests OK (81 skipped)"
+    },
+    {
+      "id": "feature:python-device-plumbing",
+      "evidence": "Phases 0-3 (is_hip, arch name, DLPack kDLROCM, torch/jax/paddle); test_torch 34 OK; porting session 27 at 26be6725: release build (25 targets, compressed), wheel, full default suite from the installed wheel 7558 tests OK (81 skipped)"
+    },
+    {
+      "id": "packaging:version-1.14.0+rocm.0",
+      "evidence": "36612c9c: version 1.14.0+rocm10.2.0 per Jeff's ruling (session 20)"
+    },
+    {
+      "id": "packaging:wheel-linux",
+      "evidence": "porting session 27 at 26be6725: release build (25 targets, compressed), wheel, full default suite from the installed wheel 7558 tests OK (81 skipped); wheel 37,218,821 bytes"
+    },
+    {
+      "id": "packaging:wheel-licences",
+      "evidence": "porting sessions 19 and 21: ROCm wheel carries 14 licence files, no CUDA/NVRTC/libmathdx notice; CUDA and CPU wheels unchanged"
+    },
+    {
+      "id": "test:warp-tests-default-suite",
+      "evidence": "porting session 27 at 26be6725: release build (25 targets, compressed), wheel, full default suite from the installed wheel 7558 tests OK (81 skipped)"
+    },
+    {
+      "id": "test:tile",
+      "evidence": "porting session 27 at 26be6725: release build (25 targets, compressed), wheel, full default suite from the installed wheel 7558 tests OK (81 skipped)"
+    },
+    {
+      "id": "test:cuda-runtime",
+      "evidence": "porting session 27 at 26be6725: release build (25 targets, compressed), wheel, full default suite from the installed wheel 7558 tests OK (81 skipped)"
+    },
+    {
+      "id": "test:texture",
+      "evidence": "porting session 27 at 26be6725: release build (25 targets, compressed), wheel, full default suite from the installed wheel 7558 tests OK (81 skipped)"
+    },
+    {
+      "id": "test:geometry-bvh-volume",
+      "evidence": "porting session 27 at 26be6725: release build (25 targets, compressed), wheel, full default suite from the installed wheel 7558 tests OK (81 skipped)"
+    },
+    {
+      "id": "test:fem",
+      "evidence": "porting session 27 at 26be6725: release build (25 targets, compressed), wheel, full default suite from the installed wheel 7558 tests OK (81 skipped); fem isolation fixed in bc1ae44b"
+    },
+    {
+      "id": "test:graph-capture",
+      "evidence": "porting session 27 at 26be6725: release build (25 targets, compressed), wheel, full default suite from the installed wheel 7558 tests OK (81 skipped)"
+    },
+    {
+      "id": "test:interop",
+      "evidence": "porting session 27 at 26be6725: release build (25 targets, compressed), wheel, full default suite from the installed wheel 7558 tests OK (81 skipped)"
+    },
+    {
+      "id": "test:matrix",
+      "evidence": "porting session 27 at 26be6725: release build (25 targets, compressed), wheel, full default suite from the installed wheel 7558 tests OK (81 skipped)"
+    },
+    {
+      "id": "test:aot",
+      "evidence": "porting session 27 at 26be6725: release build (25 targets, compressed), wheel, full default suite from the installed wheel 7558 tests OK (81 skipped)"
+    },
+    {
+      "id": "test:examples",
+      "evidence": "porting session 27 at 26be6725: release build (25 targets, compressed), wheel, full default suite from the installed wheel 7558 tests OK (81 skipped)"
+    },
+    {
+      "id": "test:cpu-regression",
+      "evidence": "CPU-only suite with GPUs hidden: Ran 2294, OK (skipped=15) (porting session 10); fem files CPU-only OK at bc1ae44b (session 25)"
+    },
+    {
+      "id": "test:cuda-nvcc-compile",
+      "evidence": "nvcc 12.8 build and preprocessed-unit comparison: porting sessions 19, 22, 24, 27 (CUDA build of 26be6725 succeeded)"
+    },
+    {
+      "id": "platform:wave64",
+      "evidence": "gfx950 porting sessions; gfx942 (1 and 2 GPUs) and gfx90a evidence sessions passed at the Phase 6 candidate e78ee32f; validators revalidate at head"
+    },
+    {
+      "id": "platform:wave32",
+      "evidence": "gfx1201 and gfx1100 evidence sessions passed at e78ee32f / a8e95dcb; validators revalidate at head"
+    },
+    {
+      "id": "platform:windows",
+      "evidence": "Phase 6, porting sessions 13-14 on windows-gfx1151; validators revalidate at head (laptop runs last)"
+    }
+  ],
+  "scoped_out": [
+    {
+      "id": "feature:conditional-graph-nodes",
+      "reason": "Q4 ruled by Jeff Daily 2026-11-18: report unsupported on HIP as upstream does for CUDA < 12.4, no emulation; deferred item warp-hip-conditional-graph-nodes"
+    },
+    {
+      "id": "feature:clang-cuda-jit",
+      "reason": "Q7 ruled by Jeff Daily 2026-11-18: not ported in this line, both switches fail clearly on HIP; deferred item warp-hip-clang-jit"
+    }
+  ],
+  "owed": [
+    {
+      "id": "feature:gl-interop",
+      "reason": "cuGraphicsGL* map to hipGraphicsGLRegisterBuffer/Image (cuda_util.cpp) but no session exercised them: the fleet hosts have no display or GL context"
+    },
+    {
+      "id": "packaging:wheel-windows",
+      "reason": "the Windows wheel has not been built yet (packaging path written in session 19, untested); it comes with the Windows validation, which runs last"
+    },
+    {
+      "id": "test:wheel-install",
+      "reason": "Linux: the installed-wheel suite passed (session 27) but in the job venv, because the fleet guard refuses pip for any other environment, so not a clean venv; Windows: not run yet"
+    }
+  ],
+  "removed_from_floor": [
+    {
+      "id": "library:cuBQL_${device}_${T}${D}",
+      "kind": "library",
+      "where": "warp\\native\\cuBQL\\CMakeLists.txt",
+      "reason": "cuBQL's own CMakeLists.txt is not part of Warp's build (build_lib.py never invokes it); the vendored sources compile into bvh.cu and are accounted as feature:cubql-backend"
+    },
+    {
+      "id": "library:cuBQL_${device}_${T}${D}_static",
+      "kind": "library",
+      "where": "warp\\native\\cuBQL\\CMakeLists.txt",
+      "reason": "same as library:cuBQL_${device}_${T}${D}: a target of cuBQL's unused CMakeLists.txt; accounted as feature:cubql-backend"
+    }
+  ]
 }
