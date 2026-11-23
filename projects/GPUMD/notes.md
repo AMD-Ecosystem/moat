@@ -2339,3 +2339,43 @@ Device code: `cuobjdump -xelf all` / `-xptx all` on all 227 objects of each tree
 Host code: `objdump -dr` of all 227 objects, normalizing only addresses and the hash tokens (immediates kept, so a `__LINE__` shift would show): **227/227 identical**. The expected `__LINE__` shift after line 22 of `spin_wall.cuh` does not occur because nothing in that header expands `__LINE__`. Raw `.o` and executable bytes differ in both directions only through nvcc's per-compile hash tokens, as in every earlier entry. `nvcc -E -Xcompiler -P` of `force/nep_spin/nep_spin.cu` (includes `spin_wall.cuh`): identical 57183 lines in both trees, so nvcc never sees the added lines. The host-only compile the spin tests do (`c++ -std=c++14 -pedantic-errors -Isrc -x c++ -fsyntax-only src/utilities/nep_io/nep_spin_model_file.cu src/utilities/nep_io/nep_file.cu`): rc 0, no output, in both trees.
 
 Not covered (as before): `main_nep/nep_spin` runtime-specialized sources under `NEP_SPECIALIZED_RUNTIME_BUILD` (compiled at run time by `nep_compile`, which needs a GPU run); they include no changed file differently, since the only change is skipped by every non-HIP compiler. PASS: at 0bb29e76 the CUDA path builds with nvcc 12.8 exactly as upstream 91287ce2 does, with identical diagnostics, device code, PTX and host code. No platform states changed; nothing pushed to the fork.
+## Validation 2026-11-23 (linux-gfx90a, validator) -- sync round 3 at 0bb29e76, PASS (replica batched-vs-per-slot mismatch NOT back without `-ffp-contract=on`)
+
+jeff asked for this run. Host: AMD Instinct MI250X/MI250 (gfx90a, CDNA2, wave64), `HIP_VISIBLE_DEVICES=1` (dispatcher-pinned; `amd-smi process` showed every GPU idle at the start and GPU 1 idle at the end), every GPU run under `ulimit -c 0`. Toolchain: TheRock pip SDK hipcc (as in the earlier gfx90a records). `orient.sh` on `port/GPUMD` named validator (`revalidate`). Fresh clone of AMD-Ecosystem/GPUMD at `projects/GPUMD/src`, detached at **0bb29e76d332048323622110374fa8a47e4fc88f** (= `origin/moat-sync-91287ce`; `moat-port` not used), `protect-fork` installed; detached worktree `agent_space/dbg` at the same commit for the DEBUG build. No fork edit, no push. Job venv: ase 3.29.0, pytest 7.3.2, hypothesis 6.56.4, calorine from a source clone of gitlab materials-modeling/calorine at **1c94125** (reports 4.1). Full run (the delta is an upstream merge, no carry-forward).
+
+### Builds (gfx90a, from the MOAT root)
+    utils/timeit.sh GPUMD compile -- make -C projects/GPUMD/src/src -f makefile.hip HIP_ARCH=gfx90a -j32
+    utils/timeit.sh GPUMD compile -- make -C agent_space/dbg/src -f makefile.hip HIP_ARCH=gfx90a -j64 gpumd nep CFLAGS="-O3 -std=c++17 --offload-arch=gfx90a -DUSE_HIP -Wno-inconsistent-missing-override -Wno-unused-result -Wno-pass-failed -DDEBUG"
+
+Both rc 0, 0 errors; release log 150 warning lines (the nodiscard `-Wunused-value` class). **No `-ffp-contract` anywhere in the release log** (hipcc default `fast` on every TU, replica included). Release: gpumd 20017704 B, nep 3148120 B, tb 322920 B; DEBUG gpumd 20017544 B, nep 3148048 B. No `gpumd_replica` (target gone upstream; replica is in `gpumd`).
+
+### The `-ffp-contract=on` question
+The 2026-11-10 gfx90a failure (3b0f1908: `test_batched_matches_per_slot_remd`/`_prd` and split-resume, 0/3 in 4 of 4 runs, deterministic 2.8e-9 relative energy split from the two `Box`/`Batch_Box` instantiations of the replica NEP kernels under `fast` contraction) **does not reproduce at 0bb29e76 without the flag**:
+- `python3 -m pytest -v tests_pytest/test_replica.py` (release `src/gpumd`, current example models): **20/20 passed** (68.6 s), including `test_batched_matches_per_slot_prd`/`_remd` (each asserts `batched integration: on` in the batch-1 run, then byte-compares restart files plus `remd_exchange.out`/`remd_temperature_status.out`/`remd_thermo.out` or `prd_events.out`).
+- `-k 'batched_matches_per_slot or qnep_large_box_concurrent_resume'`, **5 runs: 3/3 passed each run** (18.5-19.1 s).
+So no flag needs restoring on gfx90a at this head. Not root-caused why (the per-slot path now integrates through ordinary `integrate/ensemble.cu` and the NEP code moved to `force/replica/replica_nep.cu`, so the codegen that split on gfx90a is different code); the recorded fault class stays a live risk if upstream reshapes these kernels again, and the bitwise tests are the standing check.
+
+### Tests (real gfx90a), against the last gfx90a record (d3658389, 2026-11-10) and gfx942 at 0bb29e76
+| command | gfx90a 0bb29e76 | gfx90a d3658389 | gfx942 0bb29e76 | cause of the difference |
+|---|---|---|---|---|
+| `pytest tests_pytest/test_replica.py` (release) | **20/20** | old suite `tests_regression/replica/test_replica.py` + `gpumd_replica`: 4/16 as-is, 16/16 with legacy models | 20/20 | upstream moved replica into `gpumd` and its tests to `tests_pytest/`; reads models via `NEP_Model_File`, so no legacy-model workaround |
+| batched/qnep-resume subset, repeated | **3/3 x5** | 3/3 x3 (with the flag) | 3/3 x3 | -- |
+| `pytest tests_pytest/test_spin_*.py` (release) | **173 passed, 1 failed** (146 s): `test_spin_wall_runtime.py::test_prediction_wall[1]` | 110 passed, 4 failed | 173/1 | upstream +60 spin tests and seeds the 4 rand() corrector cases in run.in (they now pass); the new failure asserts `Spin aggregate JIT ready`, which the HIP build never prints (`nep_compile on is not supported by the HIP build`; deferral `gpumd-hip-nep-runtime-specialization`) |
+| `pytest tests_pytest -m "not slow"` (release; overlapped the regression run) | **937 passed, 2 failed, 638 skipped, 30 deselected** (2425 s) | 866/4/638/10 | 937/2/638/30 | identical to gfx942; failures `test_prediction_wall[1]` (above) and `test_ediff_loss.py::test_input_errors[nan lambda_d]` (upstream a6c09716 `is_valid_real` message change; host code, every platform) |
+| full `tests_regression` (DEBUG, self-comparison, from the worktree root): `python3 tests_regression/run_regression.py --repo-root $D --suite full --baseline $D/src/gpumd --candidate $D/src/gpumd --baseline-nep $D/src/nep --candidate-nep $D/src/nep` | **250/255 cases, relations 25/25** | 251/256, 25/25 | 249/255, 25/25 | our `ilp_nep_cutoff_below_nep` case dropped (fix is upstream's); `qnep_pppm_future_bec` (float-atomic noise at atol, failed on gfx942) passed here, as it did on gfx90a before |
+| the 5 failures rerun (`--case` x5), plain / under the `LD_PRELOAD` `void srand(unsigned){}` shim | 0/5 / **5/5** | 0/5 / 5/5 | (6) 0/6 / 5/6 | -- |
+| `pytest tests_pytest/test_nep_seed.py::test_same_seed_gives_the_same_model`, 10 runs | **10/10 passed** | 10/10 | 10/10 | -- |
+| `python3 tests_regression/tb/run_regression.py --old src/tb --new src/tb` (release) | **32/32** | (suite did not exist) | 32/32 | new upstream suite |
+
+Every failure classified, none new:
+- **rand() reseed** (deferral `gpumd-hip-runtime-reseeds-rand`, ruled defer; TheRock#9865): `replicate_velocity_unseeded` (final.xyz), `graphene_hac` (hac.out), `graphene_nemd_shc` (compute.out), `graphene_hnemd_shc` (kappa.out), `silicon_liquid_transport` (adf.out); same 5 as every earlier gfx90a record.
+- **HIP build lacks runtime specialization** (upstream's guard): `test_prediction_wall[1]`.
+- **upstream code/test mismatch** (platform-independent): `test_input_errors[nan lambda_d]`.
+
+### Gates
+- CUDA compile: not run here (no nvcc); still owed at 0bb29e76 on the mi355 host, as the gfx942 record says.
+- `python3 utils/jargon.py --port GPUMD` (local `master` = `origin/master`, local `moat-sync-91287ce` = origin's): **clean**.
+- Documentation: upstream's `doc/installation.rst` AMD section matches `makefile.hip` (`HIP_ARCH=...`).
+- Integrity: `git status --porcelain --untracked-files=no` empty in the clone and `agent_space/dbg`, both at 0bb29e76.
+
+Result: **completed** at 0bb29e76 on linux-gfx90a.
