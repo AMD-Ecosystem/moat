@@ -3,3 +3,8 @@
 {"kind":"session","ts":"2026-11-23T20:31:22Z","epoch":1795465882.306538,"event":"start","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-11-23T20:47:53Z","epoch":1795466873.088612,"event":"end","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-11-23T22:48:09Z","epoch":1795474089.695296,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-23T23:19:28Z","phase":"compile","seconds":100.072,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300b-20261123-144637-review-autoware-universe-s1-prompt/s1/build.sh"}
+{"kind":"phase","ts":"2026-11-23T23:20:20Z","phase":"test","seconds":44.463,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300b-20261123-144637-review-autoware-universe-s1-prompt/s1/test_pre.sh"}
+{"kind":"phase","ts":"2026-11-23T23:21:10Z","phase":"test","seconds":6.926,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300b-20261123-144637-review-autoware-universe-s1-prompt/gs/run.sh"}
+{"kind":"phase","ts":"2026-11-23T23:32:28Z","phase":"test","seconds":589.943,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300b-20261123-144637-review-autoware-universe-s1-prompt/s1/ogm.sh"}
+{"kind":"session","ts":"2026-11-23T23:48:09Z","epoch":1795477689.304665,"event":"end","platform":"linux-gfx942"}

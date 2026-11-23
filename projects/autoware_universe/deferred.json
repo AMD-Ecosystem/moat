@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "hip-memcpytosymbol-default-kind",
+      "kind": "rocm-bug-report",
+      "component": "HIP",
+      "summary": "hipMemcpyToSymbol and hipMemcpyToSymbolAsync return hipErrorInvalidMemcpyDirection for hipMemcpyDefault (HIP 7.17.26434, ROCm 10.2, gfx942), where CUDA documents cudaMemcpyDefault as accepted and recommended for cudaMemcpyToSymbol[Async]. Reproducer and evidence in the project notes, Validation 2026-11-23.",
+      "refs": [
+        "projects/autoware_universe/notes.md#validation-2026-11-23"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-23T23:48:02Z",
+      "decided": null
+    },
+    {
+      "id": "cuda-voxel-downsample-radix-end-bit",
+      "kind": "other",
+      "component": null,
+      "summary": "Upstream bug (CUDA and HIP alike): autoware_cuda_pointcloud_preprocessor CudaVoxelGridDownsampleFilter::searchValidVoxel passes floor(log2(num_voxels)) as the exclusive end_bit of DeviceRadixSort::SortPairs, so the voxel key's top bit is not sorted and equal voxels split into several output points whenever the voxel count is not a power of two (40x25x8 grid: 27548 outputs for 8000 voxels, matching a CPU model exactly). Reporting it upstream is a person's call.",
+      "refs": [
+        "projects/autoware_universe/notes.md#validation-2026-11-23"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-23T23:48:02Z",
+      "decided": null
+    }
+  ]
+}
