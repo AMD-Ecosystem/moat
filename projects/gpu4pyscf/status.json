@@ -7,7 +7,7 @@
   "priority": 4.871,
   "ext_type": "cmake-cupy-plugin",
   "adopted_at": "2026-05-30T00:46:51Z",
-  "updated_at": "2026-11-20T18:43:35Z",
+  "updated_at": "2026-11-23T18:54:32Z",
   "head_sha": "06477124c88075009ae5741ce7cbe4173062f1e7",
   "waivers": {
     "windows": {
@@ -146,7 +146,7 @@
       "failed_sha": "06477124c88075009ae5741ce7cbe4173062f1e7",
       "started_at": "2026-11-01T01:47:21Z",
       "completed_at": "2026-11-03T21:14:17Z",
-      "updated_at": "2026-11-20T18:43:35Z",
+      "updated_at": "2026-11-23T18:54:32Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -193,8 +193,8 @@
   },
   "porting": {
     "arch": "linux-gfx1201",
-    "since": "2026-11-20T18:43:35Z",
-    "holder": "996a63afd9e7"
+    "since": "2026-11-23T18:54:32Z",
+    "holder": "f2988100930f"
   },
   "reviewed_sha": "06477124c88075009ae5741ce7cbe4173062f1e7"
 }
