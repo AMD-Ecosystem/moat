@@ -146,6 +146,6 @@ From the consumer census below. Under Q1 = A the consumers compile unchanged onl
 
 - Q1 (ROCm spconv for stage 4): **A**. Take `autowarefoundation/spconv_cpp` up as its own project depending on `spconv` and `cumm`; add it to `depends_on` only when stage 4 starts.
 - Q2 (bevdet): **B**. Screen `autowarefoundation/bevdet_vendor` as a project; its licence clearance is Jeff's decision when intake reaches it. bevdet stays `owed` here meanwhile.
-- Q3 (where the CUDA-to-HIP compat mapping lives): **not ruled yet**; Jeff asked how disjoint autoware_cuda and autoware_universe are and leans to B if they are meant to stand alone. Stage 1 waits for this.
+- Q3 (where the CUDA-to-HIP compat mapping lives): **B** (ruled later the same day). Per-package HIP-only compat headers in autoware_universe, force-included on the HIP branch; no autoware_cuda change for it. This fits Q4 = iii: each package PR carries its own header.
 - Q4 (delivery shape): **iii**, one upstream PR per package, following upstream's norm.
-- Q5 (Agnocast variant): **not ruled yet** (Jeff asked for the question to be explained).
+- Q5 (Agnocast variant): **A**. Default build only; the Agnocast variant is scoped out because it has no GPU code (same ruling as cuda_blackboard).
