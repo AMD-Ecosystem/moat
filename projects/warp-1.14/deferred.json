@@ -361,6 +361,19 @@
       "upstream_issue": null,
       "created_at": "2026-11-23T22:48:03Z",
       "decided": null
+    },
+    {
+      "id": "hip-gl-mapped-texture-array-depth-and-copy",
+      "kind": "rocm-bug-report",
+      "component": null,
+      "summary": "For an array from hipGraphicsSubResourceGetMappedArray on a GL 2D texture, hipArray3DGetDescriptor reports Depth 1 (CUDA reports 0, and HIP reports 0 for a hipArray3DCreate(Depth=0) array), and hipMemcpy3D, hipMemcpy2DFromArray and hipMemcpy2DToArray return hipErrorInvalidValue for such arrays. Standalone reproducers hip_gl_image_desc.py and hip_gl_image_copy.py (pyglet + ctypes).",
+      "refs": [
+        "notes.md Evidence session 2 (2026-11-23, linux-gfx1201) item 5"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-23T23:03:58Z",
+      "decided": null
     }
   ]
 }
