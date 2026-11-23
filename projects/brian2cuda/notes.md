@@ -1610,3 +1610,33 @@ Belongs in `references/build-headers-macros.md`, next to the `__CUDA_ARCH__` tab
 - Jargon: `jargon.py --port brian2cuda` clean. Docs: no new build step this round (README already documents the HIP backend).
 
 Verdict: completed at 77e096c.
+
+## Fix review PR draft (HIP device-pass guards)
+
+Title: `HIP: compile TimedArray, per-neuron poisson() and binomial functions (fix round for #327)`
+
+Body:
+
+The HIP backend could not build any model that uses a TimedArray, `poisson()` with a per-neuron lambda, or a BinomialFunction (true at the published tip 1c9536f too; the maintainer has not reported it). Generated function code picks its device branch with `#if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ > 0))`, and hipcc never defines `__CUDA_ARCH__`, so its device pass compiled the host branch: "reference to __host__ variable '_namespace_timedarray_values' in __global__ function", "reference to __host__ function '_host_poisson' in __host__ __device__ function". No maintainer request; upstream master has not moved since the last round (1d7c251), so there is no merge.
+
+Commits:
+
+1. `77e096c` [ROCm] Select hipcc's device pass in generated function code. All nine guards (TimedArray namespace pointers and their kernel lines, the `_brian_<func>` math wrappers, `_poisson`, four in binomial.py) reach generated code through `CUDACodeGenerator._add_user_function`. When the HIP backend is active, that function now appends `|| defined(__HIP_DEVICE_COMPILE__)` to the condition (hipcc defines it in its device pass only, checked with `-dM -E` on both passes). On CUDA nothing is substituted. The `__CUDA_ARCH__ >= 600` gate in the atomicAdd(double) helper is left alone: it is device-only, so HIP keeps the atomicCAS loop it always used.
+
+Retested on MI250X (gfx90a), ROCm 10.1 (HIP 7.16), Brian2 2.10.1:
+
+- New GPU cases, now kept with the project records: a 1-D and 2-D TimedArray read in device code equals the array values exactly, and an ODE driven by it matches Brian2's runtime target; per-neuron `poisson()` for lambda 0 to 500 (200000 draws each) has mean and variance within 5 standard errors of lambda; BinomialFunction (inversion and normal approximation) means within 2 standard errors of n*p; integer-argument math matches numpy. All four failed to compile, or (math) passed, before the change.
+- The three earlier cases, rebuilt with fixed seeds and stricter checks: LIF spike counts per neuron equal the CPU runtime and quiet neurons match the closed form to 2.4e-15; Poisson input through 1 ms delays delivers exactly the expected input to all 50 targets with none early; the 200-neuron, 12k-synapse recurrent network is within 2.5% of the CPU runtime's spike count over 3 seeds. Unchanged from the published tip.
+- Upstream's test-suite runner, `-k "timedarray or poisson"`, HIP backend: 17 failed + 10 passed before, 4 failed + 23 passed after. The 4 are PoissonInput and binomial tests that stop in `BinomialFunction.__init__`: Brian2 2.10.1 unpacks two values and brian2cuda's binomial generator returns three. That happens on CUDA too and is not ours to fix here; it is why the binomial GPU case attaches the generated code by hand.
+- test_logging.py (3 tests) and test_cuda_standalone.py::test_codegen_and_compile with the HIP backend: 4 passed.
+- CUDA: projects for six example models (including TimedArray, per-neuron `poisson()` and BinomialFunction) generated with the CUDA backend are identical before and after this change, apart from a line reordering that the published tip also shows between two of its own runs.
+
+Not covered: the wave32 and Windows platforms still have to be re-tested at 77e096c, and the nvcc compile check runs on the host with nvcc. Windows should behave the same (clang defines `__HIP_DEVICE_COMPILE__` in its device pass there too), but it has not run.
+
+## Upstream reply
+
+The HIP backend could not compile models that use a TimedArray, `poisson()` with a per-neuron lambda, or a BinomialFunction: the generated function code selects its device branch with `__CUDA_ARCH__`, which hipcc never defines. With the HIP backend active, the code generator now also accepts hipcc's device pass (`__HIP_DEVICE_COMPILE__`) at that one point; the code generated for nvcc is unchanged. Tested on an AMD Instinct MI250X: TimedArray values and per-neuron Poisson and binomial samples check out on the GPU, the TimedArray and Poisson tests in `run_test_suite.py` now pass with the HIP backend, and the earlier LIF, delayed-synapse and recurrent-network runs still pass. Binomial and PoissonInput still stop in `BinomialFunction.__init__` with Brian 2.10.1, because brian2cuda's binomial code generator returns three values and that release unpacks two; that happens with CUDA as well.
+
+## Notes for our eyes (fix round 2026-11-23)
+
+Before the review PR opens, update the Upstream reply to name every GPU that has completed validation at the round's final head (today only the MI250X), and drop anything that has not run. The reply's last sentence reports an upstream issue (brian2 version vs the 3-tuple) that exists on CUDA too; jeff may prefer to drop it or file it separately.
