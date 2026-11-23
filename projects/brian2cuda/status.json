@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "codegen",
   "adopted_at": "2026-06-05T04:44:12Z",
-  "updated_at": "2026-11-23T20:21:55Z",
+  "updated_at": "2026-11-23T20:21:59Z",
   "head_sha": "1c9536f5ea33193aaf4383580900cc2aa35a99fb",
   "depends_on": [],
   "pr_url": "https://github.com/brian-team/brian2cuda/pull/327",
@@ -183,7 +183,12 @@
     }
   },
   "published_sha": "1c9536f5ea33193aaf4383580900cc2aa35a99fb",
-  "fix": null,
+  "fix": {
+    "branch": "moat-fix-327",
+    "base_sha": "1c9536f5ea33193aaf4383580900cc2aa35a99fb",
+    "review_pr": null,
+    "opened_at": "2026-11-23T20:21:59Z"
+  },
   "fix_merged_at": "2026-11-23T20:14:16Z",
   "porting_released": {
     "arch": "linux-gfx90a",
