@@ -1234,3 +1234,49 @@ Verdict: changes-requested (back to the porter in this job).
 
 Build at be630dac (same recipe): 0 errors. `jargon.py --port anari-visionaray`: clean.
 Pushed moat-fix-10 only (moat-port still 1b6b35a8).
+
+## Review 2026-11-23 round 2 (linux-gfx1201, reviewer) -- 1b6b35a8..be630dac -- CHANGES REQUESTED
+
+Second, independent read of `git diff upstream/main be630da` plus the merge (done by a
+child agent, every finding re-read here before recording). CUDA/CPU preprocessed text
+unchanged; merge resolution clean; no remaining CUDA-only chain touching device memory
+(left: CUDA-driver `__noinline__` workarounds and `__expf`/`__logf` under __CUDA_ARCH__ in
+dco/Volume.h, a possible splat-path performance gap only).
+
+### Port Correctness
+1. DeviceBVH.h:280-288 (rebuildHostBVH2, HIP arm): device-to-host hipMemcpyAsync into a
+   std::malloc'd (pageable) buffer, then the host builder reads it at once; the only
+   stream sync is after the build and is skipped under BVH_FLAG_NO_STREAM_SYNCHRONIZE,
+   which every geometry caller passes (Triangle.cpp:209, Sphere.cpp:105, ...). CUDA
+   documents a D2H copy to pageable memory as complete on return; HIP does not promise
+   it. The published port used a blocking hipMemcpy here; the merge took upstream's async
+   form. Fix: hipStreamSynchronize(copyStream) right after the copy in the HIP arm.
+2. dco/BLS.h:83-111 (get_bounds, HIP host pass): `cwbvh_node hip_root` is uninitialized
+   and returned when no branch matches (empty BLS BVH), where CUDA/CPU return an
+   invalidated aabb. Pre-existing in upstream's HIP code and in the published port. Fix:
+   stage only when a root was found, otherwise fall through to the invalid box.
+
+Not requested (nits, recorded): the HIP buildGrid arms in BlockStructuredField.cpp and
+UnstructuredField.cpp duplicate the CUDA arms token for token (published port's choice,
+kept to leave the reviewed diff shape alone); the VisionarayLibrary.cpp source-property
+clobbering noted in the porter section.
+
+### Porter fix for review round 2, head be630dac -> 6f1e7937
+
+6. 6f1e793 [ROCm] Finish the HIP host staging of BVH primitives and BLS bounds: HIP
+   rebuildHostBVH2 synchronizes the copy stream right after the D2H staging copy (round 2
+   item 1); get_bounds(BLS) HIP host pass copies the root only when a BVH has nodes and
+   otherwise falls through to the invalid aabb (item 2).
+Build at 6f1e7937: 0 errors, 8 gfx1201 code objects, entry point
+anari_library_visionaray_hip_new_library. jargon clean. Pushed moat-fix-10 only.
+
+## Review 2026-11-23 round 3 (linux-gfx1201, reviewer) -- 1b6b35a8..6f1e7937 -- PASS
+
+Re-read 6f1e793 against both round-2 items: the sync is inside the HIP device-pointer
+branch only (host-pointer and CUDA/CPU paths unchanged); get_bounds keeps the Triangle/Quad
+`if`/`if` shape of the CUDA/CPU chain, so a matched branch stages exactly the node the
+CUDA path reads, and the no-node case returns the same invalid box. Round-1 and round-2
+items all closed (f4cf2aa, be630da, 6f1e793). Whole branch: jargon clean, commit titles
+<= 72 chars, [ROCm] only on HIP-only commits, AI disclosure in each body, Test Plan
+present, no Co-Authored-By. No GPU run exists at this head (pinned GPU hangs; see porter
+section); per the reviewer scope that is the validator's gate, not a review finding.
