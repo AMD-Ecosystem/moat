@@ -7631,3 +7631,303 @@ The round fixes findings 1 to 13. Verdict: **Request Changes**, for one regressi
 The second review recorded as a gap that `3c6714b8`'s new block sizes are also registered for NVIDIA devices and that no NVIDIA GPU had run them. Run by the coordinator on a V100 (CUDA 12.9, driver 575.57.08): upstream `warp-lang==1.14.0` from PyPI (which has libmathdx) with the fork's `warp/tests/tile/test_tile_matmul.py` at `3c6714b8` copied over the installed one, `python -m warp.tests -s autodetect -p "test_tile_matmul.py"`: Ran 21 tests, FAILED (failures=4 with the log level raised; errors=3 without), skipped=1 (the bf16 case: no suitable device). The fp16, fp32 and fp64 fragment tests fail at `block_dim` 16: "Failed to compile LTO 'dot_16_16_16_70_16_...'", and with `LIBMATHDX_LOG_LEVEL=5`: `cublasdx/detail/blas_execution.hpp(142): error: static assertion failed with "Provided block dimension is invalid, BlockDim<> must have at least 32 threads, and can't have more than 1024 threads."` The run stops a test at its first failing launch, so `block_dim` 48 has not been shown to work there either.
 
 This is a CUDA regression of the port's test suite that the nvcc check cannot see, because that check builds with `--no-use-libmathdx`. Fix owed by the porter: launch block sizes below 32 only on HIP devices (cuBLASDx needs at least 32 threads), keep every block size on the CPU reference, and the coordinator re-runs the file on the V100 to confirm 48, 64 and 96 pass there.
+## Evidence session (2026-11-23, linux-gfx1250, evidence only): fp32 WMMA at `26be6725`
+
+Requested by Jeff Daily, per his ruling that the gfx1250 fp32 WMMA path of `tile_matmul` is measured on hardware now and switched on if it is correct (review 2026-11-23 finding 14, deferred item `warp-hip-gfx1250-fp32-wmma`). Evidence only: the work lock stays with linux-gfx950, no project state changed, nothing was committed or pushed to the fork. **Result: the documented gfx1250 fp32 layout is correct on hardware, and with the path switched on every check passes. fp32 `tile_matmul` is faster with WMMA in 23 of 24 benchmark cells (forward 1.10x to 3.92x, adjoint up to 2.49x). The exception is the 16x16 block_dim 256 adjoint, at 0.99x. The unmodified suite at `26be6725` has 3 failures that reproduce. All three come from the ROCm 10.2 runtime's code-object translator on this device, not from the port.**
+
+### Setup
+- Fork cloned read-only into `projects/warp-1.14/src`, detached at `26be6725fb9c52e1c88f8d22c07a56529ac40424`, `git lfs pull` (git-lfs installed with apt). `git status --porcelain` was empty at the end; the `example_apic_fluid.usd` an example writes was deleted.
+- ROCm 10.2 installed into the job venv, as in the other evidence sessions: `pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple "rocm[devel,device-gfx1250]==10.2.0" "torch[device-gfx1250]==2.15.0+rocm10.2.0" numpy==1.26.4 usd-core`, then `rocm-sdk init`. `PATH=$FLEET_VENV/bin:$PATH`, `R=$(rocm-sdk path --root)`. torch 2.15.0+rocm10.2.0 ran a GPU tensor op correctly. torch was installed after the switch-on tile loop, so that loop's `test_tile_mlp` registered no tests; it was then re-run with torch (below).
+- Build, gfx1250 only: `python build_lib.py --rocm-path $R --hip-arch gfx1250 -j 64` gave "Warp build succeeded" (29 s under `utils/timeit.sh`). `warp.so`'s RUNPATH is the venv's 10.2 `_rocm_sdk_devel/lib`.
+- Every GPU run used `HIP_VISIBLE_DEVICES=0` (the dispatcher's pin), `ulimit -c 0`, and a fresh private `WARP_CACHE_PATH`. `idle_wait.sh` (below) required `amd-smi process` to show no process on GPU 0 before every GPU run. Scripts were extracted verbatim from these notes: `wmma_layout.hip` (md5 52886a52...), `mma_check.py` (8f445b81...) and `mma_check_bf16.py` (69c0be2a...) from "The WMMA probe, fixed", and `bench_tile_matmul.py` (e6eea1be...) and `compare.py` from Porting sessions 4 and 9.
+
+### 1. Host facts
+- GPU: amd-smi `TARGET_GRAPHICS_VERSION gfx1250`, market name "AMD Radeon Graphics", device id 0x75c1, 442368 MB VRAM. Warp reports `"cuda:0" : "AMD Radeon Graphics" (432 GiB, gfx1250, mempool enabled)`, `arch` 125, `sm_count` 256, wavefront 32, `max_shared_memory_per_block` 327680 (320 KiB). One GPU.
+- Software: ROCm 10.2.0 wheels in the job venv, HIP runtime 7.17 (`hipconfig --version` 7.17.26434-0000000; Warp greeting "ROCm 10.2, HIP runtime 7.17"). Host: amdgpu driver 7.1.0.31300009, kernel 6.14.0-37-generic, amd-smi 27.1.0. The system ROCm that amd-smi reports is 10.1.0, but nothing here used it.
+- **The GPU was not idle at the start.** At 21:10 UTC, `amd-smi process` showed another team's processes on GPU 0: a sequence of short-lived PIDs that are not visible in this container, each holding 0.8 to 4 GB VRAM. Nothing ran while they were present. The build, ROCm install and probe compile (no GPU) went ahead. At 21:15:15 the GPU had shown no process for 30 s, and every GPU run after that waited for an empty `amd-smi process`. A 20 s occupancy log ran for the whole session. amd-smi shows host PIDs, so it lists this session's own runs too. Each multi-PID sample falls inside one of this session's parallel test runs (`-m 16`, the suite); the benchmark window (21:35-21:41) shows only its own single process. amd-smi's `GFX_ACTIVITY` read 75% even with no process present, so it was not used.
+- **This device is the a0 revision, and ROCm 10.2 translates every gfx1250 code object at load time.** ROCm 10.2's `libhsa-runtime64` loads `libhsa_hotswap_rocjitsu.so` (in `$R/lib`; controlled by `HSA_HOTSWAP_ENABLE`, `HSA_HOTSWAP_VERBOSE`, `HSA_HOTSWAP_DUMP_SOURCE`, `HSA_HOTSWAP_DUMP_DIR`). It rewrites the compiler's code objects from `input_revision=b0` to `output_revision=a0`. Every kernel in this session ran through it. The WMMA probes, `mma_check*.py`, the tile set and the benchmark logged no translator diagnostic. The suite logged two kinds, both in item 5 below.
+
+### 2. `wmma_layout.hip` on gfx1250: layout correct, accumulation within bound
+`$R/lib/llvm/bin/clang++ -x hip --rocm-path=$R --offload-arch=gfx1250 -O2 -w wmma_layout.hip -o wmma_layout -L$R/lib -lamdhip64 -Wl,-rpath,$R/lib && ./wmma_layout` exited 0. The device assembly (`--cuda-device-only -S`) holds `v_wmma_f32_16x16x4_f32`.
+```
+WMMA family 1250, layout (non-negative)  K=16: 0 of 256 wrong
+WMMA family 1250, layout (non-negative)  K=32: 0 of 256 wrong
+WMMA family 1250, layout (non-negative)  K=64: 0 of 256 wrong
+WMMA family 1250, layout (position)      K=16: 0 of 256 wrong
+WMMA family 1250, layout (position)      K=32: 0 of 256 wrong
+WMMA family 1250, layout (position)      K=64: 0 of 256 wrong
+WMMA family 1250, accumulation           K=16: 0 of 256 over the bound, worst error 0.40 of the bound
+WMMA family 1250, accumulation           K=32: 0 of 256 over the bound, worst error 0.25 of the bound
+WMMA family 1250, accumulation           K=64: 0 of 256 over the bound, worst error 0.14 of the bound
+```
+So the documented layout is correct and needs no change. Lane l = 16 g + lo holds operands A[lo][k0 + 2g + v] and B[k0 + 2g + v][lo] for v = 0, 1 (lanes 0-15 hold K 0-1, lanes 16-31 K 2-3 of each 4-wide K step). Accumulator r of lane l is C[8g + r][lo]. This is what `tile_matmul_mma.h`'s gfx1250 `op<float32>` implements: `kpl = 2`, `k_split = true`, so `k_offset = 2g` and `k_step = 4`, and `row(g, r) = 8g + r`.
+
+**Rounding, measured:** `wmma_order.hip` (below) compares every output cell bitwise against host references, on random f32 in [-1, 1]. In all 1024 cells (K = 4, 16, 64, 256), the instruction's result equals a sequential `fmaf` chain in K order. It does not equal a chain of separate multiply and add (168, 100, 72 and 52 of 256 cells match), a per-instruction single rounding of the exact 4-term dot product plus the accumulator (155/98/53/23), or the exact sum rounded once (155/92/63/28). So on gfx1250, fp32 WMMA rounds exactly like a scalar FMA loop over K. That is why every fp32 `mma_check.py` case below matches the CPU device bit for bit: the CPU and scalar GPU paths also accumulate with an FMA per K step, in K order.
+
+### 3. Switch-on experiment (scratch worktree, uncommitted)
+`git -C projects/warp-1.14/src worktree add --detach agent_space/g1250/wt_wmma 26be6725`, the clone's `warp/bin/warp.so`, `warp-clang.so` and `warp.so.rocm` copied in (`warp.so` `cmp`-identical), and the run from that tree (`PYTHONPATH`, or cwd for the test runner). This is the exact diff that switches the path on. No layout correction is needed:
+```diff
+diff --git a/warp/native/tile_matmul_mma.h b/warp/native/tile_matmul_mma.h
+index 807af76d..1c7ffc01 100644
+--- a/warp/native/tile_matmul_mma.h
++++ b/warp/native/tile_matmul_mma.h
+@@ -87,10 +87,10 @@ template <> struct op<bfloat16> {
+ #endif
+ 
+ #elif (defined(WP_TILE_WMMA) && WP_TILE_WMMA) || __has_builtin(__builtin_amdgcn_wmma_f32_16x16x16_f16_w32_gfx12)       \
+-    || __has_builtin(__builtin_amdgcn_wmma_f32_16x16x16_f16_w32)
+-// 32-lane WMMA. The gfx11 and gfx12 fp16 layouts and the gfx11 bf16 layout are measured and on (gfx12 bf16
+-// assumes the gfx12 fp16 layout); the gfx1250 path stays off unless WP_TILE_WMMA is defined to 1 (each WMMA
+-// builtin exists on exactly one target family).
++    || __has_builtin(__builtin_amdgcn_wmma_f32_16x16x16_f16_w32) || __has_builtin(__builtin_amdgcn_wmma_f32_16x16x4_f32)
++// 32-lane WMMA. The gfx11 and gfx12 fp16 layouts, the gfx11 bf16 layout and the gfx1250 fp32 layout are
++// measured and on (gfx12 bf16 assumes the gfx12 fp16 layout); each WMMA builtin exists on exactly one target
++// family.
+ #define WP_TILE_MMA 1
+ constexpr int kWave = 32;
+ 
+```
+On the other families this condition changes nothing. Each WMMA builtin exists on exactly one family (gfx1201 session's check with the same compiler), so the new term is true only on gfx1250. On gfx1250 only `op<float32>` exists in the branch, so fp16, bf16 and fp64 still fail `supported()` and stay scalar. The worktree was removed afterwards (`git worktree remove --force`, `git worktree prune`; `git worktree list` shows only the clone).
+
+Results, switch on:
+- **`python mma_check.py`: FAILURES 0**, exit 0, 210 s. All 165 cases are `ok` (3 dtypes x 11 shapes x 5 block_dims). There is no SMEM-LIMIT: with 320 KiB per block, every forward and backward kernel launches, including fp64 64x64x64. Every bd 64 line reads `c 0.0e+00 d 0.0e+00 gA 0.0e+00 gB 0.0e+00`, fp32 included, which is the FMA-chain rounding above. Code objects (`isa_map.py`, below, which maps each case to its object): **`v_wmma_f32_16x16x4_f32` in every fp32 object whose shapes fit, 5704 instructions in total**. Per shape at bd 32/64/96/128/256: 16^3 32/32/32/32/32; 32^3 256/128/128/64/64; 64^3 416/416/672/416/256; 16x48x32 88/96/64/64/64; 48x16x64 120/184/144/104/96; 32x64x16 256/128/128/80/64; 64x32x48 176/240/272/144/96; 24x16x16 and 16x16x12 12 each (their adjoint products, or the forward for K = 12, fit the 16x16x4 fragment); 8^3 and 17x33x15 0. fp64 and fp16: 0 in all 110 objects.
+- **As shipped, for comparison** (the clone at `26be6725`): `mma_check.py` FAILURES 0, with status lines identical to the switch-on run, and 0 matrix instructions (`v_wmma|v_mfma|v_swmmac`) in 165 objects. Byte comparison of the two runs' objects (`cmp_objs.py`, below): fp64 55 of 55 and fp16 55 of 55 identical. fp32: 10 of 55 identical, which are exactly the 8^3 and 17x33x15 objects, which have no WMMA.
+- **`python mma_check_bf16.py`: FAILURES 0**, 55 cases, every max abs difference 0.0. **bf16 stays scalar**: 0 `v_wmma` in 56 objects, all identical to the shipped tree's run, which also gives FAILURES 0. gfx1250 has bf16 and fp16 WMMA instructions (16x16x32), but the header defines no `op` for them on this target, so both dtypes keep the scalar path and are correct.
+- **`test_tile_matmul.py` alone** (`python -m warp.tests -s autodetect -p test_tile_matmul.py -m 8`, fresh cache): **Ran 25, OK**. 6 of 28 objects contain WMMA (140 `v_wmma_f32_16x16x4_f32`: 16, 16, 60, 36, 6, 6). These are the fp32 matmul modules.
+- **Tile set, 24 files** (`run_set.sh`, below, one file at a time with `-m 16` and a private cache each): **636 run, 9 skipped, 0 failures**. Per file: test_tile 126, atomic_bitwise 3, cholesky 33, cholesky_no_mathdx 16, empty 20, fft 20 (8 skipped, MathDx), fft_no_mathdx 16, func_arg 27, fused_ops 36, large_offsets 1, load 64, mathdx 6, matmul 25, matmul_no_mathdx 22, mlp 0 (torch was not yet installed), reduce 62, shared_memory 30, solve 5 (1 skipped, MathDx), solve_no_mathdx 28, sort 2, stack 40, view 16, test_block_dim_dispatch 2, test_template_launch_bounds 36. After torch was installed, `test_tile_mlp.py` in the same tree gave Ran 3, OK (skipped=1, "Skipping test on CUDA device without MathDx (tolerance)"). **With it, the tile set is 639 run, 10 skipped, 0 failures, the same as gfx950.** The five 64 KiB capability skips of gfx1100/gfx1201 do not occur at 320 KiB.
+
+### 4. fp32 `tile_matmul` benchmark, WMMA against scalar
+Trees: "WMMA" is the switch-on worktree; "scalar" is the clone at `26be6725` as shipped (no matrix instruction on gfx1250, checked above). Three runs per tree, **alternating** WMMA and scalar to keep run-order drift out of the ratios, each with a fresh cache: `python bench_tile_matmul.py --blocks 16384 --iters 50 --csv ...` (`bench_both.sh`, below; 340 s for all six under `utils/timeit.sh warp-1.14 bench`). Merged with `compare.py`, with `mfma` renamed to `wmma` (`compare_wmma.py`; the diff is only those names). Every run exited 0 and every cell is `ok` in all six runs. At 320 KiB there are no `ADJ-FAILED` or 64x64 fp64 rows. Each WMMA cache holds 1392 `v_wmma_f32_16x16x4_f32`, each scalar cache 0. In all 24 fp32 objects (12 cells x fwd/adj), WMMA is present and the objects differ between the trees. The 48 fp16 and fp64 objects are byte-identical between the trees (controls).
+
+**fp32, median of 3 runs per tree (ms):**
+
+| tile | block_dim | scalar fwd | WMMA fwd | fwd speedup | scalar adj | WMMA adj | adj speedup |
+|---|---|---|---|---|---|---|---|
+| 16x16 | 32 | 0.200 | 0.051 | 3.92x | 0.080 | 0.043 | 1.84x |
+| 16x16 | 64 | 0.177 | 0.079 | 2.23x | 0.062 | 0.048 | 1.31x |
+| 16x16 | 128 | 0.158 | 0.096 | 1.65x | 0.070 | 0.053 | 1.33x |
+| 16x16 | 256 | 0.204 | 0.148 | 1.38x | 0.070 | 0.070 | **0.99x** |
+| 32x32 | 32 | 0.949 | 0.398 | 2.38x | 0.589 | 0.446 | 1.32x |
+| 32x32 | 64 | 0.997 | 0.321 | 3.11x | 0.444 | 0.251 | 1.77x |
+| 32x32 | 128 | 1.054 | 0.529 | 1.99x | 0.375 | 0.168 | 2.23x |
+| 32x32 | 256 | 1.266 | 0.582 | 2.18x | 0.478 | 0.192 | 2.49x |
+| 64x64 | 32 | 16.705 | 5.809 | 2.88x | 8.248 | 6.200 | 1.33x |
+| 64x64 | 64 | 8.628 | 3.444 | 2.51x | 4.228 | 3.101 | 1.36x |
+| 64x64 | 128 | 5.196 | 2.414 | 2.15x | 2.419 | 1.756 | 1.38x |
+| 64x64 | 256 | 4.154 | 3.788 | 1.10x | 1.801 | 1.264 | 1.43x |
+
+- **Slower than scalar: one cell, the fp32 16x16 block_dim 256 adjoint.** The three runs give 0.0700/0.0704/0.0702 ms with WMMA against 0.0699/0.0697/0.0694 ms scalar, so WMMA is consistently about 0.7% slower, and the runs do not overlap. A likely reason (not measured further): a 16x16 tile is one fragment, so at 256 threads one of the eight wavefronts computes each adjoint product while the scalar path spreads it over all 256 threads. The forward of the same cell is 1.38x faster. The ruling requires a fallback or an explanation for such a cell; that is Jeff's call. The smallest forward gain is 64x64 at bd 256 (1.10x), the scalar optimum for that tile, as on gfx1201's fp16.
+- Controls (fp16 and fp64, identical code in both trees): 0.99x-1.02x in every cell except fp16 32x32 bd 32 forward at 1.05x. That cell is noise: the scalar side's three runs are 0.718/0.685/0.718 ms, overlapping the WMMA side's 0.685/0.688/0.665. Run-to-run spread over all 144 series: median 0.2%, max 15.1% (fp16 32x32 bd 64 scalar forward, run 1 0.469 ms against 0.408 twice).
+- For reference, the fp64 scalar 64x64 times here (61-127 ms forward) are the first fp64 64x64 numbers on a wave32 part, because 64 KiB parts cannot launch them.
+
+### 5. Full default suite, unmodified build at `26be6725`
+`python -m warp.tests -s autodetect` from the clone (`suite.sh`, below; private cache; 2074 s under `utils/timeit.sh warp-1.14 test`): **Ran 7604 tests, FAILED (failures=6, errors=11, skipped=80)**, exit 17.
+
+How it ran: the parallel phase went as far as 6048 ok and 296 FAIL/ERROR lines, almost all cascades of a sticky `Warp CUDA error 719: unspecified launch failure` in single workers (test_spatial 67, test_quat 40, test_utils 31, test_vec 24, test_special_values 18, test_unpack 17, ...). Then "Warning: Process pool broken during parallel execution. Switching to isolated single-process fallback." The runner re-ran every suite in its own process, one at a time, and the final counts are from that pass. An orphaned `example_sph` child of the broken pool (PID recorded from `ps`, parent 1, in this session's venv) kept running on the GPU for 16 minutes and was killed by that PID. The re-run of the same test in the fallback passed.
+
+The 17 in the final count, and a re-run of each affected file alone in the normal parallel mode (`run_set.sh` on `rerun.txt`, `-m 16`, fresh cache):
+
+| test | final-pass result | cause | alone, parallel mode |
+|---|---|---|---|
+| fem `test_deformed_geometry_cuda_0` | ERROR, `Failed to load CUDA module ..._test_geo_sides_ac74fa3c` | translator: `[hsa-hotswap-rj] error: translation diagnostic ... mnemonic=s_set_pc_i64 message=indirect branch or call target recovery is not implemented for relocated kernel text`, `translation failed ... input_bytes=267376`, then HIP 209 "no kernel image is available" in `wp_cuda_load_module` | **reproduces** |
+| fem `test_hex_mesh_cuda_0` | FAIL, `6 != 108` | `Warp CUDA error 209: no kernel image is available for execution on the device (in function radix_sort_pairs_device ...)`: the library's built-in radix sort kernel did not load | **reproduces** |
+| `test_mesh_query_point_cuda_0` | FAIL, device-side `expect_eq` failures (face, u, v) | the run logs 501 translator warnings `fallthrough past this block reaches no decodable instruction; translated with a synthesized s_endpgm boundary` (two code objects) and no HIP error; wrong query results | **reproduces** |
+| test_codegen: `test_error_unmatched_arguments_cuda_0` (FAIL), `test_expect_cpu`, `test_expect_cuda_0`, `test_ifexp_only_executes_one_branch_cpu`, `test_inplace_cpu`, `test_inplace_cuda_0` (ERROR: a codegen error from an earlier test, then `'Adjoint' object has no attribute 'return_var'`) | | the isolated fallback runs a whole file in one process in an order the parallel runner never uses: an "expected error" test fails to raise on cuda_0, and later tests in the same process inherit the half-built state, CPU tests included | test_codegen 117 OK |
+| test_constant_precision: `test_mixed_literal_variable_rejects_wrong_type_cuda_0` (FAIL), `test_quatd_mixed_literal_variable_cpu` (ERROR) | | same pattern | 46 OK |
+| test_fixedarray: `test_error_invalid_func_return_annotation_cuda_0` (FAIL), `test_fixedarray_array_polymorphism_cpu`/`_cuda_0`, `test_fixedarray_ptr_cpu` (ERROR) | | same pattern | 20 OK |
+| test_mat_constructors: `test_anon_constructor_error_type_mismatch_cuda_0` (FAIL), `test_anon_type_instance_float16_cpu` (ERROR) | | same pattern | 54 OK |
+
+Also re-run alone, all OK: test_spatial 201, test_special_values 74, test_unpack 32. These are the files with the most parallel-phase 719 cascades. So the 719s that broke the pool did not reproduce in isolation. The first one in the log follows `test_is_special_quat_float16_cuda_0` or `test_spatial_cross_float16_cuda_0`; the interleaved output does not say which. Both pass alone. Whether the 719s come from the translator under concurrency or from the GPU's other user's activity before 21:15 (the suite started at 21:41, with the GPU idle) is not established.
+
+**So the unmodified port has 3 failures on gfx1250, all on GPU, and all three coincide with ROCm 10.2's b0-to-a0 code-object translator on this a0 device:** a kernel with an indirect call that the translator refuses (`s_set_pc_i64`), a built-in hipCUB/rocPRIM radix sort that does not load (HIP 209), and a mesh query whose code objects were translated with synthesized `s_endpgm` boundaries and give wrong results. None is in code the port changed for gfx1250, and no other GPU family shows them. They are not evidence against the port, but they also cannot be cleared here: running with `HSA_HOTSWAP_ENABLE=0` (untranslated b0 code on a0 hardware) was deliberately not tried, because a GPU hang on this shared, scarce host would hurt other teams. A gfx1250 b0 device, or a translator fix, is what would tell. Skips (80, same reasons as gfx950's 81 apart from count): no suitable devices 24, conditional graph nodes 16, MathDx 8+1+1, two CUDA devices 7, mempool access 5+1+1, peer access 3+1+1+1, CPU memory access 2, NVRTC two archs 2, multi-GPU 2, rmm 1, memory-usage flakiness 1, Requires CUDA 1, NVRTC 1, stream priority 1.
+
+### For the porter and Jeff
+- The diff in item 3 switches gfx1250 fp32 WMMA on. The layout needs no change, and correctness is bit-identical to the scalar path on every `mma_check.py` case. The one cell slower than scalar is the 16x16 block_dim 256 fp32 adjoint, at about 0.7%. Whether that needs a fallback (for example, excluding single-fragment tiles when the block has more than one wavefront) or this explanation is Jeff's call. Nothing was committed. Deferred item `warp-hip-gfx1250-fp32-wmma` is Jeff's to close.
+- The stale gfx1250 comment in the header goes with the diff. The release-notes line for gfx1250, if it is enabled: fp32 `tile_matmul` uses WMMA when tiles are multiples of 16 and the block is a whole number of 32-thread wavefronts; on gfx1250 its results are bit-identical to the scalar path. fp16, bf16 and fp64 stay scalar on gfx1250.
+- Item 5's three translator failures are a ROCm 10.2 runtime issue on a0 hardware. If Jeff wants a report, the reproducer is `python -m warp.tests -s autodetect -p test_fem_geometry.py` (the `s_set_pc_i64` translation failure). The translator's own message asks for `HSA_HOTSWAP_DUMP_SOURCE=1` and a bug report. Nothing was filed.
+
+### Scripts from this session
+
+`idle_wait.sh`:
+```bash
+#!/bin/bash
+# wait until GPU 0 shows no process in <n> consecutive samples 10 s apart; give up after <max> s.
+# usage: idle_wait.sh <n> <max>; exit 0 idle, 1 timed out
+n=${1:-3}; max=${2:-600}; ok=0; t0=$(date +%s)
+while true; do
+  if amd-smi process -g 0 2>&1 | grep -q 'PID:'; then ok=0; else ok=$((ok+1)); fi
+  [ $ok -ge $n ] && { echo "idle $(date -u +%T)"; exit 0; }
+  [ $(( $(date +%s) - t0 )) -ge $max ] && { echo "busy $(date -u +%T)"; exit 1; }
+  sleep 10
+done
+```
+
+`wmma_order.hip`:
+```cpp
+// gfx1250 v_wmma_f32_16x16x4_f32 rounding: compare each output cell bitwise against host references
+// (sequential fmaf chain in K order; the same chain with plain multiply-add; double rounded once).
+// Random f32 in [-1, 1], 16x16xK, the documented layout (measured correct by wmma_layout.hip).
+#include <hip/hip_runtime.h>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+typedef float f8 __attribute__((ext_vector_type(8)));
+typedef float f2 __attribute__((ext_vector_type(2)));
+__global__ void k(const float* A, const float* B, float* C, int K)
+{
+    int l = threadIdx.x, lo = l % 16, g = l / 16;
+    f8 acc = {};
+    for (int k0 = 0; k0 < K; k0 += 4) {
+        f2 a = {A[lo * K + k0 + 2 * g], A[lo * K + k0 + 2 * g + 1]};
+        f2 b = {B[(k0 + 2 * g) * 16 + lo], B[(k0 + 2 * g + 1) * 16 + lo]};
+        acc = __builtin_amdgcn_wmma_f32_16x16x4_f32(false, a, false, b, (short)0, acc, false, false);
+    }
+    for (int r = 0; r < 8; ++r) C[(8 * g + r) * 16 + lo] = acc[r];
+}
+int main()
+{
+    srand(7);
+    int fails = 0;
+    for (int K : {4, 16, 64, 256}) {
+        float *A, *B, *C;
+        hipMallocManaged(&A, 16 * K * 4); hipMallocManaged(&B, K * 16 * 4); hipMallocManaged(&C, 256 * 4);
+        for (int x = 0; x < 16 * K; ++x) A[x] = 2.0f * rand() / RAND_MAX - 1.0f;
+        for (int x = 0; x < 16 * K; ++x) B[x] = 2.0f * rand() / RAND_MAX - 1.0f;
+        k<<<1, 32>>>(A, B, C, K);
+        hipDeviceSynchronize();
+        int eq_fma = 0, eq_muladd = 0, eq_once = 0, eq_blk = 0;
+        for (int i = 0; i < 16; ++i)
+            for (int j = 0; j < 16; ++j) {
+                float s = 0, t = 0, u = 0; double d = 0;
+                for (int kk = 0; kk < K; ++kk) {
+                    s = fmaf(A[i * K + kk], B[kk * 16 + j], s);
+                    volatile float p = A[i * K + kk] * B[kk * 16 + j]; t = t + p;
+                    d += double(A[i * K + kk]) * B[kk * 16 + j];
+                }
+                // per instruction: exact 4-term dot product plus the accumulator, rounded once
+                for (int k0 = 0; k0 < K; k0 += 4) {
+                    double q = u;
+                    for (int v = 0; v < 4; ++v) q += double(A[i * K + k0 + v]) * B[(k0 + v) * 16 + j];
+                    u = float(q);
+                }
+                float c = C[i * 16 + j];
+                eq_fma += c == s; eq_muladd += c == t; eq_once += c == float(d); eq_blk += c == u;
+            }
+        printf("K=%3d: cells equal to fmaf chain %d, mul+add chain %d, per-instruction single rounding %d, "
+               "whole sum rounded once %d (of 256)\n", K, eq_fma, eq_muladd, eq_blk, eq_once);
+        hipFree(A); hipFree(B); hipFree(C);
+    }
+    return 0;
+}
+```
+
+`isa_map.py`:
+```python
+# usage: isa_map.py <mma_check log> <cache> <rocm root>; maps the i-th cuda:0 module load of mma_check.py
+# (dtype, shape, block_dim order) to its code object and counts v_wmma instructions per case
+import re, subprocess, sys, glob, collections
+log, K, R = sys.argv[1:4]
+DT = sys.argv[4].split(",") if len(sys.argv) > 4 else ["float32", "float64", "float16"]
+SHAPES = [(16, 16, 16), (32, 32, 32), (64, 64, 64), (16, 48, 32), (48, 16, 64), (32, 64, 16), (64, 32, 48),
+          (8, 8, 8), (24, 16, 16), (16, 16, 12), (17, 33, 15)]
+BDS = (32, 64, 96, 128, 256)
+cases = [(d, s, b) for d in DT for s in SHAPES for b in BDS]
+mods = [m.group(1) + "_" + m.group(2) for m in re.finditer(r"Module (\S+) (\w+) load on device 'cuda:0'", open(log).read())]
+assert len(mods) == len(cases), (len(mods), len(cases))
+tab = collections.defaultdict(dict)
+kinds = collections.Counter()
+for (d, s, b), m in zip(cases, mods):
+    f = glob.glob(f"{K}/*/wp_{m}/*.hsaco")[0]
+    asm = subprocess.run([f"{R}/lib/llvm/bin/llvm-objdump", "-d", "--mcpu=gfx1250", f], capture_output=True, text=True).stdout
+    w = re.findall(r"\bv_wmma\w*", asm)
+    kinds.update(w)
+    tab[(d, s)][b] = len(w)
+print("v_wmma kinds:", dict(kinds))
+for (d, s), row in tab.items():
+    print(f"{d:8s} M{s[0]:3d} N{s[1]:3d} K{s[2]:3d}: " + " ".join(f"bd{b}={row[b]}" for b in BDS))
+```
+
+`cmp_objs.py`:
+```python
+# usage: cmp_objs.py <logA> <cacheA> <logB> <cacheB>; pairs the i-th cuda:0 module of two runs of the same script
+# and reports per block of 55 (one dtype of mma_check.py) how many code objects are byte-identical
+import re, sys, glob, filecmp
+def mods(log, K):
+    ms = [m.group(1) + "_" + m.group(2) for m in re.finditer(r"Module (\S+) (\w+) load on device 'cuda:0'", open(log).read())]
+    return [glob.glob(f"{K}/*/wp_{m}/*.hsaco")[0] for m in ms]
+a, b = mods(*sys.argv[1:3]), mods(*sys.argv[3:5])
+names = sys.argv[5].split(",")
+for i, n in enumerate(names):
+    blk = range(55 * i, min(55 * (i + 1), len(a)))
+    print(n, sum(filecmp.cmp(a[j], b[j], shallow=False) for j in blk), "of", len(blk), "identical")
+```
+
+`run_set.sh`:
+```bash
+#!/bin/bash
+# usage: run_set.sh <tree> <list> <outdir>; one file at a time, private cache each, from the tree
+ulimit -c 0
+tree=$1; list=$2; out=$3; mkdir -p $out
+cd $tree
+while read -r p; do
+  K=$(mktemp -d $out/kc.XXXX)
+  WARP_CACHE_PATH=$K python -m warp.tests -s autodetect -p "$p" -m ${M:-16} > $out/$p.log 2>&1
+  echo "$p rc=$? $(grep -E '^Ran ' $out/$p.log) $(grep -E '^(OK|FAILED)' $out/$p.log)"
+  rm -rf $K
+done < $list
+```
+
+`bench_both.sh`:
+```bash
+#!/bin/bash
+# Phase 4 tile_matmul benchmark, three runs per tree, alternating WMMA (switch-on worktree) and scalar
+# (the clone at 26be6725 as shipped), fresh cache each; GPU 0 must show no process before each run.
+ulimit -c 0
+G=<job>/moat/agent_space/g1250
+mkdir -p $G/bench
+for n in 1 2 3; do
+  for tree in wmma scalar; do
+    if [ $tree = wmma ]; then src=$G/wt_wmma; else src=$G/../../projects/warp-1.14/src; fi
+    $G/idle_wait.sh 1 900 || { echo "GPU busy, stopping before $tree run$n"; exit 2; }
+    PYTHONPATH=$src WARP_CACHE_PATH=$(mktemp -d $G/bench/kc.XXXXXX) "$FLEET_VENV/bin/python" $G/bench_tile_matmul.py \
+      --blocks 16384 --iters 50 --csv $G/bench/bench_${tree}_run$n.csv > $G/bench/bench_${tree}_run$n.log 2>&1
+    echo "$tree run$n rc=$? $(date -u +%T)"
+  done
+done
+```
+
+`suite.sh`:
+```bash
+#!/bin/bash
+# full default suite once, from the unmodified clone at 26be6725, private kernel cache
+ulimit -c 0
+G=<job>/moat/agent_space/g1250
+$G/idle_wait.sh 2 900 || { echo "GPU busy, suite not started"; exit 2; }
+cd $G/../../projects/warp-1.14/src
+WARP_CACHE_PATH=$(mktemp -d $G/kc_suite.XXXX) "$FLEET_VENV/bin/python" -m warp.tests -s autodetect > $G/logs/suite.log 2>&1
+echo "suite rc=$?"
+```
+
+`compare_wmma.py` = `compare.py` plus this diff:
+```diff
+1c1
+< # Merge the three runs of each tree: median ms per cell, MFMA speedup over scalar, run-to-run spread.
+---
+> # Merge the three runs of each tree: median ms per cell, WMMA speedup over scalar, run-to-run spread.
+8c8
+< for tree in ("scalar", "mfma"):
+---
+> for tree in ("scalar", "wmma"):
+16c16
+< print("| dtype | tile | block_dim | scalar fwd ms | MFMA fwd ms | fwd speedup | scalar adj ms | MFMA adj ms | adj speedup | checks |")
+---
+> print("| dtype | tile | block_dim | scalar fwd ms | WMMA fwd ms | fwd speedup | scalar adj ms | WMMA adj ms | adj speedup | checks |")
+25,26c25,26
+<     adj = f"{m['scalar_adj']:.3f} | {m['mfma_adj']:.3f} | {m['scalar_adj'] / m['mfma_adj']:.2f}x" if adj_ok else "(no launch) | (no launch) | -"
+<     print(f"| {key[0]} | {key[1]}x{key[1]} | {key[2]} | {m['scalar_fwd']:.3f} | {m['mfma_fwd']:.3f} | {m['scalar_fwd'] / m['mfma_fwd']:.2f}x | {adj} | {'/'.join(c.split(':')[1] for c in ck if c.startswith('mfma'))} |")
+---
+>     adj = f"{m['scalar_adj']:.3f} | {m['wmma_adj']:.3f} | {m['scalar_adj'] / m['wmma_adj']:.2f}x" if adj_ok else "(no launch) | (no launch) | -"
+>     print(f"| {key[0]} | {key[1]}x{key[1]} | {key[2]} | {m['scalar_fwd']:.3f} | {m['wmma_fwd']:.3f} | {m['scalar_fwd'] / m['wmma_fwd']:.2f}x | {adj} | {'/'.join(c.split(':')[1] for c in ck if c.startswith('wmma'))} |")
+```
+
