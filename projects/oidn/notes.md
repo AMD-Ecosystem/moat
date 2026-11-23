@@ -306,3 +306,21 @@ oidnDenoise -d cpu --hdr ... --alb ... --nrm ... -w smoke.tza -o w.pfm; oidnDeno
 
 ### Not run here, and why
 - CUDA no-regression compile: no CUDA toolkit on this host; still owed by the mi355 host at this head (see the gfx90a section).
+
+## CUDA no-regression compile at 06bdc4c (linux mi355 host, nvcc 12.8, 2026-11-23)
+
+Compile and link only; no GPU used. Run-time behaviour of the CUDA device: **cuda-not-validated**.
+
+Toolchain: nvcc 12.8 (V12.8.93, `/usr/local/cuda-12.8`), host gcc 13.3.0 (Ubuntu 24.04), CMake 3.31.6 and Ninja 1.13.0 from the job venv. Fresh clone of the fork; submodules `external/cutlass` d55f6be and `weights` 28883d1 (the `weights` URL pointed at `RenderKit/oidn-weights`, since the relative `../oidn-weights.git` does not exist under the fork's owner); same submodule SHAs at both commits. The CPU device was left off (needs ISPC; the diff does not touch it). Same source directory for both builds, so paths match.
+```
+git checkout 06bdc4c   # then again with: git checkout master  (6602ee2, merge-base of the port)
+cmake -G Ninja -B ../oidn-build-head -DCMAKE_BUILD_TYPE=Release -DOIDN_DEVICE_CUDA=ON -DOIDN_DEVICE_CPU=OFF -DCUDAToolkit_ROOT=/usr/local/cuda-12.8
+cmake --build ../oidn-build-head -j 25 -v
+```
+- Both configure and build exit 0 (head 116 build lines, 26 s). Outputs at both: `libOpenImageDenoise.so`, `libOpenImageDenoise_core.so`, `libOpenImageDenoise_device_cuda.so.2.5.1` (CUDA Driver API, links `libcuda.so.1`, absent on this host as expected), `libcurtn.a`, `oidnTest`, `oidnDenoise`, `oidnBenchmark`. 4 CUDA objects (`cuda_engine.cu`, `cuda_conv.cu`, `cutlass_conv_sm75.cu`, `cutlass_conv_sm80.cu`), gencode sm_75, sm_80, sm_90, sm_100, sm_120 (the CUDA device's own list; `CUDA_ARCHITECTURES OFF`).
+- Warnings: 0 at head, 0 at master (`grep -ci warning` over the full verbose logs).
+- CUDA sub-build command lines (`ninja -t commands` in `devices/cuda/build`, build-dir path normalised): **identical** at head and master, all 12 commands.
+- CUDA sub-build CMake cache: identical. Top-level cache differs only by the new `OIDN_HIP_GFX950:BOOL=ON` entry (declared unconditionally inside `if(NOT APPLE)`, consumed only under `if(OIDN_DEVICE_HIP)`).
+- Device code: the 15 cubins extracted with `cuobjdump -xelf all` from the 4 objects. `cuda_conv` and `cuda_engine` cubins are byte-identical (md5) for all five SMs. The two CUTLASS objects' cubins differ in bytes only through nvcc's per-invocation internal-linkage names (`_INTERNAL_<hash>_..._cu_<random>_<pid>`): recompiling the master object a second time with the identical command also changes the md5. With those names normalised, symbol tables (name, value, size) and section sizes are identical at head and master for all 15 cubins. (`nvdisasm` is not in this toolkit install, so no SASS diff.)
+
+**Verdict: no CUDA regression at 06bdc4c.** The CUDA backend configures, compiles and links the same way as at master, with the same flags, no new warnings and equivalent device code. The port's diff reaches CUDA builds only as one unused cache option.
