@@ -337,3 +337,4 @@
 {"kind":"phase","ts":"2026-11-23T22:50:50Z","phase":"test","seconds":83.564,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi300-20261123-133919-sync-gpumd-prompt/moat/agent_space/val && /var/lib/jenkins/fleet/jobs/mi300-20261123-133919-sync-gpumd-prompt/venv/bin/python -m pytest -q -p no:cacheprovider tests_pytest/test_replica.py"}
 {"kind":"phase","ts":"2026-11-23T22:53:34Z","phase":"test","seconds":163.861,"exit":1,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi300-20261123-133919-sync-gpumd-prompt/moat/agent_space/val && /var/lib/jenkins/fleet/jobs/mi300-20261123-133919-sync-gpumd-prompt/venv/bin/python -m pytest -q -p no:cacheprovider -rf tests_pytest/test_spin_*.py"}
 {"kind":"session","ts":"2026-11-23T22:53:56Z","epoch":1795474436.815244,"event":"end","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-23T23:01:32Z","phase":"compile","seconds":52.417,"exit":0,"cmd":"make -C ../nv/gpumd-port/src -j16 -O"}

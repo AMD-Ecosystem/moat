@@ -2312,3 +2312,30 @@ Gates:
 - Integrity: `git status --porcelain --untracked-files=no` empty in the clone and both worktrees, all at 0bb29e76.
 
 Result: **completed** at 0bb29e76 on linux-gfx942. Other platforms read revalidate (gfx90a: the `-ffp-contract` replica check; gfx1100 and windows-gfx1151: wave32 and the new Windows makefile procedure).
+
+## CUDA compile check (nvcc 12.8) at 0bb29e76 vs upstream 91287ce2 (sync round 3)
+
+2026-11-23, helper on the mi355 fleet host (CUDA 12.8 toolkit, nvcc V12.8.93, gcc 13.3; no NVIDIA GPU, compile and link only; nothing run on any GPU), requested by jeff. Fresh clone of the fork, `moat-sync-91287ce` at **0bb29e76**, against `git worktree add ../gpumd-up 91287ce2` (the upstream commit the round merged). `git diff 91287ce2 0bb29e76` is confirmed to be only the three `#ifdef __HIPCC__ / #include <hip/hip_runtime.h> / #endif` lines in `src/utilities/nep_spin/spin_wall.cuh` (21 TUs include it, per the `.d` files).
+
+Recipe: as in the earlier entries (upstream's unmodified `src/makefile`, default `all` = gpumd nep tb now that `gpumd_replica` is folded into gpumd; `nvcc -std=c++14 -O3 -arch=sm_60 -Xcompiler="<makefile WARN_FLAGS>" -I./`), one tree after the other with the job count capped at 16 for this run:
+
+    export PATH=/usr/local/cuda-12.8/bin:$PATH
+    utils/timeit.sh GPUMD compile -- make -C <clone>/src -j16 -O       # 0bb29e76, 52 s
+    make -C <clone-up>/src -j16 -O                                     # 91287ce2, 52 s
+
+| | 0bb29e76 | 91287ce2 |
+|---|---|---|
+| make rc | 0 | 0 |
+| nvcc invocations (compile / link) | 227 / 3 | 227 / 3 |
+| executables | `gpumd` 30502896 B, `nep` 6632920 B, `tb` 1552152 B | same sizes |
+| nvcc errors | 0 | 0 |
+| nvcc warnings | 230, all `Support for offline compilation for architectures prior to '<compute/sm/lto>_75' will be removed` (one per invocation, `-arch=sm_60`) | identical 230 |
+| host compiler warnings (makefile's -Wall -Wextra set) | none | none |
+
+Whole build logs, sorted and path-normalized: identical.
+
+Device code: `cuobjdump -xelf all` / `-xptx all` on all 227 objects of each tree, SHA-1 of every `.text.*`, `.nv.constant*`, `.nv.shared*`, `.nv.global*`, `.nv.info*` cubin section (pyelftools) plus the full PTX, with `_GLOBAL__N__<hex>_` / `_INTERNAL_<hex>_` normalized: **all 4266 records identical, 916 kernel `.text` sections (9255936 B) and 227 PTX files.** No PROGBITS section hashed empty (the 517 empty hashes are NOBITS sections).
+
+Host code: `objdump -dr` of all 227 objects, normalizing only addresses and the hash tokens (immediates kept, so a `__LINE__` shift would show): **227/227 identical**. The expected `__LINE__` shift after line 22 of `spin_wall.cuh` does not occur because nothing in that header expands `__LINE__`. Raw `.o` and executable bytes differ in both directions only through nvcc's per-compile hash tokens, as in every earlier entry. `nvcc -E -Xcompiler -P` of `force/nep_spin/nep_spin.cu` (includes `spin_wall.cuh`): identical 57183 lines in both trees, so nvcc never sees the added lines. The host-only compile the spin tests do (`c++ -std=c++14 -pedantic-errors -Isrc -x c++ -fsyntax-only src/utilities/nep_io/nep_spin_model_file.cu src/utilities/nep_io/nep_file.cu`): rc 0, no output, in both trees.
+
+Not covered (as before): `main_nep/nep_spin` runtime-specialized sources under `NEP_SPECIALIZED_RUNTIME_BUILD` (compiled at run time by `nep_compile`, which needs a GPU run); they include no changed file differently, since the only change is skipped by every non-HIP compiler. PASS: at 0bb29e76 the CUDA path builds with nvcc 12.8 exactly as upstream 91287ce2 does, with identical diagnostics, device code, PTX and host code. No platform states changed; nothing pushed to the fork.
