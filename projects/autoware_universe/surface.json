@@ -775,8 +775,106 @@
       "note": "optional ENABLE_AGNOCAST build (pointcloud preprocessor, occupancy grid); pending Q5"
     }
   ],
-  "covered": [],
-  "scoped_out": [],
+  "covered": [
+    {
+      "id": "component:cuda_concatenate_and_time_sync_node",
+      "evidence": "built with HIP; test_cuda_combine_cloud_handler 8 GPU tests 20x pass; porter 2026-11-23 linux-gfx942 (MI300X) at fork 9574fe1 (notes.md, Porter stage 1 section)"
+    },
+    {
+      "id": "component:cuda_pointcloud_preprocessor_node",
+      "evidence": "built with HIP; test_cuda_pointcloud_preprocessor 20 tests 20x pass; porter 2026-11-23 linux-gfx942 (MI300X) at fork 9574fe1 (notes.md, Porter stage 1 section)"
+    },
+    {
+      "id": "component:cuda_polar_voxel_noise_filter_node",
+      "evidence": "built with HIP (libhipcxx cuda::std::optional, hipCUB merge sort); compiled and linked, no upstream test exercises it; porter 2026-11-23 linux-gfx942 (MI300X) at fork 9574fe1 (notes.md, Porter stage 1 section)"
+    },
+    {
+      "id": "component:cuda_polar_voxel_outlier_filter_node",
+      "evidence": "built with HIP (libhipcxx, hipCUB; [[nodiscard]] order fix); compiled and linked, no upstream test exercises it; porter 2026-11-23 linux-gfx942 (MI300X) at fork 9574fe1 (notes.md, Porter stage 1 section)"
+    },
+    {
+      "id": "component:cuda_voxel_grid_downsample_filter_node",
+      "evidence": "built with HIP (thrust::cuda aliased to thrust::hip, hipMemcpyToSymbolAsync template); compiled and linked, no upstream test exercises it; porter 2026-11-23 linux-gfx942 (MI300X) at fork 9574fe1 (notes.md, Porter stage 1 section)"
+    },
+    {
+      "id": "component:cuda_scan_ground_segmentation_filter_node",
+      "evidence": "built with HIP; filter library checked by the synthetic-scene harness against a CPU replica, 0 label differences; porter 2026-11-23 linux-gfx942 (MI300X) at fork 9574fe1 (notes.md, Porter stage 1 section)"
+    },
+    {
+      "id": "feature:ground_segmentation-subwave-sector-kernel",
+      "evidence": "shuffle width WARP_SIZE, group ballot shift, per-group 64-bit mask on HIP; harness 0 differences on wave64 (3 scenes x 20 runs), naive variant ~67k differences all in odd sectors; porter 2026-11-23 linux-gfx942 (MI300X) at fork 9574fe1 (notes.md, Porter stage 1 section)"
+    },
+    {
+      "id": "feature:pointcloud_preprocessor-constant-symbols",
+      "evidence": "cudaMemcpyToSymbolAsync mapped to hipMemcpyToSymbolAsync (HIP's const T& template overload takes the symbol), no source edit; porter 2026-11-23 linux-gfx942 (MI300X) at fork 9574fe1 (notes.md, Porter stage 1 section)"
+    },
+    {
+      "id": "feature:pointcloud_preprocessor-libcuxx",
+      "evidence": "libhipcxx from the ROCm SDK; all package sources compiled as HIP so cuda::std::optional is one type everywhere; porter 2026-11-23 linux-gfx942 (MI300X) at fork 9574fe1 (notes.md, Porter stage 1 section)"
+    },
+    {
+      "id": "feature:pointcloud_preprocessor-thrust-par_nosync",
+      "evidence": "namespace thrust::cuda = thrust::hip in the HIP-only compat header; sources unchanged; porter 2026-11-23 linux-gfx942 (MI300X) at fork 9574fe1 (notes.md, Porter stage 1 section)"
+    },
+    {
+      "id": "library:autoware_probabilistic_occupancy_grid_map_common",
+      "evidence": "built with HIP; out-of-tree tests 20x pass; porter 2026-11-23 linux-gfx942 (MI300X) at fork 9574fe1 (notes.md, Porter stage 1 section)"
+    },
+    {
+      "id": "library:autoware_probabilistic_occupancy_grid_map_cuda",
+      "evidence": "built with HIP, -fgpu-rdc for cross-file device calls; out-of-tree tests and wall-geometry probe pass; porter 2026-11-23 linux-gfx942 (MI300X) at fork 9574fe1 (notes.md, Porter stage 1 section)"
+    },
+    {
+      "id": "library:cuda_ground_segmentation",
+      "evidence": "built with HIP; porter 2026-11-23 linux-gfx942 (MI300X) at fork 9574fe1 (notes.md, Porter stage 1 section)"
+    },
+    {
+      "id": "library:cuda_ground_segmentation_lib",
+      "evidence": "built with HIP; synthetic-scene harness 0 differences vs CPU replica, 20 identical runs; porter 2026-11-23 linux-gfx942 (MI300X) at fork 9574fe1 (notes.md, Porter stage 1 section)"
+    },
+    {
+      "id": "library:cuda_pointcloud_preprocessor",
+      "evidence": "built with HIP; porter 2026-11-23 linux-gfx942 (MI300X) at fork 9574fe1 (notes.md, Porter stage 1 section)"
+    },
+    {
+      "id": "library:cuda_pointcloud_preprocessor_lib",
+      "evidence": "built with HIP; both gtests 20x pass; porter 2026-11-23 linux-gfx942 (MI300X) at fork 9574fe1 (notes.md, Porter stage 1 section)"
+    },
+    {
+      "id": "library:laserscan_based_occupancy_grid_map",
+      "evidence": "built (HIP-compiled sources, CPU node); porter 2026-11-23 linux-gfx942 (MI300X) at fork 9574fe1 (notes.md, Porter stage 1 section)"
+    },
+    {
+      "id": "library:pointcloud_based_occupancy_grid_map",
+      "evidence": "built with HIP; test_pointcloud_based_method.py 20x pass, wall-geometry probe pass; porter 2026-11-23 linux-gfx942 (MI300X) at fork 9574fe1 (notes.md, Porter stage 1 section)"
+    },
+    {
+      "id": "library:synchronized_grid_map_fusion",
+      "evidence": "built with HIP; test_synchronized_grid_map_fusion_node.py 20x pass; porter 2026-11-23 linux-gfx942 (MI300X) at fork 9574fe1 (notes.md, Porter stage 1 section)"
+    },
+    {
+      "id": "test:ground_segmentation-validator-scene",
+      "evidence": "harness kept in projects/autoware_universe/harness/; wave64 label hashes recorded in notes for the wave32 comparison; porter 2026-11-23 linux-gfx942 (MI300X) at fork 9574fe1 (notes.md, Porter stage 1 section)"
+    },
+    {
+      "id": "test:occupancy_grid_map-disabled-tests",
+      "evidence": "5 disabled tests built out of tree against the installed package, 20x pass; porter 2026-11-23 linux-gfx942 (MI300X) at fork 9574fe1 (notes.md, Porter stage 1 section)"
+    },
+    {
+      "id": "test:test_cuda_combine_cloud_handler",
+      "evidence": "8/8 x20, 0 skipped; porter 2026-11-23 linux-gfx942 (MI300X) at fork 9574fe1 (notes.md, Porter stage 1 section)"
+    },
+    {
+      "id": "test:test_cuda_pointcloud_preprocessor",
+      "evidence": "20/20 x20, 0 skipped; porter 2026-11-23 linux-gfx942 (MI300X) at fork 9574fe1 (notes.md, Porter stage 1 section)"
+    }
+  ],
+  "scoped_out": [
+    {
+      "id": "feature:agnocast",
+      "reason": "Jeff Daily, 2026-11-23 (ruling Q5 = A): default build only; the optional Agnocast variant has no GPU code and the HIP port changes none of it"
+    }
+  ],
   "owed": [
     {
       "id": "library:autoware_diffusion_planner_component",
@@ -853,10 +951,6 @@
     {
       "id": "test:test_ros_utils",
       "reason": "stage 2: needs autoware_cuda round 2 (MIGraphX TrtCommon)"
-    },
-    {
-      "id": "feature:agnocast",
-      "reason": "awaiting Jeff ruling Q5 (Agnocast)"
     },
     {
       "id": "library:autoware_tensorrt_classifier",
@@ -1036,7 +1130,7 @@
     },
     {
       "id": "library:autoware_tensorrt_bevdet",
-      "reason": "awaiting Jeff ruling Q2 (bevdet_vendor has no licence)"
+      "reason": "Jeff Daily, 2026-11-23 (ruling Q2 = B): waits for the bevdet_vendor project and its licence clearance"
     }
   ],
   "removed_from_floor": [
