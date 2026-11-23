@@ -1551,3 +1551,52 @@ Draft diff (spconv-triton 1.0.0):
 ```
 
 Scripts (host-local `agent_space/`, not committed): `analyze_autotune.py`, `gaps.py` (mtime-gap attribution grouped by warps/stages/shared), `asmstat.py` (VGPRs, scratch, asm lines per cached kernel), `compile_bench.py`, `prune_run.py`, `cmp_winners.py`, `run.sh`.
+
+## spconv-triton SPCONV_TRITON_AUTOTUNE=fast prepared for upstream (2026-11-23, linux-gfx942 measurement job, no state changed)
+
+jeff's ruling of 2026-11-23: offer the opt-in setting from the gfx1100 autotune section above to spconv-triton as a pull request he approves first, and hold Pointcept's own pull request until spconv-triton releases it. This job (AMD Instinct MI300X, gfx942, HIP_VISIBLE_DEVICES=0 pinned by the dispatcher) turned the draft into one commit and measured it. It changed no stage, lock or platform record of Pointcept and did not touch the Pointcept fork; nothing was pushed to or posted on GitHub (there is no spconv-triton fork yet). The patch, the draft title and body, and the reproduction commands are in `notes-spconv-triton-fast.md`. All GPU work ran under `ulimit -c 0`.
+
+Environment: the 2026-11-19 gfx942 validation venv's site-packages copied into this job's venv (torch 2.16.0a0+git6c3af02 / HIP 7.16.26385, Triton 3.9.0+gitfc8d31a5, the Pointcept extension eggs), spconv-triton from a clone through a `.pth` file, Pointcept `moat-port` at 35af626 (read-only clone), and the 2026-11-19 gfx942 driver `pointcept_sparse_conv_e2e.py` copied with one change: it also prints each loss with `repr()`, so the full float can be compared.
+
+### Base and design
+- Upstream `main` is `63361695` ("version 1.0.0", tag `1.0.0`), the commit the draft was written against, so no rebase. Contribution rules: the repository has no CONTRIBUTING file. The README's Testing section and `tox.ini` run `pytest tests/ -q -p no:cacheprovider`, and `pyproject.toml`/`.pre-commit-config.yaml` lint `spconv_triton/` with ruff 0.15.4 and mypy 2.2.0. Live env vars go in `constants.py` (tier 1) and `docs/ENVIRONMENT_VARIABLES.md`. `CHANGELOG.md` has an `[Unreleased]` section. The commit adds an entry to each.
+- Changed from the draft: (1) The fast lists and the helper (`GEMM_FAST`, `DWEIGHT_FAST`, `config_key`, `autotune_configs`) moved from `gemm.py` to the existing `_impl/_autotune.py`, and `gemm.py` keeps its line count. Triton 3.9 appends a kernel's starting line number to its cache key (`triton/runtime/jit.py:535`, `self.hash = dependencies_finder.ret + str(self.starting_line_number)`). With the draft's 32 added lines above the kernels, the first default-setting suite run against the upstream-main cache compiled about 900 new kernels, which would cost hours on RDNA after an upgrade. With the final layout the default setting compiles nothing (below). (2) The test is not in `tests/`. That directory is a frozen contract: `tests/test_checksums.py` asserts that every file under `tests/` matches `tests/data/MANIFEST.sha256`, and a new test file failed `test_manifest_covers_everything`. Changing the manifest is the maintainer's decision. The check went to `scripts/verify_autotune_fast.py` instead, next to the existing `verify_*.py` dev scripts (`python -m scripts.verify_autotune_fast`), and the PR body offers to move it into the suite. It probes both settings in fresh interpreters. It checks that the default lists equal the full lists, that each fast list is a non-empty proper subset with every configured entry present, that `_DW_MAX_BLOCK_K/C` is unchanged under fast and equals the full-list maximum, and that an unknown value is rejected. A mutation that derives `_DW_MAX_BLOCK_K` from the fast list (the trap recorded above) made the check fail with `[32, 128] != [128, 128]`.
+- Alternative 1 (prune candidates whose shared memory exceeds the device limit): not taken. The fast lists hold no such candidate, so it would only matter under the default setting, which this change must leave byte-for-byte unchanged. Making it correct would need an estimate that matches Triton's allocation on every backend and Triton version (pipelining buffers, layout conversions, padding), and a wrong estimate silently drops a valid winner from the default sweep. It is named as possible follow-up in the PR body, as is parallel compilation in Triton's Autotuner.
+- Lint: `ruff check spconv_triton scripts/verify_autotune_fast.py`, `ruff format --check spconv_triton` and `mypy` (pinned versions) clean. One `# noqa: S603` on the script's fixed-argv `subprocess.run`. ASCII only.
+
+### Test suite on gfx942 (276 tests)
+| run | cache | result | wall |
+|---|---|---|---|
+| upstream main 6336169 | empty | 274 passed, 1 failed, 1 skipped | 2719 s (shared the GPU with the first SpUNet pass for about 20 min) |
+| with the commit, default, `SPCONV_TEST_EXPECT_WARM=1` | copy of main's | 275 passed, 1 failed; warm guard and warm-cache witness passed; 4736 kernel dirs before and after | 42 s |
+| with the commit, default | copy of main's | 274 passed, 1 failed, 1 skipped | 41 s |
+| with the commit, `SPCONV_TRITON_AUTOTUNE=fast` | empty | 274 passed, 1 failed, 1 skipped | 447 s |
+
+The one failure is the same in every run: `test_fx_proxyable_metaclass` (`type(SparseConvTensor)` is `SpConvTensorMeta`, not `torch.fx`'s `ProxyableClassMeta`, under this torch 2.16 dev build). It fails at upstream main too, and it is unrelated to autotuning. The skip is `test_zz_warm_cache.py` outside the warm env.
+
+### SparseUNet full vs fast on gfx942 (semseg-spunet-v1m1-0-base, 2 scenes x 20000 voxels, fp32)
+Final tree, GPU otherwise idle, 40 steps; cold = empty `TRITON_CACHE_DIR`, then two warm reruns on each cache:
+
+| setting | cold first step | cache files | warm first step | steady step (steps 5-39): cold run / warm 1 / warm 2 | loss step 0 -> 39 |
+|---|---|---|---|---|---|
+| full (default) | 1154.9 s | 12311 | 10.2, 10.3 s | 0.053 / 0.049 / 0.050 s | 3.0259 -> 1.3887 |
+| fast | 138.6 s | 2207 | 10.2, 10.4 s | 0.055 / 0.053 / 0.053 s | 3.0259 -> 1.3887 |
+
+All 40 losses are bit-identical (full `repr()` floats) across all six runs. A first pass at 20 steps (the draft's layout, running alongside the main-branch suite) gave 1144.6 s vs 138.6 s first step, steady 0.057 s for both, and 20 bit-identical losses that match the 2026-11-19 gfx942 record (3.0259 -> 2.0823). So on gfx942, `fast` cuts the cold first step 8.3x (19.2 -> 2.3 min) and costs about 6 to 8% in steady step (0.049-0.050 -> 0.053 s).
+
+### Do the fast lists contain gfx942's winners? (`winners.py` over the full-mode cache)
+| kernel | keys | gfx942 winners (count) | winner in fast list | best fast / winner, geomean (worst) | summed per-key kernel time, winner vs best fast |
+|---|---|---|---|---|---|
+| `_gather_gemm_kernel` | 29 | 128/16/32 G8 w4 s3 (9), 64/16/16 G8 w2 s4 (7), 64/64/32 G8 w4 s2 (5), 4 others (8) | 12/29 | 1.059 (1.289) | 3008 vs 3239 us |
+| `_dweight_masked_kernel` | 17 | 64/64/64 w4 s3 (7), 256/16/16 w4 s3 (5), 128/32/16 w4 s3 (4), 128/64/64 w4 s3 (1) | 4/17 | 1.447 (3.153) | 1368 vs 2211 us |
+
+The unit-suite shapes agree (gather 53/76 keys, geomean 1.054; dW 7/41, geomean 1.280; there `256/16/16 w4 s3` wins 25 of 41 dW keys). gfx1100's single dW winner, `64/32/32 w4 s6`, wins no gfx942 key. So the lists are near gfx942's optimum for the gather-GEMM but not for the weight gradient. That is the 6 to 8% steady cost; the dW kernel is a small part of this workload's step, or the cost would be larger.
+
+Possible extension, not taken (for jeff): adding dW `64/64/64 w4 s3` and `256/16/16 w4 s3` and gather `128/16/32 G8 w4 s3` (7 + 4 = 10 candidates instead of 7) would hold the winner for 16/17 dW keys (geomean 1.000) and 21/29 gather keys (geomean 1.015) on gfx942, from the same timings (`winners_ext.py`). The price falls on RDNA: `64/64/64 w4 s3` compiles in 21.7 s per key on gfx1100 (the compile table above), about 7 minutes more over the 19 dW keys, and the other two were not timed on gfx1100. Whether `fast` should serve CDNA too, or stay an RDNA cold-start switch, is a design call. It needs a gfx1100 cold-time measurement of the extended lists before it goes into the PR. As prepared, the PR keeps the gfx1100-measured lists and states the MI300X cost.
+
+### What is left
+- The NVIDIA row in the draft PR body is a placeholder for jeff's V100 run. Note that on a CUDA torch Pointcept imports spconv, not spconv-triton, so that run must drive spconv-triton directly (its suite under both settings, plus a SparseUNet-style loop of `spconv_triton.pytorch` layers) or force the import.
+- jeff approves the title, body and patch, creates the spconv-triton fork, and opens the pull request himself. Pointcept's pull request stays held until spconv-triton releases the setting (his ruling). After that, Pointcept's README ROCm section can name the switch.
+
+## Lesson for cuda-to-rocm: editing lines above a Triton kernel invalidates its compile cache
+Triton (seen with 3.9) appends a `@triton.jit` function's starting line number to its cache key (`runtime/jit.py`: `self.hash = dependencies_finder.ret + str(self.starting_line_number)`). Any change that adds or removes lines above a kernel in its source file, even a comment, makes every user recompile that kernel and re-run its autotune sweep on upgrade. Where the cold compile takes hours (fp32 autotune sweeps on RDNA), a port or fix that must not cost users their cache should put new helpers in another module, or below the kernels, and keep the kernel file's line count above each kernel unchanged. To verify, run the suite against a copy of a cache filled by the previous version and count new top-level cache directories (spconv-triton's `SPCONV_TEST_EXPECT_WARM=1` guard does exactly that). Seen in Pointcept's spconv-triton dependency, 2026-11-23: about 900 recompiles from a 32-line insertion, zero after moving the code. Belongs in `diagnosis.md` or the Triton section of the build reference.
