@@ -9878,3 +9878,105 @@ Findings 1 to 13, 15 and 16 go to the porter as a fix round. Finding 14 is regis
 ## Ruling on review finding 17 (jeff, 2026-11-23)
 
 (a): leave commit `dd41f3d2`'s body as it is. No history rewrite.
+
+## Porting session 28 (2026-11-23, linux-gfx950 MI355X, porter): fix round for the 2026-11-23 review
+
+Took the lock with `set-state warp-1.14 linux-gfx950 porting` (from `changes-requested`). Fork `release/1.14.0.amd0` `26be6725..3c6714b8`: 14 commits, pushed; `advance-head` recorded. `HIP_VISIBLE_DEVICES=1` (amd-smi GPU 0), `ulimit -c 0`. "Before" measurements used session 27's installed wheel (`26be6725`, the reviewed head) from `<job>/wheelrun`; "after" used the fork tree built for gfx950 (`PYTHONPATH`). Stopped processes: only PIDs 175972 and 176053, the two processes of my own hung debug-mode run (identified by their command line and start time, 0% CPU for 10 minutes after a trap); no pattern kill.
+
+### The commits (in order)
+
+| commit | finding | change |
+|---|---|---|
+| `c0d91109` | 1 | `warp.cu`: HIP grid cap computed unsigned and clamped to INT_MAX (`block_dim` 1 gave max_blocks -1, gridDim.x 0xFFFFFFFF) |
+| `4d230f8a` | 2 | `warp.cu`: `-fno-finite-math-only` after `-ffast-math` in the hipRTC options; `test_fast_math.py`: new `test_fast_math_nan_inf`; `test_fast_math_cuda` expects 4.0 on HIP (see below) |
+| `2a08c179` | 3 | `cuda_util.h`: `wp_launch_grid`/`WP_LAUNCH_GRID`/`WP_GRID_THREAD_INDEX` (HIP: overflow into gridDim.y; CUDA: the old grid and index text); `warp.cu`: the 64-bit-count kernels' index lines and the Windows captured-memset launches; `test_array.py`: new `test_fill_large` |
+| `15c07dd6` | 4 | `tile_matmul_mma.h`: `op<float64>` and `op<bfloat16>` guarded by their own builtins |
+| `1de40317` | 5 | `tile_reduce.h`, `tile_scan.h`, `tile_radix_sort.h`: `WP_TILE_SYNC_MASK` (`__activemask()` on HIP, 0xFFFFFFFF on CUDA) at the sync-intrinsic calls; the two fast-path comparisons keep `WP_TILE_FULL_MASK` |
+| `60051d5e` | new (found by the finding 5 debug run) | `tile.h`: on HIP, `dynamic_smem_base` declared 16-byte aligned |
+| `cf188478` | 6 | `texture_software.cpp`: free the descriptor and return 0 when its upload fails |
+| `92e4a2bf` | 7 | `tile.h`: `(__CUDA_ARCH__ \|\| __HIP_DEVICE_COMPILE__) && !__INTELLISENSE__` |
+| `363daea4` | 8 | `warp.h`/`warp.cpp`/`warp.cu`: `wp_cuda_device_get_warp_size` and `DeviceInfo::warp_size` removed |
+| `52ab1a75` | 9 | `tile_matmul_mma.h`: comments say the gfx12 bf16 layout is measured; `amortizes_operand_loads` term rewritten without a division |
+| `75d5b66f` | 10 | `setup.py`: raise when the version's `+rocmX.Y` differs from the marker's ROCm (or is missing) |
+| `90d2ea90` | 11 | `setup.py`: `build_py` hook writes the wheel's marker with an empty root line; `build_dll.py`: no ROCm rpath for a build against the ROCm Python packages; `-fmacro-prefix-map` for ROCm builds (HIP compiles and Linux host C++) |
+| `57dff8bd` | 12 | `setup.py`: delete `warp/bin/<lib>.rocm` when a platform-subdirectory library without a marker is copied over it |
+| `3c6714b8` | 13 | `test_tile_matmul.py`: fragment shapes add N 32 and 64, block_dim {16, 32, 48, 64, 96}, new bf16 case (out tile, `enable_backward=False`) |
+
+The first attempt at the commit series built each commit's file contents from `HEAD`, which advanced after each commit, so the finding 2 hunk landed in the finding 3 commit. Those 14 commits were local and never pushed; I reset the branch to `26be6725` (working tree kept) and recreated them from a fixed base, so each commit holds exactly its finding. No published commit was rewritten.
+
+### Evidence per finding (gfx950, ROCm 10.2)
+
+1. Warm launch of a one-element kernel: `block_dim=1` 1739 ms before, 0.030 ms after (`block_dim=2`: 0.125 / 0.034 ms). Suite time: the two upstream files with `block_dim=1` launches, warm cache, one GPU: `test_tile_cholesky_no_mathdx` 7.47 -> 6.29 s, `test_tile_solve_no_mathdx` 7.00 -> 4.33 s (about 1.3 s per such launch, 3.9 s per run). Timing check recorded here rather than as a test (Warp's guidelines advise against timing assertions).
+2. `int(isnan(x)) + 2 * int(isinf(x))` on `[nan, inf, 1.0]` with `fast_math`: `[0, 0, 0]` before, `[1, 2, 0]` after. The new test's kernel (adds `4 * isfinite`): `[4, 4, 4, 4]` before, `[1, 2, 2, 4]` after. Side effect: upstream's `test_fast_math_cuda` (expects `pow(-2, 2)` = NaN under fast math, NVRTC's approximate pow) had passed on HIP only because its `isnan` check was folded; HIP's fast pow gives 4.0, so the test now expects 4.0 on HIP devices and NaN elsewhere. test_fast_math 14 OK (1 skipped).
+3. `wp.zeros((65536, 65544), dtype=wp.int16).fill_(7)` (4,295,491,584 elements): all 0 before, all 7 after. New test (65536 x 65537 int16, first and last row; the last row crosses flat index 2^32; skipped below 12 GB free) passes. Kernels exposed (64-bit element count, one thread per element, correct on CUDA above 2^32 - 1 and not on HIP): `memtile_value_kernel`, `memtile_kernel`, `memtile_kernel_by_value<N>`, `array_copy_{1,2,3,4}d_kernel`, the seven fabric copy kernels, `array_fill_{1,2,3,4}d_kernel` and `_by_value<N>`, `array_fill_fabric(_indexed)_kernel` and `_by_value<N>`, and the Windows captured-memset `memset_kernel`/`memtile_value_kernel<uint8_t>` launches. Not exposed (int counts, at most 2^31 - 1 elements): every kernel in `bvh.cu`, `mesh.cu`, `hashgrid.cu`, `sparse.cu`, `volume.cu` and the remaining `warp.cu` launches. Chosen form: the y-dimension overflow, one line per kernel; a capped grid plus grid-stride loop would re-indent every kernel body, and split launches would need an offset argument in every kernel.
+4. hipRTC compile of a 16x16x16 `tile_matmul` (block_dim 64) for gfx908 / gfx90a / gfx950 (`agent_space/s28/mfma_targets.py`, `warp._src.build.build_cuda(..., hip_target=...)`): before, fp64 and bf16 (float32 out) fail on gfx908 (HIP kernel build error 6), all others compile; after, all four types compile on all three targets. `v_mfma` count in the code objects after: gfx908 fp32 16, fp16 4, fp64 0, bf16 0; gfx90a fp32 16, fp64 16, fp16 4, bf16 1. **gfx908's fp32 and fp16 MFMA paths have no hardware run** (same CDNA 16x16 layouts as gfx90a, unmeasured).
+5. Debug mode `tile_sum` over 128 floats: block_dim 32 -> error 700 (the trap) before; 64, 32, 96 all 8128 after. All tile tests in debug mode (`python -m warp.tests -s autodetect --warp-debug -p "test_tile*.py"`): before (wheel), 416 OK and 120 errors, then the run hung in a trapped worker (stopped after 10 minutes at 0% CPU). After the mask change alone: 599 run, 147 errors, all from a second cause (next item). After both: **599 tests OK (9 skipped)**, no device assertion, no error 700. Release mode: the 21 tile kernels of `tile_perf.py` (tile_sum, tile_max, tile_argmax, tile_reduce, tile_scan_inclusive/exclusive, tile_sort at block_dim 32, 64, 256) plus a control kernel disassemble to identical instructions and operands before and after the mask change (22 of 22).
+   New finding, fixed in `60051d5e`: AMDGPU places `extern __shared__ char dynamic_smem_base[]` right after the kernel's static shared variables at the array's alignment (1 byte), while CUDA starts dynamic shared memory 16-byte aligned; shared tiles are copied with 16-byte accesses. In debug mode `copy_from_global`'s assertion "shared tile pointer not 16-byte aligned" fired in test_tile_reduce, test_tile_func_arg, test_tile_cholesky_no_mathdx and test_tile_solve_no_mathdx (release-mode kernels of those four files at `26be6725`: 38 of 92 have a static shared size that is not a multiple of 16). With `__attribute__((aligned(16)))` on HIP the four files pass in debug mode. Performance, release mode, mask and alignment changes together against `26be6725`, 65536 tiles of 256 floats, 7 interleaved rounds, minimum: every cell 0.998x to 1.011x, noise floor 1.000x (table below). Release tile tests 599 OK (9 skipped).
+6. Code change only (the failure needs an earlier sticky error); `Texture.__init__` already raises on a 0 handle. test_texture 118 OK (7 skipped).
+7. Precedence restored; compiler output unchanged.
+8. Export and field removed; nothing referenced them. test_devices 14 OK, test_context 1 OK.
+9. Comments corrected. The `&& WP_TILE_BLOCK_DIM >= kWave` guard the reviewer proposed still drew clang's warning (it evaluates the constant division), so the term is now `WP_TILE_BLOCK_DIM >= kWave && fragments >= 4 * (WP_TILE_BLOCK_DIM / kWave)`, equal where the old one was defined. fp16 64x64x64 `tile_matmul` at block_dim 16 through hipRTC for gfx1100: 4 `-Wdivision-by-zero` warnings before, 0 after.
+10. `get_rocm_requirement` on scratch files (`agent_space/s28/setupcheck/check.py`), VERSION 1.14.0+rocm10.2.0: before, a 10.1.0 marker gave `rocm>=10.1,<10.2`; after, it raises; a 10.2.0 marker gives `rocm>=10.2,<10.3` both times.
+11. Session 27's wheel had the build venv's ROCm root as the marker's first line, the same root's `lib` in `warp.so`'s RUNPATH, and 22 `__FILE__` strings with the job path in `warp.so` (`check_cuda`/`check_cu` and nanovdb/cuBQL error paths). The new release wheel: marker `'\n10.2.0\n'`, RUNPATH `$ORIGIN`, no file in the wheel contains the job path (warp.so and warp-clang.so checked with `strings`, every wheel member with a byte search). Remaining, not changed: the host C++ of a Windows build goes through MSVC, which has no documented `-fmacro-prefix-map` equivalent, so a future Windows wheel would still carry `__FILE__` paths of its `.cpp` files (its `.cu` files go through clang and are covered).
+12. `get_warp_libraries` on scratch files (a CUDA library in `bin/linux-x86_64`, a stale `warp/bin/warp.so.rocm`): the stale marker survived before, removed after.
+13. test_tile_matmul 26 OK in release and in debug mode (fp16, fp32, fp64 and bf16 fragment tests, 6 shapes x 5 block sizes each).
+15. The lesson "Windows HIP graph relaunch races its own memory-free nodes" now recommends waiting after each launch and says why waiting before is not enough (edited in place above, before promotion).
+16. Release notes draft (session 26 copy above and `agent_space/release_notes_draft.md`): the Textures bullet now reads "MI300X and MI355X have no texture sampling hardware. ... On MI250X, 3D textures are also sampled in software, because HIP does not support linear filtering of 3D textures on that GPU. The CUDA interop handles (...) are not available for textures sampled in software." `utils/prose.py`: clean; no mention of the 1.13 port.
+
+Finding 14 (gfx1250 fp32 WMMA) and finding 17: not touched, as routed. Jeff's later rulings in this branch (finding 17: leave the body; `warp-hip-gfx1250-fp32-wmma` decided "now", to be measured on the gfx1250 host) arrived during the round; the gfx1250 measurement needs that host and is not done here.
+
+Tile performance, release mode, `26be6725` (before) against the fork tree with the mask and alignment commits (after), GPU time per launch over 65536 tiles of 256 floats, 7 interleaved rounds (`agent_space/s28/tile_perf.py`, `perf_rounds.sh`):
+
+| op | block_dim | before us (min / median) | after us (min / median) | after/before (min) | after/before (median) |
+|---|---|---|---|---|---|
+| argmax | 32 | 24.9 / 25.1 | 24.9 / 25.0 | 1.000 | 0.998 |
+| argmax | 64 | 19.0 / 19.1 | 19.0 / 19.1 | 1.004 | 1.001 |
+| argmax | 256 | 52.7 / 53.0 | 52.8 / 53.0 | 1.002 | 1.000 |
+| max | 32 | 20.4 / 20.5 | 20.4 / 20.6 | 1.002 | 1.005 |
+| max | 64 | 17.8 / 17.9 | 17.8 / 17.8 | 1.000 | 0.999 |
+| max | 256 | 47.5 / 47.6 | 47.5 / 47.7 | 0.999 | 1.001 |
+| reduce | 32 | 19.0 / 19.2 | 19.0 / 19.1 | 1.001 | 0.997 |
+| reduce | 64 | 17.5 / 17.8 | 17.6 / 17.7 | 1.002 | 0.997 |
+| reduce | 256 | 44.4 / 44.5 | 44.4 / 44.6 | 1.001 | 1.002 |
+| scan_exc | 32 | 87.7 / 88.0 | 87.7 / 87.9 | 1.000 | 0.999 |
+| scan_exc | 64 | 48.9 / 49.0 | 48.8 / 49.0 | 0.998 | 1.000 |
+| scan_exc | 256 | 60.9 / 61.0 | 60.9 / 61.0 | 1.000 | 1.001 |
+| scan_inc | 32 | 82.7 / 82.9 | 82.6 / 82.9 | 0.999 | 1.001 |
+| scan_inc | 64 | 46.3 / 46.6 | 46.4 / 46.4 | 1.002 | 0.996 |
+| scan_inc | 256 | 60.5 / 60.6 | 60.4 / 60.7 | 1.000 | 1.001 |
+| sort | 32 | 498.1 / 500.2 | 498.3 / 499.9 | 1.000 | 0.999 |
+| sort | 64 | 229.4 / 229.7 | 229.5 / 229.9 | 1.000 | 1.001 |
+| sort | 256 | 313.5 / 314.4 | 313.4 / 314.2 | 1.000 | 0.999 |
+| sum | 32 | 19.8 / 20.0 | 19.9 / 20.0 | 1.003 | 1.000 |
+| sum | 64 | 18.2 / 18.5 | 18.5 / 18.5 | 1.011 | 1.002 |
+| sum | 256 | 44.4 / 44.5 | 44.5 / 44.6 | 1.002 | 1.002 |
+| noise_floor | 0 | 32.6 / 32.7 | 32.6 / 32.7 | 1.000 | 1.000 |
+
+### Question for Jeff (finding 2, no decision taken)
+
+12. Besides `-ffinite-math-only` (now undone), Clang's `-ffast-math` on HIP differs from NVRTC's `--use_fast_math` in ways a `fast_math` module can observe. Measured on gfx950 after this round's fix (`agent_space/s28/fastmath_probe.py`):
+   - Reassociation (`-fassociative-math`): `(x + 1e8) - 1e8` with x = 1 gives 1.0 with fast math (0.0 without); NVRTC's option does not reassociate.
+   - No signed zeros (`-fno-signed-zeros`): `1 / (z + 0.0)` with z = -0.0 gives -inf with fast math (+inf without); NVRTC keeps IEEE signed zeros.
+   - Denormals: HIP keeps them with fast math (`1e-40 * 1` stays 1e-40); NVRTC's `--use_fast_math` implies `--ftz=true` and flushes them.
+   - Alike: division is approximate on both (HIP: 300,713 of 1,048,576 quotients differ from the correctly rounded value, at most 2 ulp; NVRTC uses approximate division with `--prec-div=false`), and sin/exp/sqrt use approximate forms on both (HIP: up to 8 ulp from the non-fast result).
+   Dependence: Warp's configuration guide defines the option as compiling with "the `--use_fast_math` compiler option" (NVRTC's); the only test of its semantics is `test_fast_math.py` (negative-base pow, approximate division and inverse, and now NaN/Inf), and none depends on reassociation, signed zeros or denormal flushing. Options: (a) keep `-ffast-math -fno-finite-math-only` (this round); (b) replace `-ffast-math` on HIP with the parts that match NVRTC's option: approximate functions and reciprocal division (`-fapprox-func -freciprocal-math`) and denormal flushing (`-fgpu-flush-denormals-to-zero`), leaving out reassociation and signed-zero folding; (c) (a) plus a sentence in the release notes. Not implemented, as instructed.
+
+### Final step (head `3c6714b8`)
+
+- nvcc check (as in session 19): `cuda_pp.sh` (nvcc 12.8, sm_90) of `26be6725` against `3c6714b8`, line numbers normalized: 2 of 24 translation units identical; the others differ only by the removed `wp_cuda_device_get_warp_size` declaration (finding 8; the port had added it), and `warp.cu` also by the copy/fill kernels' index expressions (`size_t(blockIdx.x) * size_t(blockDim.x) + size_t(threadIdx.x)`, parenthesized, and for the memtile kernels in that operand order instead of blockDim * blockIdx: the same value). `WP_LAUNCH_GRID` expands to the old grid text. CUDA build of `3c6714b8` (worktree `agent_space/wcuda_s24`, `build_lib.py --cuda-path /usr/local/cuda --no-use-libmathdx -j 32`, sm_52 to sm_120): "Warp build succeeded", warp.so 199,760,928 bytes.
+- Release build: `agent_space/relbuild.sh <clone> 64` (the 25 Linux targets, `--offload-compress`, `-fmacro-prefix-map`), wall 254 s; warp.so 10,922,824 bytes, no build-path string, RUNPATH `$ORIGIN`.
+- Wheel: `python -m build --wheel -C--build-option=-Plinux-x86_64 -o <job>/wheel` in the clean clone at `3c6714b8`. **Kept at `/var/lib/jenkins/fleet/jobs/mi355-20261119-154230-warp114-perf-porter-mi355-prompt/wheel/warp_lang-1.14.0+rocm10.2.0-py3-none-manylinux_2_28_x86_64.whl`: 37,193,073 bytes, sha256 `e757280392167d5c59c0f2d45b10121666781cad257e2869190f750051f3bb00`.** Contents: warp.so 10,922,824, warp-clang.so 67,136,896, warp.so.rocm 8 (`'\n10.2.0\n'`); 548 entries; no NVIDIA binary; no member contains the job path. METADATA: `Version: 1.14.0+rocm10.2.0`, `Requires-Dist: rocm<10.3,>=10.2`, no NVIDIA CUDA classifier. Session 27's wheel moved to `<job>/wheel/old_26be6725/`.
+- Install: `$FLEET_VENV/bin/pip install --force-reinstall --no-deps <wheel>` (job venv; `pip check` clean). **Installed size (`du -sb site-packages/warp`) 106,364,306 bytes**; installed warp.so sha256 equals the build's.
+- Full default suite from the installed wheel (`agent_space/suite_wheel.sh`, cwd `<job>/wheelrun`, `warp.__file__` in site-packages, fresh kernel cache, `HIP_VISIBLE_DEVICES=1`): **Ran 7562 tests in 612.8 s, OK (skipped=81)**, wall 619 s; host load average 232 at the start (other users' jobs, 8 of their processes on the GPU). 7562 = session 27's 7558 + test_fill_large, test_fast_math_nan_inf (CPU and GPU) and the bf16 fragment test.
+- Tile tests in debug mode from the installed wheel (`python -m warp.tests -s autodetect --warp-debug -p "test_tile*.py"`, cwd `<job>/wheelrun`): **Ran 599 tests in 162.5 s, OK (skipped=9)**, no device assertion, no error 700.
+- Every result clean: stage moved to `ported` (lock released) for the reviewer. Validators revalidate at `3c6714b8`. The gfx1250 fp32 WMMA measurement ruled "now" is outstanding on the gfx1250 host; if it changes the head, the wheel is rebuilt after it.
+
+### Scripts (`agent_space/s28/`)
+
+`repro.py` (findings 1, 2, 3, 5), `fm_test_kernel.py`, `mfma_targets.py`, `wmma_warn.py`, `fastmath_probe.py`, `tile_perf.py` with `perf_rounds.sh`, `lds_load.py` with `lds_scan.sh`, `setupcheck/check.py`, `tests_after.sh`, `split.py` (the commit split). Recipes are in the evidence lines above; the scripts are scratch.
+
+## Lesson for cuda-to-rocm: dynamic shared memory is not 16-byte aligned on AMDGPU unless declared so
+Reference file: `references/diagnosis.md` (or the fault-class reference). CUDA starts a kernel's dynamic shared memory (`extern __shared__ char buf[];`) 16-byte aligned, and code that carves vector-typed tiles out of it relies on that. AMDGPU places the dynamic window directly after the kernel's static `__shared__` variables, at the alignment declared on the `extern` array (1 byte for `char`), so where it starts depends on how much static shared memory the kernel has. Release builds usually run anyway (the hardware tolerates the misaligned LDS vector access), which hides it; an alignment assertion in a debug build, or a kernel whose static shared size is not a multiple of 16 (read `.group_segment_fixed_size` with `llvm-readelf --notes` on the code object), shows it. Fix on HIP: `extern __shared__ char buf[] __attribute__((aligned(16)));` (an `alignas` after `__shared__` is a syntax error). (warp-1.14)
+
+## Lesson for cuda-to-rocm: HIP's `*_sync` warp functions check the mask in debug builds
+Reference file: the wavefront reference. HIP's `__ballot_sync`, `__shfl_*_sync` and `__syncwarp(mask)` assert, in any compile without `NDEBUG`, that the mask names exactly the lanes executing the call, and trap otherwise (the launch ends in "illegal memory access", error 700). Code that passes a constant full mask (`~0ull`, or CUDA's `0xFFFFFFFF` widened) works in release builds, where the mask is not checked and a ballot already covers only the executing lanes, but traps in debug builds wherever part of the wavefront is inactive: a block narrower than 64 threads on a 64-wide GPU, the last wavefront of a block that is not a whole number of wavefronts, or a branch on a 32-thread group. Pass `__activemask()` on HIP; keep a constant only where the code compares a mask against "all lanes" to choose a fast path. Release machine code does not change. (warp-1.14)
