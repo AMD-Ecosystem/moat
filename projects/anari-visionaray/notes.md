@@ -1280,3 +1280,58 @@ items all closed (f4cf2aa, be630da, 6f1e793). Whole branch: jargon clean, commit
 <= 72 chars, [ROCm] only on HIP-only commits, AI disclosure in each body, Test Plan
 present, no Co-Authored-By. No GPU run exists at this head (pinned GPU hangs; see porter
 section); per the reviewer scope that is the validator's gate, not a review finding.
+
+## Validation 2026-11-23 (linux-gfx1201, validator) -- NOT RUN, pinned GPU hangs; nothing recorded
+
+Head 6f1e7937, stage review-passed. Build passes (see porter sections). The GPU run could
+not happen: HIP_VISIBLE_DEVICES=0 (the dispatcher's pin) hangs any HIP program at runtime
+init, re-checked at 21:13 UTC with the smoke kernel (`timeout 30 ./smoke` -> 124); GPU 1
+belongs to another fleet job and GPU 2 is busy. Per jeff's handling of the same card for
+the other job on this host, the pin was kept and the run stopped. No completed or failed
+verdict and no set-blocked was recorded: the card, not the platform, is the problem, and
+a re-dispatch with a healthy pin should find linux-gfx1201 port-ready at this head.
+
+To resume (any host): build visionaray master with the hip_bvh.h assign_indices fix, the
+recipe above, then the harness (agent_space/anari_validate.cpp in this job dir; the
+scenes are described in the porter section) under `ulimit -c 0`, RUNS=8, both devices;
+compare with the gfx1100/windows-gfx1201 records (surface, nearest/linear structured
+volume, NanoVDB nearest/linear, all PASS) and add the new gaussian-splat scene. Also owed
+at 6f1e7937: linux-gfx90a, linux-gfx1100, windows-gfx1201 revalidation (full runs: the
+delta changes device code), and the nvcc compile check (mi355 host).
+
+## Fix review PR draft
+
+Title: Merge upstream main into the HIP device PR (#10)
+
+Body:
+
+Nobody on szellmann/anari-visionaray#10 asked for a change (no comments, reviews or line comments). GitHub reported the PR as conflicting: main moved 139 commits (7edfca5 -> c1aa91b), including the device-object split into dco/*.h, the Pathtrace renderer, a copy stream, CWBVH traversal for all GPU geometry, Gaussian splats, configurable library names, and a move to visionaray 0.7.0. This round merges main and brings the HIP device back to building and matching the CUDA device on the new code. moat-port stays at 1b6b35a8; this PR's diff is the delta (head 6f1e793).
+
+Commits on moat-fix-10:
+
+1. 5906f35 Merge branch 'main' of szellmann/anari-visionaray. Conflicts in DeviceBVH.h, DeviceCopyableObjects.h, frame/Frame.h, scene/VisionarayScene.cpp, BlockStructuredField.{h,cpp} and UnstructuredField.{h,cpp}; the commit message lists each resolution. One textually clean merge was wrong and was reverted to main: Frame.cpp kept the port's currentFrame reset, a field main removed.
+2. 9e6399e [ROCm] Use compressed-wide BVHs on the HIP device. Main's HIP arms no longer compiled (BVH2 refs traversed as CWBVH, a host cwbvh as the HIP device BVH, a nonexistent hip_lbvh.h include, HIP stream syncs guarded by WITH_CUDA). HIP now mirrors CUDA with a hip_cwbvh alias.
+3. 6ad0301 [ROCm] Export the HIP library entry point under its configured name. Main's configurable names left the HIP library without a loadable entry point.
+4. f4cf2aa [ROCm] Copy the TAA history buffers on the device with HIP. With taa on, HIP host-memcpy'd device buffers (present since before the original port, found in this round's review).
+5. be630da [ROCm] Honor the GPU selection on the HIP device. Main added cudaDevice / VISIONARAY_CUDA_DEVICE selection for CUDA only; HIP gets the same arms.
+6. 6f1e793 [ROCm] Finish the HIP host staging of BVH primitives and BLS bounds. The HIP staging copy in rebuildHostBVH2 is synchronized before the host build reads it (the published port used a blocking copy; main's async form is not guaranteed complete on HIP), and get_bounds(BLS) no longer returns an uninitialized node for an empty BVH.
+
+Dependency: the HIP device needs a two-line fix in visionaray master, include/visionaray/detail/bvh/hip_bvh.h: the two assign_indices() overloads take cuda_index_bvh<P>& / cuda_bvh<P>& and must take hip_index_bvh<P>& / hip_bvh<P>&. Without it the HIP device does not compile against visionaray master. That fix is not part of this PR.
+
+Retested:
+
+- linux-gfx1201 (ROCm 10.1): CPU and HIP libraries build at 6f1e793 (8 gfx1201 code objects), against visionaray master with the hip_bvh.h fix. The CPU device renders the surface scene. GPU run not done on this host: the GPU the job was pinned to hangs at HIP runtime init for any program (a 64-thread smoke kernel too), so the HIP render tests are owed.
+- CUDA compile check of 6f1e793: owed (no nvcc on this host).
+- Owed before approval: GPU runs on gfx90a, gfx1100 and Windows gfx1201 at 6f1e793; nvcc compile check.
+
+## Upstream reply
+
+I merged main into this branch and resolved the conflicts. Main's HIP code needed a few fixes to build and run against visionaray master: the HIP device now uses CWBVHs like the CUDA device, the HIP library exports its entry point under the configured name again, the TAA history copy runs on the device, the cudaDevice selection works on HIP too, and two HIP-only host staging paths now wait for their data.
+
+The HIP device also needs a small fix in visionaray: in include/visionaray/detail/bvh/hip_bvh.h, the two assign_indices() overloads take cuda_index_bvh<P>& and cuda_bvh<P>& and should take hip_index_bvh<P>& and hip_bvh<P>&. Nothing in visionaray includes that header, so its CI doesn't catch it.
+
+## Notes for us (not posted)
+
+- The reply names no GPU because no platform has a completed validation at 6f1e793. When validations land, add one sentence naming exactly those GPUs before opening the fix review PR.
+- Whether to send the visionaray hip_bvh.h fix as a PR to szellmann/visionaray (a follow-up round on the visionaray project) or leave it to the maintainer from this reply is jeff's call (deferral visionaray-hip-lbvh-assign-indices).
+- Windows risk: visionaray's intersect_ray1_cwbvh.inl uses __lzcnt under _WIN32 in code that is now compiled for the HIP device; untested here.
