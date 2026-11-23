@@ -2,6 +2,12 @@
 
 ## Port status
 
+2026-11-23: fork `moat-port` @ 8ee59a5, one commit on top of jeff's squash
+21bce04 (tree-identical to c44ed01). It makes the Jacobi eigensolver in `PDSNK`
+HIP-only; the CUDA build compiles upstream's `Eigen::SelfAdjointEigenSolver`
+code again. See "## Porter round 2026-11-23 (linux-gfx942)". The CUDA compile
+of 8ee59a5 is owed (no nvcc on the gfx942 host).
+
 2026-11-20: fork `moat-port` @ 29e2494, a merge of upstream main (4fb6019,
 13 commits past the old base 46594e0) on top of f9604bb. CUDA-compiled, and
 validated on gfx1100 (W7800) at 29e2494: 90 frames, no wedge (see
@@ -141,6 +147,14 @@ needs no workspace and no matrix product, is backward stable on symmetric input,
 and compiles identically for nvcc and hipcc, so there is no conditional fork. The
 `V * D * V^T` reconstruction is written as explicit loops for the same reason --
 a fixed-size 12x12 Eigen product re-enters the host-only path.
+
+Correction 2026-11-23: "a fixed-size 12x12 Eigen product re-enters the
+host-only path" is wrong. `V * D * V.transpose()` on `Matrix<double,12,12>`
+compiles and device-links in a HIP kernel (hipcc 7.16.26385, Eigen 3.4.0,
+gfx942, with and without `-fgpu-rdc`); the host-only `scaleAndAddTo` calls in
+the solver are on the dynamic-size blocks of the tridiagonalization. That is
+what lets the 2026-11-23 round share upstream's reconstruction on both back
+ends. "No conditional fork" no longer holds either: the solver is now HIP-only.
 
 Register cost: two 12x12 double arrays per thread (2304 bytes) spill to scratch.
 The Eigen original also built 12x12 temporaries on the stack, so this is not new,
@@ -1984,3 +1998,189 @@ Both exit 0, 153 warnings each (the known `[[nodiscard]]` pattern). Comparison:
 No GPU run needed: the executable validated at 29e2494 is the same file. Fork tree
 clean apart from the untracked build dirs. Recorded
 `carry-forward GPU_IPC linux-gfx942 c44ed01 binary-equiv --host-checked`.
+
+## Porter round 2026-11-23 (linux-gfx942)
+
+Request from jeff: under CUDA, `PDSNK` must be upstream's Eigen code exactly
+(the port has never run on an NVIDIA GPU, the Jacobi solver is unmeasured
+there, and the PR says the CUDA build is unchanged); the Jacobi solver becomes
+HIP-only with the smallest guard. `set-state GPU_IPC linux-gfx942 porting` took
+the lock with no warning (nobody held it).
+
+### Change: fork commit 8ee59a5 on top of 21bce04
+
+"[ROCm] Keep Eigen's eigensolver in PDSNK for the CUDA build", femEnergy.cu only.
+
+- The Jacobi routine is now a class, `SelfAdjointJacobiSolver<MatrixType>`,
+  defined only under `#if defined(USE_HIP) || defined(__HIP_PLATFORM_AMD__)`
+  (the guard the port uses in cuda_to_hip.h, device_utils.inl,
+  MASPreconditioner.cu, cuda_cub_wrappers.cu and mlbvh.cu). It has the two
+  accessors `PDSNK` reads from Eigen's solver: `eigenvalues()` sorted in
+  increasing order (a selection sort, as Eigen does, because upstream's early
+  return tests `eigenvalues()[0] >= 0.0` as "all non-negative") and
+  `eigenvectors()` as columns. The Jacobi sweep, the normalization and the
+  convergence test are the reviewed code from 21bce04, with the eigenvector
+  array replaced by the member matrix.
+- `PDSNK` is upstream's function again, signature included (`__device__`, not
+  the port's `__device__ __host__`; nothing calls it from the host). The only
+  guarded lines are the solver's declaration:
+  `SelfAdjointJacobiSolver<...> eigenSolver(symMtr);` under HIP,
+  `Eigen::SelfAdjointEigenSolver<...> eigenSolver(symMtr);` otherwise. The early
+  return, the clamp into `D` and `symMtr = eigenSolver.eigenvectors() * D *
+  eigenSolver.eigenvectors().transpose();` are upstream's text, shared.
+- Sharing the reconstruction was possible because the fixed-size 12x12 Eigen
+  product compiles in a HIP kernel (checked with hipcc 7.16.26385, Eigen 3.4.0,
+  gfx942, `-c` and a full `-fgpu-rdc` device link), contrary to the 2026-08 note
+  (corrected in place above). The 12x12 `SelfAdjointEigenSolver` constructor
+  still fails in a HIP kernel on this toolchain, with the same errors as before:
+  `scaleAndAddTo` (ProductEvaluators.h:361, dynamic-size blocks), `extract` /
+  `extractScalarFactor` (BlasUtil.h:453/455), `applyThisOnTheLeft`
+  (HouseholderSequence.h:320/322).
+
+CUDA view check: stripping every `#if defined(USE_HIP) ||
+defined(__HIP_PLATFORM_AMD__)` block (keeping `#else` parts) from the new
+femEnergy.cu and diffing against `git show main:GPU_IPC/femEnergy.cu` leaves
+one added blank line before `template <typename Scalar, int size>` (between
+`#endif` and `PDSNK`) and nothing else: the CUDA translation unit is
+upstream's token for token.
+
+Host numeric check (g++ 13.3, -O2, the class and both PDSNK variants pasted
+from the file): 20000 random symmetric 12x12 matrices (every third shifted
+by +8I, every seventh scaled by 1e6; 17536 needed projection). Eigenvalues vs
+Eigen: worst 4.6e-15 relative. Projected matrix, HIP-side PDSNK vs upstream's:
+worst 1.1e-14 relative (Frobenius).
+
+README and other comments: nothing describes the solver as shared, so no
+change. The PR draft and squash message below are updated.
+
+### Build (gfx942, this host)
+
+The image no longer has Eigen, GLEW, freeglut, Xvfb or xdotool, and the
+build dependencies must stay out of the image's shared paths, so they were
+unpacked into the job directory: `apt-get update` and `apt-get download` with
+`-o Dir::State::Lists=<job>/deps/apt/lists -o Dir::Cache=<job>/deps/apt/cache
+-o Debug::NoLocking=1` (no root, nothing installed), for `libeigen3-dev
+libglew-dev libglut-dev libglu1-mesa-dev libgl-dev libglx-dev libegl-dev
+libgles-dev libglvnd-dev xvfb xdotool libgl1-mesa-dri libglx-mesa0` and the
+dependencies `apt-get -s install` named (53 debs), each `dpkg -x` into
+`<job>/deps/root`. Dangling relative `.so` symlinks there (libGLX.so ->
+libGLX.so.0, ...) were repointed to the system copies in
+/usr/lib/x86_64-linux-gnu.
+
+TheRock pip SDK (`/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel`,
+package 10.1.0, hipcc 7.16.26385, AMD clang 24.0.0git), cmake 3.31 and Ninja
+from the same venv:
+
+```bash
+cmake -S . -B build -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 \
+  -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=<SDK root>;<job>/deps/root/usr"
+cmake --build build -j 56
+```
+
+Exit 0 (wrapped in `timeit.sh GPU_IPC compile`), 153 warnings, the known
+`[[nodiscard]]` pattern, the same count as the 2026-11-20 gfx942 record.
+21bce04 built the same way at the same source path into `build-old`.
+`codeobj_diff.py build-old build`: `verdict=differ` (device ISA differs), as
+expected: the HIP reconstruction is now Eigen's 12x12 product instead of the
+port's explicit loops, and eigenvalues are sorted.
+
+### Headless harness change on this host
+
+Xvfb execs `/usr/bin/xkbcomp`, which the image lacks, and dies with "Failed to
+activate virtual core keyboard". Xvfb was started inside a private mount
+namespace (`unshare -rm`) that bind-mounts a job-local directory over /usr/bin
+(symlinks to the real /usr/bin entries through a second bind, plus the
+unpacked xkbcomp), with `-xkbdir <job>/deps/root/usr/share/X11/xkb`. Only that
+process sees the overlay. gipc runs outside the namespace as before:
+`LIBGL_ALWAYS_SOFTWARE=1`, `AMD_LOG_LEVEL=1` (errors only; level 3 wrote 8.3 GB
+in five minutes last time), `stdbuf -o0`, `xdotool key --window <FEM> space`,
+killed after the window, `ulimit -c 0`, `HIP_VISIBLE_DEVICES=5` as pinned by
+the dispatcher (no processes on it, `amd-smi process -g 5`).
+
+### GPU run, 300 s each, same partition, new head vs a 21bce04 control
+
+The pinned device is a 38-CU compute partition of an MI300X (`amd-smi static
+-g 5 --asic`: NUM_COMPUTE_UNITS 38; the host now lists 63 GPU devices). The
+2026-11-20 record did not note its CU count; its 40-52 ms frames fit a
+whole-device run. So throughput is not comparable with that record, and
+21bce04 was run on the same partition as the control.
+
+| build | frames in 300 s | avg ms/frame (end) | Newton k per frame min/median/max | kappa end | NaN | HIP errors |
+|---|---|---|---|---|---|---|
+| 8ee59a5 (new) | 116 | 136.4 | 2 / 16 / 77 | 2948.53 | 0 | 0 |
+| 21bce04 (control) | 129 | 138.7 | 2 / 15 / 64 | 2952.39 | 0 | 0 |
+
+Same scene in both (38386 vertices, 159870 tets, 41664 faces, 4 levels,
+initial kappa 2824.037412, identical to every earlier record). No
+"intersection happened" lines, nothing on stderr apart from GLEW's status line.
+
+The per-frame Newton counts are identical for frames 1-30 (3,2,2,3 x19,4,17,18,
+8,5,5,5,5,11), then diverge from frame 31 (32 vs 31, 53 vs 51, ...). That is
+roundoff: the HIP projection now sums the reconstruction in Eigen's order and
+sorts the eigenpairs, so `H` differs in the last bits (1e-14 relative on the
+host test), and the contact-rich frames from 31 on amplify it. The frame-time
+difference is under 2 %, and the 13-frame count difference follows from the
+iteration counts after frame 31. Device code under HIP is therefore not the
+same as before (the request expected it would be, assuming the HIP path kept
+its own reconstruction); the difference is the shared upstream reconstruction
+and is numerically equivalent.
+
+Against the 2026-11-20 gfx942 record (833 frames, Newton median 4): that
+median is over 833 frames, most of them after the scene settles; these
+300 s runs end at frame 116-129, inside the contact-heavy phase, in both
+builds. A longer run is in "## Validation 2026-11-23" below.
+
+### Other places where the port changes what the CUDA build compiles or does
+
+Beyond the `cuda_to_hip.h` includes and the documented no-ops (32 in the block
+reductions, `gipc::SYNC_WARP` / `gipc::WARP_MATCH_ANY`), `git diff main
+moat-port` has these. None is the same kind of problem as the Jacobi solver (a
+different computation on CUDA), so none was changed; jeff decides.
+
+1. GPU_IPC/gl_main.cpp:91: the `cudaSetDevice` failure message reads "Do you
+   have a CUDA/HIP-capable GPU installed?" instead of upstream's
+   "CUDA-capable". The CUDA binary prints different text on that path.
+   Recommendation: revert to upstream's string. It is cosmetic, but it is the
+   one change that makes "the CUDA build is unchanged" literally untrue at
+   run time, and an AMD user is not misled by "CUDA-capable" in a CUDA
+   program's message.
+2. GPU_IPC/mlbvh.cu, 11 launch sites: upstream's `<< <grid, block >> >`
+   spacing is rewritten as `<<<grid, block >>>`. nvcc parses both as the same
+   launch, so the CUDA object is unaffected; clang's HIP front end does not
+   accept the spaced form. Recommendation: keep (it is required for HIP and is
+   a token-level no-op for nvcc, which the owed nvcc compile confirms).
+3. `#include "device_launch_parameters.h"` was removed from
+   MASPreconditioner.cu, PCG_SOLVER.cu, gl_main.cpp and mlbvh.cuh; on CUDA
+   `cuda_to_hip.h` includes it, so each file still gets it, and the host-only
+   files that include `cuda_to_hip.h` (load_mesh.h, device_buffer.h, ...) now
+   also see it. Declarations only. Recommendation: keep.
+4. CMakeLists.txt, CUDA configure: compiled flags, targets and libraries are
+   upstream's text in the `else()` branches, and the new
+   `$<$<BOOL:${USE_HIP}>:USE_HIP>` definition is empty on CUDA. The configure
+   log differs: a new `-- Backend: CUDA` line, and `-- CUDA standard` now
+   prints before `-- C++ standard`. A `USE_HIP` cache option appears.
+   Recommendation: keep; restore upstream's message order only if jeff wants
+   the CUDA configure output identical too.
+
+Checked and unchanged on CUDA: `WARP_MASK_FROM_COUNT` keeps upstream's
+`warpSize` test in the CUDA branch; the cooperative-groups and CUB includes
+keep upstream's text in the `#else` branches; femEnergy.cu changes nothing
+else outside `PDSNK`.
+
+### CUDA no-regression compile: owed
+
+This host has no nvcc. The CUDA compile of 8ee59a5 (both before/after, sm_80,
+as in "## Upstream sync 2026-11-20") is owed and jeff will run it on the host
+that has nvcc. What it should show: femEnergy.cu compiles; the last CUDA
+compile (29e2494) had `PDSNK` on the Jacobi path, so this is the first nvcc
+compile of the restored Eigen path in the port tree (upstream main compiles
+it today).
+
+### Push and records
+
+```bash
+git -C projects/GPU_IPC/src push origin moat-port     # 21bce04..8ee59a5, plain push
+python3 utils/moatlib.py advance-head GPU_IPC 8ee59a5c5cc69491b65819577bcf4110d9891e41
+python3 utils/jargon.py --port GPU_IPC                # jargon: clean
+python3 utils/prose.py <commit message>               # prose: clean
+```
