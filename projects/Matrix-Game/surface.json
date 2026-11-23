@@ -166,25 +166,25 @@
    "id": "preset:mg4-rtx5090",
    "kind": "preset",
    "where": "Matrix-Game-4/matrix_game/inference/rtx5090/",
-   "note": "FP8 _scaled_mm + Triton FP8 quantize. PENDING Jeff ruling Q2 (plan.md)."
+   "note": "FP8 _scaled_mm + Triton FP8 quantize. In scope (Q2 = B, ruled 2026-11-23): runs where the datatypes exist; see plan.md \"Q2-B: RTX presets on ROCm\"."
   },
   {
    "id": "preset:mg4-rtx5080",
    "kind": "preset",
    "where": "Matrix-Game-4/matrix_game/inference/rtx5080/",
-   "note": "FP8 GEMMs, Sage import path. PENDING Jeff ruling Q2."
+   "note": "FP8 GEMMs, Sage import path. In scope (Q2 = B, ruled 2026-11-23): runs where the datatypes exist; see plan.md \"Q2-B: RTX presets on ROCm\"."
   },
   {
    "id": "preset:mg4-rtx5070ti",
    "kind": "preset",
    "where": "Matrix-Game-4/matrix_game/inference/rtx5070ti/",
-   "note": "Triton INT8 GEMM + MXFP8 scaled_mm with SWIZZLE_32_4_4 (rejected by PyTorch's ROCm MX path). PENDING Jeff ruling Q2."
+   "note": "Triton INT8 GEMM + MXFP8 scaled_mm with SWIZZLE_32_4_4 (rejected by PyTorch's ROCm MX path). In scope (Q2 = B, ruled 2026-11-23): runs where the datatypes exist; see plan.md \"Q2-B: RTX presets on ROCm\"."
   },
   {
    "id": "preset:mg4-sage-variants",
    "kind": "preset",
    "where": "Matrix-Game-4/matrix_game/inference/rtx5090_sage/ (rtx5090-sage, rtx5080-sage, rtx5070ti-sage)",
-   "note": "Need SageAttention 2.2 CUDA kernels (no ROCm build). PENDING Jeff ruling Q2."
+   "note": "Need SageAttention 2.2 CUDA kernels (no ROCm build). Scoped out (Q2 = B, ruled 2026-11-23)."
   },
   {
    "id": "model:mg3-generate",
@@ -202,25 +202,25 @@
    "id": "model:mg2-inference",
    "kind": "executable",
    "where": "Matrix-Game-2/inference.py, inference_streaming.py, wan/",
-   "note": "PENDING Jeff ruling Q1."
+   "note": "Scoped out (Q1 = A, ruled 2026-11-23)."
   },
   {
    "id": "vendored:mg2-tensorrt-vae",
    "kind": "optional",
    "where": "Matrix-Game-2/demo_utils/vae.py, vae_torch2trt.py",
-   "note": "TensorRT/pycuda VAE acceleration. PENDING Jeff ruling Q1 (NVIDIA-only even if MG-2 is in scope)."
+   "note": "TensorRT/pycuda VAE acceleration. Scoped out (Q1 = A, ruled 2026-11-23); NVIDIA-only either way."
   },
   {
    "id": "model:mg1-inference",
    "kind": "executable",
    "where": "Matrix-Game-1/inference_bench.py, matrixgame/, run_inference.sh",
-   "note": "PENDING Jeff ruling Q1."
+   "note": "Scoped out (Q1 = A, ruled 2026-11-23)."
   },
   {
    "id": "vendored:mg1-gameworldscore-cuda",
    "kind": "extension",
    "where": "Matrix-Game-1/GameWorldScore/GameWorld/third_party/{DROID-SLAM,DROID-SLAM/thirdparty/lietorch,RAFT/alt_cuda_corr}",
-   "note": "12 .cu files of vendored third-party torch extensions (evaluation benchmark, not inference); excluded from the census. PENDING Jeff ruling Q1; planner recommends scoping out even under Q1-C."
+   "note": "12 .cu files of vendored third-party torch extensions (evaluation benchmark, not inference); excluded from the census. Scoped out (Q1 = A, ruled 2026-11-23)."
   }
  ],
  "covered": [],
@@ -304,6 +304,26 @@
   {
    "id": "test:test-${name}",
    "reason": "C++20 SDL2/OpenGL/FFmpeg game client and its ctest tests; no CUDA language, library or GPU compute. Nothing in a ROCm port touches Matrix-Game-4/game/, so it cannot regress; it is CPU/GL code outside the port surface."
+  },
+  {
+   "id": "model:mg2-inference",
+   "reason": "Jeff Daily ruling 2026-11-23 (Q1 = A): Matrix-Game-1 and Matrix-Game-2 are superseded legacy generations, scoped out of this port."
+  },
+  {
+   "id": "vendored:mg2-tensorrt-vae",
+   "reason": "Jeff Daily ruling 2026-11-23 (Q1 = A): Matrix-Game-1 and Matrix-Game-2 are superseded legacy generations, scoped out of this port. Its TensorRT/pycuda/onnxruntime-gpu VAE acceleration is NVIDIA-only and optional."
+  },
+  {
+   "id": "model:mg1-inference",
+   "reason": "Jeff Daily ruling 2026-11-23 (Q1 = A): Matrix-Game-1 and Matrix-Game-2 are superseded legacy generations, scoped out of this port."
+  },
+  {
+   "id": "vendored:mg1-gameworldscore-cuda",
+   "reason": "Jeff Daily ruling 2026-11-23 (Q1 = A): Matrix-Game-1 and Matrix-Game-2 are superseded legacy generations, scoped out of this port. The GameWorldScore benchmark's vendored DROID-SLAM/lietorch/RAFT CUDA extensions go with it (the planner recommended scoping them out even under Q1-C)."
+  },
+  {
+   "id": "preset:mg4-sage-variants",
+   "reason": "Jeff Daily ruling 2026-11-23 (Q2 = B): the three -sage presets need SageAttention 2.2's CUDA kernels (sm89 PTX mma, wgmma), which have no ROCm build; scoped out with deferral matrix-game-sageattention-rocm (projects/Matrix-Game/deferred.json). On ROCm they fail at their existing sageattention import with upstream's own message."
   }
  ],
  "owed": [],

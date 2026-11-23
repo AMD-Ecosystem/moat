@@ -2,12 +2,9 @@
 
 Planner: linux-gfx950, 2026-11-20, against upstream `main` at `51913b2bfa78` (2026-10-29).
 
-**Decisions needed from Jeff before a porter starts** (details in "Open questions" at the end and in notes.md, "Planning (2026-11-20)"):
+**Rulings (Jeff Daily, 2026-11-23; notes.md "Rulings on the planner's questions"):** Q1 = **A** (Matrix-Game-4 and Matrix-Game-3; MG-1 and MG-2 scoped out). Q2 = **B** (the three non-Sage RTX presets `rtx5090`, `rtx5080`, `rtx5070ti` made to run where the datatypes exist; the three `-sage` variants scoped out with a registered deferral), plus a bounded SageAttention check whose result goes to notes.md.
 
-1. **Q1, which model generations are in scope.** Recommended: Matrix-Game-4 and Matrix-Game-3; Matrix-Game-1 and Matrix-Game-2 recorded as scoped out (legacy).
-2. **Q2, Matrix-Game-4's NVIDIA-tuned RTX presets** (`rtx5090`, `rtx5080`, `rtx5070ti` and their `-sage` variants). Recommended: scope out; the generic `realtime` / `quality` / `baseline` presets are the port.
-
-This plan is written for the recommended answers. Each alternative is costed below so the porter can run whichever Jeff picks. `surface.json` leaves the components these questions cover unaccounted for (neither covered nor scoped out) until he rules.
+This plan was first written for Q2 = A. The porter updated it for Q2 = B on 2026-11-23 (linux-gfx950, torch 2.12.0+rocm10.2.0a20261015) before coding: see "Q2-B: RTX presets on ROCm" below, which supersedes the Q2-A text wherever they differ.
 
 ## Project
 
@@ -55,9 +52,26 @@ Dependency map for the in-scope paths:
 | AITER `aiter.ops.mha.flash_attn_varlen_func` | MG-3 via PR #67 | `pip install amd-aiter` or a source build of ROCm/aiter (CK). |
 | SDPA, flex_attention, CUDA graphs | MG-4 | Native in PyTorch ROCm (AOTriton/CK SDPA; Inductor Triton for flex_attention; hipGraph). |
 | Triton kernels (`kernels.py`, `rope_kernel.py`, MG-3 `triton_kernels.py`) | MG-4, MG-3 | Triton ROCm backend shipped with the torch ROCm wheel. |
-| SageAttention 2.2 (`sm89_compile`, `_fused`: CUDA C++ with sm89 PTX `mma`) | MG-4 `-sage` presets and `rtx5080`'s Sage import path | No ROCm build exists. Out of scope under the Q2 recommendation. |
-| `torch._scaled_mm` FP8 (e4m3fn), `scaled_mm` MXFP8 `SWIZZLE_32_4_4` | MG-4 `rtx5090`/`rtx5080`/`rtx5070ti` | FP8 e4m3fn: gfx950, gfx12 (gfx942 is FNUZ). MXFP8: gfx950 only, and PyTorch's ROCm MX path rejects `SWIZZLE_32_4_4` (it takes `NO_SWIZZLE` or `SWIZZLE_32_8`, checked in a torch 2.16 dev `aten/src/ATen/native/cuda/ScaledBlas.cpp`). Out of scope under the Q2 recommendation. |
+| SageAttention 2.2 (`sm89_compile`, `_fused`: CUDA C++ with sm89 PTX `mma`) | MG-4 `-sage` presets only (`rtx5090-sage`, `rtx5080-sage`, `rtx5070ti-sage`) | No ROCm build exists (bounded check 2026-11-23, notes.md). Scoped out under Q2-B with a deferral; on ROCm these presets fail at their existing `sageattention` import with upstream's own message. |
+| `torch._scaled_mm` FP8 per-tensor (e4m3fn) + Triton `tl.float8e4nv` quantize | MG-4 `rtx5090`, `rtx5080`, `rtx5070ti` (`fp8` roles) | OCP e4m3fn on gfx950 and gfx12; gfx942 needs `float8_e4m3fnuz` (max 240) selected at run time. Verified on gfx950 (porter probe, rel err 0.037 vs BF16, Triton cast bit-exact vs torch). |
+| `scaled_mm` MXFP8 `BlockWise1x32`, `SWIZZLE_32_4_4` scales, bias in the GEMM | MG-4 `rtx5070ti` (`cross_q`) | gfx950 only. torch 2.12 on ROCm (`ScaledBlas.cpp` v2.12.0 `check_swizzle_lengths`) requires `NO_SWIZZLE` (2.12 has no `SWIZZLE_32_8`), unpadded row-major `[M, K/32]` e8m0 scales, M/N/K multiples of 32, and hipBLASLt's MX kernels take no bias ("rocRoller does not support bias"). On other AMD GPUs the role falls back to BF16. |
 | TensorRT, pycuda, onnxruntime-gpu | MG-2 optional VAE | No equivalent wanted (MIGraphX would be a rewrite). Out of scope under the Q1 recommendation. |
+
+## Q2-B: RTX presets on ROCm
+
+What the three non-Sage presets need, measured on gfx950 with torch 2.12.0+rocm10.2.0a20261015 (porter probes, notes.md):
+
+| Piece | Used by | gfx950 as written | Change on ROCm |
+|---|---|---|---|
+| FP8 per-tensor `torch._scaled_mm`, BF16 out with bias (`FP8Linear`) | rtx5090 all linears; rtx5070ti `fp8` roles | works | none on gfx950/gfx12; gfx942 selects `float8_e4m3fnuz` with max 240 |
+| FP8 `_scaled_mm` FP32 out, no bias, rows padded to 16 (`PaddedFP8Linear`, `TransposedFFN`) | rtx5080 | to be run | as above, plus whatever the run shows |
+| Triton FP8 quantize (`tl.float8e4nv`, 448 literals) | rtx5090, rtx5080 | works, bit-exact vs torch cast | quantize to the output tensor's element type and pass the format's max, so FNUZ follows the dtype |
+| `tl.extra.cuda.libdevice.tanh` in the rtx5080 epilogue | rtx5080 FFN | to be run | the portable `triton.language.extra.libdevice` (as rtx5070ti already uses) if the CUDA-namespaced one fails |
+| Triton INT8 `tl.dot` GEMM with GELU epilogue, fixed NVIDIA tiles | rtx5070ti | works (rel err 0.010) | none expected; LDS fit of the 64x256x64/3-stage tile on gfx12 unproven |
+| MXFP8 `scaled_mm` (`MXFP8Linear`) | rtx5070ti `cross_q` | refused: torch 2.12 ROCm requires `NO_SWIZZLE` | ROCm-only branch: scales row-major `[M, K/32]`, `NO_SWIZZLE`, activation rows padded to 32, bias added after the GEMM; BF16 fallback for the role on AMD GPUs without MX (all but gfx950) |
+| SageAttention (`-sage` presets) | scoped out | no ROCm build | none; deferral registered |
+
+Gate for Q2-B on this host (gfx950): each of `rtx5090`, `rtx5080`, `rtx5070ti` renders the same input clip end to end (TAEHV, fixed prompt), outputs decode with the right frame count, no NaN/Inf, and per-frame PSNR against the bf16 `realtime` and `native` outputs of the same clip is recorded (upstream ships no numeric reference; quantization makes them not bitwise). What gfx942 and gfx12 need before they count is recorded in notes.md as unproven, not assumed.
 
 ## CUDA surface inventory
 
@@ -99,9 +113,9 @@ Fork branch `moat-port`, smallest complete change. Everything below is additive 
 
 1. `Matrix-Game-4/README.md` and `Matrix-Game-4/docs/installation.md`: an "AMD ROCm" install subsection: torch 2.12.0 ROCm wheel, optional ROCm flash-attention (CK on Instinct, `FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE` on Radeon), tested GPUs, which presets run on AMD, that `HIP_VISIBLE_DEVICES`/`CUDA_VISIBLE_DEVICES` both select the device. Requirements line gains "or AMD Instinct/Radeon with ROCm". No device-selection variables in front of example commands.
 2. `Matrix-Game-4/matrix_game/inference/wan/modules/attention.py` and `runtime.py`: **only if a ROCm run shows a need** (risk 1 or 2). Expected: no change. If MG-4 should also offer AITER (mirroring #67), that is a separate, optional commit and needs evidence it beats SDPA/FA2.
-3. `Matrix-Game-4/matrix_game/scenes.py` / `loader.py`: if an RTX preset is selected on a ROCm device, fail early with a clear message rather than deep in a Triton or `scaled_mm` call (only under Q2-A; a few lines, `torch.version.hip` gated).
+3. ~~Q2-A refusal in `scenes.py` / `loader.py`~~: not done; Q2 was ruled B.
 4. `Matrix-Game-3/`: **no code change in our fork** under the recommended route. PR #67 is the MG-3 change; we validate its head and, with Jeff's approval, comment with results. If #67 needs fixes (risk 3 or 5), propose them as a review suggestion on #67, never as a competing PR. MG-3 also runs on ROCm with zero code change through the ROCm flash-attention FA2 build; the validator records both routes.
-5. Q2-B only: `rtx5070ti/linear.py` (MXFP8 scales in `NO_SWIZZLE` layout and `SwizzleType.NO_SWIZZLE` on ROCm, or fall back to INT8/BF16 for `cross_q` where MX is unsupported), `rtx5090/fp8_linear.py` and `rtx5080/linears.py` (select `float8_e4m3fnuz` on gfx942 the way PyTorch's own tests pick `e4m3_type`), a ROCm-guarded refusal of the Sage paths. Estimated 50-100 lines plus validation on gfx950 and one gfx12 card.
+5. Q2-B (ruled): `rtx5070ti/linear.py` (ROCm MXFP8 branch: row-major `[M, K/32]` scales, `NO_SWIZZLE`, rows padded to 32, bias after the GEMM; BF16 for MX roles on AMD GPUs without MX), `rtx5090/fp8_linear.py` and `rtx5080/linears.py` (the e4m3 format chosen once per device: `float8_e4m3fnuz`/240 on gfx942, `float8_e4m3fn`/448 elsewhere, the way PyTorch's own tests pick `e4m3_type`; quantize kernels cast to the output's element type), plus whatever a real gfx950 run of each preset shows. No Sage refusal is added: the `-sage` presets already fail at their `sageattention` import with upstream's own message. CUDA path unchanged: every new branch is `torch.version.hip`-gated or keeps the CUDA values (e4m3fn, 448). Validated on gfx950; gfx942 and gfx12 recorded as unproven.
 6. Q1-B/C only: MG-2: make `wan/modules/action_module.py`'s top-level `from flash_attn import flash_attn_func` optional like its siblings; document that the TensorRT VAE is NVIDIA-only. MG-1: `GameWorldScore` CUDA extensions (DROID-SLAM, lietorch, RAFT `alt_cuda_corr`) are torch extensions needing a Strategy B port, a separate and much larger piece of work.
 
 Commit titles: `[ROCm] ...` for the docs and any ROCm-gated code. Run `python3 utils/jargon.py --port Matrix-Game` before every push.
@@ -157,6 +171,7 @@ Upstream has no GPU tests. The gate is end-to-end inference plus upstream's own 
 5. Each of 2-4 twice: without flash-attn (SDPA), then with ROCm flash-attn installed.
 6. Checks: every output decodes, frame count matches input, no NaN/Inf, frames non-constant; per-frame PSNR and max abs difference of `realtime` vs `native` (upstream says not bitwise; record the numbers and compare with what upstream reports, if anything); wave64 vs wave32 native-runtime PSNR; throughput and peak memory from the run report (`--profile-chunks` where available). A kernel-dispatch count (`rocprofv3 --kernel-trace` on a short run) proves the Triton and attention kernels actually ran on the GPU.
 7. Racing scene once with `--prompt-mode dynamic` on wave64 (exercises the T5 graph and caption refresh).
+8. Q2-B: `--preset rtx5090`, `--preset rtx5080`, `--preset rtx5070ti` on the same clip (gfx950), with the checks in "Q2-B: RTX presets on ROCm".
 
 **GPU gate, Matrix-Game-3 (wave64 required; wave32 if memory allows):**
 1. Single GPU: `python generate.py --size 704*1280 --ckpt_dir Matrix-Game-3.0 --fa_version 2 --use_int8 --num_iterations 4 --num_inference_steps 3 --image demo_images/001/image.png --prompt "<README prompt>" --seed 42 --vae_type mg_lightvae --lightvae_pruning_rate 0.5 --output_dir out --save_name rocm_fa2` on: (a) upstream `main` + ROCm flash-attention; (b) PR #67 head `9ad32b1d` + AITER; (c) `--fa_version 0` (SDPA) as the in-tree reference. Compare (a)/(b) against (c) frame-wise.
@@ -169,13 +184,15 @@ Upstream has no GPU tests. The gate is end-to-end inference plus upstream's own 
 
 ## Open questions
 
-### Q1. Which model generations are in scope? (Jeff rules; porter waits)
+Both questions were ruled on 2026-11-23 (Q1 = A, Q2 = B); the options are kept below as the record of what was costed.
+
+### Q1. Which model generations are in scope? (ruled: A)
 
 - **A (recommended): Matrix-Game-4 + Matrix-Game-3.** MG-4 is the current release and MG-3 is what PR #67 targets. MG-1 and MG-2 are recorded `scoped_out` as superseded legacy generations. Cost: as planned above.
 - **B: A + Matrix-Game-2.** Adds one optional-import fix in `wan/modules/action_module.py`, a README note that its TensorRT/pycuda VAE acceleration is NVIDIA-only, and an end-to-end `inference.py` run on wave64. Roughly one extra validation day; weights are a separate download.
 - **C: B + Matrix-Game-1.** MG-1's inference is plain diffusers + flash_attn (cheap), but its `GameWorldScore` benchmark vendors DROID-SLAM, lietorch and RAFT CUDA extensions (12 `.cu` files plus Eigen), which is a genuine torch-extension HIP port of third-party code pinned to torch 2.5.1. Recommend scoping out `GameWorldScore` even under C.
 
-### Q2. Matrix-Game-4's RTX presets? (Jeff rules; porter waits)
+### Q2. Matrix-Game-4's RTX presets? (ruled: B, `-sage` variants deferred)
 
 - **A (recommended): scope out all six RTX presets.** They are hand-tuned for specific NVIDIA consumer GPUs (names, SM counts and sm_120 numbers are in their configs). AMD users get `realtime`/`quality`/`baseline`. The port adds an early, clear refusal on ROCm. Risk: if the wave32 card cannot hold bf16 `realtime` (risk 6), wave32 has no runnable fast preset and needs B or a waiver.
 - **B: make the three non-Sage RTX presets run where the hardware has the datatypes.** FP8 on gfx950/gfx12 (FNUZ selection on gfx942), MXFP8 only on gfx950 with ROCm's scale layout, INT8 Triton GEMM everywhere. 50-100 lines; validated on gfx950 and a gfx12 card. Gives Radeon 16 GB cards a fitting preset. Presets keep NVIDIA names, which is odd for AMD users; an AMD-named preset alias would be a further upstream-visible design choice.

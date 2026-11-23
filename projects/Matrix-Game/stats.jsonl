@@ -2,3 +2,7 @@
 {"kind":"session","ts":"2026-11-12T16:51:32Z","epoch":1794502296.632836700,"event":"end","platform":"windows-gfx1151"}
 {"kind":"session","ts":"2026-11-20T21:53:09Z","epoch":1795211589.44747,"event":"start","platform":"linux-gfx950"}
 {"kind":"session","ts":"2026-11-20T21:59:37Z","epoch":1795211977.263027,"event":"end","platform":"linux-gfx950"}
+{"kind":"session","ts":"2026-11-23T20:40:02Z","epoch":1795466402.935632,"event":"start","platform":"linux-gfx950"}
+{"kind":"phase","ts":"2026-11-23T20:44:42Z","phase":"misc","seconds":115.479,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi355-20261123-122610-port-matrix-game-prompt/venv/bin/python -m pip install -q --index-url https://nightly.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple torch[device-gfx950]==2.12.0+rocm10.2.0a20261015 torchvision==0.27.0+rocm10.2.0a20261015 amd-torchvision-device-gfx950==0.27.0+rocm10.2.0a20261015 rocm[libraries,devel]==10.2.0a20261015 rocm-sdk-device-gfx950==10.2.0a20261015"}
+{"kind":"phase","ts":"2026-11-23T20:51:04Z","phase":"test","seconds":0.091,"exit":1,"cmd":"/var/lib/jenkins/fleet/jobs/mi355-20261123-122610-port-matrix-game-prompt/venv/bin/python -m unittest discover -s tests -p test_*.py"}
+{"kind":"phase","ts":"2026-11-23T20:51:23Z","phase":"test","seconds":6.355,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi355-20261123-122610-port-matrix-game-prompt/scripts/mg4_unittest.sh"}
