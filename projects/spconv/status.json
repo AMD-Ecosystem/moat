@@ -1,0 +1,20 @@
+{
+  "schema_version": 3,
+  "name": "spconv",
+  "upstream_url": "https://github.com/traveller59/spconv",
+  "fork_url": null,
+  "fork_default_branch": "master",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-23T17:18:16Z",
+  "updated_at": "2026-11-23T17:18:16Z",
+  "head_sha": null,
+  "depends_on": [
+    "cumm",
+    "ccimport"
+  ],
+  "porting": null,
+  "waivers": {},
+  "platforms": {}
+}
