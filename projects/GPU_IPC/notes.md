@@ -2,6 +2,14 @@
 
 ## Port status
 
+2026-11-23 (later): fork `moat-port` @ 53d17e2, 04c121a plus one commit
+that restores upstream's `cudaSetDevice` failure message for the CUDA build
+(jeff's ruling; the AMD build prints a HIP message). Review passed at
+53d17e2. The linux-gfx942 carry-forward was refused (`mixed`), so gfx942 reads
+`revalidate`, as does gfx1100. The nvcc 12.8 compile and link of 53d17e2
+against upstream 4fb6019 passed; see "## CUDA no-regression compile at
+53d17e2". No GPU has completed at 53d17e2 yet.
+
 2026-11-23: fork `moat-port` @ 04c121a (8ee59a5 plus a review fix, NaN
 propagation), two commits on top of jeff's squash 21bce04 (tree-identical to
 c44ed01). Review passed and linux-gfx942 completed at 04c121a; gfx1100 reads
@@ -2400,15 +2408,178 @@ commands, `jargon.py --port GPU_IPC` clean.
 
 Verdict: review passed at 53d17e2.
 
+## Carry-forward 2026-11-23: linux-gfx942 04c121a -> 53d17e2 (refused)
+
+```bash
+python3 utils/moatlib.py classify GPU_IPC 04c121a1b7999282341d609d8533be02854b75bb 53d17e2f0599311606ad595d3115b87c9e127462
+# class=mixed arch_independent=False inert=False
+# GPU_IPC/gl_main.cpp: mixed (token count differs)
+python3 utils/moatlib.py carry-forward GPU_IPC linux-gfx942 53d17e2f0599311606ad595d3115b87c9e127462 source-class "..."
+# moatlib: GPU_IPC/linux-gfx942: the source classifier calls 04c121a1b799..53d17e2f0599 `mixed`,
+# not an arch-independent documentation or comment change, so it cannot be carried forward as
+# source-class. Build both commits and compare them (utils/codeobj_diff.py, then `binary-equiv`),
+# or revalidate on the GPU
+```
+
+Not forced. `binary-equiv` was not attempted. Its `--host-checked` flag
+states that the delta's host-side code and data are unchanged, and here
+they are not: the HIP binary's string literal changes. This host is gfx950,
+not gfx942, in any case. linux-gfx942 stays `completed` at 04c121a and reads
+`revalidate` at 53d17e2. The delta cannot change device code
+(gl_main.cpp is a plain C++ source, and the change is a string literal), so
+a gfx942 revalidation is a formality, but the tool's rule is that only a GPU
+run or a binary comparison proves that.
+
+## CUDA no-regression compile at 53d17e2 (nvcc 12.8, compile and link, no GPU)
+
+This host has the full CUDA 12.8 toolkit at /usr/local/cuda-12.8 (nvcc
+V12.8.93, cuBLAS/cuSOLVER/cuSPARSE/cuFFT present, no `nvdisasm`), host
+gcc 13.3.0, Eigen 3.4.0 from /usr/include/eigen3, and GLEW/freeglut headers
+from the job-local deps (see the porter round above). There is no NVIDIA GPU,
+so nothing ran. Trees: port 53d17e2 and upstream main 4fb6019
+(`git archive` of each, so no checkout is involved).
+
+### 1. The 2026-11-20 per-file procedure, repeated
+
+Same flags as "### CUDA no-regression compile at 29e2494":
+`nvcc -std=c++17 -arch=sm_80 -rdc=true --use_fast_math --extended-lambda
+--expt-relaxed-constexpr --default-stream=per-thread -O3 -DGIPC_ASSETS_DIR=...
+-DGIPC_OUTPUT_DIR=... -DUSE_SNK -DADAPTIVE_KAPPA -IGPU_IPC -I/usr/include/eigen3
+-c GPU_IPC/<file>.cu` for the 8 `.cu` files, and `g++ -std=c++17 -O3 (same -D/-I)
+-I<cuda>/include -c` for the two `.cpp` files. Run once with each tree at its
+own path, and once more with each tree unpacked in turn at ONE absolute path.
+
+| file | upstream 4fb6019 | port 53d17e2 |
+|---|---|---|
+| ACCD, GIPC, MASPreconditioner, PCG_SOLVER, device_fem_data, mlbvh (.cu) | rc 0, 18 warnings each | rc 0, 18 each, log byte-identical |
+| cuda_cub_wrappers.cu | rc 0, 0 warnings | rc 0, 0, log identical |
+| femEnergy.cu | rc 0, 29 warnings | rc 0, 29, log identical except the line number in two "instantiation of PDSNK ... at line 832" notes (993 in the port: the HIP-only class sits above it) |
+| gl_main.cpp | rc 0, 0 warnings | rc 0, 0, log identical |
+| load_mesh.cpp | rc 1, 16 errors | rc 1, 16 errors, byte-identical after path normalization |
+
+All warnings in both trees come from Eigen headers (#20012-D defaulted
+`__host__ __device__` members, and #20011-D in `SelfAdjointEigenSolver` and
+`ProductEvaluators.h` calling host functions, which upstream's `PDSNK`
+instantiates). The port adds none. femEnergy.cu has 29 warnings in both trees
+now; at 29e2494 the port had 18, because the Jacobi path did not instantiate
+`SelfAdjointEigenSolver`. The CUDA build now keeps Eigen's solver.
+
+load_mesh.cpp still fails on upstream main: `GPU_IPC/load_mesh.h:51:16:
+error: 'uint32_t' was not declared in this scope` and 15 follow-on errors
+(load_mesh.h uses `uint32_t` without `<cstdint>`). Same on the port.
+
+### 2. Full CMake CUDA build, through the device link and link
+
+The earlier check could not link (the redist archives had no cuBLAS etc.).
+This toolkit can, so both trees were also built with the project's own
+CMake CUDA configuration:
+
+```bash
+cmake -S <tree> -B <build> -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.8/bin/nvcc -DCMAKE_CUDA_ARCHITECTURES=80 \
+  -DCUDAToolkit_ROOT=/usr/local/cuda-12.8 "-DCMAKE_PREFIX_PATH=<job>/deps/root/usr"
+cmake --build <build> -j 16 -- -k 0
+```
+
+- As shipped: configure rc 0 in both; build rc 1 in both, with the only
+  failed target `CMakeFiles/gipc.dir/GPU_IPC/load_mesh.cpp.o` (the
+  `uint32_t` error above). Every other object compiles.
+- With a scratch-only `-DCMAKE_CXX_FLAGS="-include cstdint"`, which works
+  around upstream's missing include and leaves neither tree edited: build
+  rc 0 in both, `gipc` links (13428576 bytes upstream, 13432672 port), 0
+  compiler warnings in either (CMake puts Eigen on a system include path).
+  `strings gipc | grep capable` prints upstream's
+  "cudaSetDevice failed!  Do you have a CUDA-capable GPU installed?" in BOTH
+  binaries. This is the change in 53d17e2.
+- Configure log differences are item 4 of the porter round's list, which jeff
+  ruled to keep: a `-- Backend: CUDA` line, `-- CUDA standard` printed before
+  `-- C++ standard`, and `-- Header files: 22` (21 upstream; cuda_to_hip.h).
+
+### 3. Device code, same absolute path, PTX compared (`cuobjdump -ptx`)
+
+- Identical PTX: ACCD, device_fem_data, MASPreconditioner, mlbvh.
+  MASPreconditioner and mlbvh differ only when the two trees are built at
+  different paths, because nvcc's internal-linkage symbol names hash the
+  path.
+- cuda_cub_wrappers: all 284 differing lines are internal-linkage symbol
+  names (`_INTERNAL_4e76571a_20_cuda_cub_wrappers_cu_<hash>_<n>`; the
+  suffix follows the file's content, which gained the HIP include block).
+  No instruction differs.
+- GIPC and PCG_SOLVER: the documented `warpSize` -> 32 change in the block
+  reductions. nvcc reads `warpSize` from the `WARP_SZ` register at run time,
+  so the PTX has fewer `mov.u32 %r, WARP_SZ` (GIPC 32 -> 28, PCG_SOLVER
+  13 -> 12), with constant 32 in their place and the resulting register and
+  scheduling changes. It is a no-op on every NVIDIA GPU, as the PR says.
+- femEnergy.cu: the PTX differs (4165 lines). This is nvcc's
+  nondeterminism, not the port. The evidence:
+  - The preprocessed translation unit nvcc gives cicc (`--keep`,
+    `femEnergy.cpp1.ii`) differs from upstream's only by the two unused
+    `__forceinline__` helpers device_utils.inl gains on CUDA
+    (`gipc::SYNC_WARP`, `gipc::WARP_MATCH_ANY`), plus line markers. For the
+    port's femEnergy.cu and for its CUDA view with the HIP lines blanked
+    (`unifdef -l`), the `.cpp1.ii`, `.cudafe1.gpu` and `.module_id` are
+    byte-identical.
+  - cicc 12.8 is not deterministic on this file. Six identical
+    concurrent invocations of `nvvm/bin/cicc` on the port's
+    `femEnergy.cpp1.ii`, with the same arguments except their scratch file
+    names, gave 4 distinct PTX outputs (3/1/1/1). Six on upstream's
+    `.cpp1.ii` gave 4 distinct outputs (3/1/1/1). Both sets contain the
+    exact PTX of the upstream build (md5 afd2391f...) and the exact PTX of
+    the port build (de38136f...). So either tree's input can produce
+    either tree's output. Single sequential nvcc runs happened to repeat
+    (a port rerun gave the same PTX), which is why this looked like a source
+    difference at first.
+  - What the variants differ in: virtual register numbering and, in
+    `_calculate_bending_gradient_hessian`, two scalar `ld.local.f64` from
+    adjacent stack slots against one `ld.local.v2.f64`. Same values loaded,
+    same arithmetic.
+  - SASS could not be disassembled (no `nvdisasm` in this toolkit). The
+    cubins differ because the PTX they come from does.
+
+  Conclusion for femEnergy.cu: with the HIP guard not taken it is upstream's
+  file plus one blank line, and nvcc's device input matches upstream's
+  except for two unused inline functions. The CUDA device code is upstream's
+  within cicc's own run-to-run variation.
+
+### Gate
+
+Pass. Every `.cu` file compiles with the same result and the same warnings
+on both trees. The port adds no error or warning. The CUDA build links when
+upstream's missing `<cstdint>` is worked around (scratch flag, neither tree
+edited). load_mesh.cpp fails identically on upstream main 4fb6019 without
+this change. The CUDA binary prints upstream's text on the `cudaSetDevice`
+failure path.
+
+## Lesson for cuda-to-rocm: nvcc's device code can vary between identical compiles
+
+For validation.md, "Proving two builds carry the same device code". When
+the CUDA side of a port is checked by comparing nvcc output (PTX or cubin)
+before and after, a difference is not proof that the source changed what
+the device runs. cicc (CUDA 12.8) gave 4 distinct PTX outputs from 6
+identical invocations on one preprocessed file (a 12x12 Eigen
+eigensolver kernel file: register numbering, plus one pair of scalar loads
+against a vector load). Before blaming the port: compare the preprocessed
+input (`nvcc --keep`, the `.cpp1.ii`); if it matches, or differs only by
+unused code, run cicc several times on each input and see whether the
+output sets overlap. Also build both trees at the same absolute path,
+because nvcc's internal-linkage symbol names hash the path and the file
+content, and every such symbol then differs in the PTX. (GPU_IPC)
+
 ## Upstream PR draft
 
-Status (2026-11-23, head 04c121a): replaces the two earlier draft sections.
-The Testing paragraph names only GPUs with a completed validation at
-04c121a: the Instinct MI300X (gfx942). Add the Radeon PRO W7800 (gfx1100)
-only after it revalidates at the final head. The nvcc sentence needs jeff's
-compile of the final head. The Windows sentence rests on the c44ed01 link
-(unchanged since: the delta is femEnergy.cu only). `utils/prose.py` and
-`utils/jargon.py -` clean on the body below.
+Status (2026-11-23, head 53d17e2): replaces the earlier draft sections. The
+Testing paragraph names only GPUs with a completed validation at 53d17e2.
+There are none yet. linux-gfx942 completed at 04c121a, and the
+carry-forward to 53d17e2 was refused (`mixed` delta; see
+"## Carry-forward 2026-11-23"), so it reads `revalidate`. Once gfx942
+completes at the final head, put back the sentence "On an AMD Instinct
+MI300X (gfx942) the default scene ran headless for <N> frames in <time> with
+no HIP errors and no NaN." with that run's numbers, and add the Radeon PRO
+W7800 (gfx1100) only if it also completes there. The nvcc sentences describe
+"## CUDA no-regression compile at 53d17e2". The Windows sentence rests on the
+c44ed01 link: the delta since then is femEnergy.cu (HIP-only class) and
+gl_main.cpp (one guarded message), and it was not rebuilt on Windows.
+`utils/prose.py` and `utils/jargon.py -` clean on the body below.
 
 Title:
 
@@ -2438,20 +2609,21 @@ cmake --build build -j
 
 Use the architecture of your GPU (`rocminfo | grep gfx` lists it), for example gfx90a, gfx942 or gfx1100.
 
-Testing: on an AMD Instinct MI300X (gfx942) the default scene ran headless for 1393 frames in twenty minutes with no HIP errors and no NaN. The CUDA sources were compiled with nvcc 12.8 (sm_80) before and after this change; every `.cu` file compiles, and `load_mesh.cpp` fails identically on current main without this change (load_mesh.h uses `uint32_t` without including `<cstdint>`). On Windows the AMD build compiles and links with clang and Ninja, but it was not run on a GPU.
+Testing: the CUDA build was compiled with nvcc 12.8 (sm_80) on current main and with this change, but not run (no NVIDIA GPU). Every `.cu` file compiles on both with the same warnings, and the executable links on both. `load_mesh.cpp` fails identically on current main without this change, because load_mesh.h uses `uint32_t` without including `<cstdint>`; the link above was done with `-include cstdint` added to the C++ flags for that reason. On Windows the AMD build compiles and links with clang and Ninja, but it was not run on a GPU.
 
 This work was done with the assistance of an AI coding agent and reviewed by me.
 ~~~~
 
 ## Squash commit message
 
-For jeff's squash of 21bce04..04c121a onto upstream main 4fb6019. Started
-from `git log -1 --format=%B 21bce04`; the PDSNK paragraph now says the Jacobi
-solver is AMD-only and the CUDA build keeps Eigen, the Test Plan gives the
-literal run commands and names only the MI300X (the one GPU validated at
-04c121a). The same caveats as the PR draft apply (gfx1100 revalidation, the
-nvcc compile of the final head). `utils/prose.py` and `utils/jargon.py -`
-clean.
+For jeff's squash of 21bce04..53d17e2 onto upstream main 4fb6019. Started
+from `git log -1 --format=%B 21bce04`. The PDSNK paragraph says the Jacobi
+solver is AMD-only and the CUDA build keeps Eigen. The Test Plan gives the
+literal build and run commands, and its result sentence names no GPU,
+because none has completed at 53d17e2. Put back the MI300X sentence (as in
+the PR draft status above) once gfx942 completes at the final head. The nvcc
+sentence describes the 53d17e2 check. `utils/prose.py` and
+`utils/jargon.py -` clean.
 
 ~~~~
 [ROCm] Add a HIP build for AMD GPUs
@@ -2479,7 +2651,9 @@ Xvfb :1 -screen 0 1024x1024x24 &
 DISPLAY=:1 LIBGL_ALWAYS_SOFTWARE=1 ./build/gipc &
 sleep 10
 DISPLAY=:1 xdotool key --window "$(DISPLAY=:1 xdotool search --name FEM | head -1)" space
+cmake -S . -B build-cuda -DCMAKE_CUDA_ARCHITECTURES=80 -DCMAKE_BUILD_TYPE=Release "-DCMAKE_CXX_FLAGS=-include cstdint"
+cmake --build build-cuda -j
 ```
 
-The space key starts the simulation. On an AMD Instinct MI300X (gfx942) the default scene ran headless for 1393 frames in twenty minutes with no HIP errors and no NaN. The `.cu` files also compile with nvcc 12.8 (sm_80) before and after this change. On Windows the AMD build compiles and links with clang and Ninja; it was not run on a GPU there.
+The space key starts the simulation. The CUDA build was compiled and linked with nvcc 12.8 (sm_80) before and after this change, with the same warnings, and not run; `-include cstdint` works around load_mesh.h using `uint32_t` without `<cstdint>`, which fails the same way without this change. On Windows the AMD build compiles and links with clang and Ninja; it was not run on a GPU there.
 ~~~~
