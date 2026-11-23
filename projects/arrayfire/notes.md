@@ -3205,3 +3205,110 @@ jeff approved and ran `agent_space/af-ub-reword.sh`: `moat-sync-64c88d9` 83f66a5
 ## experimental/hip PR opened (2026-11-05)
 
 jeff approved: merge into moat-port first (done via merge-fix, tag rocm-20261105), then he opened https://github.com/arrayfire/arrayfire/pull/3741 from jeffdaily (head AMD-Ecosystem:moat-port 83be19781, base experimental/hip 950dcdd02, fast-forward of 25 commits). Body: `agent_space/af-exphip-body.md` (the approved review body with the disclosure line, upstream framing, and the Delivery/compare-links sections dropped). Watch that PR in checkups; it is not tracked by pr_state (the maintained record stays).
+
+
+## Sync round 2026-11-23 (porter, linux-gfx942) -- moat-sync-b11d700, merge 78ed7b348, head 539d4be10
+
+Asked for by jeff (fleet job on the mi300 host). `moatlib.py sync-branch arrayfire` re-homed the folder onto `port/arrayfire` (cut from origin/main 6510c43b) and staged `moat-sync-b11d700`: base 83be19781 (published tip, = `moat-port`), absorbing upstream `master` b11d7007980b. Lock taken with `set-state arrayfire linux-gfx942 porting`, no contention. The fork's `master` mirror was already at b11d70079. `experimental/hip` on arrayfire/arrayfire is still 950dcdd02 (`git fetch upstream experimental/hip`, 2026-11-23).
+
+### Upstream's range: 64c88d932..b11d70079, 6 commits, all syurkevi
+f85374a1f nsis PATH via registry (Windows installer template); 09708a04f oneAPI sort-by-key split; 077b8b1d9 oneAPI/OpenCL view offsets in index/assign; eec2ada1a OpenCL qr/svd mapped-memory copies; efea5c054 Windows standalone install bundles Level Zero adapters (CMakeLists.txt); b11d70079 `af_get_device` calls `init()` first (src/api/c/device.cpp) and the CPU backend trims NULs/trailing spaces from the CPU brand string. Nothing under `src/backend/cuda` or `src/backend/hip`; no new CUDA code, so no port commit re-applies a pattern.
+
+### Merge 78ed7b3483e4236270f39a21cff0e61850ebc6c5 (parents 83be19781 + b11d70079)
+`git merge --no-commit --no-ff upstream/master`, then committed with the `git pull`-style subject (a branch-name subject trips jargon) and a body stating there were no conflicts and where CMakeLists.txt changed on each side. Checks: `git diff 83be19781 78ed7b348` equals `git diff 64c88d932 b11d70079` line for line (compared the +/- lines); `git diff 83be19781 78ed7b348 -- src/backend/hip` empty; `merge-base --is-ancestor` true for both 83be19781 and upstream/master.
+
+CMakeLists.txt read after the merge (not only built): upstream's hunk is entirely inside `if(WIN32 AND AF_INSTALL_STANDALONE)` (about CMakeLists.txt:588-655 at 539d4be10): a new `if(AF_BUILD_ONEAPI)` Level Zero adapter block, and a per-file REALPATH install loop replacing `file(INSTALL ... TYPE SHARED_LIBRARY)`. The port's `AF_BUILD_HIP` option (:98), the HIP block with the ROCm 7.0 floor comment (:215-239) and `conditional_directory(AF_BUILD_HIP ...)` (:447) are untouched. HIP builds as `afcuda`, which is in `built_backends`, so on Windows with `AF_INSTALL_STANDALONE` its runtime DLLs pass through the new REALPATH loop -- untestable here (Linux host), owed to a Windows host if anyone ships a standalone HIP installer.
+
+Shared code HIP compiles: `af_get_device` -> `init()` exists in the HIP backend with CUDA's semantics (src/backend/hip/platform.cpp:375; `AF_CUDA_DEFAULT_DEVICE` at device_manager.cpp:660). The CPU backend change is backend-neutral.
+
+### Port commit 539d4be1021cbb78dcd2c19b951aabefa940844d -- comments only
+`jargon.py --port arrayfire` (after `git branch master origin/master`) found 4 hits in ALREADY-PUBLISHED HIP code from 62f0a39ff (2026-06-08), missed by earlier rounds' scans (the checker's list has grown since): `agent_space/af_hiprtc_poc` and `projects/arrayfire/notes.md` in src/backend/hip/CMakeLists.txt:18-22 (a stale "STATUS: headless-core bring-up in progress" paragraph, false since June, and it says "bring-up") and `agent_space/af_hiprtc_poc` in compile_module.cpp:108. Removed the paragraph; reworded compile_module.cpp keeping the line count (no `__LINE__` shift). After it, jargon reports only the standing published `6800d5586` 'MOAT' commit-message hit (frozen, cannot be reworded); upstream's `.github/scripts` `head_sha` hits are gone now that the scan base is the current master.
+
+### Build (MI300X gfx942, ROCm SDK wheel 7.16.26385, no /opt/rocm; same toolchain as the 2026-11-04 gfx942 record)
+Script `agent_space/af-build.sh`, the same configure as the 2026-11-04 entry:
+```
+R=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+S=projects/arrayfire/src; B=$S/build-hip-gfx942
+python3 -I $S/.github/scripts/check-matrix-data.py $S $B
+AF_CI_MTX_FILES=ON utils/timeit.sh arrayfire compile -- cmake -C $S/.github/scripts/matrixmarket.cmake -S $S -B $B -GNinja \
+  -DCMAKE_BUILD_TYPE=Release -DAF_BUILD_HIP=ON -DAF_BUILD_CUDA=OFF -DAF_BUILD_CPU=ON -DAF_BUILD_OPENCL=OFF -DAF_BUILD_ONEAPI=OFF \
+  -DAF_BUILD_UNIFIED=ON -DAF_BUILD_EXAMPLES=OFF -DAF_BUILD_FORGE=OFF -DAF_WITH_CUDNN=OFF -DAF_WITH_IMAGEIO=OFF \
+  -DAF_BUILD_DOCS=OFF -DAF_BUILD_TESTS=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_PREFIX_PATH=$R -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++
+utils/timeit.sh arrayfire compile -- cmake --build $B -j 28
+```
+At 78ed7b348: configure exit 0, 1657/1657, exit 0, 0 errors (5m55s). `info_cuda`: `ArrayFire v3.10.1 (CUDA, 64-bit Linux, build 78ed7b348)`.
+
+### Tests at 78ed7b348 (HIP_VISIBLE_DEVICES=2 as pinned, all 8 GPUs idle at start, `ulimit -c 0`)
+```
+export ROCM_PATH=$R HIP_VISIBLE_DEVICES=2; rm -rf ~/.arrayfire
+utils/timeit.sh arrayfire test -- ctest --test-dir $PWD/$B -R '_cuda$' -j1 --output-on-failure
+$B/test/reduce_cuda
+```
+**131/132 PASS** (1317 s). Only failure `test_confidence_connected_cuda`: 3 pass, 12 skip, 21 fail (Image IO not configured, `AF_WITH_IMAGEIO=OFF`), the standing disposition. `reduce_cuda` 1062/1062. threading 12.4 s, jit 90 s, binary 68 s. The JIT cache holds `KER*_HIP_gfx942_AF_310.bin`.
+
+Against the last record (gfx942, 131/132 at 83f66a507/83be19781, same toolchain): identical, same sole failure, same case split. No difference to attribute, so no upstream-only build was needed; such a build is also not possible for these tests, because upstream's tip has no HIP backend (its `_cuda` tests need CUDA).
+
+At 539d4be10: incremental rebuild exit 0 (423 steps, reconfigure after the CMakeLists comment change). `codeobj_diff.py` on libafcuda.so 78ed7b348 vs 539d4be10: `verdict=identical` (device ISA + 21632 exports). sha256 differs; `strings` shows the embedded build commit (`78ed7b348` vs `539d4be10`), which ArrayFire bakes into the library, so the byte difference is that string and the layout after it. The validator run at the head is the full GPU evidence.
+
+### Not tested here
+- CUDA compile: no nvcc on this host. OWED: the nvcc 12.8 comparison (recipe in the 2026-11-04 "CUDA compile check" entry, mi355 host) at 539d4be10. Expected trivial: this round changes nothing under src/backend/cuda and nothing CUDA-reachable besides upstream's own code.
+- Windows: upstream's NSIS template and `AF_INSTALL_STANDALONE` REALPATH loop are Windows-only; nothing here tests them with the HIP backend.
+
+### Push / record
+Plain push of the new branch `moat-sync-b11d700` to the fork (pre-push hook installed by `protect-fork`); `moat-port` on the fork is still 83be19781. `advance-head arrayfire 539d4be10...`.
+
+### Delivery: needs jeff
+arrayfire/arrayfire#3741 (base `experimental/hip` 950dcdd02, head `AMD-Ecosystem:moat-port` 83be19781) is OPEN and was APPROVED by syurkevi on 2026-11-11, not merged (read-only `gh pr view`, 2026-11-23). Because its head IS `moat-port`, the `--merge-fix --apply` that ends this round moves that approved upstream PR: these two commits would appear on it under the existing approval. That is an upstream-visible change. jeff decides whether to (a) wait for #3741 to merge, then merge this round and open a fresh experimental/hip PR for it, or (b) let the round land on #3741 with a note to the maintainer. Do not run merge-fix before that call.
+
+## Sync review PR draft
+
+Title: `[ROCm] Merge upstream master (b11d700) into the HIP backend branch` (66 chars). Branch `moat-sync-b11d700` -> `moat-port`. No `## Upstream reply` section (no maintainer is waiting on anything in this round). `prose.py` clean, `jargon.py -` clean, ASCII. If this body is reused for an `experimental/hip` pull request, drop the compare links and the Delivery paragraph.
+
+~~~markdown
+Merge upstream `master` at b11d70079 (6 commits past 64c88d932, the last upstream commit merged into this branch) into the HIP port branch, plus one comment-only cleanup. Merge, not rebase, so the published commits stay as they are.
+
+## What to look at
+
+- Upstream's own commits in this round (all by syurkevi, none touch `src/backend/cuda` or `src/backend/hip`): https://github.com/arrayfire/arrayfire/compare/64c88d932273fc812ba4123961360ff95375b719...b11d7007980bee208f8e1c89dfbd9131790110f8
+- The merge commit 78ed7b348 (no conflicts, no edits beyond git's automatic merge): https://github.com/AMD-Ecosystem/arrayfire/commit/78ed7b3483e4236270f39a21cff0e61850ebc6c5
+- Our commits after the merge (one commit, comments only): https://github.com/AMD-Ecosystem/arrayfire/compare/78ed7b3483e4236270f39a21cff0e61850ebc6c5...539d4be1021cbb78dcd2c19b951aabefa940844d
+- The whole round against the current branch: https://github.com/AMD-Ecosystem/arrayfire/compare/83be197816b2ce57303c29dda35b7c56d8d9209b...539d4be1021cbb78dcd2c19b951aabefa940844d
+
+`git diff 83be19781 78ed7b348` is exactly upstream's `git diff 64c88d932 b11d70079`, line for line, so the merge dropped or added nothing of its own.
+
+## Upstream's commits
+
+- f85374a1f nsis: edit PATH through the registry (Windows installer template only).
+- 09708a04f oneapi: split sort by key objects (oneAPI backend only).
+- 077b8b1d9 oneapi, opencl: apply array offsets when indexing with views (oneAPI and OpenCL backends only).
+- eec2ada1a opencl: avoid rect copies to mapped memory in qr and svd (OpenCL backend only).
+- efea5c054 installer: bundle Level Zero adapters for oneAPI (`CMakeLists.txt`, inside `if(WIN32 AND AF_INSTALL_STANDALONE)`).
+- b11d70079 fix getDevice before init and NUL bytes in CPU name (`src/api/c/device.cpp`, `src/backend/cpu/device_manager.cpp`).
+
+## What overlapped
+
+Only `CMakeLists.txt` changed on both sides, and git merged it without a conflict. Upstream's change is inside the Windows standalone-install block: a new `if(AF_BUILD_ONEAPI)` section for the Level Zero adapters, and the runtime-DLL install loop now installs the file a symlink points to under the link's name. The HIP backend's option, its configuration block and `conditional_directory(AF_BUILD_HIP ...)` are in other parts of the file and unchanged. The HIP backend builds as `afcuda`, which is in `built_backends`, so with `AF_INSTALL_STANDALONE` on Windows its ROCm runtime DLLs go through the new install loop; that loop only changes how symlinks are copied.
+
+Two upstream changes reach code the HIP build compiles: `af_get_device` now calls `init()` first, which the HIP backend provides with the same semantics as CUDA (it applies `AF_CUDA_DEFAULT_DEVICE`), and the CPU backend trims NULs and trailing spaces from the CPU name. Neither needs a HIP counterpart. Upstream added no CUDA code in this range, so no port change was needed.
+
+## Our commit
+
+- 539d4be10 `[ROCm] Drop stale status and scratch paths from HIP comments`: removes a status paragraph in `src/backend/hip/CMakeLists.txt` written while the backend was incomplete, and a reference to a scratch directory in `src/backend/hip/compile_module.cpp`. Comments only. Built at both 78ed7b348 and 539d4be10: `libafcuda.so` has identical device code and the same 21632 exported symbols; the files differ only in the embedded build commit string and the layout that follows from it.
+
+## Test plan
+
+MI300X (gfx942), ROCm 7.16:
+
+```
+python3 -I .github/scripts/check-matrix-data.py . build-hip-gfx942
+AF_CI_MTX_FILES=ON cmake -C .github/scripts/matrixmarket.cmake -S . -B build-hip-gfx942 -GNinja -DCMAKE_BUILD_TYPE=Release -DAF_BUILD_HIP=ON -DAF_BUILD_CUDA=OFF -DAF_BUILD_CPU=ON -DAF_BUILD_OPENCL=OFF -DAF_BUILD_ONEAPI=OFF -DAF_BUILD_UNIFIED=ON -DAF_BUILD_EXAMPLES=OFF -DAF_BUILD_FORGE=OFF -DAF_WITH_CUDNN=OFF -DAF_WITH_IMAGEIO=OFF -DAF_BUILD_DOCS=OFF -DAF_BUILD_TESTS=ON -DCMAKE_HIP_ARCHITECTURES=gfx942
+cmake --build build-hip-gfx942
+ctest --test-dir build-hip-gfx942 -R '_cuda$' -j1 --output-on-failure
+```
+
+Result: 131/132 test binaries pass, the same as at 83be19781 on this GPU. The one failure is `confidence_connected` (21 of 36 cases fail and 12 skip because Image IO is not configured, 3 pass), as in every run with `AF_WITH_IMAGEIO=OFF`. `reduce` passes 1062/1062. The HIP runtime compiler needs `ROCM_PATH` set when ROCm is not installed in `/opt/rocm`.
+
+Not tested here: the Windows installer and standalone-install changes, and the CUDA build (no CUDA toolkit on this machine).
+
+Delivery: arrayfire/arrayfire#3741 (base `experimental/hip`, head this branch's target on the fork) is open and approved at 83be19781 but not merged. Merging this round adds these commits to that pull request.
+~~~
