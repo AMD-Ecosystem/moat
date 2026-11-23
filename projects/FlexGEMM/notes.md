@@ -1339,3 +1339,12 @@ for kind in ('subm', 'strided'):
 - Documentation: README "AMD GPUs (ROCm)" under Installation is present and unchanged by the delta.
 - `python3 utils/jargon.py --port FlexGEMM`: clean (after `git fetch origin main:main` in the fork clone; without a local `main` it cannot resolve the range).
 - `git -C projects/FlexGEMM/src status --porcelain`: clean at ab42455 after the run (the benchmark's `tests/submconv/conv_fwd.png` moved to `agent_space/`).
+
+## Windows attempt 2026-11-20 (windows-gfx1151, Radeon 8060S APU; head ab4245582c7ecdbe9ed687577d00c39d14f9de39): build OK, host froze in the first GPU test
+
+Written by the dispatching session on 2026-11-23 from the validator's leftover files; the validator itself died with the machine and recorded nothing.
+
+- **Build: succeeded.** First Windows build of the port. Venv with `triton-windows 3.9.0.post30` and `spconv-triton 1.0.0`, TheRock ROCm SDK from an existing torch venv (`ROCM_HOME`/`HIP_PATH` at its `_rocm_sdk_devel`, `HIP_DEVICE_LIB_PATH` at the bitcode directory), `CC=CXX=clang-cl`. The second build attempt ended `Successfully built flex_gemm` / `Successfully installed flex_gemm-1.0.0` at 22:41 local. What the first attempt lacked was not recorded; the two command files differ only in environment, and whoever repeats this must check whether the documented command alone works on Windows.
+- **Test: `tests/hashmap.py`, unmodified, was the first GPU script started (22:42:20). Windows' last recorded heartbeat is 22:41:58 and the next event is the unclean-shutdown record at the 2026-11-23 reboot.** No bugcheck was logged; the machine stopped responding and stayed that way until it was power-cycled. The log file is empty, so there is no test output and no evidence that the port computed anything wrong.
+- Why this script is a hazard on this host: it runs 44 cases (RES 1..1024, four key/value dtype pairs) and repeats each insert and lookup 110 times. The insert kernel is an `atomicCAS` open-addressing loop. Repeated CAS retry loops under contention are a known way to starve or lock this 20-CU APU (see the stdgpu and symforce entries in the laptop's history); the validator prompt forbade stress loops but did not recognize that this project test is one.
+- **Not retried.** The platform is recorded blocked so the selector does not hand this run to the laptop again. Whether to retry with a reduced driver (RES <= 64, one repetition, a watchdog) or to ask for a Windows waiver is Jeff's decision. The compiled Windows extension and the venv are still on the laptop.
