@@ -3,12 +3,12 @@
   "name": "oidn",
   "upstream_url": "https://github.com/RenderKit/oidn",
   "fork_url": "https://github.com/AMD-Ecosystem/oidn",
-  "fork_default_branch": "main",
+  "fork_default_branch": "master",
   "priority": 0.0,
   "ext_type": "cmake",
   "stage": "planned",
   "adopted_at": "2026-11-06T02:27:16Z",
-  "updated_at": "2026-11-20T21:25:22Z",
+  "updated_at": "2026-11-23T19:15:35Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
@@ -81,5 +81,11 @@
     "arch": "linux-gfx90a",
     "since": "2026-11-20T21:18:44Z",
     "at": "2026-11-20T21:25:22Z"
+  },
+  "base_branch_ruling": {
+    "branch": "master",
+    "previous": "main",
+    "by": "jeffdaily",
+    "at": "2026-11-23T19:15:35Z"
   }
 }
