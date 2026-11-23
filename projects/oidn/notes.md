@@ -183,3 +183,33 @@ Upstream PR 302 (75bc1d9, wensongc) adds a Composable Kernel XDL/MFMA convolutio
 - Commit hygiene against our gate: no `[ROCm]` prefix, no Test Plan, a `Co-authored-by: Cursor <cursoragent@cursor.com>` trailer (`audit-commits` reports these four). Already raised as P3/P4 for a person; nothing new.
 - `OIDN_HIP_TARGETS` is a working user override (top-level pass-through in `devices/CMakeLists.txt`) but has no documentation entry of its own and no `option`/cache declaration at the top level; it is described only inside the `OIDN_HIP_GFX950` entry (README and, since 06bdc4c, `doc/compilation.md`). Worth mentioning to the author if upstream wants it documented; not a correctness issue.
 - With an `OIDN_HIP_TARGETS` that names only CDNA targets, the DL/WMMA TUs get no offload arch and clang falls back to its default target (dead code). The porter recorded this; same behaviour in PR 302 alone.
+
+## Validation 2026-11-23 (linux-gfx90a, AMD Instinct MI250X / MI250, fork moat-port 06bdc4c)
+
+First run of the MFMA path on gfx90a hardware. One GCD, `HIP_VISIBLE_DEVICES=0` (dispatcher pin), idle at start (0% GFX, 0 GB VRAM). All GPU runs under `ulimit -c 0` and `timeout`.
+
+### Toolchain (job directory only)
+- ROCm 10.2.0 TheRock SDK pip-installed into the job venv over the base image's 10.1 links: `$FLEET_VENV/bin/python -m pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple "rocm[libraries,devel,device-gfx90a,device-gfx942,device-gfx950]==10.2.0"`. `rocm-sdk version` 10.2.0, `hipconfig --version` 7.17.26434. `ROCM_PATH=$(rocm-sdk path --root)`, `PATH` += `$ROCM_PATH/bin:$ROCM_PATH/lib/llvm/bin`, `LD_LIBRARY_PATH` += `$ROCM_PATH/lib`. No system ROCm used.
+- ISPC v1.32.0 Linux release tarball extracted under the job directory (`deps/ispc`); oneTBB 2021.11 from the image. Torch was not installed (no training run, below).
+- Weights (Q4 ruling): `git config submodule.weights.url https://github.com/RenderKit/oidn-weights.git`, `GIT_LFS_SKIP_SMUDGE=1 git submodule update --init --recursive external/composable_kernel weights`, then in `weights/` `git lfs install --local --skip-repo && git lfs pull` (rt_alb.tza 1830792 bytes). `.gitmodules` untouched.
+
+### Build (default target list, all targets)
+```
+cmake -G Ninja -S src -B src/build -DCMAKE_BUILD_TYPE=Release -DOIDN_DEVICE_HIP=ON -DOIDN_DEVICE_CPU=ON \
+      -DROCM_PATH=$ROCM_PATH -DHIP_CLANG_NUM_PARALLEL_JOBS=4 -DISPC_EXECUTABLE=<ispc>
+cmake --build src/build -j 32
+```
+168 s, 132 steps, 0 warnings. Code objects (`objcopy --only-section=.hip_fatbin` + `clang-offload-bundler --list`): `ck_conv_mfma.cpp.o` = gfx90a, gfx942, gfx950 only; `ck_conv_wmma.cpp.o` and `ck_conv_dl.cpp.o` = the 19 RDNA/APU targets, no CDNA; `hip_engine.cpp.o` = all 22.
+
+### Results
+- `oidnDenoise --ld`: Device 0 "AMD Instinct MI250X / MI250", Type HIP (so `getArch` matched the real `gcnArchName` for gfx90a).
+- `timeout 1800 oidnTest --device hip`: **All tests passed (2499 assertions in 20 test cases)**.
+- `timeout 3600 oidnTest --device cpu`: **All tests passed (1820 assertions in 20 test cases)**.
+- CPU-reference image differential (`oidnDenoise -d cpu ... -o ref.pfm`, then `oidnDenoise -d hip ... -r ref.pfm`, default maxerror), deterministic numpy-generated PFM inputs at 1920x1080, 1023x577, 257x129 (seeds 1234-1236), the same 19 option sets as the gfx950 run (RT hdr, hdr+alb+nrm, ldr+srgb+alb+nrm at -q high/balanced/fast; hdr+alb; hdr+alb+nrm --clean_aux; ldr+alb; RTLightmap hdr and dir; HIP-only -t half, --maxmem 256, --inplace, --buffer device, --buffer managed): **57/57, errors=0 in every case**, avgerror 1.57e-4 to 6.30e-4.
+- MFMA path really runs: `rocprofv3 --kernel-trace --stats` on one 1023x577 RT hdr+alb+nrm run shows 20 `ck::...::kernel_grouped_conv_fwd_multiple_abd_xdl_cshuffle` dispatches (16 + 4, 3.57 ms + 1.34 ms) on agent gfx90a "AMD Instinct MI250X / MI250", plus the OIDN input/output/pool/upsample/autoexposure kernels. Disassembly of the gfx90a code object from `ck_conv_mfma.cpp.o`: 96x `v_mfma_f32_32x32x8f16`, `.wavefront_size: 64`, LDS 24768 bytes, scratch 0, VGPR/SGPR spills 0, VGPRs 126/60, AGPRs 0, max workgroup 256. So CK's `IsSupportedArgument`-less launch works on gfx90a and the single-rate MFMA numerics agree with CPU.
+- `oidnBenchmark -d hip` (information only, idle GCD): RT hdr_alb_nrm 1920x1080 17.16 ms, 3840x2160 70.70 ms, 1280x720 7.91 ms; RT hdr_calb_cnrm 1920x1080 30.41 ms; RTLightmap 2048x2048 33.86 ms. About 6x the shared-MI355X numbers; one MI250X GCD has far lower fp16 MFMA throughput, so this is not evidence of a problem. Whether a K1=8 tile is faster on gfx90a remains a tuning question (porter's note).
+- Integrity: `git -C projects/oidn/src status --porcelain` empty at 06bdc4c; `jargon.py --port oidn` clean.
+
+### Not run here, and why
+- CUDA no-regression compile: this host has no CUDA toolkit (no nvcc, no conda). Not recorded at this head anywhere yet; it is owed by the mi355 host before the port is presented. The diff touches no CUDA source (one `option()` line inside `if(NOT APPLE)` and pass-through lines inside `if(OIDN_DEVICE_HIP)`).
+- ROCm training smoke run (Q5 ruling): not repeated. The porter ran it on gfx950 (wave64 gate) and the porter's list of what gfx90a still owes does not include it; the request was to run it here only if the notes said it was still needed. Nothing in `training/` is arch-specific (it runs through ROCm PyTorch, not this library's kernels). If Jeff wants it on gfx90a as well, it is the porter's recipe above with `torch[device-gfx90a]==2.15.0+rocm10.2.0`.
