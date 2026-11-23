@@ -16,6 +16,7 @@ history: `git show 2cc3927f97db:projects/spconv/notes.md`.
   scaffolded fresh from main without `--force`.
 - 2026-11-23, Jeff Daily: "Decision: the existing AMD-side spconv work -- Option A". Proceed with this port independently of `ZJLi2013/spconv_rocm` and `ZJLi2013/cumm-rocm`; do not build on that rewrite, and do not publish under their package names (`cumm-rocm`, `spconv-rocm`): use names per ROCm major such as `cumm-rocm7` and `spconv-rocm7`. The planner does not wait on any contact with them; a heads-up, if any, is jeff's own.
 - 2026-11-23, Jeff Daily: cumm licence cleared with a condition (recorded on `port/cumm`): the port must not modify the four GPL-headed nvrtc files; a hipRTC path goes in new files. ccimport declined as already supported (PyPI, no fork).
+- 2026-11-23, Jeff Daily: scope ruling "Option B". The port is not complete until an AMD matrix-instruction kernel family (MFMA and WMMA, for fp16 and bf16) exists beside the plain kernels, as with Quest prefill. No pull request, review page or wheels before then; the planner plans both families.
 
 ## Intake -- 2026-11-20 to 2026-11-23, linux-gfx942 (fleet job, headless)
 
