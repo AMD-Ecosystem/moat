@@ -8,15 +8,15 @@
   "ext_type": "python-triton",
   "stage": "porting",
   "adopted_at": "2026-11-12T16:27:02Z",
-  "updated_at": "2026-11-23T20:39:59Z",
+  "updated_at": "2026-11-23T21:10:39Z",
   "head_sha": null,
   "depends_on": [
     "flash-attention"
   ],
   "porting": {
     "arch": "linux-gfx950",
-    "since": "2026-11-23T20:39:59Z",
-    "holder": "ed406de4029c"
+    "since": "2026-11-23T21:10:39Z",
+    "holder": "e3510a0de078"
   },
   "waivers": {
     "windows": {
@@ -56,7 +56,7 @@
       "failed_sha": null,
       "started_at": "2026-11-23T20:39:59Z",
       "completed_at": null,
-      "updated_at": "2026-11-23T20:39:59Z",
+      "updated_at": "2026-11-23T21:10:39Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
