@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "miopen-fp16-winograd-overflow",
+      "kind": "rocm-bug-report",
+      "component": "MIOpen",
+      "summary": "MIOpen FP16 Winograd forward convolution overflows to inf/NaN for inputs whose exact output is far inside the FP16 range. gfx1100 (Radeon PRO W7800), TheRock ROCm 10.2.0a20261022 MIOpen: ConvWinoFuryRxS<2-3> (chosen by default) turns a 512x512x3x3 conv with one input channel at +-30000 (exact output max 3360) into all-inf; ConvBinWinogradRxSf2x3g1 fails the same way at +-40000 (exact max 4480); MIOPEN_DEBUG_CONV_WINOGRAD=0 is finite with max abs error <1. Seen in LivePortrait Animals mode (spade_generator G_middle_5.conv_1, input absmax 38304, exact output max 12689 -> 2048 inf -> black boxes). Reproducer and draft issue in LivePortrait notes, Porting 2026-11-23.",
+      "refs": [
+        "projects/LivePortrait/notes.md#porting-2026-11-23-linux-gfx1100"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-23T20:55:03Z",
+      "decided": null
+    }
+  ]
+}

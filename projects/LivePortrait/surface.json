@@ -66,24 +66,49 @@
       "where": "app_animals.py"
     }
   ],
-  "covered": [],
-  "scoped_out": [],
-  "owed": [
+  "covered": [
+    {
+      "id": "mode:humans-inference",
+      "evidence": "inference.py fp16 and fp32, image/video source, video/image/pkl driving: all finish; fp16/fp32/CPU compared (linux-gfx1100 porter 2026-11-23 at e9e604e (docs follow-up 00f208c); notes.md \"Porting (2026-11-23, linux-gfx1100)\")"
+    },
+    {
+      "id": "onnx:face-detection-landmarks",
+      "evidence": "MIGraphX EP selected on ROCm, parity vs CPU EP on 24 source images (boxes <5e-4 px, 203-pt landmarks <=0.05 px) (linux-gfx1100 porter 2026-11-23 at e9e604e (docs follow-up 00f208c); notes.md \"Porting (2026-11-23, linux-gfx1100)\")"
+    },
+    {
+      "id": "app:gradio-humans",
+      "evidence": "app.py serves its root page (HTTP 200) with MIGraphX active (linux-gfx1100 porter 2026-11-23 at e9e604e (docs follow-up 00f208c); notes.md \"Porting (2026-11-23, linux-gfx1100)\")"
+    },
+    {
+      "id": "optional:torch-compile",
+      "evidence": "inference.py --flag_do_torch_compile finishes, output within 0.55/255 of eager fp16 (linux-gfx1100 porter 2026-11-23 at e9e604e (docs follow-up 00f208c); notes.md \"Porting (2026-11-23, linux-gfx1100)\")"
+    },
+    {
+      "id": "build:requirements-and-docs",
+      "evidence": "requirements_rocm.txt resolves and runs on Linux; README/readme_zh_cn ROCm sections (linux-gfx1100 porter 2026-11-23 at e9e604e (docs follow-up 00f208c); notes.md \"Porting (2026-11-23, linux-gfx1100)\")"
+    },
     {
       "id": "extension:MultiScaleDeformableAttention",
-      "reason": "Awaiting Jeff's scope ruling (LivePortrait notes, Planning 2026-11-20, Question 1): Animals mode depends on the vendored X-Pose subtree (Apache-2.0 file headers, IDEA non-commercial repository licence). Not cut by the planner; pr_ready stays refused until ruled."
+      "evidence": "setup.py build install with ROCm torch, gfx1100 (linux-gfx1100 porter 2026-11-23 at e9e604e (docs follow-up 00f208c); notes.md \"Porting (2026-11-23, linux-gfx1100)\")"
     },
     {
       "id": "test:msdeformattn-op",
-      "reason": "Awaiting Jeff's scope ruling (LivePortrait notes, Planning 2026-11-20, Question 1): Animals mode depends on the vendored X-Pose subtree (Apache-2.0 file headers, IDEA non-commercial repository licence). Not cut by the planner; pr_ready stays refused until ruled."
+      "evidence": "ops/test.py forward double/float True, gradcheck 30..1025 True; 2048/3096 via fast_mode True (linux-gfx1100 porter 2026-11-23 at e9e604e (docs follow-up 00f208c); notes.md \"Porting (2026-11-23, linux-gfx1100)\")"
     },
     {
       "id": "mode:animals-inference",
-      "reason": "Awaiting Jeff's scope ruling (LivePortrait notes, Planning 2026-11-20, Question 1): Animals mode depends on the vendored X-Pose subtree (Apache-2.0 file headers, IDEA non-commercial repository licence). Not cut by the planner; pr_ready stays refused until ruled."
+      "evidence": "inference_animals.py fp32 clean; fp16 black boxes from MIOpen FP16 Winograd overflow (see notes question 1) (linux-gfx1100 porter 2026-11-23 at e9e604e (docs follow-up 00f208c); notes.md \"Porting (2026-11-23, linux-gfx1100)\")"
     },
     {
       "id": "app:gradio-animals",
-      "reason": "Awaiting Jeff's scope ruling (LivePortrait notes, Planning 2026-11-20, Question 1): Animals mode depends on the vendored X-Pose subtree (Apache-2.0 file headers, IDEA non-commercial repository licence). Not cut by the planner; pr_ready stays refused until ruled."
+      "evidence": "app_animals.py serves its root page (HTTP 200) (linux-gfx1100 porter 2026-11-23 at e9e604e (docs follow-up 00f208c); notes.md \"Porting (2026-11-23, linux-gfx1100)\")"
+    }
+  ],
+  "scoped_out": [],
+  "owed": [
+    {
+      "id": "benchmark:speed",
+      "reason": "speed.py aborts on gfx1100 (ROCm 10.2 nightly, torch 2.16 nightly): an inductor max-autotune Triton conv candidate for the motion extractor raises hipErrorLaunchFailure. The port changes nothing speed.py runs; a rerun on another platform or a person's ruling closes it (notes, Porting 2026-11-23)."
     }
   ],
   "removed_from_floor": []
