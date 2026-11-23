@@ -24,3 +24,9 @@
 {"kind":"phase","ts":"2026-11-23T20:22:26Z","phase":"compile","seconds":11.812,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi355-20261123-120039-fix2-autoware-cuda-prompt/build.sh cuda"}
 {"kind":"phase","ts":"2026-11-23T20:23:34Z","phase":"test","seconds":14.574,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi355-20261123-120039-fix2-autoware-cuda-prompt/test.sh"}
 {"kind":"session","ts":"2026-11-23T20:24:44Z","epoch":1795465484.823823,"event":"start","platform":"linux-gfx950"}
+{"kind":"session","ts":"2026-11-23T20:26:41Z","epoch":1795465601.897213,"event":"end","platform":"linux-gfx950"}
+{"kind":"session","ts":"2026-11-23T20:26:50Z","epoch":1795465610.359728,"event":"start","platform":"linux-gfx950"}
+{"kind":"phase","ts":"2026-11-23T20:27:05Z","phase":"compile","seconds":9.823,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi355-20261123-120039-fix2-autoware-cuda-prompt/build.sh hip"}
+{"kind":"phase","ts":"2026-11-23T20:27:19Z","phase":"test","seconds":14.542,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi355-20261123-120039-fix2-autoware-cuda-prompt/test.sh"}
+{"kind":"phase","ts":"2026-11-23T20:27:39Z","phase":"cuda-compile","seconds":11.467,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi355-20261123-120039-fix2-autoware-cuda-prompt/build.sh cuda"}
+{"kind":"session","ts":"2026-11-23T20:27:54Z","epoch":1795465674.400949,"event":"end","platform":"linux-gfx950"}
