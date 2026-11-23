@@ -608,3 +608,28 @@ So the change comes from #561's switch of `CellList::mols`/`dimensions` from poi
 - `git -C projects/GOMC/src status --porcelain`: empty.
 - Pushed `moat-fix-562` only (`git push origin moat-fix-562`); `moat-port` untouched at b8d1aa91. `moatlib.py advance-head GOMC 25ba089d...`; `classify b8d1aa91 25ba089d` -> `mixed`, so the other platforms read `revalidate`.
 - Windows: not testable here. The delta has no Windows-specific code; the CellList copy constructor upstream wrote copies arrays per box (no array mem-initializer), so the clang error that b8d1aa91 fixed should not come back, but the windows gate still needs a real run at 25ba089d.
+
+## Review 2026-11-23 (linux-gfx1100, reviewer): fix round moat-fix-562
+
+Scope: the delta `git diff b8d1aa91...25ba089d` (the one merge commit), with upstream's merged commits (`git log 09ec304e..411b8a73`, `git diff 09ec304e 411b8a73`) read separately from the port's own changes (the two conflict resolutions). An independent read-only child agent did the review; I re-read every point it reported against the code. Verdict: review-passed, no blocking findings.
+
+Checked:
+- Resolutions: `git show --cc 25ba089d` touches only CMakeLists.txt (USE_HIP/CUDA selection kept, upstream's "No CUDA compiler found on this system" text in the CUDA branch). src/CellList.cpp has no combined hunk, so it is upstream's file. `git diff upstream/development 25ba089d` equals `git diff 09ec304e b8d1aa91` except for the warning text and the dropped CellList.cpp hunk, so nothing of the port is lost or duplicated.
+- Upstream delta: no CUDA code, runtime calls, CUB, warp-width assumptions or GCC-only constructs. `list{other.list}`, the initializer order and the per-box assignments are valid for clang, so the Windows all-clang build should not regress (it is not testable here). Reference members delete CellList's implicit copy assignment; nothing assigns a CellList, and the copy constructor's one user (ParallelTemperingUtilities.cpp:529) still compiles. The delta does not touch cuda_to_hip.h, GOMCHIPSetup.cmake or any GPU source.
+- Commit 25ba089d: title 56 chars, no `[ROCm]` prefix (it is a merge of shared code), no internal vocabulary, AI assistance disclosed, no Co-Authored-By, fenced Test Plan. `jargon.py --port GOMC` clean.
+
+Not blocking: the merge message's Test Plan names AR_KR/ISOPEN_NEOPEN/PEN_HEX SingleRun runs, which make no volume moves (`VolFreq 0.000`, commented out, `0.0`), so the evidence it names cannot see the upstream volume-move change below. The message is accurate as written, the commit is pushed and must not be amended, and this round's own evidence includes the NPT case that does see it. The fix review PR body says so.
+
+Upstream regression in 411b8a73 (#561), confirmed by code reading on top of the porter's bisection. It is not a port defect:
+- System.cpp:55 binds `cellList(statics.mol, boxDimRef)`. CellList.cpp:202 (GridAll) and :221 (GridBox) do `dimensions = dims;`, which is now `BoxDimensions::operator=` (BoxDimensions.cpp:172) copying into boxDimRef, where before it only re-pointed a pointer.
+- VolumeTransfer::CalcEn calls GridBox(newDim, ...) (NPT, VolumeTransfer.h:149/151) or GridAll(newDim, ...) (NVT-GEMC, :143/145), so the trial box overwrites the system box before the move is accepted.
+- GetCoeff (VolumeTransfer.h:207-229) then computes `newDim.volume / boxDimRef.volume` = 1 and `exp(-BETA*PRESSURE*(newV - oldV))` = 1. Every volume move is accepted, which matches the measured 100.0% (was 50.0%). The reject path's GridBox/GridAll(boxDimRef, ...) (:266/:268) is a self-assignment and restores nothing.
+- Affects every input with VolFreq > 0 (NPT, and NVT-GEMC volume transfer), on CPU and GPU builds alike. A non-orthogonal box also has a likely slicing problem: `operator=` is not virtual, so a BoxDimensionsNonOrth assigned through `BoxDimensions&` keeps its old `cellBasis_Inv`/`cellLength` (BoxDimensionsNonOrth.h:79-80). That last point comes from reading the code only and was not run.
+- Callers that pass boxDimRef itself (System, Simulation, MultiParticle, MultiParticleBrownianMotion, NeMTMC) are unaffected.
+
+CUDA compile gate at 25ba089d (CUDA 12.8; no toolkit on the host, so NVIDIA redist archives cuda_nvcc 12.8.93, cuda_cudart 12.8.90 and cuda_cccl 12.8.90 were fetched into the job directory, sha256 checked against redistrib_12.8.1.json, extracted with `--strip-components=1`, plus `ln -s lib lib64`):
+```bash
+utils/timeit.sh GOMC cuda-compile -- bash -c "cmake -S $PWD/projects/GOMC/src -B $PWD/agent_space/gomc-cuda -DCMAKE_CUDA_COMPILER=$C/bin/nvcc \
+  -DCUDAToolkit_ROOT=$C -DCMAKE_CUDA_ARCHITECTURES=80 -DCMAKE_BUILD_TYPE=Release && cmake --build $PWD/agent_space/gomc-cuda -j 16"
+```
+rc=0, 0 warnings, all 8 executables; flags show `-arch=all` (upstream override, as before). This is a compile-only check and says nothing about NVIDIA runtime behavior.
