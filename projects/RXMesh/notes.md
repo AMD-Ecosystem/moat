@@ -1055,3 +1055,11 @@ Branch contains upstream/main (0 behind) and descends from df10bfe. Every port e
 ### Recommendation
 
 Request Changes (finding 1).
+
+## Porter fix 2026-11-23 (moat-fix-73) -- review finding 1
+
+091056d7 `[ROCm] Use a self-contained cuda::std::array for HIP device code`: `hip_compat/cuda/std/array` is now a minimal aggregate (`T m_elems[N]`, `__host__ __device__ constexpr` const/non-const `operator[]`, `size()`, `begin()`/`end()`), not an alias of std::array. Rebuilt (HIP gfx1100 Release): 30/30 PASSED. `query.cu` (which emits the device `t_e()`) also compiles at -O0 with `-D_GLIBCXX_ASSERTIONS -UNDEBUG`. CUDA (nvcc 12.8, arch 80) incremental rebuild links (the header is HIP-only). A Windows Debug build was not tried here (no Windows host). Pushed to the fork's moat-fix-73 (fd6cd893..091056d7) with the fork URL spelled out: a push typed as `git push origin ...` in a command that started in the moat checkout was refused by the fleet guard, which read `origin` as the moat repository's remote. advance-head -> 091056d7.
+
+## Re-review 2026-11-23 (delta fd6cd893..091056d7, linux-gfx1100 reviewer)
+
+The fix covers every use site of tet_edges()/tet_faces() (subscripts, `.size()`, range-for: rxmesh.cpp, patcher.cu, rxmesh_queries.cuh t_e, rxmesh_test.h, test_queries.h, test_tet.cu); brace-elided aggregate init in util.h compiles; no reserved identifiers; CUDA include path untouched (hip_compat only under USE_HIP). jargon clean, commit title 64 chars, `[ROCm]`, disclosure and Test Plan present. No remaining findings from the 2026-11-23 review. Verdict: pass.
