@@ -4152,3 +4152,92 @@ int main(int argc, char** argv) {
 ```
 
 </details>
+## Validation 2026-11-23 (linux-gfx1100, revalidate at `9cb8bee`) -- PASS
+
+First run of the gfx11 WMMA prefill tiles on real RDNA3 hardware. Host: AMD Radeon Pro W7800 48GB (gfx1100, wave32, 70 CUs), `HIP_VISIBLE_DEVICES=1` (PCI 0x46; idle before every GPU run, `amd-smi metric --usage` 0 %; another job was busy on a different card), PyTorch 2.16.0a0+git6c3af02 / HIP 7.16.26385 (pip ROCm SDK), Python 3.11 (`/opt/python-3.11-venv`), all GPU runs under `ulimit -c 0`. Fork clone at `9cb8bee` (`moat-port`), submodules initialised, `git status --porcelain` empty before and after. `classify Quest c9828e2 9cb8bee` -> `mixed`, so a full run (this platform's prior `validated_sha` is `c9828e2`, before prefill and topk existed on HIP).
+
+### Build (README Linux block, fresh build directory)
+
+`agent_space/quest/build_readme.sh <fork>` = the README block verbatim with `-DCMAKE_HIP_ARCHITECTURES=gfx1100` after `rm -rf build`, `ninja -j $MAX_JOBS` (32):
+
+```
+cd quest/ops && rm -rf build && mkdir -p build && cd build
+cmake -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_PREFIX_PATH=`python -c 'import torch;print(torch.utils.cmake_prefix_path)'` ..
+ninja -j 32
+ln -sf $PWD/_kernels*.so ../../
+```
+
+Wrapped `utils/timeit.sh Quest compile`: rc 0, 8/8, 0 errors, `CMAKE_BUILD_TYPE=Release` from the default, `--offload-arch=gfx1100` only. Wall **2840 s**, of which about 35 min is one single-threaded `ld.lld` device LTO step for `batch_prefill.cu` (MI300X: 555 s for the whole build). The spilling WMMA instantiations (below) are the likely cost in register allocation; not measured further. The old `find_package(Torch)` hazard on this host (recorded 2026-08-20) is gone: `torch.utils.cmake_prefix_path` now resolves into the wheel install.
+
+### GPU tests (transformers 4.37.2, tokenizers 0.15.2, pytest 7.3.2 in `<job>/pylib-test`)
+
+```
+env PYTHONPATH=<fork>:<job>/pylib-test python3 -m pytest <fork>/quest/tests -p no:cacheprovider -v -rs
+```
+
+**202 passed, 28 skipped, 0 failed** (15.0 s). rope 64, estimate 9, decode_attention 6, approx_attention 42, decode_launch_shape 3, topk 49 + 15 skipped (k >= kv_len), prefill_attention 29 + 13 skipped (qo_len > kv_len). Same as MI300X at `9cb8bee`.
+
+### fp64 reference check of prefill (gfx11 WMMA on hardware)
+
+The porter's harness is not in the notes (it lives in another host's `agent_space`), so it was rewritten from its description: `agent_space/quest/harness/prefill_ref.cu` calls `BatchPrefillWithPagedKVCacheDispatched` directly (NHD, shuffled pages from a pool with 7 spare pages, output buffers pre-filled with 0xff), fp64 CPU reference with the bottom-right causal rule, output and base-2 LSE checked. Built with the extension's HIP flags (`harness/build.sh <tree> <out> gfx1100`: SDK clang, `-O3 -std=gnu++20 -ffp-contract=on`, the three `hip_compat` force-includes, `__HIP_NO_HALF_*`). Same 100-case matrix as the porter: qo x kv in {1x17, 13x33, 16x16, 51x400, 63x700, 77x129, 128x129, 244x1110, 311x311, 502x1110} x {fp16 hd128 nfx1 causal, fp16 hd128 nfx2 causal, fp16 hd128 non-causal, fp16 hd64, fp16 GQA 4, bf16 hd128, bf16 hd64 GQA 4 non-causal, page size 1, page size 8, page size 32 GQA 8} (nfx by the dispatcher's rule `qo * group > 64` except the two forced rows; 8 kv heads, fewer for GQA). Tolerances as the porter's: 5e-3 + 5e-3 |ref| (fp16), 2e-2 + 3e-2 |ref| (bf16), LSE 2e-2 + 2e-3 |ref|.
+
+| build | result | max abs err |
+|---|---|---|
+| `9cb8bee` (gfx11 WMMA; device asm has 1872 `v_wmma_f32_16x16x16_f16` + 432 `_bf16`) | **100/100** | fp16 1.7e-3, bf16 1.2e-2, LSE 1.5e-2 |
+| `2b938d8` (old shuffle emulation, same harness; validates the harness) | 100/100 | WMMA error smaller in 49 cases, equal in 48, larger in 3 (by <= 3.4e-4, bf16 16x16 case 6.5e-3 vs 6.1e-3) |
+| negative control: copy of the `9cb8bee` header with gfx11 `acc_row` changed to `2 * i + 1 - lane / 16` (D row halves swapped) | 0/100 | smallest per-case max err 0.34 |
+
+```
+cd agent_space/quest/harness
+./build.sh <fork> ./ref_9cb8bee gfx1100 && ./ref_9cb8bee check      # TOTAL 100/100 passed
+```
+
+The review's list of what a real Radeon run must confirm, answered:
+1. The hardware matches the documented gfx11 layout (A/B row or column l % 16 with all 16 k, D rows `2i + l/16`): yes. 100/100 against fp64 with WMMA instructions in the code object, and swapping the D row halves fails every case, so the check discriminates the layout on this hardware.
+2. The `_w32` builtins with lanes 16-31 replicating lanes 0-15 (k0 = 0 for all lanes): correct results in every case; all cases go through these operands.
+3. The xor-16 P exchange on a real wave32: exercised by every case (P always feeds the second product through it); correct.
+4. Q in registers vs Q in LDS on gfx11 (`nfx * nfy <= 8`): hd128 nfx1 and hd64 nfx1/2 keep Q in registers, hd128 nfx2 keeps it in LDS; both branches are in the matrix and pass. The end-to-end prefill instantiation is the Q-in-LDS one.
+5. Time with the spills: below. The instantiation the model uses (`<1,16,true,kNone,2,8,4,4>` fp16) reports 256 VGPR and 348 B/lane scratch (`--cuda-device-only -S`, `; ScratchSize`), within the review's 340-448 B range; other instantiations 0-448 B.
+
+### Prefill time against SDPA (`agent_space/quest/prefill_time.py`, same method as MI300X)
+
+`quest.utils.prefill_forward` (includes the operator's per-call host work) vs `F.scaled_dot_product_attention` with the same alignment (`is_causal` where qo = kv, `causal_lower_right` where qo < kv, default backend selection). Causal, 32 heads x 128, fp16, page size 16, mean of 20 (5 for the large shapes) after 3 warmups, `utils/timeit.sh Quest test -- env PYTHONPATH=<fork>:<job>/pylib-test python3 agent_space/quest/prefill_time.py`:
+
+| qo x kv | Quest prefill_forward | torch SDPA | ratio | max abs diff vs SDPA | kernel alone (harness) |
+|---|---|---|---|---|---|
+| 1 x 4096 | 0.450 ms | 0.174 ms | 2.58 | 6.1e-05 | 0.356 ms |
+| 128 x 4096 | 0.680 ms | 0.879 ms | 0.77 | 1.2e-04 | 0.664 ms |
+| 1024 x 1024 | 0.597 ms | 0.374 ms | 1.60 | 2.0e-03 | 0.462 ms |
+| 1024 x 4096 | 2.614 ms | 2.260 ms | 1.16 | 2.4e-04 | 2.745 ms |
+| 4096 x 4096 | 5.641 ms | 3.482 ms | 1.62 | 2.0e-03 | 6.175 ms |
+| 8192 x 8192 | 21.947 ms | 13.946 ms | 1.57 | 2.0e-03 | 23.26 ms |
+| 16384 x 16384 | 89.782 ms | 82.401 ms | 1.09 | 2.0e-03 | 93.27 ms |
+
+Kernel alone: `./ref_9cb8bee time <qo> <kv> <iters>` (shuffled pages, which is why it can read slower than the operator's contiguous pages at large shapes). Old emulated path: there is no build switch for it in `9cb8bee` (the selector is by target), so the same harness was built from the `2b938d8` tree: **4096 x 4096 126.9 ms, 1024 x 1024 10.5 ms** (kernel alone) against 6.17 ms and 0.46 ms for WMMA: 20.5x and 22.8x faster. So with the spills the gfx1100 prefill is within 1.1-1.6x of SDPA on every shape from 1024 up, ahead of it at 128 x 4096, and 2.6x behind only at qo = 1 (operator host cost). Recorded as numbers, not a failure; whether the review's zero-spill nfz cap is worth it on gfx11 can follow from this table.
+
+### End-to-end (transformers 4.45.2, tokenizers 0.20.3, accelerate 1.0.1, sentencepiece 0.2.0 in `<job>/pylib-e2e`)
+
+The model fits (fp16 13.5 GB on a 48 GB card). `NousResearch/Llama-2-7b-chat-hf` at `351844e75ed0bcbbe3f10671b3c808d2b83894ee` (safetensors, downloaded into `<job>/models`; `do_sample` set to false in `generation_config.json`, original kept as `.orig`), `scripts/example_textgen.py` with only `MODEL_PATH` changed (`agent_space/quest/e2e/example_textgen.py`):
+
+```
+env PYTHONPATH=<fork>:<job>/pylib-e2e python3 agent_space/quest/e2e/example_textgen.py --method hg
+env PYTHONPATH=<fork>:<job>/pylib-e2e python3 agent_space/quest/e2e/example_textgen.py --method quest --token_budget 1024
+env PYTHONPATH=<fork>:<job>/pylib-e2e python3 agent_space/quest/e2e/example_textgen.py --method quest --token_budget 128
+```
+
+All rc 0. The output from `Input Sequence Length: 103` on is byte-identical across the three (md5 `b900af27...`) and is the same continuation as on MI300X ("Reason: The rabbit is the only one who is not working hard. ... can also mean \"lazy.\""). `rocprofv3 --kernel-trace --stats` of the budget-128 run: `BatchPrefillWithPagedKVCacheKernel<1,16,true,kNone,2,8,4,4,...>` 32 calls at 37.8 us (MI300X 32.6 us), `quest_radix_topk_one_block_kernel` 2130, `MaxPossibleSampleWithPagedKVCacheKernel` 2130, `BatchDecodeWithPagedKVCacheKernel` 3072, `VariableLengthMergeStatesKernel` 3072, `AppendPagedKVCachePrefillKernel` 32: the same counts as MI300X.
+
+### CUDA gate
+
+Not run here: this host has no CUDA toolkit now (`/opt/conda/envs` absent, no `nvcc`). `cuda-not-validated: no toolkit on this host`; the real-nvcc compile of `9cb8bee` is still owed on the gfx950 host. `prefill.cuh` is unchanged from `6c06912`, whose CUDA view was shown identical to `2b938d8` by preprocessing (review 2026-11-20).
+
+### Content
+
+`jargon.py --port Quest` clean (after `git fetch origin main:main` in the clone); the README's ROCm section documents the build used here; `audit-commits` reports only the known `6e7d8db` gap.
+
+### Owed next (Quest at `9cb8bee`)
+
+1. linux-gfx1201 (RDNA4 gfx12 WMMA layout, first hardware run), windows-gfx1151 (gfx11 WMMA, Windows build), linux-gfx90a (MFMA `bf16_1k`).
+2. Real-nvcc compile of `9cb8bee` on the gfx950 host.
+3. Possible, not required: the gfx1100 build time (one 35-minute device LTO step) may be worth a look alongside the spill reduction, since every gfx11 user pays it.
