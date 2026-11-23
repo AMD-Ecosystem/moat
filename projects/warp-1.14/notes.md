@@ -8571,3 +8571,7 @@ index 727148c7..808dd763 100644
 ## Ruling on session 29's question 13 (jeff, 2026-11-23)
 
 (a): commit the `fast_math` patch as measured (`-fapprox-func -freciprocal-math -fgpu-flush-denormals-to-zero` in place of `-ffast-math -fno-finite-math-only`), with the release-notes sentence for (a). The 2% losses on example_dem and example_raycast are accepted.
+
+## Ruling on the GL interop fix (jeff, 2026-11-23)
+
+(a): the porter takes the gfx1201 evidence session's `cuda_util.cpp` fix (promote an already loaded libGL to global scope before the first HIP GL registration) only if evidence session 2 shows map, kernel read and write, unmap and the renderer's frame capture give correct data with it. If they do not, no commit and the result goes back to jeff. Either way the release notes say that on Linux GL interop needs a windowed (GLX) context and headless rendering copies through the host on ROCm.
