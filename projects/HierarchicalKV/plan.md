@@ -2,7 +2,23 @@
 
 Planner run 2026-11-20 on linux-gfx942 (MI300X host, ROCm 10.1 pip SDK, no GPU used, nothing built). Analysis is against the upstream shallow clone at `451f240d185968d29ae022408e0bc3a8e987a4bb` (2026-11-15). Intake screened `c79175830d51`; the census below was re-taken at the newer tip and matches intake's counts to within a few call sites.
 
-**Three rulings from Jeff are needed before a porter starts.** They are listed under "Open questions" at the end and at the top of the planner section in notes.md: (1) the scope cut, (2) the windows gate, (3) the base branch name.
+Jeff ruled the planner's three questions on 2026-11-23 (scope C, windows not yet ruled, base branch `master`); see "Scope C" below, which supersedes the open questions at the end.
+
+## Scope C (Jeff Daily's ruling, 2026-11-23)
+
+The rulings in notes.md ("Rulings on the planner's questions") supersede the open questions at the end of this plan. Scope is **C**, wider than the option A this plan was first written for:
+
+1. The header library and every default CMake target (20 gtest executables, 3 default benchmarks). Unchanged from the plan below.
+2. The opt-in research benchmarks (`-DHKV_BUILD_REPRO_BENCHMARKS=ON`: the 19 `HKV_REPRO_SOURCES` targets plus `digest_ablation_no_digest` and `concurrency_rw_lock`). Extra surface beyond the library: `benchmark/benchmark_util.cuh` (`__shfl*`, `__syncwarp`, `warpSize`, `%globaltimer`), `tbe_like_cache_baseline.cc.cu` (raw warp intrinsics, `warpSize`), and the `$<$<COMPILE_LANGUAGE:CUDA>:-O3>` option in `benchmark/CMakeLists.txt`, which needs a HIP twin. Built under the same `HKV_USE_HIP` branch; each binary is run once as a smoke test (they are benchmarks, not tests; they gate nothing beyond running to completion without a device fault).
+3. A ROCm Bazel path beside the existing `cuda_configure`: a `rocm_configure` repository rule under `build_deps/gpus/` that locates a ROCm install (`ROCM_PATH`, default the pip SDK or `/opt/rocm`), generates `@local_config_rocm` with a `rocm` header/library target, a HIP clang toolchain, and a `build_defs.bzl` exposing the same `cuda_cc_library` macro name (so `include/BUILD`, `include/merlin/BUILD`, `include/merlin/core_kernels/BUILD` and `benchmark/BUILD` need no per-backend fork beyond selecting the config), plus a `build:rocm` config in `.bazelrc`. The Bazel targets in the repository are the header libraries and `//benchmark:benchmark_util` (it compiles `merlin_hashtable_benchmark.cc.cu`); there are no Bazel test targets upstream, so "the Bazel tests" means building every Bazel target (`bazel build --config=rocm //...`) and running `//benchmark:benchmark_util`. Bazel is built or fetched (bazelisk, version 5.0.0 per `.bazeliskrc`) inside the job directory.
+
+Order of work: (1) library and default targets with their GPU tests passing, (2) research benchmarks, (3) Bazel. If the Bazel path cannot be finished in one round, its surface entries stay `owed` with what is done and what remains, never `scoped_out`.
+
+Still out of scope: `benchmark/native_tbe` and `baselines/` (outside every option; `scoped_out` in `surface.json` citing the ruling).
+
+The windows gate is **not ruled**. The port neither assumes a waiver nor writes a Windows-specific test filter; a Windows run is a validator question after the ruling.
+
+Base branch: `master` (`set-base-branch` recorded by jeffdaily, 2026-11-23). Build toolchain for this round: TheRock ROCm 10.2.0 wheels (`rocm[libraries,devel,device-gfx942]==10.2.0` from `https://stable.repo.amd.com/rocm/whl-next/`).
 
 ## Project
 
@@ -117,7 +133,8 @@ No cuBLAS, cuFFT, cuRAND, cuSPARSE, cuDNN, NCCL, textures, driver API, NVRTC or 
 - `tests/test_util.cuh`: timer branch. Tests include merlin headers, so the runtime aliases reach them. Expect a handful of test-only spellings that hipify flags.
 - `benchmark/benchmark_util.cuh`: timer branch, needed because the 3 default benchmarks include it.
 - `README.md`: a "Building for AMD GPUs (ROCm)" section with the configure line and the consumer note (add `include/`, compile as HIP, link libhipcxx/hipCUB/rocThrust include paths). No device-selection environment variables in example commands.
-- Not touched: Bazel files, `baselines/`, `benchmark/native_tbe`, `third_party/`, and the research benchmarks unless open question 1 says otherwise.
+- `benchmark/CMakeLists.txt`, `benchmark/*.cc.cu` as needed (scope C), Bazel files under `build_deps/gpus/`, `WORKSPACE`, `.bazelrc` and the `BUILD` files (scope C).
+- Not touched: `baselines/`, `benchmark/native_tbe`, `third_party/`.
 
 ## Build commands
 
