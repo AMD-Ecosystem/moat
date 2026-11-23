@@ -8,7 +8,7 @@
   "ext_type": "unknown",
   "stage": "awaiting-fork",
   "adopted_at": "2026-11-20T20:55:39Z",
-  "updated_at": "2026-11-20T21:03:37Z",
+  "updated_at": "2026-11-23T18:49:49Z",
   "head_sha": null,
   "depends_on": [
     "ccimport"
@@ -56,5 +56,11 @@
     "viable": true,
     "summary": "spconv's code generator and tensorview headers, where most of the adopted spconv HIP port lands; study shows SIMT kernels correct on gfx942 after a shim plus two small fixes; needs licence clearance for four GPL-3.0+GCC-exception libstdc++ headers it ships",
     "at": "2026-11-20T21:03:37Z"
+  },
+  "license_clearance": {
+    "approved_by": "jeffdaily",
+    "at": "2026-11-23T18:49:49Z",
+    "tier": 3,
+    "note": "Cleared 2026-11-23 with a condition: the port must not modify the four GPL-3.0-or-later WITH GCC-exception-3.1 files (include/tensorview/core/nvrtc_std.h and core/nvrtc/core.h, limits.h, type_traits.h). A hipRTC path goes in new files under the project's own license. Not a legal opinion."
   }
 }
