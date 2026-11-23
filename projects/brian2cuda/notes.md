@@ -1515,3 +1515,68 @@ print('GENERATED', outdir)
 - Jargon clean at 1c9536f. Docs: no new build step this round.
 
 Verdict: completed at 1c9536f.
+
+## Fix round 2026-11-23 (porter, linux-gfx90a) -- HIP device-pass guards (TimedArray, per-neuron poisson, binomial)
+
+Why: jeff asked for the gap recorded under "For jeff" in the 2026-11-20 round. No maintainer request: the upstream thread (read 2026-11-23, `gh pr view 327 --repo brian-team/brian2cuda --json comments,reviews`, plus `gh api repos/brian-team/brian2cuda/pulls/327/comments` = 0 line comments) has no reviews and nothing new since jeff's 2026-11-23 merge reply. PR head on GitHub = 1c9536f = recorded `published_sha`; MERGEABLE (state UNSTABLE = checks only).
+
+Setup: `set-state brian2cuda linux-gfx90a porting --agent porter` (lock taken, no holder before), `fix-branch brian2cuda` (moat-fix-327, base 1c9536f; the fork had no leftover moat-fix-327). Upstream master is still 1d7c251, already merged at the base, so no merge this round.
+
+### What hipcc defines (checked, not assumed)
+
+`hipcc -x hip --offload-arch=gfx90a {--cuda-host-only|--cuda-device-only} -dM -E` (HIP 7.16.26385): `__HIP_DEVICE_COMPILE__` is defined in the device pass only; `__CUDA_ARCH__` and `__CUDACC__` in neither; `__HIP__`, `__HIPCC__` (and, oddly, `__AMDGCN__`) in both. `__HIP_PLATFORM_AMD__` comes from the makefile `-D`, not the compiler.
+
+### Every site (grep of the whole tree for CUDA_ARCH / DEVICE_COMPILE / CUDACC / HIPCC, case-insensitive; pinned brian2 2.10.1 has none)
+
+- cuda_generator.py `_add_user_function`: namespace pointer declaration and its kernel-line assignment (the TimedArray failure).
+- cuda_generator.py `_brian_<func>` template for the C99 math functions (integer-argument branch).
+- cuda_generator.py `_poisson(double, int)` (per-neuron lambda).
+- binomial.py: 4 guards in the inversion and normal-approximation generators.
+- All 9 have the identical text `(defined(__CUDA_ARCH__) && (__CUDA_ARCH__ > 0))` and all reach generated code through `_add_user_function`.
+- cuda_generator.py `#if (__CUDA_ARCH__ >= 600)` in `_brian_atomicAdd(double)`: NOT changed. It sits in an `inline __device__` function only, so both hipcc passes agree; HIP has always taken the atomicCAS software loop there and still does. Switching HIP to the hardware `atomicAdd(double)` would be a behavior change (on gfx90a without unsafe-fp-atomics it is itself a CAS loop) with nothing broken to justify it.
+- brianlib/logging.h: already `__CUDA_ARCH__ || __HIP_DEVICE_COMPILE__` (2026-11-20 round). spikequeue.h, cuda_utils.h, cuda_to_hip.h, curand_buffer.h, main.cu, rand.cu: platform guards (`__HIP_PLATFORM_AMD__` / `USE_HIP` / `__HIPCC__`), not pass guards; correct as is. Templates contain no pass guard.
+
+### Commit on moat-fix-327 (1c9536f..77e096c)
+
+`77e096c` [ROCm] Select hipcc's device pass in generated function code. cuda_generator.py: `_CUDA_DEVICE_PASS` constant + `_hip_device_pass()`; in `_add_user_function`, when `is_hip_backend()`, the function's own support code, hash defines and kernel lines get `|| defined(__HIP_DEVICE_COMPILE__)` appended to that condition (dependencies were already rewritten by the recursive call). On CUDA nothing is substituted. One point instead of 9 edits, so the Python sources of the sites are unchanged and a user's own `@implementation('cuda')` code with the same guard also works on HIP.
+
+### Tests (MI250X gfx90a, HIP_VISIBLE_DEVICES=1 dispatcher pin, all 4 GPUs idle by `amd-smi metric --usage`; ROCm 10.1 pip SDK, HIP 7.16.26385, no /opt/rocm; brian2 2.10.1, numpy 2.5.5, job venv `$FLEET_VENV/py312` from `/usr/bin/python3.12 -m venv` + `pip install brian2==2.10.1 pytest -e projects/brian2cuda/src`)
+
+The cases now live in `projects/brian2cuda/gpu_tests/` (README there): t1-t3 are the three recorded cases rebuilt with fixed seeds and stricter checks, t4-t7 are new.
+
+```
+ulimit -c 0
+USE_HIP=1 utils/timeit.sh brian2cuda test -- bash projects/brian2cuda/gpu_tests/run_all.sh $FLEET_VENV/py312/bin/python /tmp/b2c_job_head
+```
+
+| case | published tip 1c9536f | 77e096c |
+|---|---|---|
+| t1 LIF | PASS 106 spikes = CPU 106 per neuron, quiet err 2.4e-15 | identical |
+| t2 Poisson + 1 ms delay | PASS 997 syn, 417 src spikes, 0 early, 50/50, input 4029 = expected 4029 | identical |
+| t3 recurrent 3 seeds | PASS ~12k syn, GPU 957/946/930 vs CPU 964/955/987 (2.5%) | identical |
+| t4 TimedArray 1-D + 2-D | FAIL compile: `reference to __host__ variable '_namespace_timedarray_values' in __global__ function` | PASS, x and y exact (err 0), v vs CPU runtime err 0 |
+| t5 poisson(lambda_i), lambda 0..500 | FAIL compile: `reference to __host__ function '_host_poisson' in __host__ __device__ function` | PASS, max z 1.97, every variance within 5 SE, lambda 0 all zeros, scalar control 2.9987 (3) |
+| t6 binomial (adapter) | FAIL compile: `reference to __host__ function '_host_randn' in __host__ __device__ function` | PASS, inversion mean 2.0015 (z 1.66), normal approx 4000.03 (z 0.94) |
+| t7 int-argument math | PASS 3.6e-15 | identical |
+
+t6: `BinomialFunction(...)` itself still raises `ValueError: too many values to unpack (expected 2)` at `brian2/input/binomial.py:208` with the pinned brian2 2.10.1 (upstream's generator returns 3 values; CUDA hits it too). The case records that and builds the same functions through a test-only adapter (generator's code + headers attached with `add_implementation('cuda', ..., compiler_kwds=...)`), so binomial.py's generated device code is compiled and run.
+
+Upstream tests with HIP:
+
+- `test_logging.py::{test_codegen_log_level_flags,test_file_log_level,test_log_level_gating}` + `test_cuda_standalone.py::test_codegen_and_compile` at 77e096c: 4 passed (29 s). It drops an `output/` build directory at the pytest rootdir (the moat checkout root); deleted.
+- Upstream's runner over Brian2's and brian2cuda's tests, `cd /tmp/<dir>; USE_HIP=1 python <tree>/brian2cuda/tools/test_suite/run_test_suite.py -k "timedarray or poisson" -c <dir>/cache` (main stage / stage 2 / stage 3): published tip 17 failed + 10 passed / 3 failed + 3 passed / 1 passed; 77e096c 4 failed + 23 passed / 6 passed / 1 passed. All 4 remaining are `ValueError: too many values to unpack` (test_poissoninput x2, the two `test_random_binomial_poisson_*_set_synapses_fixed_seed`): the brian2 version mismatch, not HIP. Its `-j` option crashes in upstream's `utils.set_preferences` (`list.remove(x): x not in list`); run without it.
+- `pytest -m "standalone_compatible or cuda_standalone" brian2cuda/tests/test_random_number_generation.py -k poisson`: 4 passed / 5 failed at 1c9536f, 7 passed / 2 failed (the two binomial ones above) at 77e096c; 11 multiple-run tests skip under plain pytest (they need the runner).
+
+CUDA generated text (the reviewer must re-check this): `gpu_tests/cuda_codegen/compare.sh` generates smoke, cuba, stdp, timed_poisson (1-D + 2-D TimedArray, per-neuron and scalar poisson, integer math), binomial (adapter) and spatial with both trees, CUDA backend forced by a version-only nvcc stub on PATH (`agent_space/b2c/fakecuda/bin/nvcc`, prints the 5-line nvcc 12.8 `--version`), USE_HIP unset, `PYTHONHASHSEED=0`:
+
+```
+env -u USE_HIP PATH=<stub dir>:$PATH CUDA_PATH=<stub root> bash projects/brian2cuda/gpu_tests/cuda_codegen/compare.sh $FLEET_VENV/py312/bin/python <1c9536f worktree> projects/brian2cuda/src /tmp/b2c_cg_cuda cuda
+```
+
+Result: all 6 cases identical, except timed_poisson/main.cu with the same lines in a different order. Running 1c9536f against itself gives the same kind of reordering (stdp create_generator, timed_poisson main.cu): codegen iterates sets of objects there. No generated file contains the new text. The same script with `hip` shows the only content change on HIP is 18 guard lines gaining `|| defined(__HIP_DEVICE_COMPILE__)`.
+
+Windows: the change is generator-side text, and clang defines `__HIP_DEVICE_COMPILE__` in its device pass on Windows as on Linux, so I expect the same fix there; no Windows host ran it. The windows gate must revalidate at 77e096c, and the gpu_tests cases (t4-t6 in particular) are what should run there.
+
+CUDA compile check: owed by the nvcc host at 77e096c (generated text is unchanged, so it should repeat the 2026-11-20 result; `cuda_codegen/` has the generator, and its `gen_case.py` adds TimedArray 2-D and the binomial adapter to the 2026-11-20 set).
+
+Pushed: `git push origin moat-fix-327` (new branch at 77e096c). `git ls-remote`: moat-port still 1c9536f; upstream PR head still 1c9536f. `advance-head brian2cuda 77e096c`. `jargon.py --port brian2cuda`: clean. `git -C projects/brian2cuda/src status --porcelain`: clean.
