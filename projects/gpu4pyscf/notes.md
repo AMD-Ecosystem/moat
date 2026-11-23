@@ -5662,3 +5662,65 @@ Of its three files, only gpu4pyscf/pbc/df/ft_ao.py changed upstream (#1062: +13 
 - Fast-forward each real branch to its staging tip (`git push <fork> <staging-tip>:pr-1054-<name>`, a fast-forward since every staging tip descends from the current branch tip), then post the drafted comment and, where listed, edit the body lines. The three conflict merges are on 5f609f6a; master has since gained #1061, which touches none of their files, so GitHub should show them mergeable without another merge.
 - #1057 and #1058: the review request is answered only on the staging branches; whether to take it as is is jeff's call.
 - The open branches' commit Test Plans say `USE_HIP=1`, which builds CUDA on current master (#1063). They are pushed commits and were left alone (no amend, no force-push); the drafted body lines use `GPU4PYSCF_BACKEND=hip`.
+## Porter 2026-11-23 (porter, linux-gfx1201 R9700, fork moat-port 0647712 -> e34356b, pushed) -- eighth fix: gfx12 complex GEMM split over plain CuPy calls
+
+Dispatched by jeff with his ruling of 2026-11-20, which is recorded above under "Ruling 2026-11-20 (jeff): the gfx12 complex GEMM workaround becomes an eighth pull request" (jeffdaily, 2026-11-20: "send the seven as they are and bring the workaround back as an eighth pull request, rewritten without the held helper"). This round resumes the stopped 2026-11-20 porter (section "Porter 2026-11-20 ... STOPPED: the pinned GPU wedged"): `set-state gpu4pyscf linux-gfx1201 porting` re-stamped that job's lock to this one, as jeff intended. Nothing of the held einsum helper or its call-site rewrites came back.
+
+**Pinned GPU checked first.** Fleet job, `HIP_VISIBLE_DEVICES=1` from the dispatcher (a different card from the one that wedged on 2026-11-20 and hung an earlier job of 2026-11-23 on a 1 MB copy). A 1 MB `hipMemcpy` host to device and back through ctypes on `libamdhip64.so` returned at once with the data intact (0.95 s including runtime start). All GPU work under `ulimit -c 0`. No hang, no liveness failure (12 liveness checks after non-0/1 pytest exits, all answered) and no reset in this round.
+
+**Environment.** Radeon AI PRO R9700 (`gcnArchName` b'gfx1201'). TheRock ROCm SDK 10.1.0 pip (HIP runtime 7.16.26385, rocBLAS 5.7.0.39d8d603, AMD clang 24.0.0), no /opt/rocm, `LD_LIBRARY_PATH=$(rocm-sdk path --root)/lib`. Job venv (`FLEET_VENV`): numpy 2.2.6, scipy 1.17.1, cupy-rocm-7-0 14.2.0, pyscf 2.14.0, pyscf-dispersion 1.7.0, geometric 1.1.1, basis-set-exchange 0.12, MCFun 0.2.6, h5py 3.16.0, pytest 9.2.0, pytest-xdist 3.8.0, pytest-timeout 2.4.0, cmake 3.31.6; ruff 0.15 and flake8 for lint. Scratch under the fleet job directory (`agent/`, `res/`, `w/`), not durable.
+
+**Build at 0647712.** Fresh clone of moat-port in projects/gpu4pyscf/src, `protect-fork` run. `USE_HIP=1 GPU_ARCHITECTURES=gfx1201 CMAKE_BUILD_ARGS='--parallel 24 --verbose' python setup.py build_py` in `utils/timeit.sh gpu4pyscf compile`: exit 0 in 160 s, 12 libraries, `--offload-arch=gfx1201` only, `-mllvm -disable-machine-licm` (committed option) on 100/100 HIP compile and 12/12 `--hip-link` lines. The new commit is Python only, so these libraries are the new head's.
+
+### The defect, reproduced on this card at 0647712 with CuPy alone (`agent/repro.py`)
+`cupy` `(n, k) @ (k, m)` against NumPy, rows of the result that are wrong:
+
+| dtype | n = 2^21 | n = 2^21 + 1 | n = 2^21 + 64 |
+|---|---|---|---|
+| complex128 | 0 | 1 (first wrong row 2097152) | 64 (first 2097152) |
+| complex64 | 0 | 1 (first 2097152) | 64 (first 2097152) |
+| float64, float32 | 0 | 0 | 0 |
+
+Independent of k and m: (k, m) = (1, 1) and (64, 128) at n = 2^21 + 1 give one wrong row too. The large dimension as the result's column count, `(6, 6) @ (6, 2^21 + 64)`, is exact (2.7e-15). **Trigger, precisely:** complex dtype (rocBLAS zgemm/cgemm, reached here through `gemm_strided_batched_ex` with `f64_c`/`f32_c`), rocBLAS's n (the row count of CuPy's row-major result) greater than 2^21, on a gfx12 GPU; every column from index 2^21 on is left unwritten and the call returns success. This is the 2026-11-02 root cause (gfx12 reads work-group IDs y/z as 16 bits; rocBLAS puts complex GEMM n tiles of 32 in grid y), unchanged.
+
+**The installed ROCm is not fixed:** ROCm 10.1.0, rocBLAS 5.7.0.39d8d603, the build of the 2026-11-02 root cause. ROCm/rocm-libraries#14983 is open (read-only `gh issue view`, 10 comments, the last on 2026-11-17, about rocSOLVER; none reports a rocBLAS fix). So the work went ahead.
+
+The six tests at 0647712, one pytest process per file (`agent/six.sh`): all six fail, test_ej_ip1_kpts 11.0211, test_vk_kpts_vs_fft 1.43503, test_ejk_derivatives_kpts_with_long_range 7.047e-5, test_uhf_ejk_derivatives_kpts_with_long_range 4.790e-4, test_vk_hermi1_kpts_vs_aft 0.0462, test_krhf_grad_with_pseudo 0.01470 vs 0.02009.
+
+### Change: one commit, e34356b2 `[ROCm] Split wide complex k-point products on gfx12 GPUs` (pbc/df/ft_ao.py, pbc/df/grad/krhf.py, pbc/df/grad/kuhf.py, +55/-7)
+The 2026-11-20 porter's diff ("The change, exactly" above), applied unchanged to 0647712 except for the comment, reworded to "On gfx12 GPUs, rocBLAS complex GEMM with n > 2**21 leaves the result's columns from 2**21 on unwritten and still reports success: the kernel indexes its n tiles with a 16-bit work-group ID (ROCm/rocm-libraries#14983). Complex products that can be wider than that are split below it. Remove this and its uses once rocBLAS is fixed." Its design, as recorded there: one module constant `COMPLEX_GEMM_MAX_N` (None, or `1 << 21` on a gfx12 HIP device) and one block generator `complex_gemm_blocks` in ft_ao.py; the two code sites that drive complex products past 2^21 in the tests (ft_ao.py FTOpt `'Lk,pLqG->kpqG'`; the krhf/kuhf ejk-derivative pair `'Lk,kpqG->LqpG'` and `'->LpqG'`) run the same `contract` call on slices of the large operand and of the output when the constant is set and nao*nao*nGv exceeds it, and their original line, verbatim, in the `else:` branch. No new abstraction over `contract`; the held einsum helper is not used.
+- **Telling the GPUs apart, and the cost:** `gpu_specs` is `__config__.props` (device 0's `getDeviceProperties`), already imported by ft_ao.py, so the check costs nothing at import. CuPy-ROCm returns `gcnArchName` as bytes; CuPy itself decodes it that way (`cupyx/_runtime.py:402`), so `startswith(b'gfx12')` follows CuPy's own contract. Every gfx12 target has the 16-bit IDs (2026-11-20 ISA check: gfx1200, gfx1201, gfx1250), so the prefix, not just gfx1201, is right. Limitation: a host mixing gfx12 with other GPUs is judged by device 0, like upstream's other `__config__` settings. If it were applied on every HIP device instead, the cost would be the split itself, which the timing below shows is nil or a gain at these sizes; the gate exists because the defect is gfx12-only.
+- **Nothing on CUDA, and how that is known:** on CUDA (and any non-gfx12 GPU) `COMPLEX_GEMM_MAX_N` is None, so each site takes its `else:` branch, whose line is byte-for-byte the original (the diff shows it moved, not changed), and `complex_gemm_blocks` is never called. No compiled source changes. Not run on an NVIDIA GPU.
+- **Easy to delete:** the comment says what to remove and when; the deletion is the constant, the generator and three `if` branches, keeping each `else:` line.
+- Coverage limit, unchanged from the 2026-11-20 audit: this covers the products the test suite drives past 2^21. Other G-blocked complex products in the AFT code (aft_jk.py:642/651 from nao = 12, and others for large bases) can pass 2^21 for larger systems; covering them all would need the guard inside `contract`, which is the held design.
+- Lint: `ruff check --config .ruff.toml --unsafe-fixes gpu4pyscf` and `ruff check --select NPY --ignore NPY002 gpu4pyscf` (ruff 0.15, upstream's lint workflow) and flake8 with the repository config: clean.
+
+### Gate results at e34356b2 (all one pytest process per file, CI marker selection `-m 'not slow and not benchmark and not special' -k 'not _high_cost'`, `-p no:xdist`, `OMP_NUM_THREADS=2`, `PYTHONPATH=<tree>`, per-file `timeout -k 30 1800`, a watchdog for exit spins (never fired), counts from junit)
+- **The six tests: 6 passed** (with the two `..._long_range` siblings the `-k` selects, 8 passed). rocBLAS call log (`ROCBLAS_LAYER=2`, `ROCBLAS_LOG_BENCH_PATH` per file, `agent/scanrb.py`): complex GEMM calls with n > 2^21 from the four files **79 before** (test_pbc_aft 4 x (6, 3515625, 6) + 1 x (6, 5334336, 6); test_pbc_df_derivatives 16 x (6, 3272481, 6); test_pbc_grad_krhf 52 x (2, 6892100, 2); test_pbc_scf_jk 6 x (3, 4194304, 3)), **0 after**.
+- **Affected directories**, 0647712 and e34356b2 side by side (a 0647712 worktree carrying the same libraries), two files at a time per tree:
+
+| directory | 0647712 | e34356b2 |
+|---|---|---|
+| pbc/df (7 files) | 137/5/6/0 | 141/1/6/0 |
+| pbc/grad (18 files) | 185/9/2/0 | 186/8/2/0 |
+| pbc/scf (11 files) | 154/16/2/0 | 155/15/2/0 |
+| **total** | **476/30/10/0** | **482/24/10/0** |
+
+The 0647712 rows equal the 2026-11-20 validation's per-directory counts. Per test, the only differences are the six targets (failed -> passed). The 24 left are all in the recorded 0647712 classification: pbc/df test_ft_ao_strain_deriv; pbc/grad krks/kuks test_df_rsh_grad, rks test_df_sr_rsh_grad, krks test_sr_rsh_grad, slabdipole x2, slabgate, test_multigrid_image_boundary_strain_deriv; pbc/scf get_rho_*_built x4, ghf x4, soscf x5, gdm krks_uniform_grid and kuhf.
+- **Whole upstream CI selection at e34356b2** (all 254 files in 42 directories, wall 3576 s; to save GPU time the 0647712 tree was stopped after the affected directories and the rest compared with the 2026-11-20 run by test name): **2217/40/109/0** over 2366 tests, against **2211/46/109/0** recorded at 0647712 over the same 2366 (that run used per-directory `-n 4 --dist loadfile`). Directories other than the three above have the recorded counts except: properties 20/0 (test_raman_hf_densityfitting passed), scf 209/3 (test_stability_rhf_unstable failed, test_gdm_rhf and test_rhf_df_against_qchem as recorded), tdscf 129/3 (test_rtddft_ris_diffuse failed, test_wb97xv_tda passed). Those four are the tests the 2026-11-19/20 gfx1201 rounds recorded as varying between runs of identical code, unmodified master included, and they are molecular code that never imports pbc/df/ft_ao.py (only pbc modules and the SYCL dpnp helper do). **No new failure.**
+- **Cost of one affected call** (`agent/bench.py`, the product `contract('Lk,pLqG->kpqG')` alone, median of 10, one call vs the split, max error against NumPy):
+
+| nk, nao, nGv | rocBLAS n | one call | split |
+|---|---|---|---|
+| 6, 15, 15625 | 3515625 | 15.17 ms, err 7.2 | 15.54 ms (2 blocks), 3.6e-15 |
+| 6, 24, 9261 | 5334336 | 25.07 ms, err 7.4 | 23.36 ms (3), 3.6e-15 |
+| 3, 16, 16384 | 4194304 | 17.39 ms, err 4.0 | 10.79 ms (2), 1.4e-15 |
+| 2, 10, 68921 | 6892100 | 11.06 ms, err 2.8 | 9.91 ms (4), 9.0e-16 |
+| 2, 10, 16384 (below the limit) | 1638400 | 2.49 ms | 2.49 ms (1) |
+| 8, 40, 16384 | 26214400 | 1007.08 ms, err 9.7 | 238.99 ms (14), 5.3e-15 |
+
+At most +2.4% (the 3.5 million case), faster elsewhere; the same as the 2026-11-20 figures.
+
+**Other gates.** `jargon.py --port gpu4pyscf`: clean. `prose.py` and `jargon.py -` on the commit message: clean; ASCII; title 56 characters; AI disclosure ("Authored with Claude."), fenced Test Plan, no Co-Authored-By. `audit-commits gpu4pyscf`: OK. Integrity: `git -C projects/gpu4pyscf/src status --porcelain` empty (build output untracked and ignored). Pushed plainly, 06477124..e34356b2; `advance-head gpu4pyscf e34356b2`.
+
+**Owed after this round:** the reviewer for the one-commit delta; the validator on linux-gfx1201 at e34356b2 (the record is validation-failed at 0647712); then **an MI300X (linux-gfx942) run of e34356b2** (the change is inert there: `COMPLEX_GEMM_MAX_N` is None on gfx942, so no product is split; still owed because the head moved); wave32 is still owed by linux-gfx1100, and gfx90a has not run the rescoped heads.
