@@ -2184,3 +2184,68 @@ python3 utils/moatlib.py advance-head GPU_IPC 8ee59a5c5cc69491b65819577bcf4110d9
 python3 utils/jargon.py --port GPU_IPC                # jargon: clean
 python3 utils/prose.py <commit message>               # prose: clean
 ```
+
+### Correction to the run comparison above (same day)
+
+A third run of the same 8ee59a5 binary (started as a 1200 s run, stopped at
+frame 227 when the review below requested a change) also matches frames 1-30
+exactly and then diverges at frame 31 (Newton k 12, where the first 8ee59a5
+run had 11 and 21bce04 had 11). Two runs of ONE binary diverge at the same
+frame, so the old/new divergence from frame 31 is run-to-run nondeterminism
+(the order of floating-point atomic accumulations), not the code change; the
+roundoff explanation given above cannot be told apart from it. That partial
+run: 227 frames, Newton k 2 / 9 / 78 (min/median/max), the last 20 frames at
+5-10 iterations (the scene settling), 146 ms/frame average, no NaN, no HIP
+error.
+
+## Review 2026-11-23 (delta 21bce04..8ee59a5)
+
+Scope: `git diff 21bce04..8ee59a5` (femEnergy.cu only), with the pr-review
+skill; the code reading and the compile and host tests were done by a child
+agent and each finding was re-checked against the code before recording.
+
+Verified: with the HIP guard not taken, femEnergy.cu is upstream's file token
+for token (CUDA view diff against `git show main:GPU_IPC/femEnergy.cu`: one
+extra blank line, nothing else); `PDSNK` is `__device__` only as upstream; it
+calls only Eigen (`SelfAdjointEigenSolver`, `setZero`, the product), all
+upstream. The class plus upstream's tail compiles for gfx942 with and without
+`-fgpu-rdc`. Host comparison against upstream's Eigen-based PDSNK, 20000
+random symmetric matrices: 8.6e-15 relative, eigen-residual 3.6e-15,
+orthogonality 1.1e-14, zero sort violations, zero early-return mismatches;
+degenerate inputs (zero, repeated eigenvalues, rank-deficient, identity, x1e200,
+x1e-200) agree with Eigen to 4e-15 with the same early-return decision.
+Rotation formulas match Golub-Van Loan sym.schur2; the sort swaps eigenvalue
+and eigenvector column together. Commit message: title 59 chars, `[ROCm]`
+correct, ASCII, AI disclosure in prose, no trailer, no internal vocabulary.
+
+### Blocking
+
+1. femEnergy.cu:850-858 (scale loop) with the shared tail: a non-finite input
+   comes back as an all-zero Hessian. An inf entry makes `scale` inf, the
+   normalization turns every finite entry to 0, no rotation runs, the
+   eigenvalues are `0 * inf` = NaN, and upstream's tail then builds `D = 0`
+   (`NaN > 0.0` is false) and returns `I * 0 * I`. Same for a NaN on the
+   diagonal of an otherwise diagonal matrix (`mag > scale` skips the NaN).
+   Eigen's solver returns NaN in both cases and 21bce04 returned H unchanged;
+   the class's own comment says it exists so a blown-up matrix does not come
+   back plausible-looking. Fix (HIP-only, CUDA text unaffected): take the
+   scale with `!(mag <= scale)` so NaN propagates, and when `scale` is not
+   finite fill the eigenvalues and eigenvectors with quiet NaN and return.
+2. Commit-message Test Plan: the headless GPU run is described in prose with
+   no command. The follow-up commit and the squash message must give the
+   literal commands (Xvfb, the gipc launch, the xdotool keypress).
+
+### Comment
+
+3. femEnergy.cu:835: "Jacobi needs no workspace" is not literal; the
+   constructor keeps a `Scalar a[Size][Size]` copy (1152 bytes at 12x12).
+   Reword to "no workspace beyond a copy of the matrix".
+
+Observation for the record, not a finding: scratch in
+`_calculate_bending_gradient_hessian` (femEnergy.cu:1416, launched from
+GIPC.cu:7005) grows from 4864 to 7136 bytes per lane at gfx942 (VGPRs stay
+128, occupancy 4 waves/SIMD), from upstream's `D` and the `V * D * V^T`
+temporaries that sharing the tail brings in. Frame time on this partition
+moved under 2 % (136.4 vs 138.7 ms).
+
+Verdict: changes requested.
