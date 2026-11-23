@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-05T01:25:53Z",
-  "updated_at": "2026-11-23T19:00:03Z",
+  "updated_at": "2026-11-23T19:02:51Z",
   "head_sha": "94702259cb20b8644075d22fd47493dfbf38840c",
   "depends_on": [],
   "pr_url": "https://github.com/ivan-chai/torch-linear-assignment/pull/31",
@@ -164,7 +164,7 @@
   "fix": {
     "branch": "moat-fix-31",
     "base_sha": "c65c0b823fe81f022e060291a47374ac8483cfc8",
-    "review_pr": null,
+    "review_pr": "https://github.com/AMD-Ecosystem/torch-linear-assignment/pull/1",
     "opened_at": "2026-11-20T21:31:21Z"
   },
   "porting_released": {
