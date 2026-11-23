@@ -3338,3 +3338,19 @@ No nvcc here. Owed: nvcc 12.8 comparison at 539d4be10 (porter entry). No CUDA-si
 
 Finding 1 is corrected in place in the `## Sync review PR draft` section above (the efea5c054 bullet only); re-checked `prose.py` clean and `jargon.py -` clean after the edit.
 
+
+
+## Validation 2026-11-23 (validator, linux-gfx942, sync round moat-sync-b11d700 head 539d4be10) -- RESULT: COMPLETED (131/132)
+
+Head `539d4be1021cbb78dcd2c19b951aabefa940844d` (= `head_sha` = `reviewed_sha`), checked out in `projects/arrayfire/src`, `git status --porcelain` empty (build dir gitignored). GPU: AMD Instinct MI300X HF (gfx942, wave64), `HIP_VISIBLE_DEVICES=2` as pinned by the dispatcher, idle at start, `ulimit -c 0`. Toolchain: ROCm SDK wheel 7.16.26385 (`_rocm_sdk_devel`), no /opt/rocm, `ROCM_PATH` exported. Build: the porter's `build-hip-gfx942`, incrementally rebuilt at 539d4be10 from this checkout (configure line in the porter entry above); `info_cuda` reports `build 539d4be10`, `[0] AMD Instinct MI300X HF, 196592 MB`.
+
+```
+export ROCM_PATH=$R HIP_VISIBLE_DEVICES=2; rm -rf ~/.arrayfire
+utils/timeit.sh arrayfire test -- ctest --test-dir $PWD/$B -R '_cuda$' -j1 --output-on-failure
+$B/test/reduce_cuda
+```
+**131/132 PASS** (357 s; the porter's run took 1317 s because the comgr cache in ~/.cache/comgr was cold then, while ~/.arrayfire was cleared both times and refilled with 3195 `KER*_HIP_gfx942` code objects). Only failure `test_confidence_connected_cuda` (3 pass, 12 skip, 21 fail: Image IO not configured), the standing `AF_WITH_IMAGEIO=OFF` disposition. `reduce_cuda` 1062/1062. threading, jit, binary, sparse, blas passed. No HIP fault, NaN or timeout.
+
+Comparison: identical to the porter's run at the merge 78ed7b348 and to this platform's last record (131/132 at 83f66a507/83be19781, same toolchain).
+
+Gates: CUDA no-regression compile NOT run (no nvcc on this host) -- owed at 539d4be10 on the mi355 host. `jargon.py --port arrayfire`: only the standing published `6800d5586` 'MOAT' commit-message hit (frozen). Documentation: the round changes no ROCm build docs; the README and CMakeLists HIP sections are intact after the merge. Windows and the other Linux platforms read revalidate at this head and were not run here.
