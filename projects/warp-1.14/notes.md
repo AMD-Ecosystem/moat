@@ -7953,3 +7953,518 @@ The porter's fix round advanced `head_sha` to `3c6714b8` while these runs were i
  
 ```
 The fix round's other changes to that header leave the gfx1250 fp32 path alone. They guard the MFMA `op<float64>`/`op<bfloat16>` for gfx908, change a comment on gfx12 bf16, and change `amortizes_operand_loads`' non-`k_split` branch (gfx11 only; gfx1250's `op<float32>` has `k_split = true`). `op<float32>` for gfx1250 is unchanged. The new term is true on gfx1250 only: ROCm 10.2 clang `--cuda-device-only -E` on `__has_builtin(__builtin_amdgcn_wmma_f32_16x16x4_f32)` is 1 for gfx1250 and 0 for gfx1201, gfx1100 and gfx950. Whether these results carry to `3c6714b8` is the validator's call; no record was changed here.
+
+## Evidence session (2026-11-23, linux-gfx1201, evidence only): OpenGL interop at `3c6714b8`
+
+Requested by Jeff Daily (ruling on OpenGL interop above). Evidence only: no lock taken, no state change, nothing pushed to the fork. Fork clone `<job>/gl/warp` at `3c6714b8`, built `python build_lib.py --rocm-path "$(rocm-sdk path --root)" --hip-arch gfx1201 -j 12` (warp.so 6,449,992 bytes; the build's last step, "Clearing kernel cache", runs `wp.init()` and stalled for the reason in item 2, so the 10-minute background limit stopped it after the library was linked and stripped). `ulimit -c 0` for GPU runs, except one Weston launch that segfaulted (item 4); core_pattern pipes to apport, so no core file was left in the job. Processes stopped: only my own recorded PIDs (2595480, a stalled run; 2602424, my Weston, whose children exited with it).
+
+**Summary.** (1) The container makes a GPU-backed EGL context on every Radeon (radeonsi, gfx1201, GL 4.6, Mesa 25.2.8). (2) HIP's Linux GL interop is GLX-only: with an EGL context current, registration fails (`hipErrorInvalidValue`, "No GL context is current"), so headless EGL rendering (`pyglet.options["headless"]`, the OpenGLRenderer's headless mode) always takes Warp's copy fallback on HIP. (3) **Port defect:** under a real GLX context on the right GPU, registration through the port still fails at `3c6714b8`, because HIP finds the Mesa GLX interop entry points with `dlsym(RTLD_DEFAULT, ...)`, which cannot see the libGL that pyglet loads through ctypes (`RTLD_LOCAL`). With `RegisteredGLBuffer`'s default `fallback_to_copy=True`, every Warp GL interop use on Linux silently falls back to copies. The 12-line fix below makes buffer (all three flags) and texture registration succeed through the port's own `wp_cuda_graphics_register_gl_buffer`/`_gl_image`. (4) Map, kernel read/write, unmap, the renderer's PBO path and the copy fallback (steps 2 to 4 of the request) were **not run**: HIP device 0 of this job never completes a compute packet (item 2), and the pin was kept. They need a re-run on a healthy GPU.
+
+### 1. Host
+
+- GPU: HIP device 0 (`HIP_VISIBLE_DEVICES=0`, dispatcher pin, kept) is PCI `0000:e3:00.0` (`hipDeviceGetPCIBusId`), which is **amd-smi GPU 3**, AMD Radeon AI PRO R9700 (device 0x7551), gfx1201, wave32. HIP's device order differs from amd-smi's here (amd-smi GPU 0 is `03:00.0`). amd-smi: 9 W, 3 % GFX activity, no process listed. One other job in the container (pinned to HIP device 2).
+- ROCm: the job venv came with TheRock 10.1.0; installed `"$FLEET_VENV/bin/python" -m pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple "rocm[devel,device-gfx1201]==10.2.0" numpy==1.26.4 pyglet` (rocm, rocm-sdk-core 10.2.0, pyglet 2.1.19). HIP 7.17.26434 (`AMD_LOG_LEVEL=3` banner), libamdhip64 from the venv's `_rocm_sdk_core/lib`. Ubuntu 24.04.5, kernel 6.11.0-26-generic, Python 3.11.17.
+- GL user space in the image: libglvnd 1.7.0 (`libEGL.so.1`, `libGL.so.1`, `libGLX.so.0`, `libOpenGL.so.0`), Mesa 25.2.8-0ubuntu0.24.04.4 (`libEGL_mesa0`, `libglx-mesa0`, `libgl1-mesa-dri` with `radeonsi_dri.so`, `libgbm1`), libdrm 2.4.125. `/usr/share/glvnd/egl_vendor.d/50_mesa.json`. No X server except `/usr/bin/Xvfb` (software only).
+- `/dev/dri`: card1-5 (group video), renderD128-131 (group render); the user is in both groups; `/dev/kfd` present. Render node to PCI (`/sys/class/drm/renderD*/device`): renderD128 `e3:00.0` (HIP device 0), renderD129 `c3:00.0`, renderD130 `03:00.0`, renderD131 `06:00.0`.
+- EGL (`egl_devices.py`): client extensions include `EGL_EXT_device_enumeration`, `EGL_EXT_platform_device`, `EGL_MESA_platform_surfaceless`. Devices: 0 renderD131, 1 renderD130, 2 renderD129, 3 renderD128, 4 software (`EGL_MESA_device_software`).
+- Headless pyglet context (`egl_probe.py <device>`): device 1 -> `GL_VENDOR AMD`, `GL_RENDERER AMD Radeon Graphics (radeonsi, gfx1201, LLVM 20.1.2, DRM 3.64, 6.11.0-26-generic)`, `GL_VERSION 4.6 (Core Profile) Mesa 25.2.8-0ubuntu0.24.04.4`, HeadlessDisplay/HeadlessContext; device 4 -> `llvmpipe (LLVM 20.1.2, 256 bits)`. Device 3 (the HIP device's GPU) clears and reads back a pixel in 0.017 s (`egl_clear.py 3`). So the container does reach the GPU for graphics; llvmpipe is only EGL device 4.
+
+### 2. HIP device 0 does not complete compute packets (environment, not the port)
+
+- `wp.init()` with no GL at all (`import warp as wp; wp.init()`) spins at 100 % CPU: 200 s, then `timeout`. faulthandler: `context.py:6582 get_current_cuda_device` (the `wp_cuda_context_get_current` call). Native stack under gdb as parent (`init_trap.py`, SIGTRAP after 20 s): `rocr::core::InterruptSignal::WaitRelaxed` <- `hsa_signal_wait_scacquire` <- `AqlQueue::ExecutePM4` <- `GpuAgent::InvalidateCodeCaches` <- `BlitKernel::Initialize` <- `GpuAgent::DmaCopy` <- `RegionMemory::Freeze` <- `hsa_executable_freeze` <- libamdhip64: the first packet HIP submits never completes.
+- Without Warp (`hip_memset.py`): `hipMalloc` 1 MiB returns at once; `hipMemset` never returns (30 s, twice; `AMD_LOG_LEVEL=3` ends at `acquireQueue refCount: ... (1)`). `hipInit`, `hipGetDeviceCount` (1), `hipCtxGetCurrent`, `hipSetDevice` return at once (`hip_ctx.py`).
+- The build's own `wp.init()` (22:06) stalled before any GL work in this job, so the state predates this session. The gfx ring of the same GPU works (`egl_clear.py 3`). A GPU reset needs root and touches a shared device; not attempted. No other GPU was used for compute (pin kept).
+
+### 3. HIP's GL interop is GLX-only on Linux (source and measurement)
+
+Source: ROCm/rocm-systems `projects/clr` at `efc99e08` (2026-11-23, develop; the log line numbers below, `hip_gl.cpp:89`, `:720`, `:721`, `:820`, match this source). `hipamd/src/hip_gl.cpp` `setupGLInterop()` builds the context properties with `ROCCLR_HIP_GL_CONTEXT_KHR` and, on Linux, `ROCCLR_HIP_GLX_DISPLAY_KHR`; `rocclr/platform/context.cpp` `Context::create` then loads `libGL.so.1` (`Os::loadLibrary`, `dlopen(filename, RTLD_LAZY)`) as `GLFunctions(h, isEGL=false)` and takes `glXGetCurrentContext()`/`glXGetCurrentDisplay()`. The EGL branch (`EGLDeviceKhr`, `MESA_INTEROP_EGL` in `rocclr/device/rocm/rocglinterop.cpp`) is reached only through the OpenCL `CL_EGL_DISPLAY_KHR` property, which HIP never passes. `glAssociate()` then calls `Init(kind)`, which finds `glXGLInteropQueryDeviceInfoMESA`/`glXGLInteropExportObjectMESA` through `dlsym(RTLD_DEFAULT, "glXGetProcAddress")` (fallback `dlsym(RTLD_DEFAULT, "MesaGLInteropGLXQueryDeviceInfo")`), caches the answer in a `std::call_once`, and requires the PCI bus/device/function, vendor and device id from Mesa to equal the HIP device's.
+
+Measured (`hip_gl_register.py`, ctypes, no Warp, `AMD_LOG_LEVEL=4`), 4 KiB GL buffer:
+
+- EGL context on device 3 (same GPU as HIP device 0): `glXGetCurrentContext None`; log `Failed GlInterop::glAssociate()`, `Context setup failed: create`, `No GL context is current`; `hipGraphicsGLRegisterBuffer` -> 1 `hipErrorInvalidValue` for flags 0, 1 and 2.
+- GLX context (item 4) on the same GPU, libGL loaded by pyglet only: `glXGetCurrentContext` non-NULL, the same three log lines, `hipErrorInvalidValue` for flags 0, 1, 2 and for `hipGraphicsGLRegisterImage` (GL_TEXTURE_2D RGBA8 64x64). Mesa itself reports the right device for this context (`mesa_interop_info.py glx`: ret 0, `0000:e3:00.0`, vendor 1002 device 7551; also EGL device 3: `e3:00.0`), so the PCI check would pass: `Init()` fails because pyglet's ctypes load of libGL is `RTLD_LOCAL`, invisible to `dlsym(RTLD_DEFAULT)`.
+- Same, with `ctypes.CDLL("libGL.so.1", mode=ctypes.RTLD_GLOBAL)` before pyglet: `hipGraphicsGLRegisterBuffer` -> `hipSuccess`, log `fd 25, Map Interop memory 0x780aeec80000, size 0x1000, status = 0x0h` (the dma-buf import). The following `hipGraphicsMapResources(1, res, NULL)` never returned (60 s): mapping submits to the stalled queue of item 2.
+- Same, promoting pyglet's already loaded libGL afterwards with `RTLD_NOLOAD | RTLD_GLOBAL` (`hip_gl_register2.py`, `GL_PROMOTE=1`; the call the fix makes): buffer flags 0, 1, 2 -> `hipSuccess`, each `hipGraphicsUnregisterResource` -> `hipSuccess`; `hipGraphicsGLRegisterImage` -> `hipSuccess`, unregister `hipSuccess`. Without it (`GL_PROMOTE` unset): all four `hipErrorInvalidValue`.
+
+### 4. GLX without a display: headless Weston and Xwayland on the GPU
+
+No package went into the image's paths: `apt-get download` of weston 13.0.0-4build3, xwayland 2:23.2.6-1ubuntu0.8 and their missing libraries (libweston-13-0, libseat1, libinput10, libfreerdp2, libneatvnc0, libpipewire-0.3-0t64 and others; `libgstreamer-plugins-base1.0-0` 404'd and was not needed), each `dpkg -x` into `<job>/gl/root`. `start_weston.sh` (below) runs `weston --backend=headless --renderer=gl` with `WESTON_MODULE_MAP` pointing at the unpacked modules and `xwayland=true`; it needs `/tmp/.X11-unix` (created; the first launch without it segfaulted after "failed to bind to /tmp/.X11-unix/X0"). Weston logs `Using rendering device: /dev/dri/renderD131` (it has no option to choose the device) and `GL renderer: AMD Radeon Graphics (radeonsi, gfx1201, ...)`, then `xserver listening on display :0`; Xwayland starts on the first client. A GLX client then renders on the HIP device's GPU with Mesa's client-side selection `DISPLAY=:0 DRI_PRIME=pci-0000_e3_00_0` (Mesa interop query: `e3:00.0`; without `DRI_PRIME`: `06:00.0`, the wrong GPU for HIP device 0).
+
+### 5. Through the port's own entry points
+
+`warp_native_register.py <warp.so>` calls `wp_cuda_graphics_register_gl_buffer(NULL, buf, flags)` and `wp_cuda_graphics_register_gl_image(NULL, tex, GL_TEXTURE_2D, 0)` from ctypes (a NULL context makes `ContextGuard` a no-op, so no `wp.init()` is needed), under the GLX context of item 4, libGL loaded by pyglet only, as a Warp application has it:
+
+- `3c6714b8` (lib_orig, sha256 `2bfc9a3a...`): all four NULL, `Warp CUDA error 1: invalid argument (in function wp_cuda_graphics_register_gl_buffer, warp/native/warp.cu:5626)` and `(... wp_cuda_graphics_register_gl_image, warp/native/warp.cu:5640)`. In `RegisteredGLBuffer` this becomes the "Could not register GL buffer ... Falling back to copy operations" warning (or the `RuntimeError` with `fallback_to_copy=False`); `RegisteredGLTexture` (texture.py:1239, the only caller of `_gl_image`) raises.
+- `3c6714b8` plus the diff below (lib_fix, sha256 `af6c389e...`, same build command): buffer flags 0, 1, 2 and the texture -> a resource each, unregistered without error.
+
+Proposed fix for the porter (HIP section of `warp/native/cuda_util.cpp`, which already includes `<dlfcn.h>` and `<mutex>` outside Windows; compiled for gfx1201 with no new warning; the CUDA path is untouched):
+
+```diff
+diff --git a/warp/native/cuda_util.cpp b/warp/native/cuda_util.cpp
+index ce83116a..12f8f64b 100644
+--- a/warp/native/cuda_util.cpp
++++ b/warp/native/cuda_util.cpp
+@@ -383,8 +383,20 @@ CUresult cuGraphicsResourceGetMappedPointer_f(CUdeviceptr* pDevPtr, size_t* pSiz
+     return hipGraphicsResourceGetMappedPointer(pDevPtr, pSize, resource);
+ }
+ 
++// HIP finds the GLX interop entry points with dlsym(RTLD_DEFAULT, ...), which does not see a
++// libGL loaded with RTLD_LOCAL (the default of Python's ctypes, which pyglet uses), and it caches
++// the failed lookup for the life of the process. Give an already loaded libGL global scope first.
++static void make_gl_symbols_global()
++{
++#if !defined(_WIN32)
++    static std::once_flag once;
++    std::call_once(once, []() { dlopen("libGL.so.1", RTLD_LAZY | RTLD_GLOBAL | RTLD_NOLOAD); });
++#endif
++}
++
+ CUresult cuGraphicsGLRegisterBuffer_f(CUgraphicsResource* pCudaResource, unsigned int buffer, unsigned int flags)
+ {
++    make_gl_symbols_global();
+     return hipGraphicsGLRegisterBuffer(pCudaResource, buffer, flags);
+ }
+ 
+@@ -392,6 +404,7 @@ CUresult cuGraphicsGLRegisterImage_f(
+     CUgraphicsResource* pCudaResource, unsigned int image, unsigned int target, unsigned int flags
+ )
+ {
++    make_gl_symbols_global();
+     return hipGraphicsGLRegisterImage(pCudaResource, image, target, flags);
+ }
+ 
+```
+
+Notes on the fix: `RTLD_NOLOAD` promotes a libGL the application already loaded and loads nothing new; a variant without `RTLD_NOLOAD` would also cover an application that reached GL only through `libOpenGL.so.0` + `libGLX.so.0` (HIP loads `libGL.so.1` itself in `Context::create` anyway), not measured. The promotion must precede the first HIP GL call in the process, because HIP caches the failed lookup (`std::call_once` in `Init`); calling it in the two register wrappers guarantees that. Windows (`OpenGL32.dll`, wgl) takes another branch in HIP and is not covered here; the ruled Windows windowed run will show it.
+
+### What this means for Warp on Linux (at `3c6714b8`)
+
+- Headless (`pyglet.options["headless"] = True`, which is EGL): no zero-copy interop on HIP with or without the fix; HIP has no EGL path. `RegisteredGLBuffer` falls back to copies (default `fallback_to_copy=True`; every `RegisteredGLBuffer(...)` in `render_opengl.py` uses the default: lines 857, 2416, 2589 and the `get_pixels` PBO at 2840), `fallback_to_copy=False` raises, `RegisteredGLTexture` raises.
+- Windowed under X11/Xwayland (GLX): registration fails at `3c6714b8` (the RTLD_LOCAL defect), so the same fallback; with the fix, registration succeeds. Map, kernel access and unmap after a successful registration are not yet measured anywhere.
+
+### Not done, and the re-run that closes it
+
+Steps 2 (map, read in a kernel, write, unmap, GL read-back; READ_ONLY and WRITE_DISCARD), 3 (OpenGLRenderer `get_pixels` into a GPU array, interop against `fallback_to_copy`) and 4 (forced fallback) all need `wp.init()` or a mapped resource, i.e. a compute queue on the HIP device, and HIP device 0 here completes none (item 2). `gl_buffer.py` (below) is the step 2 and 4 script; it was started twice and stopped in `wp.init()` both times. A re-run on a GPU whose compute works: the fix applied to a clone, the Weston/Xwayland recipe of item 4 with `DRI_PRIME` naming the HIP device's PCI address, then `gl_buffer.py glx interop` and `gl_buffer.py glx fallback`, and an OpenGLRenderer run in windowed mode under Xwayland (a hidden window is enough) for `get_pixels`. The headless (EGL) renderer can still be measured for step 3's fallback half and step 4: `gl_buffer.py 3 fallback` style, with the EGL device that matches the HIP device.
+
+Question for Jeff: whether the porter takes the fix above now (it changes only the HIP build), and whether the release notes say that on Linux GL interop needs a GLX (windowed) context and that headless EGL rendering uses copies on ROCm.
+
+### Scripts (`<job>/gl/scripts/`)
+
+`egl_devices.py`:
+
+```python
+# Enumerate EGL devices and their DRM nodes with plain ctypes on libEGL.
+import ctypes
+egl = ctypes.CDLL("libEGL.so.1")
+egl.eglGetProcAddress.restype = ctypes.c_void_p
+egl.eglGetProcAddress.argtypes = [ctypes.c_char_p]
+egl.eglQueryString.restype = ctypes.c_char_p
+egl.eglQueryString.argtypes = [ctypes.c_void_p, ctypes.c_int]
+print("client extensions:", egl.eglQueryString(None, 0x3055).decode())
+QD = ctypes.CFUNCTYPE(ctypes.c_uint, ctypes.c_int, ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(ctypes.c_int))(egl.eglGetProcAddress(b"eglQueryDevicesEXT"))
+QS = ctypes.CFUNCTYPE(ctypes.c_char_p, ctypes.c_void_p, ctypes.c_int)(egl.eglGetProcAddress(b"eglQueryDeviceStringEXT"))
+n = ctypes.c_int()
+QD(0, None, ctypes.byref(n))
+devs = (ctypes.c_void_p * n.value)()
+QD(n.value, devs, ctypes.byref(n))
+for i in range(n.value):
+    print(i, "ext:", QS(devs[i], 0x3055), "drm:", QS(devs[i], 0x3233), "render:", QS(devs[i], 0x3377))
+```
+
+`egl_probe.py`:
+
+```python
+# Headless pyglet context on EGL device argv[1]; prints the GL strings.
+import sys, ctypes
+import pyglet
+pyglet.options["headless"] = True
+pyglet.options["headless_device"] = int(sys.argv[1])
+from pyglet import gl
+win = pyglet.window.Window(width=64, height=64, visible=False)
+win.switch_to()
+for name in ("GL_VENDOR", "GL_RENDERER", "GL_VERSION"):
+    print(name, ctypes.cast(gl.glGetString(getattr(gl, name)), ctypes.c_char_p).value.decode())
+print("display:", type(win.display).__name__, "context:", type(win.context).__name__)
+win.close()
+```
+
+`egl_clear.py`:
+
+```python
+# Headless context on EGL device argv[1]: clear an FBO to a colour, read it back.
+import sys, ctypes, time
+import pyglet
+pyglet.options["headless"] = True
+pyglet.options["headless_device"] = int(sys.argv[1])
+from pyglet import gl
+win = pyglet.window.Window(width=64, height=64, visible=False)
+win.switch_to()
+gl.glClearColor(0.25, 0.5, 0.75, 1.0)
+gl.glClear(gl.GL_COLOR_BUFFER_BIT)
+px = (ctypes.c_ubyte * 4)()
+s = time.time()
+gl.glReadPixels(0, 0, 1, 1, gl.GL_RGBA, gl.GL_UNSIGNED_BYTE, px)
+print("device", sys.argv[1], "pixel", list(px), round(time.time() - s, 3), "s")
+```
+
+`hip_ctx.py`:
+
+```python
+# Calls hipInit, hipGetDeviceCount, hipCtxGetCurrent directly, timing each.
+import ctypes, time, os, faulthandler
+faulthandler.dump_traceback_later(40, exit=True)
+import rocm_sdk
+rocm_sdk.initialize_process(preload_shortnames=["amdhip64"])
+hip = ctypes.CDLL("libamdhip64.so.7")
+for line in open("/proc/self/maps"):
+    if "amdhip64" in line: print(line.split()[-1]); break
+def t(name, *a):
+    s = time.time(); r = getattr(hip, name)(*a); print(name, r, round(time.time() - s, 3), "s", flush=True)
+t("hipInit", 0)
+n = ctypes.c_int(); t("hipGetDeviceCount", ctypes.byref(n)); print("count", n.value)
+ctx = ctypes.c_void_p(); t("hipCtxGetCurrent", ctypes.byref(ctx)); print("ctx", ctx.value)
+t("hipSetDevice", 0)
+t("hipCtxGetCurrent", ctypes.byref(ctx)); print("ctx", ctx.value)
+```
+
+`hip_memset.py`:
+
+```python
+# hipMalloc + hipMemset + hipMemcpy D2H on HIP device 0, each timed; exits after 30 s if stuck.
+import ctypes, time, faulthandler
+faulthandler.dump_traceback_later(30, exit=True)
+import rocm_sdk
+rocm_sdk.initialize_process(preload_shortnames=["amdhip64"])
+hip = ctypes.CDLL("libamdhip64.so.7")
+bus = ctypes.create_string_buffer(64); hip.hipDeviceGetPCIBusId(bus, 64, 0); print("device 0 PCI", bus.value.decode())
+p = ctypes.c_void_p()
+s = time.time(); print("hipMalloc", hip.hipMalloc(ctypes.byref(p), ctypes.c_size_t(1 << 20)), round(time.time() - s, 3), flush=True)
+s = time.time(); print("hipMemset", hip.hipMemset(p, 7, ctypes.c_size_t(1 << 20)), flush=True)
+print("hipDeviceSynchronize", hip.hipDeviceSynchronize(), round(time.time() - s, 3), flush=True)
+out = (ctypes.c_ubyte * 16)()
+print("hipMemcpy D2H", hip.hipMemcpy(out, p, ctypes.c_size_t(16), 2), list(out)[:4], flush=True)
+```
+
+`init_trap.py`:
+
+```python
+# wp.init() with a SIGTRAP after 20 s so a parent gdb can take the native stack.
+import os, signal, threading, time
+threading.Thread(target=lambda: (time.sleep(20), os.kill(os.getpid(), signal.SIGTRAP)), daemon=True).start()
+import warp as wp
+wp.init()
+print("init returned")
+```
+
+`hip_gl_register.py`:
+
+```python
+# hipGraphicsGLRegisterBuffer on a GL buffer, through ctypes (no Warp), with the
+# GL context from argv[1]: an EGL device index (headless pyglet) or "glx".
+# Registration, map, mapped pointer, unmap, unregister; prints each hipError_t.
+import sys, os, ctypes, faulthandler
+if os.environ.get("GL_GLOBAL"):
+    ctypes.CDLL("libGL.so.1", mode=ctypes.RTLD_GLOBAL)  # make glXGetProcAddress visible to dlsym(RTLD_DEFAULT)
+faulthandler.dump_traceback_later(60, exit=True)
+import numpy as np
+import pyglet
+if sys.argv[1] != "glx":
+    pyglet.options["headless"] = True
+    pyglet.options["headless_device"] = int(sys.argv[1])
+from pyglet import gl
+win = pyglet.window.Window(width=64, height=64, visible=False)
+win.switch_to()
+print("GL_RENDERER", ctypes.cast(gl.glGetString(gl.GL_RENDERER), ctypes.c_char_p).value.decode())
+libgl = ctypes.CDLL("libGL.so.1")
+libgl.glXGetCurrentContext.restype = ctypes.c_void_p
+libgl.glXGetCurrentDisplay.restype = ctypes.c_void_p
+print("glXGetCurrentContext", libgl.glXGetCurrentContext(), "glXGetCurrentDisplay", libgl.glXGetCurrentDisplay())
+import rocm_sdk
+rocm_sdk.initialize_process(preload_shortnames=["amdhip64"])
+hip = ctypes.CDLL("libamdhip64.so.7")
+hip.hipGetErrorName.restype = ctypes.c_char_p
+def chk(name, r):
+    print(f"{name}: {r} {hip.hipGetErrorName(r).decode()}", flush=True)
+    return r
+bus = ctypes.create_string_buffer(64); hip.hipDeviceGetPCIBusId(bus, 64, 0)
+print("HIP device 0 PCI", bus.value.decode())
+chk("hipSetDevice", hip.hipSetDevice(0))
+data = np.arange(1024, dtype=np.float32)
+buf = gl.GLuint(); gl.glGenBuffers(1, ctypes.byref(buf))
+gl.glBindBuffer(gl.GL_ARRAY_BUFFER, buf)
+gl.glBufferData(gl.GL_ARRAY_BUFFER, data.nbytes, data.ctypes.data, gl.GL_DYNAMIC_DRAW)
+gl.glBindBuffer(gl.GL_ARRAY_BUFFER, 0); gl.glFinish()
+res = ctypes.c_void_p()
+for flags in (0, 1, 2):
+    r = chk(f"hipGraphicsGLRegisterBuffer(flags={flags})", hip.hipGraphicsGLRegisterBuffer(ctypes.byref(res), buf.value, flags))
+    if r == 0:
+        break
+if r == 0:
+    chk("hipGraphicsMapResources", hip.hipGraphicsMapResources(1, ctypes.byref(res), None))
+    ptr = ctypes.c_void_p(); size = ctypes.c_size_t()
+    chk("hipGraphicsResourceGetMappedPointer", hip.hipGraphicsResourceGetMappedPointer(ctypes.byref(ptr), ctypes.byref(size), res))
+    print("mapped", hex(ptr.value or 0), size.value)
+    chk("hipGraphicsUnmapResources", hip.hipGraphicsUnmapResources(1, ctypes.byref(res), None))
+    chk("hipGraphicsUnregisterResource", hip.hipGraphicsUnregisterResource(res))
+```
+
+`mesa_interop_info.py`:
+
+```python
+# Asks Mesa which device backs the current GL context, through the same entry points HIP uses.
+# argv[1]: EGL device index (headless) or "glx".
+import sys, ctypes
+import pyglet
+glx = sys.argv[1] == "glx"
+if not glx:
+    pyglet.options["headless"] = True
+    pyglet.options["headless_device"] = int(sys.argv[1])
+from pyglet import gl
+win = pyglet.window.Window(width=64, height=64, visible=False)
+win.switch_to()
+class Info(ctypes.Structure):
+    _fields_ = [(n, ctypes.c_uint32) for n in ("version", "pci_segment_group", "pci_bus", "pci_device", "pci_function", "vendor_id", "device_id")]
+info = Info(version=1)
+if glx:
+    lib = ctypes.CDLL("libGL.so.1")
+    lib.glXGetProcAddress.restype = ctypes.c_void_p
+    lib.glXGetCurrentContext.restype = ctypes.c_void_p
+    lib.glXGetCurrentDisplay.restype = ctypes.c_void_p
+    fp = lib.glXGetProcAddress(b"glXGLInteropQueryDeviceInfoMESA")
+    dpy, ctx = lib.glXGetCurrentDisplay(), lib.glXGetCurrentContext()
+else:
+    lib = ctypes.CDLL("libEGL.so.1")
+    lib.eglGetProcAddress.restype = ctypes.c_void_p
+    lib.eglGetCurrentContext.restype = ctypes.c_void_p
+    lib.eglGetCurrentDisplay.restype = ctypes.c_void_p
+    fp = lib.eglGetProcAddress(b"eglGLInteropQueryDeviceInfoMESA")
+    dpy, ctx = lib.eglGetCurrentDisplay(), lib.eglGetCurrentContext()
+print("entry point", hex(fp or 0), "display", dpy, "context", ctx)
+f = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p, ctypes.POINTER(Info))(fp)
+r = f(dpy, ctx, ctypes.byref(info))
+print("ret", r, "pci %04x:%02x:%02x.%x" % (info.pci_segment_group, info.pci_bus, info.pci_device, info.pci_function), "vendor %04x device %04x" % (info.vendor_id, info.device_id))
+```
+
+`hip_gl_register2.py`:
+
+```python
+# Registration only (no map: this GPU's compute queue does not complete packets).
+# GL_PROMOTE=1: after pyglet has loaded libGL (RTLD_LOCAL), re-open it with
+# RTLD_NOLOAD | RTLD_GLOBAL, the same call a native fix would make.
+import sys, os, ctypes, faulthandler
+faulthandler.dump_traceback_later(60, exit=True)
+import numpy as np
+import pyglet
+from pyglet import gl
+win = pyglet.window.Window(width=64, height=64, visible=False)
+win.switch_to()
+if os.environ.get("GL_PROMOTE"):
+    RTLD_NOLOAD = 4
+    h = ctypes.CDLL("libGL.so.1", mode=ctypes.RTLD_GLOBAL | RTLD_NOLOAD)
+    print("promoted libGL.so.1 to global scope:", h._handle != 0)
+import rocm_sdk
+rocm_sdk.initialize_process(preload_shortnames=["amdhip64"])
+hip = ctypes.CDLL("libamdhip64.so.7")
+hip.hipGetErrorName.restype = ctypes.c_char_p
+def chk(name, r):
+    print(f"{name}: {r} {hip.hipGetErrorName(r).decode()}", flush=True)
+    return r
+chk("hipSetDevice", hip.hipSetDevice(0))
+data = np.arange(1024, dtype=np.float32)
+buf = gl.GLuint(); gl.glGenBuffers(1, ctypes.byref(buf))
+gl.glBindBuffer(gl.GL_ARRAY_BUFFER, buf)
+gl.glBufferData(gl.GL_ARRAY_BUFFER, data.nbytes, data.ctypes.data, gl.GL_DYNAMIC_DRAW)
+gl.glBindBuffer(gl.GL_ARRAY_BUFFER, 0); gl.glFinish()
+for flags in (0, 1, 2):
+    res = ctypes.c_void_p()
+    if chk(f"hipGraphicsGLRegisterBuffer(flags={flags})", hip.hipGraphicsGLRegisterBuffer(ctypes.byref(res), buf.value, flags)) == 0:
+        chk("hipGraphicsUnregisterResource", hip.hipGraphicsUnregisterResource(res))
+tex = gl.GLuint(); gl.glGenTextures(1, ctypes.byref(tex))
+gl.glBindTexture(gl.GL_TEXTURE_2D, tex)
+gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RGBA8, 64, 64, 0, gl.GL_RGBA, gl.GL_UNSIGNED_BYTE, None)
+gl.glBindTexture(gl.GL_TEXTURE_2D, 0); gl.glFinish()
+res = ctypes.c_void_p()
+if chk("hipGraphicsGLRegisterImage(GL_TEXTURE_2D RGBA8)", hip.hipGraphicsGLRegisterImage(ctypes.byref(res), tex.value, gl.GL_TEXTURE_2D, 0)) == 0:
+    chk("hipGraphicsUnregisterResource", hip.hipGraphicsUnregisterResource(res))
+```
+
+`warp_native_register.py`:
+
+```python
+# Calls the port's wp_cuda_graphics_register_gl_buffer / _gl_image (warp.so at argv[1]) with a
+# NULL context (ContextGuard is then a no-op, so no wp.init()), under a pyglet GLX context.
+import sys, ctypes, faulthandler
+faulthandler.dump_traceback_later(60, exit=True)
+import numpy as np
+import pyglet
+from pyglet import gl
+win = pyglet.window.Window(width=64, height=64, visible=False)
+win.switch_to()
+import rocm_sdk
+rocm_sdk.initialize_process(preload_shortnames=["amd_comgr", "amdhip64", "hiprtc"])
+w = ctypes.CDLL(sys.argv[1])
+w.wp_cuda_graphics_register_gl_buffer.restype = ctypes.c_void_p
+w.wp_cuda_graphics_register_gl_buffer.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint]
+w.wp_cuda_graphics_register_gl_image.restype = ctypes.c_void_p
+w.wp_cuda_graphics_register_gl_image.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_uint]
+w.wp_cuda_graphics_unregister_resource.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+w.wp_get_error_string.restype = ctypes.c_char_p
+data = np.arange(1024, dtype=np.float32)
+buf = gl.GLuint(); gl.glGenBuffers(1, ctypes.byref(buf))
+gl.glBindBuffer(gl.GL_ARRAY_BUFFER, buf)
+gl.glBufferData(gl.GL_ARRAY_BUFFER, data.nbytes, data.ctypes.data, gl.GL_DYNAMIC_DRAW)
+gl.glBindBuffer(gl.GL_ARRAY_BUFFER, 0)
+tex = gl.GLuint(); gl.glGenTextures(1, ctypes.byref(tex))
+gl.glBindTexture(gl.GL_TEXTURE_2D, tex)
+gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RGBA8, 64, 64, 0, gl.GL_RGBA, gl.GL_UNSIGNED_BYTE, None)
+gl.glBindTexture(gl.GL_TEXTURE_2D, 0); gl.glFinish()
+for flags in (0, 1, 2):
+    r = w.wp_cuda_graphics_register_gl_buffer(None, buf.value, flags)
+    print(f"register_gl_buffer(flags={flags}):", "resource" if r else "NULL", "" if r else w.wp_get_error_string().decode())
+    if r: w.wp_cuda_graphics_unregister_resource(None, r)
+r = w.wp_cuda_graphics_register_gl_image(None, tex.value, gl.GL_TEXTURE_2D, 0)
+print("register_gl_image(GL_TEXTURE_2D):", "resource" if r else "NULL", "" if r else w.wp_get_error_string().decode())
+if r: w.wp_cuda_graphics_unregister_resource(None, r)
+```
+
+`gl_buffer.py`:
+
+```python
+# GL buffer <-> Warp interop check. Usage: gl_buffer.py <egl_device|glx> <interop|fallback>
+import sys, ctypes
+import numpy as np
+mode, path = sys.argv[1], sys.argv[2]
+import pyglet
+if mode != "glx":
+    pyglet.options["headless"] = True
+    pyglet.options["headless_device"] = int(mode)
+from pyglet import gl
+import warp as wp
+
+win = pyglet.window.Window(width=64, height=64, visible=False)
+win.switch_to()
+print("GL_RENDERER", ctypes.cast(gl.glGetString(gl.GL_RENDERER), ctypes.c_char_p).value.decode())
+wp.init()
+dev = wp.get_device("cuda:0")
+print("warp", wp.__version__, wp.__file__, dev, dev.name, "arch", dev.arch)
+
+N = 1 << 16
+
+def make_buffer(data):
+    buf = gl.GLuint()
+    gl.glGenBuffers(1, ctypes.byref(buf))
+    gl.glBindBuffer(gl.GL_ARRAY_BUFFER, buf)
+    gl.glBufferData(gl.GL_ARRAY_BUFFER, data.nbytes, data.ctypes.data, gl.GL_DYNAMIC_DRAW)
+    gl.glBindBuffer(gl.GL_ARRAY_BUFFER, 0)
+    return buf
+
+def read_buffer(buf, n):
+    out = np.empty(n, dtype=np.float32)
+    gl.glFinish()
+    gl.glBindBuffer(gl.GL_ARRAY_BUFFER, buf)
+    gl.glGetBufferSubData(gl.GL_ARRAY_BUFFER, 0, out.nbytes, out.ctypes.data)
+    gl.glBindBuffer(gl.GL_ARRAY_BUFFER, 0)
+    return out
+
+@wp.kernel
+def check_and_write(a: wp.array(dtype=float), bad: wp.array(dtype=int)):
+    i = wp.tid()
+    if a[i] != float(i) * 0.5:
+        wp.atomic_add(bad, 0, 1)
+    a[i] = float(i) * 2.0 + 1.0
+
+@wp.kernel
+def check_only(a: wp.array(dtype=float), bad: wp.array(dtype=int)):
+    i = wp.tid()
+    if a[i] != float(i) * 0.5:
+        wp.atomic_add(bad, 0, 1)
+
+@wp.kernel
+def write_only(a: wp.array(dtype=float)):
+    i = wp.tid()
+    a[i] = float(i) * 3.0 - 7.0
+
+src = np.arange(N, dtype=np.float32) * 0.5
+fallback = path == "fallback"
+results = {}
+
+# NONE: read then write
+buf = make_buffer(src)
+r = wp.RegisteredGLBuffer(buf.value, dev, flags=wp.RegisteredGLBuffer.NONE, fallback_to_copy=fallback)
+print("NONE: resource", r.resource is not None)
+a = r.map(dtype=float, shape=(N,))
+print("NONE: mapped ptr", hex(a.ptr), "size", a.size)
+bad = wp.zeros(1, dtype=int, device=dev)
+wp.launch(check_and_write, dim=N, inputs=[a, bad], device=dev)
+r.unmap()
+wp.synchronize_device(dev)
+back = read_buffer(buf, N)
+exp = np.arange(N, dtype=np.float32) * 2.0 + 1.0
+results["NONE"] = (int(bad.numpy()[0]), int((back != exp).sum()))
+print("NONE: kernel read mismatches", results["NONE"][0], "GL readback mismatches", results["NONE"][1])
+del r
+
+# READ_ONLY: kernel reads, buffer unchanged
+buf2 = make_buffer(src)
+r = wp.RegisteredGLBuffer(buf2.value, dev, flags=wp.RegisteredGLBuffer.READ_ONLY, fallback_to_copy=fallback)
+a = r.map(dtype=float, shape=(N,))
+bad = wp.zeros(1, dtype=int, device=dev)
+wp.launch(check_only, dim=N, inputs=[a, bad], device=dev)
+r.unmap()
+wp.synchronize_device(dev)
+back = read_buffer(buf2, N)
+results["READ_ONLY"] = (int(bad.numpy()[0]), int((back != src).sum()))
+print("READ_ONLY: kernel read mismatches", results["READ_ONLY"][0], "GL buffer changed", results["READ_ONLY"][1])
+del r
+
+# WRITE_DISCARD: kernel writes every element
+buf3 = make_buffer(src)
+r = wp.RegisteredGLBuffer(buf3.value, dev, flags=wp.RegisteredGLBuffer.WRITE_DISCARD, fallback_to_copy=fallback)
+a = r.map(dtype=float, shape=(N,))
+wp.launch(write_only, dim=N, inputs=[a], device=dev)
+r.unmap()
+wp.synchronize_device(dev)
+back = read_buffer(buf3, N)
+exp3 = np.arange(N, dtype=np.float32) * 3.0 - 7.0
+results["WRITE_DISCARD"] = (0, int((back != exp3).sum()))
+print("WRITE_DISCARD: GL readback mismatches", results["WRITE_DISCARD"][1])
+del r
+
+# Second map/unmap cycle on one registration (the renderer maps every frame)
+buf4 = make_buffer(src)
+r = wp.RegisteredGLBuffer(buf4.value, dev, fallback_to_copy=fallback)
+for k in range(3):
+    a = r.map(dtype=float, shape=(N,))
+    wp.launch(write_only, dim=N, inputs=[a], device=dev)
+    r.unmap()
+wp.synchronize_device(dev)
+results["REMAP"] = (0, int((read_buffer(buf4, N) != exp3).sum()))
+print("REMAP x3: GL readback mismatches", results["REMAP"][1])
+del r
+
+ok = all(v == (0, 0) for v in results.values())
+print("RESULT", "PASS" if ok else "FAIL", results)
+win.close()
+```
+
+`start_weston.sh`:
+
+```bash
+#!/bin/bash
+# Headless Weston with the GL renderer and Xwayland, all from packages unpacked under $J/gl/root.
+J=/var/lib/jenkins/fleet/jobs/gfx1201-20261123-140237-warp114-gl-evidence-prompt
+R=$J/gl/root; M=$R/usr/lib/x86_64-linux-gnu
+export XDG_RUNTIME_DIR=$J/gl/xdg
+export LD_LIBRARY_PATH=$M:$M/weston
+export WESTON_MODULE_MAP="headless-backend.so=$M/libweston-13/headless-backend.so;gl-renderer.so=$M/libweston-13/gl-renderer.so;xwayland.so=$M/libweston-13/xwayland.so;desktop-shell.so=$M/weston/desktop-shell.so;weston-desktop-shell=$R/usr/libexec/weston-desktop-shell;weston-keyboard=$R/usr/libexec/weston-keyboard"
+exec $R/usr/bin/weston --config=$J/gl/weston.ini --backend=headless --renderer=gl --socket=wl-gl --width=640 --height=480 --log=$J/gl/weston.log
+```
+
+`weston.ini` (`$J/gl/weston.ini`, `R` = `<job>/gl/root`):
+
+```ini
+[core]
+xwayland=true
+[xwayland]
+path=$R/usr/bin/Xwayland
+```
