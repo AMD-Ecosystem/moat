@@ -1357,3 +1357,28 @@ The HIP device also needs a small fix in visionaray: in include/visionaray/detai
 - Whether to send the visionaray hip_bvh.h fix as a PR to szellmann/visionaray (a follow-up round on the visionaray project) or leave it to the maintainer from this reply is jeff's call (deferral visionaray-hip-lbvh-assign-indices).
 - gfx942/gfx950 (MI300 class) cannot run the HIP device (no texture API; see Validation 2026-11-23 linux-gfx942). Do not list MI300 among the retested GPUs.
 - Windows risk: visionaray's intersect_ray1_cwbvh.inl uses __lzcnt under _WIN32 in code that is now compiled for the HIP device; untested here.
+
+## CUDA compile check 2026-11-23 (mi355 host, nvcc 12.8.93): moat-fix-10 head 6f1e7937 vs upstream c1aa91b
+
+Requested by jeff; this is the nvcc check the fix round owed. Compile and link only (no NVIDIA GPU on the host; nothing run on any GPU). Toolkit: the host's CUDA 12.8 at `/usr/local/cuda-12.8` (nvcc V12.8.93, CCCL included), host gcc 13.3.0. Trees: the fork's `moat-fix-10` at 6f1e7937 (= recorded head_sha) and upstream `main` at c1aa91b (the commit 5906f35 merged; still upstream's tip today), plain clones in the job directory, no edits.
+
+Deps built in the job directory, the porter section's versions with CUDA in place of HIP: ANARI-SDK next_release @ 47b22af (same cmake line), visionaray master @ 99d4829c unpatched (the hip_bvh.h fix is HIP-only; neither tree includes that header without WITH_HIP) with `-DVSNRAY_ENABLE_CUDA=ON -DVSNRAY_ENABLE_HIP=OFF -DCMAKE_CUDA_COMPILER=$C/bin/nvcc -DCMAKE_CUDA_ARCHITECTURES=80` and the porter's other switches. Both built rc=0.
+
+The 2026-06-25 gate's procedure, with the toolkit changed from 13.3 to 12.8 and `-j 16`, building every target (CPU and CUDA libraries):
+```bash
+C=/usr/local/cuda-12.8; D=<job>/cc/av-deps
+cmake -S <tree> -B <build> -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DANARI_VISIONARAY_ENABLE_CUDA=ON -DANARI_VISIONARAY_ENABLE_HIP=OFF -DANARI_VISIONARAY_ENABLE_NANOVDB=ON \
+  -DCMAKE_CUDA_COMPILER=$C/bin/nvcc -DCMAKE_CUDA_ARCHITECTURES=80 "-DCMAKE_PREFIX_PATH=$D/visionaray-install;$D/anari-install"
+ninja -C <build> -k 0 -j 16
+```
+Correction to the 2026-06-25 note: `-DCMAKE_CUDA_ARCHITECTURES=80` does not override the `_cuda` target's `CUDA_ARCHITECTURES "native"` property (CMakeLists.txt:199, upstream's and unchanged by the port). build.ninja shows `-arch=native`, and with no GPU nvcc warns "Cannot find valid GPU for '-arch=native', default arch is used" and builds sm_52. So a second pass on each tree added `"-DCMAKE_CUDA_FLAGS=-gencode=arch=compute_80,code=sm_80"`, which puts an sm_80 image beside the default one (cuobjdump: 8 sm_52 + 8 sm_80 ELFs in the library).
+
+| tree | pass | rc | steps | CUDA TUs | libraries | errors | warning lines |
+|---|---|---|---|---|---|---|---|
+| 6f1e7937 (port) | default (sm_52) | 0 | 120/120 | 8 | libanari_library_visionaray.so, libanari_library_visionaray_cuda.so | 0 | 24 |
+| c1aa91b (upstream) | default (sm_52) | 0 | 120/120 | 8 | same two | 0 | 24 |
+| 6f1e7937 (port) | + sm_80 | 0 | 120/120 | 8 | same two | 0 | 32 |
+| c1aa91b (upstream) | + sm_80 | 0 | 120/120 | 8 | same two | 0 | 32 |
+
+The 8 CUDA TUs are Frame.cu, Pathtrace_impl.cu, Raycast_impl.cu, VisionarayScene.cu, BlockStructuredField.cu, GridAccel.cu, UnstructuredField.cu and NanoVDBField.cu. The warning sets are identical between the trees in both passes (multiset compare, paths and line numbers normalized): `#177-D` unused variable `eta` (renderer/common.h) and `currentIndex` (UnstructuredField.cpp), nvcc's `-arch=native` fallback and pre-sm_75 deprecation notes, and the matching remarks. The 39x `#20091-D` and 8x `#20011-D` recorded at c7ac989c no longer appear on either tree (upstream's 139-commit move). Result: PASS, the port (22 files, +237/-86 vs c1aa91b) adds no nvcc error or warning on the CUDA path. The remaining items at 6f1e7937 are unchanged: the GPU runs on linux-gfx90a, linux-gfx1100 and windows-gfx1201.
