@@ -655,6 +655,39 @@ Completion checks: `audit-clean` OK; `jargon.py --port GOMC` clean; ROCm build d
 
 Result: completed for linux-gfx1100 at 25ba089d. Still owed at this head: wave64 (gfx90a/gfx942) and windows (gfx1151 or another Windows card). Not run here.
 
+## Validation 2026-11-23 (linux-gfx942, validator): fix round moat-fix-562
+
+Requested by jeff. Fork `moat-fix-562` @ 25ba089d (= head_sha), fresh clone, `git status --porcelain` empty. First validation record for linux-gfx942 (it only reviewed before); the last wave64 record is gfx90a at b8d1aa91. Full real-GPU run, no carry-forward (`classify b8d1aa91 25ba089d` -> `mixed`). Host: AMD Instinct MI300X (gfx942, wave64), HIP_VISIBLE_DEVICES=6 (dispatcher pin), `ulimit -c 0`, one run. Toolchain: TheRock ROCm SDK pip wheels (`rocm-sdk path --root`, no /opt/rocm), g++ host compiler, CMake 3.31.6.
+
+Same commands as the gfx1100 validation at this head (README recipe, SDK compiler path, no arch given):
+```bash
+R=$(rocm-sdk path --root)
+utils/timeit.sh GOMC compile -- bash -c "cmake -S $PWD/projects/GOMC/src -B $PWD/agent_space/gomc-val -DUSE_HIP=ON -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ \
+  -DCMAKE_PREFIX_PATH=$R -DCMAKE_BUILD_TYPE=Release && cmake --build $PWD/agent_space/gomc-val -j 32"
+utils/timeit.sh GOMC test -- bash -c "ulimit -c 0; python3 agent_space/gomc_val.py agent_space/gomc-val projects/GOMC/src agent_space/gomc-vwork"
+```
+Build: rc=0, 36 s, all 8 executables, 0 errors, 5133 warnings (the known `hipError_t` nodiscard class; gfx1100 had 5126). Arch autodetected: the cache holds `gfx942` once per visible agent and the GPU targets compile with `--offload-arch=gfx942` only. `gomc_val.py` was rewritten from the procedure recorded above (agent_space does not survive between jobs): each case gets its own copy of test/input/Systems for GPU and for CPU, the same ConsoleFreq and single-box NVT/NPT derivations, and the Base -> K_1 -> K_N chains run in sequence in one copy. Every `ENER_n` row is compared field by field and every `% Accepted` line verbatim. GPU log: `Device Name: AMD Instinct MI300X`.
+
+| run | GPU / CPU exit | ENER rows | GPU vs CPU max rel diff | acceptance lines GPU = CPU | key acceptance | GPU wall | vs gfx1100 at 25ba089d |
+|---|---|---|---|---|---|---|---|
+| GEMC AR_KR SingleRun 3000 | 0 / 0 | 62 | 0 | 6/6 | disp AR 48.30% / KR 19.04% | - | same |
+| GEMC ISOPEN_NEOPEN 3000 (MEMC) | 0 / 0 | 62 | 0 | 9/9 | MEMC NEO-ISB 61.76% | - | same |
+| GCMC PEN_HEX 200 (Ewald) | 0 / 0 | 12 | 0 | 12/12 | PEN disp 43.75% | - | same |
+| NVT AR_KR box 0, 1000 | 0 / 0 | 11 | 0 | 4/4 | disp AR 97.22% / KR 98.39% | - | same |
+| NPT AR_KR box 0, 1000 | 0 / 0 | 11 | 0 | 5/5 | disp 98.40/97.76%, volume 100.0% | 0.71 s | same |
+| GEMC ISOPEN_NEOPEN 30000 | 0 / 0 | 62 | 0 | 9/9 | MEMC 54.05%, mol-transfer ISB 41.01% | 16.2 s | same |
+| GCMC PEN_HEX 2000 | 0 / 0 | 42 | 0 | 12/12 | PEN disp 24.81%, mol-transfer PEN 19.05% | 1.93 s | same |
+| checkpoint AR_KR Base/K_1/K_N | 0,0,0 / 0,0,0 | 66 | 0 | 18/18 | K_N disp AR 48.30% / KR 19.04% | 2.61 s | same counts |
+| checkpoint ISOPEN_NEOPEN Base/K_1/K_N | 0,0,0 / 0,0,0 | 66 | 0 | 27/27 | MEMC 64.22 / 55.45 / 58.76% | 3.95 s | same counts |
+
+Result: 9/9 pass (test phase 51 s), GPU output identical to CPU at printed precision on every case, and every count and key acceptance matches the gfx1100 record at this head. Against the last wave64 record (gfx90a at b8d1aa91), the seven SingleRun-derived cases are identical except NPT (volume 100.0% vs 50.0%, disp 98.40/97.76 vs 98.00/97.55); that is upstream 411b8a73's volume-move regression (Review 2026-11-23), reproduced here on CPU and GPU alike, not the port. The checkpoint chains are new in this round. (The first three per-case GPU wall times were lost to a truncated console capture; the per-case logs in the work dir carry the counts and acceptances above.) Non-GPU: the CPU executables of the same build ran every case with rc=0. CPU gtests still do not build on upstream `development`, and the GPU gtests are CUDA-only; both unchanged.
+
+CUDA compile gate at 25ba089d: recorded in Review 2026-11-23 (nvcc 12.8.93, rc=0, all 8 executables); not re-run.
+
+Completion checks: `git -C projects/GOMC/src status --porcelain` shows no tracked changes; `audit-clean` OK; `jargon.py --port GOMC` clean (after `git -C projects/GOMC/src branch -f development upstream/development`); ROCm build documented in README (line 54).
+
+Result: completed for linux-gfx942 at 25ba089d, which satisfies the wave64 gate. Still owed at this head: windows.
+
 ## Fix review PR draft
 
 Title: Merge upstream development (411b8a73) to resolve PR #562 conflicts
@@ -672,19 +705,20 @@ Commits (one, nothing rewritten):
 Retested at 25ba089d:
 
 - Radeon Pro W7800 (gfx1100, Linux): fresh build from the README recipe, then GPU vs CPU runs of the same build on GEMC AR_KR 3000 steps, GEMC ISOPEN_NEOPEN 3000 and 30000 (MEMC), GCMC PEN_HEX 200 and 2000 (Ewald), single-box NVT and NPT AR_KR 1000, plus Base/K_1/K_N checkpoint restarts for AR_KR and ISOPEN_NEOPEN. 9/9 pass, GPU energies and acceptance rates identical to CPU.
+- Instinct MI300X (gfx942, Linux): the same build recipe and the same 9 runs, 9/9 pass with GPU identical to CPU and every result identical to the W7800.
 - CUDA 12.8 compile (nvcc 12.8.93): all 8 executables build, 0 warnings. Compile only.
-- Still owed before approval: a wave64 run (MI250X or MI300X) and a Windows run at this head. Windows cannot be tested on this host. The delta adds no Windows-specific code, and upstream's new copy constructor avoids the array member initializer that clang rejected.
+- Still owed before approval: a Windows run at this head. Windows cannot be tested on this host. The delta adds no Windows-specific code, and upstream's new copy constructor avoids the array member initializer that clang rejected.
 
 One result changed, and upstream's code causes it: NPT volume acceptance is now 100% (it was 50%) on GPU and CPU alike. Upstream's own CPU-only build moves the same way between 09ec304e and 411b8a73, and restoring only the old CellList files brings back 50%. With `dimensions` now a reference, `CellList::GridBox(newDim, ...)` in `VolumeTransfer::CalcEn` copies the trial box into the system box, so the acceptance ratio in `GetCoeff` is always 1 and rejected moves are not undone. This affects every input with volume moves (NPT, and NVT-GEMC volume transfer). The port keeps upstream's code unchanged.
 
 ## Upstream reply
 
-I merged the current `development` into this branch so it merges cleanly again. The only conflicts were the CMake warning text and the CellList copy constructor, where your new version already does what this branch had changed, so the PR no longer touches CellList.cpp. Retested on a Radeon Pro W7800: GPU and CPU results are identical.
+I merged the current `development` into this branch so it merges cleanly again. The only conflicts were the CMake warning text and the CellList copy constructor, where your new version already does what this branch had changed, so the PR no longer touches CellList.cpp. Retested on a Radeon Pro W7800 and an Instinct MI300X: GPU and CPU results are identical.
 
 While retesting, NPT runs changed after #561: volume moves are now always accepted (50% before, 100% after on the AR_KR system, CPU-only builds too). With `CellList::dimensions` now a reference, `dimensions = dims;` in `GridBox`/`GridAll` copies the trial box from `VolumeTransfer::CalcEn` into the system's `BoxDimensions` instead of re-pointing, so `GetCoeff` compares the new volume with itself and a rejected move does not restore the box. NVT-GEMC volume transfers go through `GridAll` the same way. Restoring the pointer members brings the old acceptance back.
 
 ## Notes for jeff (not posted)
 
-- The reply names only the W7800, the one GPU completed at 25ba089d so far. Once gfx90a/gfx942 and Windows validate this head, add them if you want.
+- The reply names the W7800 and the MI300X, the GPUs completed at 25ba089d so far. Once Windows validates this head, add it if you want.
 - The second paragraph of the reply reports an upstream bug the maintainer did not ask about. Cut it if you would rather file a separate issue, or not raise it at all.
 - The fork's `development` mirror is still at 09ec304e (not touched here). Until it is fast-forwarded to 411b8a73, `audit-commits` and a fresh clone's `jargon.py --port` count upstream's three new commits as ours (set a local `development` to `upstream/development` first).
