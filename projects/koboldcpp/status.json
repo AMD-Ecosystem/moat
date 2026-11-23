@@ -6,16 +6,12 @@
   "fork_default_branch": "concedo_experimental",
   "priority": 0.0,
   "ext_type": "make",
-  "stage": "porting",
+  "stage": "ported",
   "adopted_at": "2026-11-06T01:28:57Z",
-  "updated_at": "2026-11-23T20:20:42Z",
+  "updated_at": "2026-11-23T20:20:53Z",
   "head_sha": "0fff6ace646ba4c58b022317bca9007fb08478ae",
   "depends_on": [],
-  "porting": {
-    "arch": "linux-gfx942",
-    "since": "2026-11-23T19:26:11Z",
-    "holder": "630296f31775"
-  },
+  "porting": null,
   "waivers": {},
   "platforms": {
     "linux-gfx942": {
@@ -25,7 +21,7 @@
       "failed_sha": null,
       "started_at": "2026-11-23T19:26:11Z",
       "completed_at": null,
-      "updated_at": "2026-11-23T19:26:11Z",
+      "updated_at": "2026-11-23T20:20:53Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -82,9 +78,9 @@
     "at": "2026-11-10T18:08:41Z"
   },
   "porting_released": {
-    "arch": "linux-gfx950",
-    "since": "2026-11-20T21:33:29Z",
-    "at": "2026-11-20T21:42:21Z"
+    "arch": "linux-gfx942",
+    "since": "2026-11-23T19:26:11Z",
+    "at": "2026-11-23T20:20:53Z"
   },
   "base_branch_ruling": {
     "branch": "concedo_experimental",

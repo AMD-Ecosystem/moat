@@ -800,79 +800,79 @@
  "owed": [
   {
    "id": "target:koboldcpp_hipblas-windows",
-   "reason": "Windows ROCm route not ruled yet (notes.md, Q1); Linux uses the Makefile"
+   "reason": "Windows route ruled (a), fix the CMake LLAMA_HIPBLAS branch (notes.md rulings); that is a follow-up porter round, and Linux uses the Makefile"
   },
   {
    "id": "library:ggml-rocm",
-   "reason": "Windows ROCm route not ruled yet (notes.md, Q1); Linux uses the Makefile"
+   "reason": "Windows route ruled (a), fix the CMake LLAMA_HIPBLAS branch (notes.md rulings); that is a follow-up porter round, and Linux uses the Makefile"
   },
   {
    "id": "library:ggml-v2-legacy-rocm",
-   "reason": "Windows ROCm route not ruled yet (notes.md, Q1); Linux uses the Makefile"
+   "reason": "Windows route ruled (a), fix the CMake LLAMA_HIPBLAS branch (notes.md rulings); that is a follow-up porter round, and Linux uses the Makefile"
   },
   {
    "id": "library:ggml-v2-rocm",
-   "reason": "Windows ROCm route not ruled yet (notes.md, Q1); Linux uses the Makefile"
+   "reason": "Windows route ruled (a), fix the CMake LLAMA_HIPBLAS branch (notes.md rulings); that is a follow-up porter round, and Linux uses the Makefile"
   },
   {
    "id": "library:ggml-v3-rocm",
-   "reason": "Windows ROCm route not ruled yet (notes.md, Q1); Linux uses the Makefile"
+   "reason": "Windows route ruled (a), fix the CMake LLAMA_HIPBLAS branch (notes.md rulings); that is a follow-up porter round, and Linux uses the Makefile"
   },
   {
    "id": "option:LLAMA_HIPBLAS",
-   "reason": "Windows ROCm route not ruled yet (notes.md, Q1); Linux uses the Makefile"
+   "reason": "Windows route ruled (a), fix the CMake LLAMA_HIPBLAS branch (notes.md rulings); that is a follow-up porter round, and Linux uses the Makefile"
   },
   {
    "id": "option:LLAMA_CUBLAS",
-   "reason": "Windows ROCm route not ruled yet (notes.md, Q1); Linux uses the Makefile"
+   "reason": "Windows route ruled (a), fix the CMake LLAMA_HIPBLAS branch (notes.md rulings); that is a follow-up porter round, and Linux uses the Makefile"
   },
   {
    "id": "library:audiocpp",
-   "reason": "Windows ROCm route not ruled yet (notes.md, Q1); Linux uses the Makefile"
+   "reason": "Windows route ruled (a), fix the CMake LLAMA_HIPBLAS branch (notes.md rulings); that is a follow-up porter round, and Linux uses the Makefile"
   },
   {
    "id": "library:common2",
-   "reason": "Windows ROCm route not ruled yet (notes.md, Q1); Linux uses the Makefile"
+   "reason": "Windows route ruled (a), fix the CMake LLAMA_HIPBLAS branch (notes.md rulings); that is a follow-up porter round, and Linux uses the Makefile"
   },
   {
    "id": "library:embeddings_adapter",
-   "reason": "Windows ROCm route not ruled yet (notes.md, Q1); Linux uses the Makefile"
+   "reason": "Windows route ruled (a), fix the CMake LLAMA_HIPBLAS branch (notes.md rulings); that is a follow-up porter round, and Linux uses the Makefile"
   },
   {
    "id": "library:ggml",
-   "reason": "Windows ROCm route not ruled yet (notes.md, Q1); Linux uses the Makefile"
+   "reason": "Windows route ruled (a), fix the CMake LLAMA_HIPBLAS branch (notes.md rulings); that is a follow-up porter round, and Linux uses the Makefile"
   },
   {
    "id": "library:ggml_v1",
-   "reason": "Windows ROCm route not ruled yet (notes.md, Q1); Linux uses the Makefile"
+   "reason": "Windows route ruled (a), fix the CMake LLAMA_HIPBLAS branch (notes.md rulings); that is a follow-up porter round, and Linux uses the Makefile"
   },
   {
    "id": "library:ggml_v2",
-   "reason": "Windows ROCm route not ruled yet (notes.md, Q1); Linux uses the Makefile"
+   "reason": "Windows route ruled (a), fix the CMake LLAMA_HIPBLAS branch (notes.md rulings); that is a follow-up porter round, and Linux uses the Makefile"
   },
   {
    "id": "library:ggml_v3",
-   "reason": "Windows ROCm route not ruled yet (notes.md, Q1); Linux uses the Makefile"
+   "reason": "Windows route ruled (a), fix the CMake LLAMA_HIPBLAS branch (notes.md rulings); that is a follow-up porter round, and Linux uses the Makefile"
   },
   {
    "id": "library:gpttype_adapter",
-   "reason": "Windows ROCm route not ruled yet (notes.md, Q1); Linux uses the Makefile"
+   "reason": "Windows route ruled (a), fix the CMake LLAMA_HIPBLAS branch (notes.md rulings); that is a follow-up porter round, and Linux uses the Makefile"
   },
   {
    "id": "library:music_adapter",
-   "reason": "Windows ROCm route not ruled yet (notes.md, Q1); Linux uses the Makefile"
+   "reason": "Windows route ruled (a), fix the CMake LLAMA_HIPBLAS branch (notes.md rulings); that is a follow-up porter round, and Linux uses the Makefile"
   },
   {
    "id": "library:sdtype_adapter",
-   "reason": "Windows ROCm route not ruled yet (notes.md, Q1); Linux uses the Makefile"
+   "reason": "Windows route ruled (a), fix the CMake LLAMA_HIPBLAS branch (notes.md rulings); that is a follow-up porter round, and Linux uses the Makefile"
   },
   {
    "id": "library:tts_adapter",
-   "reason": "Windows ROCm route not ruled yet (notes.md, Q1); Linux uses the Makefile"
+   "reason": "Windows route ruled (a), fix the CMake LLAMA_HIPBLAS branch (notes.md rulings); that is a follow-up porter round, and Linux uses the Makefile"
   },
   {
    "id": "library:whisper_adapter",
-   "reason": "Windows ROCm route not ruled yet (notes.md, Q1); Linux uses the Makefile"
+   "reason": "Windows route ruled (a), fix the CMake LLAMA_HIPBLAS branch (notes.md rulings); that is a follow-up porter round, and Linux uses the Makefile"
   },
   {
    "id": "capability:music-acestep",
