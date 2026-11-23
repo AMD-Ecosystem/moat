@@ -335,6 +335,19 @@
         "at": "2026-11-23T21:06:45Z",
         "note": "2026-11-23: measure on the gfx1250 host now, assuming the GPU is available; turn it on if the layout checks pass"
       }
+    },
+    {
+      "id": "rocm-gfx1250-a0-translator-failures",
+      "kind": "rocm-bug-report",
+      "component": null,
+      "summary": "On the gfx1250 fleet device (a0 revision) ROCm 10.2's load-time code-object translator (libhsa_hotswap_rocjitsu) fails or mistranslates three Warp kernels: s_set_pc_i64 'indirect branch or call target recovery is not implemented' (module load fails, HIP 209), the built-in radix sort kernel not loading (209), and wrong mesh_query_point results after 'synthesized s_endpgm boundary' warnings. Reproducer: python -m warp.tests -s autodetect -p test_fem_geometry.py.",
+      "refs": [
+        "notes.md Evidence session (2026-11-23, linux-gfx1250) item 5"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-23T22:26:08Z",
+      "decided": null
     }
   ]
 }
