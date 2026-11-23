@@ -7,18 +7,22 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:19:23Z",
-  "updated_at": "2026-11-23T21:10:16Z",
+  "updated_at": "2026-11-23T21:10:21Z",
   "head_sha": "166231301b30a399ceccaf00182324a885dec6c9",
   "depends_on": [],
   "pr_url": "https://github.com/szcompressor/cuSZ/pull/91",
   "pr_number": 91,
   "pr_opened_at": "2026-06-25T21:25:23Z",
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx90a",
+    "since": "2026-11-23T21:10:20Z",
+    "holder": "7b659127442e"
+  },
   "waivers": {},
   "pr_state": "open",
   "license_spdx": "BSD-3-Clause",
   "upstream_repo_id": 260815204,
-  "stage": "changes-requested",
+  "stage": "porting",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -27,7 +31,7 @@
       "validated_sha": "11140547",
       "started_at": "2026-06-25T05:46:25.276181Z",
       "completed_at": "2026-06-25T21:18:12Z",
-      "updated_at": "2026-11-23T21:10:16Z",
+      "updated_at": "2026-11-23T21:10:20Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
