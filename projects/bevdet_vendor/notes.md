@@ -1,0 +1,1 @@
+# bevdet_vendor notes
