@@ -5744,3 +5744,34 @@ Fleet job on the R9700 host (gfx1201), `HIP_VISIBLE_DEVICES=1`, GPU checks under
 - Detection: on this card `is_hip` True, `props['gcnArchName']` = `b'gfx1201'` (bytes), COMPLEX_GEMM_MAX_N = 2097152; `props` is device 0 of `__config__`, already imported by ft_ao.py as `gpu_specs`.
 - Commit text: `jargon.py --port gpu4pyscf` clean, `prose.py` on the message clean, ASCII (message and added lines), title 56 characters, `[ROCm]` correct (gfx12/rocBLAS-specific), "Authored with Claude.", fenced Test Plan, no Co-Authored-By, no AMD-internal references. The figures in the body (six test misses, 476/30/10/0 -> 482/24/10/0 over 36 files, 79 -> 0 logged calls, the four timings) match the porter's 2026-11-23 record.
 - Footprint: Python only, three files, no helper over `contract`, nothing of the held einsum helper.
+
+## Porter 2026-11-23 (porter, linux-gfx1201 R9700, fork moat-port e34356b -> 7d87782, pushed) -- answer to the 2026-11-23 review: the AFT exchange-derivative products
+
+Same fleet job, environment and method as the porter section above. Took the lock back (`set-state gpu4pyscf linux-gfx1201 porting`, from changes-requested).
+
+**Why this went ahead without a ruling.** The review offered (a) split aft_jk.py:642/651 too, or (b) keep the scope and reword, and wrote the choice for jeff. jeff's request already asks for the workaround "only where gpu4pyscf makes the affected complex products"; aft_jk.get_ek_derivatives is such a place, reached from nao = 12, and covering it is the same plain `contract` chunking under the same guard, not a new design. So this round took (a) and audited the rest. If jeff prefers (b), the new commit can be reverted by itself.
+
+### What the audit found (rocBLAS call logs, `ROCBLAS_LAYER=2`, small cases with the split at its default; `agent/kmap.py`, `agent/kmap2.py`)
+- `get_k_kpts` (`_update_vk_` and, through a KRHF SCF with AFTDF, `_update_vk_dmf`), the aft_jk.py:267/277/300 products the review named: the G-by-AO size (74088 = 9261 x 8 at nao 8) lands on rocBLAS **m** or **k**, never n. Not affected; no change.
+- get_ek_derivatives: `'Lk,kjig->Ljig'` / `'Lk,kjig->Lijg'` put nao*nao*nGv on n (the review's finding; nGv up to 16384 per block, so from nao = 12). **And** the first step, `'snjk,nlkg->snjlg'` (k-point) and `'sjk,lkg->sjlg'` (Gamma), puts nao*nGv on n (logged `-m 8 -n 74088 -k 8`). With that function's block size `min(0.8*avail/(32*nao^2*bvk_ncells), 16384)`, nao*nGv passes 2^21 for nao from 129 to about 340 at the Gamma point on a 32 GB card (less with more BvK cells). Confirmed: a Gamma-point cell of 13 He atoms with s, p, d shells (130 Cartesian AOs), mesh 26^3, logged one complex call (130, 2129920, 130) and **get_ek_derivatives was off by 13.0** without the split (`agent/ekbig.py`). The same cell with 16 atoms (160 AOs) logged (160, 2621440, 160) and then ran out of GPU memory in upstream's next contraction (card shared with two test processes), so it was not compared.
+- `vkG = cp.einsum(...)` and the other calls in the function: n = nGv <= 16384 or small. Not affected.
+
+### Change: one commit, 7d877821 `[ROCm] Split the AFT exchange-derivative complex products on gfx12` (pbc/df/aft_jk.py +34/-6, pbc/df/ft_ao.py comment)
+- aft_jk.py imports `COMPLEX_GEMM_MAX_N` and `complex_gemm_blocks` from ft_ao. `'Lk,kjig->Ljig'` then `'->Lijg'` are split like the krhf/kuhf pair (preallocated `dm_vG`, the whole first loop before the `beta=1` loop), when nao*nao*nGv exceeds the limit; `'snjk,nlkg->snjlg'` and `'sjk,lkg->sjlg'` are split along G alone (`lib.prange(0, nGv, COMPLEX_GEMM_MAX_N // nao)`) when nao*nGv exceeds it. Each `else:` branch holds the original lines verbatim; the existing comment block about the second transformation now sits above the `if`.
+- The ft_ao.py comment now names where the constant is used instead of claiming every product ("The k-point transforms here and in grad/krhf.py and grad/kuhf.py, and the products in aft_jk.get_ek_derivatives, can be wider than that and are split below it."), answering the review's wording point.
+- Lint: ruff 0.15 (both workflow invocations) and flake8: clean.
+
+### Checks (`agent/ekcheck.py`, `agent/ekcheck2.py`, `agent/ekbig.py`; get_ek_derivatives, max abs difference of the (natm+3, 3) result)
+
+| case | rocBLAS n reached | unsplit vs fine split | default split vs fine split |
+|---|---|---|---|
+| k-point 2x1x1, nao 8, threshold forced to 4096 (both G-only and AO splits exercised; unsplit still correct) | 592704 | 1.05e-15 | 7.8e-16 |
+| Gamma, nao 8, threshold 4096 | 74088 | 3.8e-15 | 6.7e-16 |
+| k-point 2x1x1, nao 16, mesh 25^3 | 4000000 | **3.26** | 4.4e-15 |
+| Gamma, 130 Cartesian AOs, mesh 26^3 | 2129920 | **13.0** | 1.1e-13 |
+
+Time at the 130-AO case: unsplit 11.3 s, default split 11.1 s. The translational sum rule on the ek gradient (`abs(ek.sum(axis=0))`) stays at 1e-14 even when the result is wrong, so it does not detect this defect.
+
+### Tests at 7d877821
+- All 62 pbc test files, one process per file, CI selection (aft_jk is imported only by pbc modules): **750/31/59/0**, the same result for every test as e34356b2's run of the same files. So the whole upstream CI selection at 7d877821 is **2217/40/109/0**: the e34356b2 run outside pbc (code that cannot import the change) plus this pbc run; against 0647712's 2211/46/109/0, no new failure.
+- `jargon.py --port gpu4pyscf`: clean; `prose.py` and `jargon.py -` on the message: clean; ASCII; title 66 characters; `audit-commits`: OK. Pushed 7d877821 plainly; `advance-head gpu4pyscf 7d877821`. `git -C projects/gpu4pyscf/src status --porcelain` empty (test-generated from_h5.xyz removed).
