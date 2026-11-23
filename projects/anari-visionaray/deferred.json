@@ -27,6 +27,19 @@
       "upstream_issue": null,
       "created_at": "2026-11-23T20:58:00Z",
       "decided": null
+    },
+    {
+      "id": "anari-visionaray-hip-gfx94x-no-texture",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "HIP device cannot target gfx942/gfx950 (MI300 class): ROCm disables the image/texture API on gfx94x at compile time (__HIP_NO_IMAGE_SUPPORT via __gfx94plus_clr__) and at runtime (hipDeviceAttributeImageSupport=0, hipMalloc3DArray -> operation not supported). visionaray's hip_texture (tex1D/tex2D/tex3D) is used in device code for transfer functions, structured volumes, HDRI and image samplers, so 8 HIP TUs fail at 6f1e7937 on gfx942. Supporting it means a buffer-backed texture path with software filtering under __HIP_NO_IMAGE_SUPPORT in visionaray (and any direct texture use here): a feature-sized change, not a port fix. Pre-existing since the original port; not caused by fix round moat-fix-10.",
+      "refs": [
+        "projects/anari-visionaray/notes.md#validation-2026-11-23-linux-gfx942"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-23T21:24:42Z",
+      "decided": null
     }
   ]
 }

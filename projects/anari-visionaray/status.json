@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-23T14:02:30Z",
-  "updated_at": "2026-11-23T21:13:05Z",
+  "updated_at": "2026-11-23T21:24:42Z",
   "head_sha": "6f1e7937b823184cbc34a3296a65ca273a249861",
   "depends_on": [
     "visionaray"
@@ -125,6 +125,28 @@
         "last_session_at": null
       },
       "last_agent": "reviewer"
+    },
+    "linux-gfx942": {
+      "blocked": true,
+      "blocked_reason": "gfx942 has no HIP image/texture API: ROCm marks tex1D/2D/3D unavailable for gfx94x (__HIP_NO_IMAGE_SUPPORT), so visionaray hip_texture.h fails to compile in 8 HIP device TUs; hipDeviceAttributeImageSupport=0 on MI300X. Needs a buffer-backed texture path (feature-sized, deferral anari-visionaray-hip-gfx94x-no-texture)",
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-23T21:24:42Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
     }
   },
   "published_sha": "1b6b35a8115e27f1facba0e5db6b1c061086590c",

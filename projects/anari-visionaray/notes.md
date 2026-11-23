@@ -1299,6 +1299,27 @@ volume, NanoVDB nearest/linear, all PASS) and add the new gaussian-splat scene. 
 at 6f1e7937: linux-gfx90a, linux-gfx1100, windows-gfx1201 revalidation (full runs: the
 delta changes device code), and the nvcc compile check (mi355 host).
 
+## Validation 2026-11-23 (linux-gfx942) -- BLOCKED: gfx942 has no texture API; HIP device does not compile
+
+Head 6f1e7937 on moat-fix-10 (fork clone at projects/anari-visionaray/src, `git rev-parse HEAD` = 6f1e7937b823184cbc34a3296a65ca273a249861), stage review-passed, platform port-ready. GPU: AMD Instinct MI300X (gfx942:sramecc+:xnack-, CPX partition), HIP_VISIBLE_DEVICES=4 (dispatcher pin, kept), ROCm 10.1.0 pip SDK.
+
+Device check first (the gfx1201 job's pinned card hung): a 64-thread smoke kernel on the pinned GPU passes (`timeout 60 ./smoke` -> `h[63]=126`, rc 0). The device works.
+
+Deps in the job dir, same recipe as the porter section with `-DCMAKE_HIP_ARCHITECTURES=gfx942` and `-j32`: ANARI-SDK next_release @ 47b22af (built, rc 0), visionaray master @ 99d4829c plus the hip_bvh.h assign_indices fix (built, rc 0). Fork configured with the porter's cmake line (HIP ON, CUDA OFF, NanoVDB ON, gfx942), built with `utils/timeit.sh anari-visionaray compile -- cmake --build $J/build -j32`.
+
+Result: the CPU library (anari_library_visionaray) builds. The HIP library does not: 8 TUs fail (renderer/Pathtrace_impl.hip, renderer/Raycast_impl.hip, frame/Frame.hip, scene/VisionarayScene.hip, spatial_field/{GridAccel,BlockStructuredField,UnstructuredField,NanoVDBField}.hip), every error the same:
+```
+visionaray-install/include/visionaray/texture/hip_texture.h:99:7: error: 'tex3D<float, nullptr>' is unavailable: The image/texture API not supported on the device
+(also tex1D<float4>, tex2D<float4>, tex3D<float4> at hip_texture.h:42/70/99)
+```
+Cause: ROCm's hip/amd_detail/amd_device_functions.h defines `__HIP_NO_IMAGE_SUPPORT 1` for gfx942/gfx950 (`__gfx94plus_clr__`), which marks the texture fetch functions unavailable. The hardware agrees: on the pinned MI300X `hipDeviceAttributeImageSupport` = 0 and `hipMalloc3DArray` returns "operation not supported". (Unlike the skill's note for ROCm 7.x, `clang++ -x hip --offload-arch=gfx942 -dM -E` from the 10.1 SDK printed no IMAGE_SUPPORT macro; the header is what defines it here.) This is the documented cuda-to-rocm fault "GPUs without texture support (gfx94x and later)".
+
+Not caused by this fix round: the port has gone through visionaray's hip_texture since the original port (1b6b35a8 already used it in DeviceCopyableObjects.h, frame/Frame.*, renderer/*, HDRI, Image1D and more), and upstream main (c1aa91b) uses it in dco/Frame.h, dco/Light.h and common.h. No gfx94x platform has ever been validated for this project; the recorded GPU passes are gfx90a, gfx1100 and windows-gfx1201, all with texture hardware. Supporting gfx94x needs a buffer-backed texture path with software filtering under `__HIP_NO_IMAGE_SUPPORT`, mainly in visionaray: a feature-sized change, and a scope call for a person.
+
+Recorded: `set-blocked anari-visionaray linux-gfx942 "<reason above>"` (this card cannot run the HIP device), not validation-failed (nothing in the fix-round delta for a porter to fix), and deferral `anari-visionaray-hip-gfx94x-no-texture` (feature-port) for the defer/now ruling. No GPU test ran, so there are no counts to compare with the last records (gfx90a, gfx1100, windows-gfx1201 at 1b6b35a8: surface, structured nearest/linear, NanoVDB nearest/linear, all PASS). The anari_validate harness was not rewritten here: with no HIP library, it could only exercise the CPU device, which the porter already ran at 6ad03010.
+
+Still owed at 6f1e7937: the first GPU pass. linux-gfx90a (wave64, has texture hardware), linux-gfx1100 and windows-gfx1201 runs, plus the nvcc compile check. wave64 must come from gfx90a, not from an MI300 or MI355 host.
+
 ## Fix review PR draft
 
 Title: Merge upstream main into the HIP device PR (#10)
@@ -1334,4 +1355,5 @@ The HIP device also needs a small fix in visionaray: in include/visionaray/detai
 
 - The reply names no GPU because no platform has a completed validation at 6f1e793. When validations land, add one sentence naming exactly those GPUs before opening the fix review PR.
 - Whether to send the visionaray hip_bvh.h fix as a PR to szellmann/visionaray (a follow-up round on the visionaray project) or leave it to the maintainer from this reply is jeff's call (deferral visionaray-hip-lbvh-assign-indices).
+- gfx942/gfx950 (MI300 class) cannot run the HIP device (no texture API; see Validation 2026-11-23 linux-gfx942). Do not list MI300 among the retested GPUs.
 - Windows risk: visionaray's intersect_ray1_cwbvh.inl uses __lzcnt under _WIN32 in code that is now compiled for the HIP device; untested here.
