@@ -9874,3 +9874,7 @@ The port is HIP for Warp 1.14's native library, runtime compiler, tiles, texture
 ## Coordinator routing of the 2026-11-23 review (2026-11-23)
 
 Findings 1 to 13, 15 and 16 go to the porter as a fix round. Finding 14 is registered as deferred item `warp-hip-gfx1250-fp32-wmma` for jeff to rule. Finding 17 (the `dd41f3d2` commit body) is with jeff; the porter does not touch history. For finding 2 the porter adds `-fno-finite-math-only` now and reports what else clang's `-ffast-math` changes that NVRTC's `--use_fast_math` does not, as a question, without implementing a wider remap.
+
+## Ruling on review finding 17 (jeff, 2026-11-23)
+
+(a): leave commit `dd41f3d2`'s body as it is. No history rewrite.
