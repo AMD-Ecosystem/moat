@@ -2249,3 +2249,31 @@ temporaries that sharing the tail brings in. Frame time on this partition
 moved under 2 % (136.4 vs 138.7 ms).
 
 Verdict: changes requested.
+
+## Response to review 2026-11-23: fork commit 04c121a
+
+"[ROCm] Propagate NaN from the HIP Jacobi solver on non-finite input",
+femEnergy.cu, HIP-only lines.
+
+1. Non-finite input. The scale is now taken with `if(mag > scale || mag !=
+   mag)`, and `if(!(scale <= Eigen::NumTraits<Scalar>::highest()))` fills
+   `m_eivalues` and `m_eivec` with `quiet_NaN()` and returns; upstream's tail
+   then yields NaN (`NaN * 0`). The review's suggested `if(!(mag <= scale))`
+   was not used: it is not sticky (a later finite `mag` satisfies
+   `!(mag <= NaN)` and overwrites a NaN scale), and the host test showed the
+   NaN-on-the-diagonal case still returning a finite matrix with it. The HIP
+   flags have no fast-math, so `mag != mag` is not folded away.
+   Host test (g++ -O2, with and without -ffp-contract=on), HIP-side PDSNK vs
+   upstream's: inf on the diagonal, -inf off the diagonal, NaN on the diagonal
+   of a diagonal matrix, NaN off the diagonal: all four return NaN in both;
+   finite random input unchanged (20000 matrices, 1.1e-14 relative, as before).
+2. Test Plan: 04c121a's message gives the literal Xvfb / gipc / xdotool
+   commands, and so does the squash message below.
+3. Comment: "no workspace beyond a copy of the matrix".
+
+CUDA view of femEnergy.cu against main: still one added blank line and no
+token difference. Incremental build exit 0. 300 s run on partition 5 under the
+same harness: 125 frames, Newton k 2 / 15 / 64, frames 1-31 identical to every
+earlier run (..., 5, 5, 5, 5, 11), 137.7 ms/frame, no NaN, no HIP error.
+`jargon.py --port GPU_IPC` clean; pushed 8ee59a5..04c121a (plain push);
+`advance-head GPU_IPC 04c121a1b7999282341d609d8533be02854b75bb`.
