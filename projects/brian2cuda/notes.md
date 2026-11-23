@@ -1580,3 +1580,21 @@ Windows: the change is generator-side text, and clang defines `__HIP_DEVICE_COMP
 CUDA compile check: owed by the nvcc host at 77e096c (generated text is unchanged, so it should repeat the 2026-11-20 result; `cuda_codegen/` has the generator, and its `gen_case.py` adds TimedArray 2-D and the binomial adapter to the 2026-11-20 set).
 
 Pushed: `git push origin moat-fix-327` (new branch at 77e096c). `git ls-remote`: moat-port still 1c9536f; upstream PR head still 1c9536f. `advance-head brian2cuda 77e096c`. `jargon.py --port brian2cuda`: clean. `git -C projects/brian2cuda/src status --porcelain`: clean.
+
+## Review 2026-11-23 (fix round, delta 1c9536f..77e096c)
+
+pr-review skill, local-branch mode on moat-fix-327. An independent child reviewer read the delta, the generator and templates; its claims were fact-checked by re-reading the cited code. No findings. What was checked:
+
+- Coverage: the 9 device-pass guards (cuda_generator.py namespace pointer + kernel line in `_add_user_function`, `_brian_<func>`, `_poisson`; binomial.py x4) all reach generated code only through `determine_keywords` -> `_add_user_function`. `universal_support_code` bypasses it but holds only the `>= 600` gate. Templates, device.py and brianlib have no other pass guard.
+- No generated text changes for nvcc: `is_hip_backend()` is the one selector shared by codegen and build, and nothing caches function code across backends. Re-read `/tmp/b2c_cg_cuda` (published tip vs fix, CUDA backend): no content difference; the only difference, timed_poisson/main.cu, is a reordering of the same lines, the same kind of reordering the published tip shows against itself. No generated file carries `__HIP_DEVICE_COMPILE__` except brianlib/logging.h, unchanged since the published tip.
+- `#if (__CUDA_ARCH__ >= 600)` (cuda_generator.py:113) is in an `inline __device__` function only, so both hipcc passes take the atomicCAS loop, unchanged from before. Leaving it is correct.
+- Substitution: runs after the function's own lists are complete; dependencies come back already rewritten and are not rewritten twice (and twice would still be valid text).
+- `-fgpu-rdc`: `support_code_lines` render inside `namespace { }` (templates/common_group.cu:65-79, verified), so the device/host `_namespace*` pair has internal linkage, as under nvcc.
+- Commit message: title 60 chars, `[ROCm]` earned (HIP-only change), AI disclosure, Test Plan with a literal command, no trailer, no in-house vocabulary; counts and claims match the notes. `jargon.py --port brian2cuda` clean.
+- Windows: generated-text change only; clang defines `__HIP_DEVICE_COMPILE__` in its Windows device pass too. Not run on Windows (stated in the porter section).
+
+Recommendation: Approve.
+
+## Lesson for cuda-to-rocm: a code generator's device-pass guards live in strings, and only fail when a model uses them
+
+Belongs in `references/build-headers-macros.md`, next to the `__CUDA_ARCH__` table entry. A project that generates CUDA at run time (here a simulator that turns model equations into `.cu` files) keeps its `#if defined(__CUDA_ARCH__)` device/host selections in Python string templates, one per generated function. A header grep of the source tree does not see them as code, and each one only reaches the compiler when a user's model calls that function, so a HIP port can pass a test set of ordinary models for months while every model with a lookup table, a per-element random draw or a binomial sample fails to compile ("reference to __host__ variable ... in __global__ function"). Grep the generator's Python for the macro names as well as the headers, and make the port's GPU tests call every function implementation the generator can emit, not just representative models. If all the snippets pass through one assembly function, widening the condition there, only when the HIP backend is selected, leaves the CUDA output byte-identical, which is easy to prove by generating projects with both trees and diffing them. (brian2cuda, 2026-11)
