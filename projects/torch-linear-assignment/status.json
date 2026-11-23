@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-05T01:25:53Z",
-  "updated_at": "2026-11-23T19:08:17Z",
+  "updated_at": "2026-11-23T19:08:43Z",
   "head_sha": "94702259cb20b8644075d22fd47493dfbf38840c",
   "depends_on": [],
   "pr_url": "https://github.com/ivan-chai/torch-linear-assignment/pull/31",
@@ -160,13 +160,8 @@
       "state": "completed"
     }
   },
-  "published_sha": "c65c0b823fe81f022e060291a47374ac8483cfc8",
-  "fix": {
-    "branch": "moat-fix-31",
-    "base_sha": "c65c0b823fe81f022e060291a47374ac8483cfc8",
-    "review_pr": "https://github.com/AMD-Ecosystem/torch-linear-assignment/pull/1",
-    "opened_at": "2026-11-20T21:31:21Z"
-  },
+  "published_sha": "94702259cb20b8644075d22fd47493dfbf38840c",
+  "fix": null,
   "porting_released": {
     "arch": "linux-gfx90a",
     "since": "2026-11-20T21:40:58Z",
@@ -179,5 +174,6 @@
     "head_sha": "94702259cb20b8644075d22fd47493dfbf38840c",
     "content_sha256": "78ed7ef98bc74f58dd48d570f3e595cc2edc3f68512745bb3632bfcb8788f04a",
     "review_pr": "https://github.com/AMD-Ecosystem/torch-linear-assignment/pull/1"
-  }
+  },
+  "fix_merged_at": "2026-11-23T19:08:43Z"
 }
