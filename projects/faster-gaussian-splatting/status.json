@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-05T01:19:27Z",
-  "updated_at": "2026-11-23T19:29:49Z",
+  "updated_at": "2026-11-23T19:30:18Z",
   "head_sha": "ff9ebec006c585c7ffec18270b51a52bb200052e",
   "depends_on": [],
   "waivers": {},
@@ -195,14 +195,9 @@
   "pr_number": 14,
   "pr_opened_at": "2026-11-13T01:17:25Z",
   "pr_state": "open",
-  "published_sha": "00e803dec721a28e4f9d6e060fd50dcdcf2925b9",
+  "published_sha": "ff9ebec006c585c7ffec18270b51a52bb200052e",
   "porting": null,
-  "fix": {
-    "branch": "moat-fix-14",
-    "base_sha": "00e803dec721a28e4f9d6e060fd50dcdcf2925b9",
-    "review_pr": "https://github.com/AMD-Ecosystem/faster-gaussian-splatting/pull/3",
-    "opened_at": "2026-11-20T21:31:46Z"
-  },
+  "fix": null,
   "reviewed_sha": "ff9ebec006c585c7ffec18270b51a52bb200052e",
   "pr_approval": {
     "approved_by": "jeffdaily",
@@ -210,5 +205,6 @@
     "head_sha": "ff9ebec006c585c7ffec18270b51a52bb200052e",
     "content_sha256": "9f491ccd4031e516c77cbb94e608d872e5270a7b972767eed78dd4b7ea4f6e67",
     "review_pr": "https://github.com/AMD-Ecosystem/faster-gaussian-splatting/pull/3"
-  }
+  },
+  "fix_merged_at": "2026-11-23T19:30:18Z"
 }
