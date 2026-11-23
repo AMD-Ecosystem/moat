@@ -1189,3 +1189,48 @@ The HIP device now compiles visionaray's intersect_ray1_cwbvh.inl in HIP device 
 Its non-CUDA find_first_set_bit uses `__lzcnt` under `_WIN32` (`__builtin_clz`
 otherwise); whether the Windows HIP device pass accepts `__lzcnt` is unknown. If the
 windows-gfx1201 revalidation fails there, the fix is in visionaray, not this fork.
+
+## Review 2026-11-23 (linux-gfx1201, reviewer) -- moat-fix-10 1b6b35a8..6ad03010 -- CHANGES REQUESTED
+
+Scope: upstream's merged commits (7edfca5..c1aa91b, 139 commits) were read for what they
+add on the surfaces the port multiplexed (every `#if WITH_CUDA` chain in the tree was
+listed and checked for a HIP arm); our own changes are the merge resolution (5906f35 vs
+the port diff of 1b6b35a over 7edfca5) and the two new commits 9e6399e and 6ad0301.
+Merge resolution and the two commits: no problems found (resolution matches port intent
+file by file; every new HIP line is inside a WITH_HIP / __HIPCC__ arm; CUDA preprocessor
+output unchanged; `jargon.py --port` clean; titles <= 72, [ROCm] only on HIP-only commits,
+no Co-Authored-By).
+
+### Port Correctness
+1. frame/Frame.cpp:345-361 (TAA "Copy buffers for next pass"): CUDA copies with
+   cudaMemcpyAsync on the copy stream; HIP falls to the `#else` host `memcpy` on
+   `taa.prevBuffer.devicePtr()` etc. HIP DeviceArray memory is `hipMalloc` device memory
+   (DeviceArray.h:152ff), so a frame rendered with the renderer's `taa` enabled
+   dereferences device pointers on the host. Pre-existing at 7edfca5 (then cudaMemcpy)
+   and missed by the original port. Fix: a WITH_HIP arm mirroring CUDA (hipMemcpyAsync on
+   syncContext->copyStream, hipStreamSynchronize).
+2. VisionarayDevice.cpp:326-349, 371-390, 407-419 and VisionarayGlobalState.h:28-30: GPU
+   selection (`cudaDevice` parameter, VISIONARAY_CUDA_DEVICE, device count check,
+   deviceProps, set/revert around every API call via CUDADeviceScope) is new upstream code
+   (at 7edfca5 both CUDA and HIP had `// TODO: set device`) and has only a CUDA arm. On HIP
+   m_gpuID stays -1, the selection is ignored and mapArray/unmapArray (lines 34-50) still
+   say `// TODO: set device`. Fix: HIP arms with hipGetDeviceCount /
+   hipGetDeviceProperties / hipGetDevice / hipSetDevice, hipDeviceProp_t deviceProps, and
+   the scope in mapArray/unmapArray; keep upstream's parameter and env names.
+
+Verdict: changes-requested (back to the porter in this job).
+
+### Porter fix for the review (same job), head 6ad03010 -> be630dac
+
+4. f4cf2aa [ROCm] Copy the TAA history buffers on the device with HIP (review item 1):
+   WITH_HIP arm in frame/Frame.cpp mirroring CUDA (hipMemcpyAsync x2 on
+   syncContext->copyStream + hipStreamSynchronize).
+5. be630da [ROCm] Honor the GPU selection on the HIP device (review item 2): HIP arms in
+   VisionarayDevice.cpp initDevice (hipGetDeviceCount, fallback to 0 with the same
+   warning, hipGetDeviceProperties), deviceCommitParameters (same `cudaDevice` param and
+   VISIONARAY_CUDA_DEVICE env), setCUDADevice/revertCUDADevice (hipGetDevice/hipSetDevice),
+   mapArray/unmapArray use CUDADeviceScope like CUDA; hipDeviceProp_t deviceProps in
+   VisionarayGlobalState.h. Upstream's names (cudaDevice, CUDADeviceScope) kept.
+
+Build at be630dac (same recipe): 0 errors. `jargon.py --port anari-visionaray`: clean.
+Pushed moat-fix-10 only (moat-port still 1b6b35a8).

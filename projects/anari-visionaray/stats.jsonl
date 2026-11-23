@@ -99,3 +99,4 @@
 {"kind":"phase","ts":"2026-11-23T20:35:19Z","phase":"compile","seconds":16.226,"exit":1,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/gfx1201-20261123-122535-conflict-anari-visionaray-prompt/build -j12 -- -k 0"}
 {"kind":"phase","ts":"2026-11-23T20:39:02Z","phase":"compile","seconds":157.585,"exit":1,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/gfx1201-20261123-122535-conflict-anari-visionaray-prompt/build -j12 -- -k 0"}
 {"kind":"phase","ts":"2026-11-23T20:40:11Z","phase":"compile","seconds":6.299,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/gfx1201-20261123-122535-conflict-anari-visionaray-prompt/build -j12 -- -k 0"}
+{"kind":"phase","ts":"2026-11-23T21:01:26Z","phase":"compile","seconds":21.432,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/gfx1201-20261123-122535-conflict-anari-visionaray-prompt/build -j12 -- -k 0"}
