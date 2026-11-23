@@ -348,6 +348,19 @@
       "upstream_issue": null,
       "created_at": "2026-11-23T22:26:08Z",
       "decided": null
+    },
+    {
+      "id": "hip-gl-interop-rtld-default-lookup",
+      "kind": "rocm-bug-report",
+      "component": null,
+      "summary": "HIP's GL interop on Linux finds Mesa's GLX interop entry points with dlsym(RTLD_DEFAULT), so hipGraphicsGLRegisterBuffer/Image fail with hipErrorInvalidValue when the application loaded libGL with RTLD_LOCAL (Python ctypes, pyglet), and the failed lookup is cached for the process; also HIP has no EGL path, so headless contexts can never register.",
+      "refs": [
+        "notes.md Evidence session (2026-11-23, linux-gfx1201) items 3 and 5; rocm-systems projects/clr hipamd/src/hip_gl.cpp, rocclr/device/rocm/rocglinterop.cpp"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-23T22:48:03Z",
+      "decided": null
     }
   ]
 }
