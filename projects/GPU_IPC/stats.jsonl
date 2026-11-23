@@ -78,3 +78,4 @@
 {"kind":"phase","ts":"2026-11-23T21:08:33Z","phase":"compile","seconds":16.189,"exit":0,"cmd":"cmake --build projects/GPU_IPC/src/build -j 56"}
 {"kind":"phase","ts":"2026-11-23T21:15:35Z","phase":"compile","seconds":18.068,"exit":0,"cmd":"cmake --build projects/GPU_IPC/src/build -j 56"}
 {"kind":"phase","ts":"2026-11-23T21:35:45Z","phase":"test","seconds":1205.047,"exit":0,"cmd":"agent_space/run_gipc.sh /var/lib/jenkins/fleet/jobs/mi300c-20261123-123703-gpu-ipc-jacobi-hip-only-prompt/moat/projects/GPU_IPC/src/build val 1200 :97"}
+{"kind":"session","ts":"2026-11-23T21:37:10Z","epoch":1795469830.9286,"event":"end","platform":"linux-gfx942"}
