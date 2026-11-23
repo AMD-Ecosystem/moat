@@ -4082,3 +4082,6 @@ jeff approved the 4-commit shape and confirmed that his 2026-11-04 force-push au
 ## Licence rescan confirmed harmless (2026-11-13)
 
 jeffdaily confirmed `plvs-nvidia-proprietary-rescan` as harmless; the deferral is marked done. `include/cuda/helper_cuda.h` and `include/cuda/helper_string.h` are upstream's vendored CUDA-samples headers (EULA pointers). The port leaves both byte-identical to upstream (blob 0ba7a3a8 before and after); the ROCm build uses our own 40-line `hip_compat/cuda/helper_cuda.h`, which copies no NVIDIA text. The flagged file is upstream's own and the port neither modifies nor adds NVIDIA-licensed text; the 2026-08-06 licence clearance stands.
+
+## Upstream issue drafts settled (2026-11-16)
+luigifreda/plvs#60 merged on 2026-11-14 with our octree use-after-free fix and the projectJac lifetime fix, and upstream 632c55b had already fixed #57/#58/#59 and the line-scale read, so jeff dropped every remaining plvs issue draft and the #58 follow-up comment. The ORB-SLAM3 projectJac draft was filed with jeff's approval, amended to cite plvs#60: https://github.com/UZ-SLAMLab/ORB_SLAM3/issues/1017
