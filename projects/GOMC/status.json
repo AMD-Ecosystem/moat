@@ -7,13 +7,13 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:24:38Z",
-  "updated_at": "2026-11-23T20:34:26Z",
+  "updated_at": "2026-11-23T20:35:07Z",
   "head_sha": "25ba089d60a73f52b4f0c4623a41c68b97314062",
   "depends_on": [],
   "waivers": {},
   "license_spdx": "MIT",
   "upstream_repo_id": 34094271,
-  "stage": "porting",
+  "stage": "reviewing",
   "platforms": {
     "linux-gfx1100": {
       "state": "completed",
@@ -22,7 +22,7 @@
       "validated_sha": "b8d1aa911eefe23946cdd1c06160172541028864",
       "started_at": "2026-11-23T20:28:08Z",
       "completed_at": "2026-10-31T07:05:55Z",
-      "updated_at": "2026-11-23T20:28:08Z",
+      "updated_at": "2026-11-23T20:35:07Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -36,7 +36,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "porter"
+      "last_agent": "reviewer"
     },
     "linux-gfx942": {
       "blocked": false,
@@ -175,9 +175,9 @@
     "reason": "upstream CONTRIBUTING.md asks for PRs against development"
   },
   "porting_released": {
-    "arch": "linux-gfx942",
-    "since": "2026-10-31T06:49:47Z",
-    "at": "2026-10-31T06:56:38Z"
+    "arch": "linux-gfx1100",
+    "since": "2026-11-23T20:28:08Z",
+    "at": "2026-11-23T20:35:06Z"
   },
   "pr_approval": {
     "approved_by": "jeffdaily",
@@ -199,7 +199,7 @@
   },
   "porting": {
     "arch": "linux-gfx1100",
-    "since": "2026-11-23T20:28:08Z",
+    "since": "2026-11-23T20:35:07Z",
     "holder": "91e7461c6e52"
   }
 }
