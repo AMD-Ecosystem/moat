@@ -7,8 +7,8 @@
   "priority": 5.508,
   "ext_type": "make",
   "adopted_at": "2026-05-29T23:57:04Z",
-  "updated_at": "2026-11-23T21:44:38Z",
-  "head_sha": "d3658389dafad6735c8fa83aac86693ad49a0ed0",
+  "updated_at": "2026-11-23T22:40:01Z",
+  "head_sha": "0bb29e76d332048323622110374fa8a47e4fc88f",
   "waivers": {},
   "license_clearance": {
     "approved_by": "jeffdaily",
@@ -18,7 +18,7 @@
   },
   "license_spdx": "GPL-3.0",
   "upstream_repo_id": 97248567,
-  "stage": "porting",
+  "stage": "ported",
   "platforms": {
     "linux-gfx950": {
       "blocked": false,
@@ -73,7 +73,7 @@
       "failed_sha": null,
       "started_at": "2026-11-05T16:10:30Z",
       "completed_at": "2026-11-10T17:40:07Z",
-      "updated_at": "2026-11-23T21:44:38Z",
+      "updated_at": "2026-11-23T22:40:01Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -186,9 +186,9 @@
     }
   },
   "porting_released": {
-    "arch": "linux-gfx1100",
-    "since": "2026-11-10T16:56:29Z",
-    "at": "2026-11-10T17:01:06Z"
+    "arch": "linux-gfx942",
+    "since": "2026-11-23T21:44:38Z",
+    "at": "2026-11-23T22:40:01Z"
   },
   "pr_history": [
     {
@@ -231,9 +231,5 @@
     "kind": "sync",
     "upstream_sha": "91287ce2993c211408f0229fafee3a9447e4ff16"
   },
-  "porting": {
-    "arch": "linux-gfx942",
-    "since": "2026-11-23T21:44:38Z",
-    "holder": "fa7301fd3433"
-  }
+  "porting": null
 }

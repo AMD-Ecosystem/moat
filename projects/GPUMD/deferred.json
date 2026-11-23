@@ -36,6 +36,19 @@
         "at": "2026-11-10T04:34:49Z",
         "note": "2026-11-09: draft a ROCm/TheRock issue for jeff to file (build LLVM with arc4random/getrandom; a library should not reseed the process rand())"
       }
+    },
+    {
+      "id": "gpumd-hip-nep-runtime-specialization",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "nep's runtime kernel specialization (nep_compile on: main_nep/common/nep_compile.cu, spin_structural_specialized.cu, NEP_SPECIALIZED_RUNTIME_BUILD) invokes nvcc at run time and is compiled out of the HIP build by upstream's own #if !defined(USE_HIP) guards, so HIP nep prints 'nep_compile on is not supported by the HIP build' and runs the generic kernels. Since upstream 91287ce2 (2026-11-23) tests_pytest/test_spin_wall_runtime.py::test_prediction_wall[1] asserts 'Spin aggregate JIT ready' and fails on every HIP build. Porting it would mean a hipcc/hiprtc runtime-compile path; not needed for a working build.",
+      "refs": [
+        "projects/GPUMD/notes.md#sync-round-3"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-23T22:37:58Z",
+      "decided": null
     }
   ]
 }

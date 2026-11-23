@@ -2151,3 +2151,125 @@ On an NVIDIA Tesla V100 (CUDA 12.9), the full regression suite with upstream mas
 ````
 
 Upstream CI at open (CUDA CI, CUDA CI on Windows): success. Waiting on maintainer review.
+
+## Sync round 3 2026-11-23 (linux-gfx942, porter) -- merge upstream 91287ce2, d3658389 -> 0bb29e76 on moat-sync-91287ce
+
+jeff asked for this run. Host: MI300X (gfx942, CDNA3, wave64), TheRock pip SDK (HIP 7.16.26385, AMD clang 24.0.0git, ROCm 10.1.0 wheels), `HIP_VISIBLE_DEVICES=1` (dispatcher-pinned; `amd-smi process` showed GPU 1 idle at the start), every GPU run under `ulimit -c 0`. The project was trunk-resident; `sync-branch GPUMD` re-homed it onto `port/GPUMD` (cut from main 6510c43b) and staged `moat-sync-91287ce` (base d3658389 = `published_sha`, upstream pin 91287ce2). `set-state GPUMD linux-gfx942 porting --agent porter` took the lock (no other holder). Fresh fork clone at `projects/GPUMD/src`, `protect-fork` installed, upstream added as a remote, local `master` = `origin/master` = 91287ce2 (the fork mirror was already at the pin). Job venv only: calorine built from a source clone of gitlab materials-modeling/calorine at **1c94125** (as in the earlier rounds; reports 4.1), ase 3.29.0, pytest 7.3.2, hypothesis 6.56.4.
+
+### Merge (88322460)
+Upstream master **91287ce2993c211408f0229fafee3a9447e4ff16** (2026-11-23, "Merge pull request #1933 from MagTheoryLab/codex/nep-spin-structural-jit"), 279 commits past the last absorbed upstream d6cd2e36 (224 non-merge, 55 merges, 40 first-parent); 1134 files, +75745/-54780. Highlights that touch the port: `gpumd_replica` folded into `gpumd` (`src/main_replica/` -> `src/force/replica/` + `src/integrate/replica/`, its tests moved to `tests_pytest/test_replica.py`); NEP-spin rewritten (`nep_spin3_*.cuh` deleted, shared code in `src/utilities/nep_spin/`, with upstream's own HIP-aware `nep_spin::WarpMask` / `tile_mask()` / `warp_ballot()` in `spin_warp.cuh`); upstream took over `makefile.hip` (default `gfx1100`, `-std=c++17`, `-Wno-inconsistent-missing-override -Wno-unused-result -Wno-pass-failed`, `-MMD` dependency files, no `gpumd_replica` target); 37e4ce6f "use std for math functions" (makes ILP_NEP's `max_nep_rc` a float and uses `std::max`); 00d206ad (replica: default-stream sync after slot setup, before the first force); `tests_regression/` split into `gpumd/`, `nep/`, `tb/`, `multigpu/` packages; a6c09716 "safer input".
+
+Merged with `git merge --no-ff upstream/master` (no rebase), message `Merge branch 'master' of https://github.com/brucefan1983/GPUMD` with a per-conflict body. **The merged tree is byte-identical to upstream 91287ce2's tree** (`git write-tree` = `91287ce2^{tree}` = f5aabe94): upstream now carries its own version of every HIP change the port had made, so each of our hunks was resolved to upstream's.
+
+Conflicts (the four from the 2026-11-23 drift check plus the test-suite ones git reported on the real merge):
+- `src/force/ilp/ilp_nep.cu`: upstream `max_nep_rc = std::max(max_nep_rc, parambs[i].rc_radial);` with `max_nep_rc` now `float` (`ilp_nep.cuh:220`), vs our `fmax(..., double(...))`. Took upstream: `std::max(float, float)` resolves identically on HIP and CUDA (the poison probe below confirms no deleted-function hit).
+- `src/force/nep_spin/nep_spin3_force.cuh`: modify (our `gpuLaneMask`) / delete (upstream). Took the deletion.
+- `src/force/replica/replica_ewald.cu` (from `main_replica/force/ewald.cu`): upstream uploads from member vectors on `stream_` with its own comment. Took upstream; our comment is obsolete.
+- `src/main_nep/nep_spin/nep_spin.cu`: upstream passes `nep_spin::tile_mask(warp_size)` (64-bit, physical lanes) to both shuffles. Took upstream.
+- `src/makefile.hip`: took upstream's file. This drops our `gpumd_replica` target, `REPLICA_CFLAGS` and the `-ffp-contract=on` it carried (the target no longer exists; see below).
+- `tests_regression/manifest.json`, `test_manifest.py` and the three `ilp_nep_cutoff_below_nep` files (file-location conflicts into `gpumd/`): with the fix itself now upstream's, our regression case for it was dropped and the suite is upstream's. (Re-expressing it in the new per-package manifests would keep a fork-only test for a line upstream rewrote; the poison probe is the standing check for the class.)
+
+Clean auto-merges that were wrong and were reverted to upstream in the merge (the upstream-sync trap):
+- `src/force/nep_spin/nep_spin.cu`: git kept `gpuLaneMask(atom_mask)` / `gpuLaneMask(center_mask)` around upstream's new `tile_mask()` values. Those are already 64-bit and in physical lane coordinates, so on lanes 32-63 of a wave64 the macro would shift them by 32 again (to 0 or the wrong half) and trap in `__hip_check_mask`. Took upstream's lines.
+- `src/utilities/nep_utilities.cuh`: upstream added the same `#include "gpu_macro.cuh"`; git kept both. Took upstream.
+- `src/utilities/gpu_macro.cuh`: `gpuLaneMask` had no callers left; removed (upstream's file).
+- `src/integrate/replica/replica_prd.cu`: our `CHECK(gpuDeviceSynchronize())` in `PRD_Driver::initialize_slot` (26547d27). Upstream 00d206ad's `gpuStreamSynchronize(nullptr)` in `Replica_Runtime::initialize` runs after every slot's `initialize_slot` (PRD and REMD, the only callers) and before `compute_force`, so it orders the `force_per_atom.resize(N*3, 0)` fill (default stream, `model/read_xyz.cu:681`) before the first force on the slot stream. Nothing between our sync and theirs touches `force_per_atom` on the slot stream (`initialize_slot` only uploads velocities and builds `PRD_Slot_Data`). Took upstream.
+- `tests_regression/README.md`, `gpumd/CONTRACT_SUITES.md`: case counts back to upstream's 255.
+
+### HIP build of the merge = upstream's own tip (it fails)
+Because 88322460's tree equals upstream 91287ce2, its build is the "upstream tip without the port" baseline:
+
+    utils/timeit.sh GPUMD compile -- make -C projects/GPUMD/src/src -f makefile.hip HIP_ARCH=gfx942 -j56 -k
+
+rc 2: 6 TUs fail (`force/nep_spin/neighbors.cu`, `nep_spin.cu`, `nep_spin_multigpu.cu`, `runtime.cu`, `utilities/nep_io/compact_nep.cu`, `nep_spin_model_file.cu`), all `utilities/nep_spin/spin_wall.cuh:85: use of undeclared identifier 'blockIdx'` (+ `blockDim`, `threadIdx`): `add_spin_wall` is compiled under `#if defined(__CUDACC__) || defined(__HIPCC__)` but the header includes only `<cmath>`; nvcc pre-includes the CUDA runtime header, hipcc does not. `tb` builds; `gpumd` and `nep` do not. So upstream's tip has no working HIP gpumd/nep, and no test run of upstream's tip without the port is possible on this host; every test difference below therefore comes from upstream's code (our whole delta to upstream is three preprocessor lines).
+
+### Our commits after the merge
+- **ea3fa7fa** `[ROCm] Include the GPU runtime header in spin_wall.cuh`: `#ifdef USE_HIP / hip_runtime.h / #else / cuda_runtime.h / #endif`, copied from the siblings `spin_math.cuh`/`spin_warp.cuh`. Built, but broke host-only tests: `test_spin_model_format.py` and `test_spin_capacity.py` compile `nep_spin_model_file.cu` (which includes `spin_wall.cuh`) with plain `c++ -std=c++14 -pedantic-errors`, where `cuda_runtime.h` is not on the include path: 46 setup errors + 1 failure (`fatal error: cuda_runtime.h: No such file or directory`). That would break on a CUDA host too, so it was a regression of my own, caught before push.
+- **0bb29e76** `[ROCm] Include hip_runtime.h in spin_wall.cuh only under hipcc`: `#ifdef __HIPCC__ / #include <hip/hip_runtime.h> / #endif`, the same condition that already gates `add_spin_wall`. nvcc and the host compiler see the upstream header plus three skipped lines. Not amended (house rule); a new commit.
+- `git diff 91287ce2 0bb29e76`: `src/utilities/nep_spin/spin_wall.cuh | 3 +++`, nothing else.
+- No `-ffp-contract=on` commit. The flag existed for `gpumd_replica` because on **gfx90a** (only) the per-slot and batched instantiations of the replica NEP kernels rounded differently under hipcc's default `fast` contraction (notes, 2026-11-10). Replica is now part of `gpumd`; both NEP paths are in `force/replica/` (`replica_nep.cu` includes `replica_nep_kernels.cuh`), but the integrators are split between `integrate/replica/` and ordinary `integrate/`, so a flag on the replica directories alone would not reproduce the old all-of-`gpumd_replica` setting, and flagging all of `gpumd` brought back the observer/seed noise the 2026-11-10 ruling removed. The failure never reproduced on gfx942 (16/16 without the flag at 3b0f1908), so this host cannot test any choice. **Owed: the linux-gfx90a revalidation must run `tests_pytest/test_replica.py -k batched_matches_per_slot` several times; if it fails there, the flag question comes back to the porter with that evidence.**
+
+### Fault-class audit of upstream's delta (src/ outside main_gnep)
+- Warp intrinsics added upstream: the NEP-spin kernels (`utilities/nep_spin/spin_kernels.cuh`, `force/nep_spin/nep_spin.cu`, `main_nep/nep_spin/nep_spin.cu`) all take masks from `nep_spin::tile_mask(width)` (`WarpMask` = `unsigned long long` under `USE_HIP`, shifted to `(threadIdx.x % warpSize) / width * width`) or `warp_ballot(i < n)` = `__ballot_sync(~WarpMask{0}, ...)` taken at kernel entry before any early return (blocks of 64 threads, so the whole wave is active on wave64; HIP trims the mask on wave32). No 32-bit mask reaches a HIP `*_sync` call (they would not compile). `__hip_check_mask` is live in these builds (no `-DNDEBUG`), and the NEP-spin tests below pass, so no mask/active-lane mismatch occurred on wave64.
+- The only 32-bit mask (`main_nep/nep_spin/spin_structural_kernels.cuh:30`, `0xffu << (threadIdx.x % 32 ...)`) is inside `#ifdef NEP_SPECIALIZED_RUNTIME_BUILD` (nvcc runtime specialization), which HIP never compiles.
+- New `atomicMax(int*)` in `integrate/spin/glsd.cu` on a `GPU_Vector<int>` (device memory), not host-coherent memory.
+- Host min/max probe (forced include `template<class A,class B> void min(A,B)=delete;` and the same for `max`; `hipcc -x hip --cuda-host-only -fsyntax-only -O3 -std=c++17 --offload-arch=gfx942 -DUSE_HIP -I./ -include poison.h`), all 227 tracked `.cu` outside `main_gnep/`, five passes (default; `-DUSE_FIXED_NEIGHBOR -DUSE_NEPCG -DDEBUG -DUSE_FIXED_SCALER -DCG_RDF -DSTRONG_DEBUG -DOUTPUT_NEIGHBOR_FOR_TRAIN -DFINE_TUNE_DESCRIPTOR -DZHEYONG -DUSE_KEPLER`; `-DUSE_GRAPHENE_TB`; `-DUSE_CJ -DGNEP_TEST_DIAGNOSTICS`; `-DNEP_SPIN_WIDE_FORWARD`, a new upstream guard): 227/227 rc 0, **0 deleted-function hits** in every pass. Control (`double a; float b; max(a,b)`): 1 hit.
+
+### Builds (gfx942, from the MOAT root)
+    utils/timeit.sh GPUMD compile -- make -C projects/GPUMD/src/src -f makefile.hip HIP_ARCH=gfx942 -j56
+    utils/timeit.sh GPUMD compile -- make -C agent_space/dbg/src -f makefile.hip HIP_ARCH=gfx942 -j56 gpumd nep CFLAGS="-O3 -std=c++17 --offload-arch=gfx942 -DUSE_HIP -Wno-inconsistent-missing-override -Wno-unused-result -Wno-pass-failed -DDEBUG"
+
+(the DEBUG line is upstream's new `CFLAGS` plus `-DDEBUG`, in a detached worktree of 0bb29e76). Both rc 0, about 60 s each. Release: gpumd 19169920 B, nep 2886016 B, tb 315784 B; DEBUG gpumd 19169776 B, nep 2885960 B. Every one of the 227 tracked `.cu` outside `main_gnep/` produced an object. Warnings: only `-Wunused-value` (nodiscard `hipError_t`); upstream's flags now silence the `-Winconsistent-missing-override` class.
+
+### Tests (real gfx942), against the last gfx942 record (d3658389, 2026-11-10)
+| command (from the clone or DEBUG worktree root) | 0bb29e76 | d3658389 on gfx942 | cause of the difference |
+|---|---|---|---|
+| `python3 -m pytest tests_pytest/test_replica.py -v` (release `src/gpumd`, current example models) | **20/20 passed** (76 s), incl. `test_batched_matches_per_slot_prd`/`_remd` | `tests_regression/replica/test_replica.py` with `gpumd_replica`: 4/16 as-is, 16/16 with the cd7f757d/eda8e04b models | upstream: replica in `gpumd`, reads models via `NEP_Model_File`, tests moved and grown; no legacy-model workaround needed any more |
+| same, `-k 'batched_matches_per_slot or qnep_large_box_concurrent_resume'`, 3 runs | **3/3 each run** | 3/3 x3 (batched, split-resume) | -- |
+| `python3 -m pytest tests_pytest/test_spin_*.py` (release) | **173 passed, 1 failed** (148 s): `test_spin_wall_runtime.py::test_prediction_wall[1]` | 110 passed, 4 failed (the `test_corrector_preserves_force_modifiers` rand() cases) | upstream: +60 spin tests; 111cf8b2/0c808c19 seed velocities with `velocity 1 seed 731` in run.in (after the first GPU call), so the 4 rand() cases now pass plain; the new failure asserts `Spin aggregate JIT ready`, which upstream's HIP build never prints (`nep_compile on is not supported by the HIP build`; runtime nvcc specialization is `#if !defined(USE_HIP)`). Registered as deferral `gpumd-hip-nep-runtime-specialization` |
+| `python3 -m pytest tests_pytest -m "not slow"` (release; overlapped the regression run for its first 8 min) | **937 passed, 2 failed, 638 skipped, 30 deselected** (1453 s) | 866 passed, 4 failed, 638 skipped, 10 deselected | upstream grew the suite; failures: `test_prediction_wall[1]` (above) and `test_ediff_loss.py::test_input_errors[nan lambda_d]`: upstream a6c09716 (2026-11-20) made `is_valid_real` reject non-finite values, so `lambda_d nan` stops at "should be a number" (`nep_parameters.cu:942`) instead of the "finite positive number" message the test (last changed 2026-10-21) expects. Host-only code, so the same on CUDA |
+| `python3 -m pytest tests_pytest/test_nep_seed.py::test_same_seed_gives_the_same_model`, 10 runs | **10/10 passed** | 10/10 | -- |
+| full `tests_regression` (DEBUG, self-comparison): `python3 tests_regression/run_regression.py --repo-root $D --suite full --baseline $D/src/gpumd --candidate $D/src/gpumd --baseline-nep $D/src/nep --candidate-nep $D/src/nep` | **249/255 cases, relations 25/25** (597 s) | 250/256, 25/25 | our `ilp_nep_cutoff_below_nep` case dropped (fix now upstream's); the same 249 upstream cases pass and the same 6 fail |
+| the 6 failures rerun (`--case` x6), plain / under the `LD_PRELOAD` `srand` no-op shim | 0/6 / **5/6** (only `qnep_pppm_future_bec`) | 0/6 / 5/6 | -- |
+| `python3 tests_regression/tb/run_regression.py --old src/tb --new src/tb` (new upstream TB suite, self-comparison) | **32/32 passed** | (suite did not exist) | new upstream suite |
+
+Failure classes, none new to the port:
+- **rand() reseed** (deferral `gpumd-hip-runtime-reseeds-rand`, ruled defer; TheRock#9865): `replicate_velocity_unseeded`, `graphene_hac`, `graphene_nemd_shc`, `graphene_hnemd_shc`, `silicon_liquid_transport`; fail plain, pass under the shim. Same set as every earlier gfx942 record.
+- **float-atomic noise at absolute bounds**: `qnep_pppm_future_bec` (thermo field 8 1.07e-7 then field 30 1.14e-7 vs atol 1e-7; under the shim bec.xyz field 22731 1.06e-5 vs atol 1e-5). Same fields and magnitudes as before.
+- **HIP build lacks runtime specialization** (upstream's guard; new test): `test_prediction_wall[1]`.
+- **upstream code/test mismatch** (platform-independent): `test_input_errors[nan lambda_d]`.
+
+### Not tested here
+- CUDA: this host has no nvcc. **The mi355 nvcc compile comparison is owed at 0bb29e76** (expected: identical to upstream 91287ce2 except `__LINE__` constants after line 22 of `spin_wall.cuh`, since nvcc never defines `__HIPCC__`).
+- Windows (gfx1151 / gfx1201 / gfx1101): not testable here. Upstream's `makefile.hip` now uses `-MMD -MP -MF` dependency files, `.o` objects and `rm -f` in `clean`; the earlier Windows procedure (`mingw32-make ... CC=hipcc.exe CFLAGS=... gpumd nep gpumd_replica`) has to drop `gpumd_replica` and check the dependency flags under mingw32-make. Owed to the windows-gfx1151 revalidation.
+- gfx90a: the batched-versus-per-slot replica check without `-ffp-contract=on` (above).
+- gfx1100 (wave32): `tile_mask`/`warp_ballot` on wave32 run on that platform's revalidation.
+
+### Gates
+- `python3 utils/jargon.py --port GPUMD` (local `master` = 91287ce2): **clean**.
+- Integrity: `git status --porcelain --untracked-files=no` empty in the clone and the DEBUG worktree (both at 0bb29e76).
+- Pushed `moat-sync-91287ce` only (plain `git push origin moat-sync-91287ce`, new branch at 0bb29e76; `moat-port` untouched at d3658389). `advance-head GPUMD 0bb29e76d332048323622110374fa8a47e4fc88f`: every platform now reads revalidate.
+- Documentation: `doc/installation.rst` "Building for AMD GPUs (ROCm/HIP)" is upstream's and matches the new `makefile.hip` (default `gfx1100`, `HIP_ARCH=...`); nothing for us to add.
+
+## Sync review PR draft
+
+Title: `Sync with upstream master 91287ce2 (279 commits); fix the HIP build of spin_wall.cuh`
+
+Body:
+
+This round merges upstream master into the ROCm branch and keeps the HIP build working on top of it. Nothing here goes upstream: the maintainer asked for no pull requests, so the round ends on this fork.
+
+Upstream now carries its own version of every HIP change this branch had made (the ILP_NEP `max` fix, 64-bit NEP-spin lane masks, the `nep_utilities.cuh` include, `makefile.hip`, the replica PRD stream ordering), so the merge resolves each of our hunks to upstream's and the merged tree is identical to upstream's 91287ce2. On top of that, one HIP-only change is needed: upstream's `spin_wall.cuh` fails to compile under hipcc.
+
+Parts, so the merged upstream commits can be told apart from ours:
+
+- Upstream's own commits, from the last merged upstream commit to the new tip (279 commits): https://github.com/brucefan1983/GPUMD/compare/d6cd2e361b4740687162c8fcb347c234d86558f2...91287ce2993c211408f0229fafee3a9447e4ff16
+- The merge commit 88322460 (conflict resolutions; its diff against upstream's tip is empty): https://github.com/AMD-Ecosystem/GPUMD/commit/88322460acec297915777eac1060110c73532621 and against upstream's tip https://github.com/AMD-Ecosystem/GPUMD/compare/91287ce2993c211408f0229fafee3a9447e4ff16...88322460acec297915777eac1060110c73532621
+- Our commits after the merge (ea3fa7fa, 0bb29e76; net 3 lines in one file): https://github.com/AMD-Ecosystem/GPUMD/compare/88322460acec297915777eac1060110c73532621...0bb29e76d332048323622110374fa8a47e4fc88f
+- What the ROCm branch gains if approved (this PR's own diff): https://github.com/AMD-Ecosystem/GPUMD/compare/d3658389dafad6735c8fa83aac86693ad49a0ed0...0bb29e76d332048323622110374fa8a47e4fc88f
+
+What conflicted and how it was resolved (all in 88322460):
+
+- `src/force/ilp/ilp_nep.cu`: upstream 37e4ce6f makes `max_nep_rc` a float and calls `std::max`, which resolves the same on HIP and CUDA; took upstream's line instead of our `fmax`.
+- `src/force/nep_spin/nep_spin3_force.cuh`: deleted upstream (NEP-spin moved to `utilities/nep_spin/`, with upstream's own 64-bit `nep_spin::tile_mask()`); took the deletion and dropped our `gpuLaneMask()` edits.
+- `src/force/replica/replica_ewald.cu` (was `main_replica/force/ewald.cu`): took upstream's rewrite and its comment.
+- `src/main_nep/nep_spin/nep_spin.cu`: took upstream's `tile_mask(32)` masks.
+- `src/makefile.hip`: took upstream's file (default `gfx1100`, `-std=c++17`, dependency files). `gpumd_replica` no longer exists, so our target for it and its `-ffp-contract=on` are gone.
+- `tests_regression/` (manifest, `test_manifest.py`, three files of our `ilp_nep_cutoff_below_nep` case): upstream split the suite into packages; with the ILP_NEP fix now upstream's, our case was dropped.
+
+Clean auto-merges that were wrong, also reverted to upstream in 88322460: `gpuLaneMask()` around upstream's already-64-bit `tile_mask()` values in `force/nep_spin/nep_spin.cu` (it would shift them a second time on lanes 32-63), a duplicated `gpu_macro.cuh` include in `nep_utilities.cuh`, the now-unused `gpuLaneMask()` in `gpu_macro.cuh`, our PRD device synchronization (upstream 00d206ad synchronizes after every slot's setup, for PRD and REMD), and the test-count edits in two READMEs.
+
+Commit by commit after the merge:
+
+- ea3fa7fa `[ROCm] Include the GPU runtime header in spin_wall.cuh`: `add_spin_wall` uses `blockIdx` under `__HIPCC__`, but the header includes no runtime header (nvcc pre-includes one, hipcc does not), so six gpumd/nep files failed to compile. This first version included `cuda_runtime.h` in the non-HIP branch, which broke host-compiler tests.
+- 0bb29e76 `[ROCm] Include hip_runtime.h in spin_wall.cuh only under hipcc`: includes `hip/hip_runtime.h` only under `__HIPCC__`, so nvcc and the host compiler see upstream's header unchanged.
+
+Retested on an AMD Instinct MI300X (gfx942), against the last run on this GPU at d3658389:
+
+- `make -C src -f makefile.hip HIP_ARCH=gfx942` builds gpumd, nep and tb (227 of 227 sources); upstream's tip alone fails in six files.
+- `tests_pytest/test_replica.py`: 20 of 20, including the bitwise batched-versus-per-slot PRD and REMD tests, on three repeats.
+- `tests_pytest/test_spin_*.py`: 173 of 174; `-m "not slow"`: 937 passed, 2 failed, 638 skipped. The 2 failures are upstream's: `test_prediction_wall[1]` expects runtime kernel specialization, which upstream compiles out of the HIP build, and `test_input_errors[nan lambda_d]` expects a message that upstream's a6c09716 no longer prints on any platform. The four `rand()`-dependent spin cases that failed before now pass, because upstream now seeds their velocities in run.in.
+- `tests_regression` full suite (`-DDEBUG`, self-comparison): 249 of 255 and relations 25 of 25, the same 249 upstream cases as before (our ILP_NEP case is gone); the 6 failures are the known `rand()`-reseed cases and `qnep_pppm_future_bec` float noise, unchanged in fields and magnitudes.
+- Seed test 10 of 10; new TB suite 32 of 32.
+
+Still owed before approval: the CUDA compile comparison on a host with nvcc, the MI250X (gfx90a) batched-versus-per-slot replica check now that `-ffp-contract=on` is gone, and test runs on the RDNA GPUs and on Windows (upstream's `makefile.hip` changed the Windows build procedure).
