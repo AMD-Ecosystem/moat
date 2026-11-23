@@ -78,3 +78,5 @@
 {"kind":"phase","ts":"2026-11-23T22:12:43Z","phase":"compile","seconds":0.003,"exit":127,"cmd":"bash build_rt_all.sh"}
 {"kind":"phase","ts":"2026-11-23T22:14:14Z","phase":"compile","seconds":84.672,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300c-20261123-114213-port-wenet-prompt/moat/agent_space/build_rt_all.sh"}
 {"kind":"session","ts":"2026-11-23T22:14:50Z","epoch":1795472090.239029,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-23T22:19:10Z","epoch":1795472350.160597,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-23T22:23:37Z","epoch":1795472617.984279,"event":"end","platform":"linux-gfx942"}
