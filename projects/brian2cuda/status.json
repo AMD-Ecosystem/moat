@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "codegen",
   "adopted_at": "2026-06-05T04:44:12Z",
-  "updated_at": "2026-11-23T20:55:20Z",
+  "updated_at": "2026-11-23T20:56:44Z",
   "head_sha": "77e096c6d87924b9062c31b349a12ecacd73e007",
   "depends_on": [],
   "pr_url": "https://github.com/brian-team/brian2cuda/pull/327",
@@ -15,7 +15,7 @@
   "pr_opened_at": "2026-06-09T17:18:58Z",
   "porting": {
     "arch": "linux-gfx90a",
-    "since": "2026-11-23T20:21:55Z",
+    "since": "2026-11-23T20:56:44Z",
     "holder": "a6d4ae59f576"
   },
   "waivers": {},
@@ -28,7 +28,7 @@
   },
   "license_spdx": "GPL-3.0",
   "upstream_repo_id": 45057564,
-  "stage": "porting",
+  "stage": "reviewing",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -37,7 +37,7 @@
       "validated_sha": "1c9536f5ea33193aaf4383580900cc2aa35a99fb",
       "started_at": "2026-06-05T08:30:52Z",
       "completed_at": "2026-11-20T22:21:58Z",
-      "updated_at": "2026-11-23T20:21:55Z",
+      "updated_at": "2026-11-23T20:56:44Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -51,7 +51,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "porter",
+      "last_agent": "reviewer",
       "validated_prior": [
         "90d6d7cf13b1dd9cfb814b157c1b357395115f56"
       ]
@@ -192,8 +192,8 @@
   "fix_merged_at": "2026-11-23T20:14:16Z",
   "porting_released": {
     "arch": "linux-gfx90a",
-    "since": "2026-11-20T22:19:04Z",
-    "at": "2026-11-20T22:20:11Z"
+    "since": "2026-11-23T20:21:55Z",
+    "at": "2026-11-23T20:56:44Z"
   },
   "reviewed_sha": "1c9536f5ea33193aaf4383580900cc2aa35a99fb",
   "pr_approval": {
