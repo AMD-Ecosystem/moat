@@ -3629,3 +3629,130 @@ Host: whole MI300X (`gfx942:sramecc+:xnack-`, 304 CUs, 192 GiB, idle before the 
 3. windows-gfx1151 (gfx11 WMMA, Windows build with the README's PowerShell block): suites, end-to-end, timing.
 4. linux-gfx90a (MFMA `bf16_1k` form, the only target using it): suites and timing.
 5. Real-nvcc compile of `9cb8bee` on the gfx950 host (the CUDA gate).
+
+## Validation 2026-11-23 (linux-gfx950, at `9cb8bee`) -- PASS
+
+Host: AMD Instinct MI355X (`gfx950:sramecc+:xnack-`, 256 CUs, 288 GiB), wave64, `HIP_VISIBLE_DEVICES=0` (pinned by the job; idle before the runs). PyTorch 2.16.0a0+git6c3af02 / HIP 7.16.26385 (pip ROCm SDK), Python 3.11 (`/opt/python-3.11-venv`), all GPU runs under `ulimit -c 0`. Fork clone at `9cb8bee` == `origin/moat-port` == `head_sha`, submodules initialised. Requested by jeffdaily; this platform is additive evidence (wave64 is already satisfied by linux-gfx942 at this head). It is the first real-hardware run of the MFMA prefill code on gfx950: the earlier gfx950 records are compile-only. The MFMA path here is the same 16x16x16 code as on gfx942 (`QUEST_PREFILL_MMA` 1); the WMMA paths are not compiled for this target.
+
+### Build
+
+`agent_space/quest/build_readme.sh`, the README Linux block verbatim with `-DCMAKE_HIP_ARCHITECTURES=gfx950`, after `rm -rf build`, `ninja -j $MAX_JOBS`, wrapped `utils/timeit.sh Quest compile`:
+
+```
+cd quest/ops
+mkdir -p build && cd build
+cmake -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx950 \
+  -DCMAKE_PREFIX_PATH=`python -c 'import torch;print(torch.utils.cmake_prefix_path)'` ..
+ninja
+ln -sf $PWD/_kernels*.so ../../
+```
+
+rc 0, 8/8, 348 s wall, 0 errors, 18 nodiscard-`hipError_t` warnings (the known ones), `CMAKE_BUILD_TYPE=Release` from the default, `--offload-arch=gfx950` on every compile line.
+
+### GPU tests (transformers 4.37.2, tokenizers 0.15.2, huggingface-hub 0.24.7, pytest 7.3.2 in `<job>/pylib-test`)
+
+```
+env PYTHONPATH=<fork>:<job>/pylib-test python -m pytest <fork>/quest/tests -p no:cacheprovider -v -rs
+```
+
+**202 passed, 28 skipped, 0 failed** (21.9 s), the MI300X count. approx_attention 42, decode_attention 6, decode_launch_shape 3, estimate 9, prefill_attention 29 + 13 skipped (qo_len > kv_len), rope 64, topk 49 + 15 skipped (k >= kv_len).
+
+### fp64 reference check of prefill (100 cases)
+
+The porter's harness was not recorded in these notes (its container is gone), so the check was rebuilt from the 2026-11-20 description; the source, build script and timing script are now in `notes-prefill-harness.md` for the next validators. It calls `BatchPrefillWithPagedKVCacheDispatched` with a forced `num_frags_x` and checks output and LSE against an fp64 CPU reference, same 10 shapes, same 10 configurations, same tolerances as 2026-11-20. Built with the extension's flags (`bash build.sh <tree> bin/<t>_<n> <n>`), once against the fork at `9cb8bee` (MFMA) and once against `git archive 2b938d8 kernels/include` (the emulated path before the matrix-core change), and run on GPU 0:
+
+| configuration | MFMA `9cb8bee` | max \|dO\| / \|dLSE\| | emulated `2b938d8` | max \|dO\| / \|dLSE\| |
+|---|---|---|---|---|
+| fp16 hd128 nfx1 causal p16 | 10/10 | 1.1e-03 / 5.3e-04 | 10/10 | 1.5e-03 / 1.6e-03 |
+| fp16 hd128 nfx2 causal p16 | 10/10 | 1.1e-03 / 5.3e-04 | 10/10 | 1.5e-03 / 1.6e-03 |
+| fp16 hd128 nfx2 non-causal p16 | 10/10 | 1.0e-03 / 3.5e-04 | 10/10 | 1.5e-03 / 1.6e-03 |
+| fp16 hd64 nfx1 causal p16 | 10/10 | 1.1e-03 / 7.6e-04 | 10/10 | 1.2e-03 / 1.0e-03 |
+| fp16 hd128 GQA4 nfx2 causal p16 | 10/10 | 1.4e-03 / 7.8e-04 | 10/10 | 1.6e-03 / 2.2e-03 |
+| bf16 hd128 nfx2 causal p16 | 10/10 | 9.8e-03 / 6.5e-03 | 10/10 | 1.1e-02 / 1.4e-02 |
+| bf16 hd64 GQA4 nfx1 non-causal p16 | 10/10 | 6.3e-03 / 4.4e-03 | 10/10 | 1.0e-02 / 1.2e-02 |
+| fp16 hd128 nfx2 causal p1 | 10/10 | 1.2e-03 / 6.5e-04 | 10/10 | 1.3e-03 / 2.1e-03 |
+| fp16 hd128 nfx1 causal p8 | 10/10 | 1.0e-03 / 9.0e-04 | 10/10 | 1.4e-03 / 2.1e-03 |
+| fp16 hd128 GQA8 nfx2 causal p32 | 10/10 | 1.3e-03 / 7.8e-04 | 10/10 | 1.8e-03 / 2.0e-03 |
+
+**MFMA 100/100, emulated 100/100.** Negative control (`-DNEGCTRL=true`, reference with the opposite causal flag, fp16 hd128 nfx2): 1/10 pass, the one being 1 x 17, where bottom-right causal and full attention are the same. The MFMA binaries report `prefill_mma_shape` {64, 4} from the device; the device assembly of the `9cb8bee` build has 384 `v_mfma` and no `v_wmma` for CFG 1, the `2b938d8` build neither. Resource use on gfx950 (`--cuda-device-only -S`, CFG 0/1/5/9): 190-256 VGPR + 0-205 AGPR, `ScratchSize: 0` in every prefill instantiation, so no spills on this target.
+
+### End-to-end (transformers 4.45.2, tokenizers 0.20.3, accelerate 1.0.1, sentencepiece 0.2.0 in `<job>/pylib-e2e`)
+
+The model fits (13 GB of 288 GB). `NousResearch/Llama-2-7b-chat-hf` at `351844e75ed0bcbbe3f10671b3c808d2b83894ee`, downloaded into `<job>/models` (safetensors, json, tokenizer), `do_sample` set to false in `generation_config.json` (original kept as `.orig`), `scripts/example_textgen.py` with only `MODEL_PATH` changed (`agent_space/quest/e2e/example_textgen.py`):
+
+```
+PYTHONPATH=<fork>:<job>/pylib-e2e python example_textgen.py --method hg
+PYTHONPATH=<fork>:<job>/pylib-e2e python example_textgen.py --method quest --token_budget 1024
+PYTHONPATH=<fork>:<job>/pylib-e2e python example_textgen.py --method quest --token_budget 128
+```
+
+All rc 0. With Quest's two banner lines removed (`Quest allocates KV-Cache ...`, `Token budget is set to ...`), the three outputs are byte-identical (md5 `b900af27eeb4...` for all three), and the continuation is the one recorded on MI300X ("Reason: The rabbit is the only one who is not working hard. ... can also mean \"lazy.\""). `rocprofv3 --kernel-trace --stats` of the budget-128 run (output again identical): `BatchPrefillWithPagedKVCacheKernel<1,16,true,kNone,2,8,4,4,...>` 32 calls, min 35.0 us, average 229.7 us; the average is inflated by the GPU clocking up from idle between the short calls of a single generation (see the timing note below); MI300X recorded 32.6 us.
+
+### Prefill time against SDPA (32 heads x 128, fp16, causal, page size 16)
+
+GPU 0 showed no other process and 0 % activity between runs, but another container kept GPU 3 of this host at 100 % / ~830 W throughout. With the MI300X method (mean of 20 after 3 warmups, one process) the times moved by up to 10x between identical runs, for SDPA as much as for Quest, and the kernel-only harness moved too (4096 x 4096: 1.00 to 2.76 ms). Inside one process, min and median agreed, so the clock state moves on the scale of seconds. The GPU idles at ~94 MHz in deep sleep. The table is therefore the best of 5 separate processes, each with `MINMED=1 LOOP_MS=100 REPS=7 WARM_MS=1000` (1 s warmup, 7 timed loops of about 100 ms, per-process min). The range across the 5 processes is in parentheses.
+
+```
+MINMED=1 LOOP_MS=100 REPS=7 WARM_MS=1000 PYTHONPATH=<fork>:<job>/pylib-test python agent_space/quest/prefill_time.py
+```
+
+| qo x kv | Quest prefill_forward | torch SDPA | ratio | max abs diff vs SDPA |
+|---|---|---|---|---|
+| 1 x 4096 | 0.472 ms (0.47-1.40) | 0.109 ms (0.11-0.20) | 4.33 | 6.1e-05 |
+| 128 x 4096 | 0.567 ms (0.57-2.29) | 0.146 ms (0.15-0.55) | 3.88 | 1.2e-04 |
+| 1024 x 1024 | 0.259 ms (0.26-10.3) | 0.043 ms (0.04-0.14) | 6.02 | 2.0e-03 |
+| 1024 x 4096 | 0.638 ms (0.64-0.91) | 0.126 ms (0.13-0.53) | 5.06 | 1.2e-04 |
+| 4096 x 4096 | 1.204 ms (1.20-2.18) | 0.227 ms (0.23-0.80) | 5.30 | 2.0e-03 |
+| 8192 x 8192 | 3.548 ms (3.55-4.02) | 0.805 ms (0.81-7.24) | 4.41 | 2.0e-03 |
+| 16384 x 16384 | 10.534 ms (10.5-16.5) | 2.802 ms (2.80-6.91) | 3.76 | 2.0e-03 |
+
+Kernel alone (`bin/mc_100` vs `bin/emu_100` from `notes-prefill-harness.md`: 32 heads, nfx 2 forced, mean of 20 launches; best of 5 processes for MFMA, of 3 for the emulation):
+
+| qo x kv | MFMA `9cb8bee` | emulated `2b938d8` | speedup |
+|---|---|---|---|
+| 1 x 4096 | 0.599 ms | 24.40 ms | 41x |
+| 128 x 4096 | 0.510 ms | 24.73 ms | 48x |
+| 1024 x 1024 | 0.150 ms | 7.96 ms | 53x |
+| 1024 x 4096 | 0.538 ms | 29.68 ms | 55x |
+| 4096 x 4096 | 0.997 ms | 58.24 ms | 58x |
+| 8192 x 8192 | 3.444 ms | 198.1 ms | 58x |
+
+There is no build switch that brings back the emulated path on an MFMA target. `QUEST_PREFILL_MMA` is only an internal selector, and predefining it does not select the emulation, so the emulated figures come from the `2b938d8` headers built by the same harness.
+
+Reading: Quest's prefill on MI355X runs at about the MI300X speed (4096 x 4096: 1.00 ms kernel, 1.20 ms operator; MI300X 1.06 / 1.135). SDPA is 2.7x faster here than on MI300X (0.227 vs 0.614 ms), so the ratio is ~5x where MI300X had 1.85x, and the plan's target ("within 2x of SDPA at 4096 x 4096") is not met on this GPU. This is a speed result, not a failure. The likely reason is that the port uses the 16x16x16 MFMA forms on every CDNA target, and gfx950's doubled matrix throughput comes from its 16x16x32 forms (and `ds_read_b64_tr_b16`), which the porter round lists as possible later steps (2026-11-20, "Owed next" item 5); MI355X also has 256 CUs to MI300X's 304. Not profiled further here.
+
+### The review's list for a real Radeon run (review 2026-11-20, "Operand layouts")
+
+This GPU is CDNA4 (wave64, MFMA), so none of the four items can be observed here, and each stays owed to linux-gfx1201, linux-gfx1100 and windows-gfx1151:
+1. That the hardware matches the documented WMMA layouts: not observable (no WMMA instruction on gfx950). Observed instead: the MFMA 16x16x16 f16/bf16 layout on gfx950 hardware, 100/100 against fp64.
+2. The `_w32` builtins with lanes 16-31 replicating 0-15 (gfx11): not observable.
+3. The xor-16 P exchange on a real wave32: not observable (wave64 here).
+4. Time with the WMMA spills: not applicable. gfx950 has no spills (`ScratchSize: 0`); its time is above. The harness in `notes-prefill-harness.md` builds for gfx1100 and gfx1201 with `ARCH=<gfx>` (checked here: 192 `v_wmma` each in the CFG 4 device assembly), so the Radeon validators can run the same 100 cases and the kernel timing.
+
+### CUDA no-regression compile (real nvcc, at `9cb8bee`) -- PASS, no port regression
+
+This is the CUDA gate owed at `9cb8bee`. The recipe is the one used for `2b938d8` (2026-11-19, above), from fresh clones in `<job>/nvcc`. Port: `AMD-Ecosystem/Quest` at `9cb8bee`. Base: `mit-han-lab/Quest` at `01c1623`. Submodule SHAs are identical in both (flashinfer `9f49803b`, its googletest `40412d85` and nvbench `f57aa9c9`, googletest `6a593823`, nvbench `d8dced8a`, pybind `768cebe1`, raft `1e4961e2`). Toolchain: CUDA 12.8 (`/usr/local/cuda`, nvcc V12.8.93), g++-11 11.5.0 (the unpacked debs from the 2026-11-19 job, copied), PyTorch `2.5.0+cu124` in `$FLEET_VENV`, `-DCMAKE_CUDA_ARCHITECTURES=80`, `TORCH_CUDA_ARCH_LIST=8.0`. No NVIDIA GPU, so this is compile and link only.
+
+```
+# run.sh <tree> <builddir> <cudaroot>, as 2026-11-19, then:
+ninja -C <job>/nvcc/build-<tree> -j64 -k 0 _kernels
+```
+
+| | base `01c1623` | port `9cb8bee` |
+|---|---|---|
+| configure + generate | rc 0, Release | rc 0, Release |
+| `_kernels` (7 `.cu` + link) | 8/8, rc 0, 18,681,432 B | 8/8, rc 0, 18,714,200 B |
+| warnings in the log | 0 | 0 |
+
+- The 7 nvcc compile lines are byte-identical between the trees after path normalisation.
+- The port module is the same size as the `2b938d8` port module (18,714,200 B, 2026-11-19).
+- Both modules export 651 text symbols, and each imports under `$FLEET_VENV/bin/python -I` from `/tmp` with the same 8 public names.
+- The prefill header's CUDA branch is unchanged: `batch_prefill.cu`'s nvcc compile line, with `-c` replaced by `-E`, was run on the port tree at `9cb8bee` and on a worktree at `2b938d8`. With line markers and blank lines removed, the two outputs are identical (360,842 lines each, same md5); the raw outputs differ only in blank lines. No `matrix_core`, `QUEST_PREFILL_MMA`, `mfma` or `wmma` token reaches the CUDA translation unit.
+- RAFT's optional `raft_objs` were not built this time (`_kernels` target only). Their 15 failures are upstream's and identical in both trees (2026-11-19).
+
+### Content checks and integrity
+
+- `jargon.py --port Quest` is clean (after `git fetch origin main:main moat-port:moat-port` in the clone).
+- The ROCm build is documented in the README (Linux and Windows blocks), and the command above is that documentation.
+- `audit-commits` reports only the known `6e7d8db` gap.
+- `git -C projects/Quest/src status --porcelain` is empty: the `_kernels` link and `build/` are ignored.
