@@ -633,3 +633,58 @@ utils/timeit.sh GOMC cuda-compile -- bash -c "cmake -S $PWD/projects/GOMC/src -B
   -DCUDAToolkit_ROOT=$C -DCMAKE_CUDA_ARCHITECTURES=80 -DCMAKE_BUILD_TYPE=Release && cmake --build $PWD/agent_space/gomc-cuda -j 16"
 ```
 rc=0, 0 warnings, all 8 executables; flags show `-arch=all` (upstream override, as before). This is a compile-only check and says nothing about NVIDIA runtime behavior.
+
+## Validation 2026-11-23 (linux-gfx1100, validator): fix round moat-fix-562
+
+Fork `moat-fix-562` @ 25ba089d (= head_sha, `git status --porcelain` empty). Full real-GPU run, no carry-forward (`classify b8d1aa91 25ba089d` -> `mixed`). Host: AMD Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32), HIP_VISIBLE_DEVICES=2 (dispatcher pin), `ulimit -c 0`. Toolchain: TheRock ROCm SDK pip wheels (no /opt/rocm), g++ host compiler.
+
+Fresh build from the README's "Building GOMC for AMD GPUs with ROCm" recipe, with the compiler path adapted to the SDK and no arch given:
+```bash
+R=$(rocm-sdk path --root)
+utils/timeit.sh GOMC compile -- bash -c "cmake -S $PWD/projects/GOMC/src -B $PWD/agent_space/gomc-val -DUSE_HIP=ON -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ \
+  -DCMAKE_PREFIX_PATH=$R -DCMAKE_BUILD_TYPE=Release && cmake --build $PWD/agent_space/gomc-val -j 16"
+utils/timeit.sh GOMC test -- bash -c "ulimit -c 0; python3 agent_space/gomc_val.py agent_space/gomc-val projects/GOMC/src agent_space/gomc-vwork"
+```
+Build: rc=0, all 8 executables, 0 errors, 5126 warnings (the known `hipError_t` nodiscard class). The arch was autodetected: the cache holds `gfx1100` once per GPU.
+
+Tests: 9/9 pass. The numbers match the porter table above exactly: 7 SingleRun-derived cases plus two Base/K_1/K_N checkpoint chains, GPU = CPU with max rel diff 0 and every acceptance line identical. NPT shows volume acceptance 100.0% on both GPU and CPU. That is upstream 411b8a73's volume-move regression (Review 2026-11-23), not the port. Every case unaffected by volume moves matches the 2026-10-31 gfx1100 record. Non-GPU: the CPU executables of the same build ran every case with rc=0. The CPU gtests still do not build on upstream `development` itself, and the GPU gtests are CUDA-only; both unchanged.
+
+CUDA compile gate at 25ba089d: recorded in Review 2026-11-23 (nvcc 12.8.93, rc=0, all 8 executables).
+
+Completion checks: `audit-clean` OK; `jargon.py --port GOMC` clean; ROCm build documented in README (line 54).
+
+Result: completed for linux-gfx1100 at 25ba089d. Still owed at this head: wave64 (gfx90a/gfx942) and windows (gfx1151 or another Windows card). Not run here.
+
+## Fix review PR draft
+
+Title: Merge upstream development (411b8a73) to resolve PR #562 conflicts
+
+Body (below, through the end of the "Notes for jeff" section; the `## Upstream reply` section ends at the next `##` heading):
+
+Upstream PR https://github.com/GOMC-WSU/GOMC/pull/562 stopped merging into `development`: GitHub reported it as conflicting. No maintainer comment or review asked for a change; the only comment on the PR is the Codacy bot. This round only absorbs the new base.
+
+Upstream added three commits since the previous base 09ec304e: binary-mode checkpoint streams (#560) and the Ubuntu 26.04 workflow update (#561). #561 rewrites the CellList copy constructor, switches CellList's `mols`/`dimensions` members from pointers to references, and rewords the "no CUDA compiler" CMake warning. None of them adds GPU code, CUDA runtime calls or CUB use, so no new code needed porting.
+
+Commits (one, nothing rewritten):
+
+- 25ba089d merges upstream `development` at 411b8a73. CMakeLists.txt conflicted: the USE_HIP/CUDA selection is kept, with upstream's new warning text inside the CUDA branch. src/CellList.cpp conflicted: upstream's version is taken as is. Its copy constructor copies `neighbors`/`head` per box, which is the clang fix this branch already carried, so the port no longer touches CellList.cpp. The branch now differs from `development` only by the port (23 files).
+
+Retested at 25ba089d:
+
+- Radeon Pro W7800 (gfx1100, Linux): fresh build from the README recipe, then GPU vs CPU runs of the same build on GEMC AR_KR 3000 steps, GEMC ISOPEN_NEOPEN 3000 and 30000 (MEMC), GCMC PEN_HEX 200 and 2000 (Ewald), single-box NVT and NPT AR_KR 1000, plus Base/K_1/K_N checkpoint restarts for AR_KR and ISOPEN_NEOPEN. 9/9 pass, GPU energies and acceptance rates identical to CPU.
+- CUDA 12.8 compile (nvcc 12.8.93): all 8 executables build, 0 warnings. Compile only.
+- Still owed before approval: a wave64 run (MI250X or MI300X) and a Windows run at this head. Windows cannot be tested on this host. The delta adds no Windows-specific code, and upstream's new copy constructor avoids the array member initializer that clang rejected.
+
+One result changed, and upstream's code causes it: NPT volume acceptance is now 100% (it was 50%) on GPU and CPU alike. Upstream's own CPU-only build moves the same way between 09ec304e and 411b8a73, and restoring only the old CellList files brings back 50%. With `dimensions` now a reference, `CellList::GridBox(newDim, ...)` in `VolumeTransfer::CalcEn` copies the trial box into the system box, so the acceptance ratio in `GetCoeff` is always 1 and rejected moves are not undone. This affects every input with volume moves (NPT, and NVT-GEMC volume transfer). The port keeps upstream's code unchanged.
+
+## Upstream reply
+
+I merged the current `development` into this branch so it merges cleanly again. The only conflicts were the CMake warning text and the CellList copy constructor, where your new version already does what this branch had changed, so the PR no longer touches CellList.cpp. Retested on a Radeon Pro W7800: GPU and CPU results are identical.
+
+While retesting, NPT runs changed after #561: volume moves are now always accepted (50% before, 100% after on the AR_KR system, CPU-only builds too). With `CellList::dimensions` now a reference, `dimensions = dims;` in `GridBox`/`GridAll` copies the trial box from `VolumeTransfer::CalcEn` into the system's `BoxDimensions` instead of re-pointing, so `GetCoeff` compares the new volume with itself and a rejected move does not restore the box. NVT-GEMC volume transfers go through `GridAll` the same way. Restoring the pointer members brings the old acceptance back.
+
+## Notes for jeff (not posted)
+
+- The reply names only the W7800, the one GPU completed at 25ba089d so far. Once gfx90a/gfx942 and Windows validate this head, add them if you want.
+- The second paragraph of the reply reports an upstream bug the maintainer did not ask about. Cut it if you would rather file a separate issue, or not raise it at all.
+- The fork's `development` mirror is still at 09ec304e (not touched here). Until it is fast-forwarded to 411b8a73, `audit-commits` and a fresh clone's `jargon.py --port` count upstream's three new commits as ours (set a local `development` to `upstream/development` first).

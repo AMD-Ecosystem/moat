@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:24:38Z",
-  "updated_at": "2026-11-23T20:38:58Z",
+  "updated_at": "2026-11-23T20:41:23Z",
   "head_sha": "25ba089d60a73f52b4f0c4623a41c68b97314062",
   "depends_on": [],
   "waivers": {},
@@ -19,10 +19,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "b8d1aa911eefe23946cdd1c06160172541028864",
+      "validated_sha": "25ba089d60a73f52b4f0c4623a41c68b97314062",
       "started_at": "2026-11-23T20:28:08Z",
-      "completed_at": "2026-10-31T07:05:55Z",
-      "updated_at": "2026-11-23T20:38:58Z",
+      "completed_at": "2026-11-23T20:41:23Z",
+      "updated_at": "2026-11-23T20:41:23Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -36,7 +36,10 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "reviewer"
+      "last_agent": "validator",
+      "validated_prior": [
+        "b8d1aa911eefe23946cdd1c06160172541028864"
+      ]
     },
     "linux-gfx942": {
       "blocked": false,
