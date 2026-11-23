@@ -1663,3 +1663,87 @@ Before the review PR opens, update the Upstream reply to name every GPU that has
 - Upstream reply above updated to name the R9700 as well as the MI250X. The fix review PR draft body still says "Retested on MI250X" and "the wave32 and Windows platforms still have to be re-tested"; wave32 is now done, Windows is not.
 
 Verdict: completed at 77e096c.
+Before the review PR opens, update the Upstream reply to name every GPU that has completed validation at the round's final head (today only the MI250X), and drop anything that has not run. The reply's last sentence reports an upstream issue (brian2 version vs the 3-tuple) that exists on CUDA too; jeff may prefer to drop it or file it separately.
+
+## CUDA compile check 2026-11-23 (mi355 nvcc host) -- PASS at 77e096c
+
+Head checked: moat-fix-327 at `77e096c` (= recorded head_sha; `git ls-remote`: moat-fix-327 77e096c, moat-port 1c9536f), against the round's base `1c9536f` (published tip). Compile and link only: this host has nvcc but no NVIDIA GPU, and nothing ran on any GPU (no binary executed; a colleague's benchmarks had the AMD GPUs). Every make capped at `-j16`.
+
+- Toolchain: `/usr/local/cuda/bin/nvcc` 12.8 (V12.8.93), gcc 13.3.0, cuRAND from the same toolkit. Job venv `$FLEET_VENV/py312` (`/usr/bin/python3.12 -m venv`, `pip install brian2==2.10.1`; numpy 2.5.5). Both trees used from detached worktrees of a fresh fork clone in `agent_space/` via `PYTHONPATH` (no install), `SETUPTOOLS_SCM_PRETEND_VERSION=1.0.0`, `PYTHONHASHSEED=0`, `USE_HIP` unset, `PATH=/usr/local/cuda/bin:$PATH CUDA_PATH=/usr/local/cuda`. `gen_case.py` asserts the CUDA backend; generated makefiles use `NVCC = @/usr/local/cuda/bin/nvcc`. sm_75 (`cuobjdump --list-elf` on the timed_poisson binary: `main.1.sm_75.cubin`).
+- Cases: `gpu_tests/cuda_codegen/gen_case.py` as checked in at 77e096c's round: smoke, cuba, stdp, timed_poisson (TimedArray 1-D + 2-D, per-neuron and scalar `poisson()`, integer-argument math), binomial (adapter around the 3-tuple, so it now generates; on 2026-11-20 it failed at generation on both trees), spatial. stdp and timed_poisson differ from the 2026-11-20 script (stdp lost its second pathway, timed_poisson grew), so their warning counts are not comparable with that entry, only between the two trees here.
+
+Generated text, real nvcc on PATH:
+
+```
+env -u USE_HIP PATH=/usr/local/cuda/bin:$PATH CUDA_PATH=/usr/local/cuda utils/timeit.sh brian2cuda compile -- bash projects/brian2cuda/gpu_tests/cuda_codegen/compare.sh $FLEET_VENV/py312/bin/python <1c9536f worktree> <77e096c worktree> <out> cuda
+```
+
+Exit 0: smoke (48 files), cuba (83), binomial (34), spatial (58) identical; stdp identical except `synapses_synapses_create_generator_codeobject.cu` and timed_poisson except `main.cu`, both the same lines in a different order (the set-iteration noise the 2026-11-23 porter section describes). No generated file contains `__HIP_DEVICE_COMPILE__` except `brianlib/logging.h`, on both trees. The 9 `(defined(__CUDA_ARCH__) && (__CUDA_ARCH__ > 0))` guards are present unwidened (timed_poisson stateupdater 5, run_regularly 3; binomial run_regularly 4).
+
+Build matrix: per tree, flag mode and case, one process generates (`device.build(compile=False, run=False)`), then `make -j16` in the generated directory. `shipped` = default prefs (nvcc `-w ... --diag_suppress=declared_but_not_referenced`, host `-w`); `warn` = `extra_compile_args_nvcc=['-use_fast_math']`, `extra_compile_args_gcc=['-Wall','-O3','-ffast-math','-fno-finite-math-only','-march=native','-std=c++17']`, set by a wrapper that imports brian2cuda and then runs `gen_case.py` with `runpy`.
+
+```
+utils/timeit.sh brian2cuda compile -- bash agent_space/b2c/scripts/run_all.sh agent_space/b2c
+```
+
+| case | 1c9536f shipped / warn | 77e096c shipped / warn |
+|---|---|---|
+| smoke | gen 0, make 0, linked / gen 0, make 0, 136 warning lines | same / same, 136 |
+| cuba | 0, 0 / 0, 0, 528 | same / same, 528 |
+| stdp | 0, 0 / 0, 0, 329 | same / same, 329 |
+| timed_poisson | 0, 0 / 0, 0, 160 | same / same, 160 |
+| binomial | 0, 0 / 0, 0, 25 | same / same, 25 |
+| spatial | 0, 0 / 0, 0, 342 | same / same, 342 |
+
+- `shipped`: make output empty on both trees for all 6 cases (0 errors, 0 warnings); every `main` linked.
+- `warn`: identical log line counts and warning counts per case, 0 errors. Sorted logs are byte-identical between the trees for all 6 cases with no normalization at all (not even line numbers, since 77e096c changes only the Python generator); the raw differences are only `-j16` output interleaving. The warnings are upstream's (nvcc #177-D unused variables and the like).
+- Makefiles byte-identical between the trees for all 12 case/mode pairs (`NVCCFLAGS`, `LFLAGS` with upstream's `-Xlinker --enable-new-dtags -Xlinker -rpath,...`, `H_SRCS`). Generated sources in the build directories identical apart from the same reordering (shipped stdp create_generator, warn timed_poisson main.cu).
+- The first pass of the warn wrapper set the cuda_standalone prefs before importing brian2cuda (which registers them), so the 6 base-tree warn generations failed with `AttributeError: ... 'devices.cuda_standalone'` before any make; fixed and rerun for those 6 (`run_base_warn.sh`, the same loop restricted to base/warn). The port-tree warn runs already used the fixed wrapper.
+
+Verdict: CUDA compile check PASS at 77e096c. The CUDA backend generates the same projects as at 1c9536f (up to known line ordering), and they compile and link with nvcc 12.8 with the same result: no new errors or warnings. No platform state changed; nothing pushed to the fork; no `gh` writes; nothing installed outside the job venv and `agent_space/`.
+
+<details><summary>Driver scripts (job directory is not kept; worktrees base = 1c9536f, port = 77e096c under the directory passed as $1; gen_case.py is the checked-in cuda_codegen copy)</summary>
+
+`run_all.sh`:
+
+```
+#!/usr/bin/env bash
+# Generate each case with each tree in shipped and warn flag modes, then make -j16.
+J=$1
+export PATH=/usr/local/cuda/bin:$PATH CUDA_PATH=/usr/local/cuda SETUPTOOLS_SCM_PRETEND_VERSION=1.0.0 PYTHONHASHSEED=0
+unset USE_HIP MAKEFLAGS
+PY=$FLEET_VENV/py312/bin/python
+cd /tmp
+for tree in base port; do for mode in shipped warn; do for c in smoke cuba stdp timed_poisson binomial spatial; do
+  d=$J/out/$tree-$mode-$c; rm -rf $d; mkdir -p $J/out
+  if [ $mode = shipped ]; then
+    PYTHONPATH=$J/$tree timeout 900 $PY -P $J/scripts/gen_case.py $c $d cuda > $d.gen.log 2>&1; g=$?
+  else
+    PYTHONPATH=$J/$tree timeout 900 $PY -P $J/scripts/gen_warn.py $J/scripts/gen_case.py $c $d cuda > $d.gen.log 2>&1; g=$?
+  fi
+  if [ $g -eq 0 ]; then (cd $d && make -j16 2>&1) > $d.make.log; m=$?; else m=NA; fi
+  echo "$tree $mode $c gen=$g make=$m"
+done; done; done
+```
+
+`gen_warn.py`:
+
+```python
+"""Run gen_case.py with warnings-visible compile flags.
+
+usage: gen_warn.py <gen_case.py> <case> <outdir> cuda
+"""
+import runpy
+import sys
+
+import brian2cuda  # noqa: F401  (registers the cuda_standalone prefs)
+from brian2 import prefs
+
+prefs.devices.cuda_standalone.cuda_backend.extra_compile_args_nvcc = ['-use_fast_math']
+prefs.codegen.cpp.extra_compile_args_gcc = ['-Wall', '-O3', '-ffast-math', '-fno-finite-math-only', '-march=native', '-std=c++17']
+script = sys.argv[1]
+sys.argv = sys.argv[1:]
+runpy.run_path(script, run_name='__main__')
+```
+
+</details>
