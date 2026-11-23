@@ -238,3 +238,9 @@ How each finding candidate was settled (fact-checked against the code and on the
 - **Not findings, recorded for the record.** On ROCm, an `mxfp8` role whose out-features are not a multiple of 32 would keep the padded weight rows as extra output columns, and the `.view` would fail. No role of this model hits that (3072, 14336), and `RuntimeConfig` only reaches it through a hand-edited config. The MXFP8 bias is added after the GEMM in BF16 (one extra rounding against the fused epilogue), as the commit says.
 - **Commit hygiene.** Titles are 38/52/54 characters. `[ROCm]` is on the two ROCm commits and absent from the shared `tanh` fix. AI disclosure is present, there is no `Co-Authored-By`, and the Test Plans are fenced. `python3 utils/jargon.py --port Matrix-Game`: clean.
 - **Lessons.** Both lessons check out against the measurements above: the MX layout, M padding, bias and output dtype, and FNUZ on gfx942 versus e4m3fn elsewhere for the first; the libdevice refusal and identical NVIDIA output (PTX/SASS) for the second. One wording point for the promoting session: in the MX lesson, "M, N and K must all be multiples of 32" was measured for M only. N was padded by the quantizer, and K is multiple-of-128 by construction. The torch error names "matrix dimensions" in general.
+
+## Correction and rulings (Jeff Daily, 2026-11-23, later the same day)
+
+- The `windows` waiver recorded in status.json (approved by Jeff Daily, 2026-11-12) is his and stands. The sentence in the rulings section above saying the waiver was "not approved or declined yet" was wrong (written by the dispatching session).
+- The SageAttention check result was reported to Jeff; the `-sage` presets stay deferred.
+- Porter questions 1 and 2 (the PR #67 comment and the `--fa_version 0` upstream bug): the draft was shown to Jeff; not ruled yet. Nothing is posted without his approval.
