@@ -174,3 +174,4 @@
 {"kind":"phase","ts":"2026-11-23T22:15:23Z","phase":"compile","seconds":19.443,"exit":0,"cmd":"cmake --build projects/arrayfire/src/build-hip-gfx942 -j 28"}
 {"kind":"phase","ts":"2026-11-23T22:25:58Z","phase":"test","seconds":356.968,"exit":8,"cmd":"ctest --test-dir /var/lib/jenkins/fleet/jobs/mi300-20261123-133924-sync-arrayfire-prompt/moat/projects/arrayfire/src/build-hip-gfx942 -R _cuda$ -j1 --output-on-failure"}
 {"kind":"session","ts":"2026-11-23T22:26:30Z","epoch":1795472790.523126,"event":"end","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-23T23:05:34Z","phase":"cuda-compile","seconds":173.831,"exit":0,"cmd":"cmake --build ../nv/build-port -j 16 -- -k 0"}

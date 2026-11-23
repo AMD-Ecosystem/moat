@@ -3354,3 +3354,40 @@ $B/test/reduce_cuda
 Comparison: identical to the porter's run at the merge 78ed7b348 and to this platform's last record (131/132 at 83f66a507/83be19781, same toolchain).
 
 Gates: CUDA no-regression compile NOT run (no nvcc on this host) -- owed at 539d4be10 on the mi355 host. `jargon.py --port arrayfire`: only the standing published `6800d5586` 'MOAT' commit-message hit (frozen). Documentation: the round changes no ROCm build docs; the README and CMakeLists HIP sections are intact after the merge. Windows and the other Linux platforms read revalidate at this head and were not run here.
+
+## CUDA compile check (nvcc 12.8) at 539d4be10 vs upstream b11d70079 (sync round moat-sync-b11d700)
+2026-11-23, helper on the mi355 fleet host (CUDA 12.8 toolkit at `/usr/local/cuda-12.8`, nvcc V12.8.93, gcc 13.3, cmake 3.31.6; no NVIDIA GPU, compile and link only, nothing run on any GPU), requested by jeff. Fresh clone of the fork, `moat-sync-b11d700` at **539d4be10**, against `git worktree add ../af-base b11d70079` (the upstream commit merged by 78ed7b348). No platform state changed; nothing pushed to the fork; nothing installed (every apt dependency of the 2026-11-04 recipe was already present).
+
+**Result: PASS, no regression.** Same diagnostics, targets, artifacts, exported symbols and device code in both trees. The only host-code differences come from the port's two shared-header changes, which are byte-for-byte the same as the round checked on 2026-11-04 (`git diff 64c88d932 83be19781` and `git diff b11d70079 539d4be10` outside `src/backend/hip` have identical +/- lines; `half.hpp`, `ArrayFireTypesIO.hpp` and `test/` are unchanged since 83be19781; `src/backend/cuda` is unchanged since 83be19781 and has no diff against upstream).
+
+### Recipe (as in the 2026-11-04 entry: upstream's CUDA CI cache, CUDA backend only, tests ON as before; job count capped at 16 for this run)
+```
+python3 -I af-$T/.github/scripts/check-matrix-data.py af-$T build-$T        # ON, 9 matrices
+AF_CI_MTX_FILES=ON cmake -S af-$T -B build-$T -G Ninja -C af-$T/.github/scripts/linux-cuda-gpu.cmake \
+  -DCUDA_architecture_build_targets=8.0 \
+  -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.8/bin/nvcc -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda-12.8
+utils/timeit.sh arrayfire cuda-compile -- cmake --build build-$T -j 16 -- -k 0
+```
+(`T` = `port` or `base`, built one after the other. `.github/` is identical in both trees. `linux-cuda-gpu.cmake` turns CPU, OpenCL, oneAPI, unified, Forge, examples, docs and cuDNN off.)
+
+### Results
+| | upstream b11d70079 | fork 539d4be10 |
+|---|---|---|
+| configure exit | 0 | 0 (log identical apart from one line-number shift, CMakeLists.txt:150 -> 151) |
+| build exit / steps | 0, 707/707 (2m53s) | 0, 707/707 (2m54s) |
+| nvcc / compiler errors, FAILED steps | 0 | 0 |
+| warnings | 438 | 438, identical after replacing each `file:line` by the source line text |
+| ninja targets | 1716 | 1716, identical after path normalisation |
+| `.cu` compiled by nvcc | 51 (50 in `afcuda`, all `--generate-code=arch=compute_80,code=[sm_80]`) | same |
+| artifacts (`.so`, executables) | 140 | 140, identical list |
+| `libafcuda.so.3.10.1` | 211562856 B | 211566952 B (see host code below); 12395 exported dynamic symbols, same list after normalising nvcc's per-compile `_GLOBAL__N__..._cu_<hash>` names |
+
+- Warnings, all pre-existing upstream ones: 411 `-Wstrict-aliasing` and 15 `-Wuninitialized` in `common/half.hpp`, 10 `-Wdeprecated-declarations` in `cusparseModule.{hpp,cpp}` (`cusparseCreateIdentityPermutation`), 1 deprecated `thrust::unary_function` in `kernel/regions.hpp`, 1 `-Wunused-result` in `test/mmio/mmio.c`. The `half.hpp` ones sit on the same source lines, shifted by the port's added hipRTC block.
+- HIP is not configured in the CUDA build: `AF_BUILD_HIP:BOOL=OFF`, `build.ninja` has no `hip` mention, `build-port/src/backend/` holds only `common` and `cuda`.
+- Device code identical: `cuobjdump -xelf all` on each `libafcuda`, SHA-1 of every `.text.*`, `.nv.constant*`, `.nv.shared*`, `.nv.global*`, `.nv.info*` cubin section with the hash tokens normalised: **all 28184 records identical, including 7081 kernel `.text` sections (110766464 B)**, the same kernel count as 2026-11-04. No PROGBITS section hashed empty.
+- Host code (`objdump -dr` of all 487 objects; only addresses, nvcc's `_GLOBAL__N__`/`_cu_<hash>_<n>` tokens and `tmpxft_` temp names normalised, immediates kept): 483 identical. The 4 that differ are all from the port's shared changes:
+  - `compile_module.cpp.o`: only `.rodata` relocation offsets, shifted 0xcc0. The NVRTC copy of `half.hpp` that the CUDA backend embeds (`nvrtc_kernel_headers/half_hpp.hpp`) carries the port's `#if defined(__HIP_RTC__)` block as text, so the embedded string is longer. This is the `.rodata` growth of `libafcuda` (0x1cde50 vs 0x1cd190).
+  - `device_manager.cpp.o` and `common/DependencyModule.cpp.o`: these instantiate `fmt::formatter<arrayfire::common::Version>::format`, which the port made `const` with locals instead of mutating members (needed by fmt v10+, unchanged since the published round). The differing functions are that formatter and code laid out around it; `.text` of the library is 0xb0 bytes smaller.
+  - `test/.../cholesky_dense.cpp.o`: the port's `choleskyEps` test tolerance helper.
+- NVRTC: not rerun. `half.hpp` and every `src/backend/cuda/kernel/*.cuh` are unchanged since the 2026-11-04 NVRTC check (upstream's range touched only `src/api/c/device.cpp` and the CPU backend among the source directories that check covered).
+- Not run: the tests (no NVIDIA GPU here, and none were to be run on this host's AMD GPUs).
