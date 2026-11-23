@@ -113,3 +113,4 @@
 {"kind":"phase","ts":"2026-11-23T22:21:42Z","phase":"test","seconds":7.198,"exit":0,"cmd":"agent_space/sweep.sh /var/lib/jenkins/fleet/jobs/gfx1201-20261123-141419-val-anari-visionaray-w32-prompt"}
 {"kind":"session","ts":"2026-11-23T22:41:01Z","epoch":1795473661.80343,"event":"start","platform":"linux-gfx1201"}
 {"kind":"phase","ts":"2026-11-23T22:46:41Z","phase":"compile","seconds":135.212,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/gfx1201-20261123-143856-fix-anari-w32-prompt/build -j24"}
+{"kind":"session","ts":"2026-11-23T23:28:49Z","epoch":1795476529.071934,"event":"end","platform":"linux-gfx1201"}
