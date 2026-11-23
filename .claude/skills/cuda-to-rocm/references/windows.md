@@ -155,6 +155,29 @@ correctly-detected device is a missing architecture in the wheel, never a port f
 Pin one date-stamp across torch, `rocm-sdk-core/libraries/devel` and the device packages,
 because they resolve against each other. (gfx1151, torch 2.12.0+rocm7.14.0a20260519.)
 
+### On Windows, Triton comes from the `triton-windows` package
+
+`pip install triton` finds nothing on Windows (`from versions: none`), and a Windows ROCm
+PyTorch wheel does not bring a Triton with it, but that does not mean there is no Triton for
+Windows. The third-party `triton-windows` package on PyPI
+(github.com/triton-lang/triton-windows; 3.9.0.post30 seen 2026-11, `cp312-abi3-win_amd64`)
+installs the `triton` module with an AMD backend that handles Windows: it finds
+`amdhip64*.dll` and resolves the SDK through `rocm-sdk path --root` or
+`ROCM_HOME`/`HIP_PATH`/`ROCM_PATH`. A Triton-based dependency that declares no `triton`
+requirement of its own (it expects the one that comes with PyTorch on Linux, as
+spconv-triton does) fails with `ModuleNotFoundError: No module named 'triton'` from inside
+the dependency until `triton-windows` is installed.
+
+Treat it as the way to get Triton on Windows, and validate the Triton kernels you depend on
+there instead of assuming either that they work or that they cannot run. Seen on gfx1151
+with a TheRock torch 2.12 wheel: a non-sparse model (Point Transformer V1) built and ran one
+forward+backward pass on the GPU, and one spconv-triton sparse convolution layer ran forward
+in 0.3 s and matched a dense CPU reference. Its backward pass took 472 s on a cold cache,
+all of it kernel compilation, and then matched too, so a 10-minute cap reads as a hang
+there: give the first run a persistent `TRITON_CACHE_DIR` and a long window
+(strategy-b-torch.md, the Triton cold-compile item under "Dependency environment").
+(Pointcept)
+
 ### A dev package neither TheRock nor vcpkg ships
 
 conda-forge ships MSVC-toolchain win-64 builds of common C/C++ libraries (GMP, OpenSSL,
@@ -210,7 +233,8 @@ pip-installed ROCm SDK puts `hipconfig.exe` in the venv `Scripts`) and set `CMAK
 to it unless the user gave one. Three more Windows gaps travel with it: CMake picks the
 default `CMAKE_HIP_ARCHITECTURES` with `rocm_agent_enumerator`, which ROCm does not ship on
 Windows, and silently falls back to gfx906 (run `amdgpu-arch` from the clang directory
-instead); `find_package(hip)` needs `CMAKE_HIP_COMPILER_ROCM_ROOT` on `CMAKE_PREFIX_PATH`
+instead; torch's `find_package(Torch)` has the same gap and fails outright, see
+"`find_package(Torch)` in a CMake HIP project" below); `find_package(hip)` needs `CMAKE_HIP_COMPILER_ROCM_ROOT` on `CMAKE_PREFIX_PATH`
 (there is no `/opt/rocm/bin` on PATH to derive it from); and CMake before 3.29 links a Windows
 HIP DLL without `-shared` (`lld-link: error: subsystem must be defined`; 3.28.4 fails, 3.29.2
 works). Outside a Visual Studio developer prompt three more fail, and the documented command
@@ -277,6 +301,37 @@ applies the same rules. See LichtFeld-Studio `cmake/HipCompute.cmake` and pytorc
 Note the split with PyTorch extension ports, where `clang-cl` IS the required host
 compiler (strategy-b-torch.md, "Windows"): torch drives the compile itself and never goes
 through CMake's `HIP` language.
+
+### `find_package(Torch)` in a CMake HIP project needs the architecture and the ROCm root
+
+A CMake torch extension (one that calls `find_package(Torch)` against a pip ROCm torch, not
+a `CUDAExtension`) has two more Windows gaps, both inside torch's `LoadHIP.cmake`, and a
+build shell that exports the variables hides both from whoever writes the README.
+
+- **The architecture.** Naming the target with `-DCMAKE_HIP_ARCHITECTURES` is not enough:
+  `find_package(Torch)` stops with `LoadHIP.cmake: No GPU arch specified for ROCm build`,
+  because torch's `torch_hip_get_arch_list` reads only the `PYTORCH_ROCM_ARCH` environment
+  variable or `rocm_agent_enumerator`, which ROCm does not ship on Windows. In the project,
+  on `WIN32`, when `ENV{PYTORCH_ROCM_ARCH}` is undefined, `set(ENV{PYTORCH_ROCM_ARCH} ...)` from the resolved
+  `CMAKE_HIP_ARCHITECTURES` before `find_package(Torch)`, and stop with a message when no
+  architecture was given at all.
+- **The ROCm root, when the Python environment is not activated.** Finding the HIP
+  `clang++` through the interpreter's directory (the `hipconfig` recipe above) does not
+  carry over: with `-DPython_EXECUTABLE=<venv>/Scripts/python.exe` and nothing activated,
+  `LoadHIP.cmake` locates ROCm only through `ENV{ROCM_PATH}` or `find_program(rocm-sdk)` on
+  PATH (`rocm-sdk.exe` is a venv `Scripts` console script too). It prints "ROCM_PATH
+  environment variable is not set and C:/opt/rocm does not exist. Building without ROCm
+  support." as a STATUS line, and the configure fails only at generate time with `The link
+  interface of target "c10_hip" contains: hip::amdhip64 but the target was not found`. In
+  the project, on `WIN32`, after `enable_language(HIP)` and before `find_package(Torch)`:
+  when `ENV{ROCM_PATH}` is undefined, `set(ENV{ROCM_PATH} "${CMAKE_HIP_COMPILER_ROCM_ROOT}")`.
+
+Test the documented non-activated command in a shell that has neither the environment's
+`Scripts` nor the SDK `bin` on PATH and exports neither variable. FindPython on Windows
+follows an activated environment (`VIRTUAL_ENV`/`CONDA_PREFIX`), not PATH order, so say in
+the README which of the two cases a command is for. A Release default for such a project
+has to run before `project()` on Windows (build-cmake-link.md, "An unset CMake build type
+runs every HIP kernel unoptimized"). (Quest)
 
 ### CRT flags, compiler-rt builtins and Git Bash flag mangling in a CMake HIP build
 
