@@ -2310,6 +2310,66 @@ reads `revalidate`: the delta changes HIP device code (`codeobj_diff`
 differ on gfx942), so a carry-forward will not apply and gfx1100 needs a
 real run before it can be named in the Testing paragraph again.
 
+## Porter round 2026-11-23 (gl_main.cpp message, linux-gfx950 host, build only)
+
+jeff's ruling on the four items in "### Other places where the port changes
+what the CUDA build compiles or does": keep 2, 3 and 4; revert 1 (the
+`cudaSetDevice` failure message). `set-state GPU_IPC linux-gfx950 porting`
+took the lock with no warning (nobody held it). This created an empty
+`linux-gfx950` platform block (state unset); no GPU was used on this host
+(colleagues' benchmarks), so it carries no evidence.
+
+### Change: fork commit 53d17e2 on top of 04c121a
+
+"[ROCm] Keep the CUDA build's cudaSetDevice failure message" (title 58
+chars), GPU_IPC/gl_main.cpp only, +5/-1:
+
+```cpp
+#if defined(USE_HIP) || defined(__HIP_PLATFORM_AMD__)
+        fprintf(stderr, "hipSetDevice failed!  Do you have a HIP-capable AMD GPU installed?");
+#else
+        fprintf(stderr, "cudaSetDevice failed!  Do you have a CUDA-capable GPU installed?");
+#endif
+```
+
+The `#else` line is upstream's line byte for byte. The guard is the one
+`cuda_to_hip.h` (the host-side header gl_main.cpp includes) and the `.cu`
+files use. Under HIP, `cudaSetDevice` is `hipSetDevice` through the header,
+so the AMD text names the call that actually failed.
+
+### Build (AMD, compile and link only; no GPU run)
+
+TheRock pip SDK (`_rocm_sdk_devel`, hipcc 7.16.26385, AMD clang 24.0.0git),
+cmake 3.31.6 and Ninja from `/opt/python-3.11-venv`. GLEW and freeglut
+headers are not in the image, so `apt-get download` (job-local
+`Dir::State::Lists`/`Dir::Cache`, no root) of `libglew-dev libglut-dev
+freeglut3-dev libglu1-mesa-dev libgl-dev libglx-dev libegl-dev libgles-dev
+libglvnd-dev libglut3.12 libeigen3-dev libx11-dev x11proto-dev libxext-dev`,
+each `dpkg -x` into `<job>/deps/root`, dangling `.so` links repointed at
+/usr/lib/x86_64-linux-gnu.
+
+```bash
+cmake -S . -B build -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx950 \
+  -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=<SDK root>;<job>/deps/root/usr"
+cmake --build build -j 16
+```
+
+`timeit.sh GPU_IPC compile`: exit 0, `gipc` linked, 153 warnings (the known
+`[[nodiscard]]` pattern, same count as every gfx942 record), 0 errors.
+`strings build/gipc | grep capable`: only the HIP message. CUDA side:
+`g++ -std=c++17 -O3 ... -I/usr/local/cuda-12.8/include -c GPU_IPC/gl_main.cpp`:
+0 warnings, and the object carries upstream's "CUDA-capable" string.
+
+### Push and records
+
+```bash
+git -C projects/GPU_IPC/src push origin moat-port   # 04c121a..53d17e2, plain push
+python3 utils/moatlib.py advance-head GPU_IPC 53d17e2f0599311606ad595d3115b87c9e127462
+python3 utils/jargon.py --port GPU_IPC              # jargon: clean
+python3 utils/prose.py <commit message>             # prose: clean
+python3 utils/moatlib.py set-state GPU_IPC linux-gfx950 delta-ported --agent porter
+```
+
 ## Upstream PR draft
 
 Status (2026-11-23, head 04c121a): replaces the two earlier draft sections.
