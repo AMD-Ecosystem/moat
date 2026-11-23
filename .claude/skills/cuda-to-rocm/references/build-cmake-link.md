@@ -41,6 +41,12 @@ clang compiles HIP device code at `-O0`. A README configure command without `-DC
 the usual trigger, and a Windows generator defaulting to Debug is the same thing. Fix: in the
 project's CMake, when the HIP backend is selected and `NOT CMAKE_BUILD_TYPE AND NOT
 CMAKE_CONFIGURATION_TYPES`, set the cache entry to `Release`; check `ninja -t commands` for `-O3`.
+For Windows that default has to run before `project()`, because `Windows-Clang.cmake` sets
+`CMAKE_BUILD_TYPE_INIT Debug` and `project()` caches it. Placed there it must also test the
+`CMAKE_BUILD_TYPE` environment variable, which CMake (3.22+) applies only inside `project()`, or it
+forces Release over a build type the user gave that way (on Linux too): `get_property(_mc GLOBAL
+PROPERTY GENERATOR_IS_MULTI_CONFIG)`, then `if(NOT CMAKE_BUILD_TYPE AND "$ENV{CMAKE_BUILD_TYPE}"
+STREQUAL "" AND NOT _mc)`, then `set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)`.
 Device `-O0` also changes which faults appear (faults-memory-streams.md, "Bitwise and min/max
 atomics on `hipMallocManaged` memory"), so build the README recipe as written before and after the
 fix. Seen on MI300X with the ROCm SDK 10.1: paged KV append 11 ms -> 26 us, and FA2 prefill at qo=1
@@ -473,18 +479,26 @@ by thread id has every thread pick element 0 while still printing correct result
 any `LINKER_LANGUAGE CXX` left on the target: `$<LINK_LANGUAGE:HIP>` is false under a CXX
 link, so a HIP-conditioned OpenMP link flag silently never applies. (HEonGPU)
 
-**A HIP-linked shared library gets no RUNPATH to the ROCm lib dir.** The ROCm lib dir is
-one of the HIP compiler's implicit link directories, so CMake leaves it out of the build
-RUNPATH; clang adds it for executables (`h2o4gpu_test` had it) but not for a `SHARED` or
-`MODULE` target. Anything else that happened to inject it (h2o4gpu's was clang's
+**A HIP-linked shared library, or a host-linked executable, gets no RUNPATH to the ROCm lib
+dir.** The ROCm lib dir is one of the HIP compiler's implicit link directories
+(`CMAKE_HIP_IMPLICIT_LINK_DIRECTORIES`), so CMake leaves it out of the build RUNPATH; clang
+adds it for executables (`h2o4gpu_test` had it) but not for a `SHARED` or `MODULE` target.
+A plain C++ executable is not covered either when it links the HIP runtime or rocFFT only
+indirectly, through a static library built with HIP sources (ESPResSo's, through heFFTe
+with `Heffte_ENABLE_ROCM`); targets that link `hip::host` directly do get the directory.
+Such an executable gets `NEEDED librocfft.so.0`/`libamdhip64.so.7` and no RUNPATH entry,
+so it runs where the ROCm lib dir is on the loader path and fails with "cannot open shared
+object file" where it is not (the pip SDK). Anything else that happened to inject it (h2o4gpu's was clang's
 `-fopenmp` link) hides the gap until it is removed. Then, with the pip/TheRock SDK and no
 `LD_LIBRARY_PATH`, the module fails to load -- and a Python loader that swallows the
 `ImportError` (h2o4gpu's `GPUlib.get()`) silently runs every solver on the CPU while the
 tests pass. Set it explicitly on the target:
 `BUILD_RPATH $<TARGET_FILE_DIR:hip::amdhip64>` (and `INSTALL_RPATH`), then check
 `readelf -d <lib> | grep RUNPATH` and run the GPU path with `LD_LIBRARY_PATH` unset.
+CUDA projects usually already do the same for the CUDA library directories, so add the HIP
+line beside it.
 Whether a `/opt/rocm` package registers its lib dir with ld.so.conf was not verified; do
-not rely on it. (h2o4gpu)
+not rely on it. (h2o4gpu, ESPResSo)
 
 **With the ROCm clang as the host compiler, a found system libunwind links but does not load.**
 The ROCm clang searches the `include/` directory next to its LLVM install ahead of the system

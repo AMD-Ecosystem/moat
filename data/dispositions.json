@@ -1247,6 +1247,19 @@
     "reason": "cant-port",
     "repo_id": 1137545832
   },
+  "lssfau/walberla": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-20T20:14:30Z",
+    "disposition": "skip",
+    "full_name": "lssfau/walberla",
+    "note": "Ruled 2026-11-20: decline as already supported, no fork and no port. waLBerla has had an upstream HIP backend since 2023; on ROCm 10.1 it builds and its GPU lattice-Boltzmann kernels agree with the CPU to round-off on gfx942 and gfx1201 (intake and wave32 check, notes on port/walberla). ESPResSo's pinned waLBerla needs no change. Seven small arch-independent upstream fixes are drafted in those notes and go to waLBerla's GitLab (gitos.rrze.fau.de) as merge requests jeff approves, after account onboarding; keep port/walberla until they are sent.",
+    "reason": "already-supported",
+    "recorded_as": {
+      "gh_host": "github.com",
+      "login": "jeffdaily"
+    },
+    "repo_id": 86795775
+  },
   "lucasdelimanogueira/pynorch": {
     "decided": "2026-06-05T01:24:38Z",
     "disposition": "skip",
