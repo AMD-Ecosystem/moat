@@ -196,15 +196,127 @@
       "kind": "platform",
       "where": "setup.py",
       "note": "setup.py raises on win32 ('Windows is not supported yet'); the project is Linux-only upstream."
+    },
+    {
+      "id": "docs:docker-image",
+      "kind": "docs",
+      "where": "docker/",
+      "note": "Upstream ships CUDA images only (docker/Dockerfile, docker/torch213)."
     }
   ],
-  "covered": [],
+  "covered": [
+    {
+      "id": "extension:cpu_adam_x86",
+      "note": "Builds ahead of time and at runtime on ROCm (the runtime build passes with_cuda=True so load() hipifies it); batch 3 CPUAdam/HybridAdam pass on gfx942."
+    },
+    {
+      "id": "extension:fused_optim_cuda",
+      "note": "l2norm shuffles take the 32-thread warp mask; batch 3 FusedAdam passes on gfx942."
+    },
+    {
+      "id": "extension:layernorm_cuda",
+      "note": "Welford shuffles pass width 32; tests/test_kernels/test_layernorm_kernel.py 45/45 on gfx942 (42/45 fail without the width fix)."
+    },
+    {
+      "id": "extension:moe_cuda",
+      "note": "cub aliased to hipcub; tests/test_kernels/test_moe_kernels.py passes on gfx942."
+    },
+    {
+      "id": "extension:inference_ops_cuda",
+      "note": "Inline PTX and cuda_fp8 E5M2 conversions replaced under USE_ROCM (bit-exact against torch.float8_e5m2), bf16 builders, CastFunctor for HIP bf16 lanes, LDS check; batches 4b and 4e pass on gfx942."
+    },
+    {
+      "id": "extension:scaled_masked_softmax_cuda",
+      "note": "Fixed 32-thread warp on ROCm; tests/test_kernels/test_scaled_softmax_kernels.py passes on gfx942."
+    },
+    {
+      "id": "extension:scaled_upper_triangle_masked_softmax_cuda",
+      "note": "Same change; tests/test_kernels/test_scaled_softmax_kernels.py passes on gfx942."
+    },
+    {
+      "id": "build:extension-loader",
+      "note": "AOT (BUILD_EXT=1, editable and the documented non-editable install from a fresh clone) and runtime builds work with ROCm torch; flags translated for hipcc; CUDA path compile-checked with nvcc (notes)."
+    },
+    {
+      "id": "python:attention-backends",
+      "note": "fa2 enabled on ROCm behind an AMD GPU check (Q2 ruling); strict fa2 acceptance 185 passed on gfx942 with flash-attn 2.8.3 (CK backend)."
+    },
+    {
+      "id": "python:fp8",
+      "note": "torch._scaled_mm dtypes from a one-time device probe (FNUZ on gfx942); batch 4a 22 passed on gfx942. The compile gate (cuda_arch < 89) reads 94 on gfx942 and the compiled OCP casts match eager."
+    },
+    {
+      "id": "python:triton-kernels",
+      "note": "num_warps capped from the device warp size (rms_layernorm); batch 4c 372 passed on gfx942."
+    },
+    {
+      "id": "python:accelerator-and-cli",
+      "note": "get_version returns the HIP version; colossalai check -i reports it."
+    },
+    {
+      "id": "tests:optimizer-kernels",
+      "note": "Batch 3: 62 passed on gfx942."
+    },
+    {
+      "id": "tests:inference-cuda-kernels",
+      "note": "Batch 4b: 60 passed, 108 skipped (upstream's unconditional fp8 conversion skip); batch 4e: 1326 passed, 258 skipped (memory guard on the 24 GiB partition, upstream's long-sequence skip)."
+    },
+    {
+      "id": "tests:inference-triton-kernels",
+      "note": "Batch 4c: 372 passed, 65 skipped (upstream's own unconditional skips)."
+    },
+    {
+      "id": "tests:fp8",
+      "note": "Batch 4a: 22 passed on gfx942. Batch 7 (4 GPUs) belongs to the owed tests:distributed runs."
+    },
+    {
+      "id": "tests:smoothquant",
+      "note": "Batch 4d: all four tests skip on every platform at this head; they import modules upstream removed (op_builder.smoothquant, inference.quant, int8_rotary_embedding_fwd)."
+    },
+    {
+      "id": "tests:single-gpu-core",
+      "note": "Batch 2: 23 passed, 2 skipped (upstream HF5 compatibility guards)."
+    },
+    {
+      "id": "tests:new-kernel-tests",
+      "note": "Added tests/test_kernels (layernorm, both softmaxes, MoE): 155 passed on gfx942."
+    },
+    {
+      "id": "docs:rocm-install",
+      "note": "README and docs/source/en/get_started/installation.md carry the ROCm install section next to the CUDA build."
+    }
+  ],
   "scoped_out": [
     {
       "id": "extension:flash_attention_cpu_npu_arm",
       "reason": "Arm CPU Adam and the Ascend NPU flash attention contain no CUDA; nothing to port. Listed so the extension inventory is complete."
+    },
+    {
+      "id": "tests:fa3-attention",
+      "reason": "FA3 (flash_attn_3, batch 4f) is NVIDIA Hopper/SM90-only with no AMD counterpart; scoped out by Jeff Daily's Q2 ruling, 2026-11-23."
+    },
+    {
+      "id": "platform:windows",
+      "reason": "setup.py refuses Windows and the stack is Linux/NCCL-only; the windows gate is waived by Jeff Daily's Q1 ruling, 2026-11-23."
+    },
+    {
+      "id": "docs:docker-image",
+      "reason": "No ROCm Docker image in this port; the docs give the install steps (Jeff Daily's Q5 ruling, 2026-11-23)."
     }
   ],
-  "owed": [],
+  "owed": [
+    {
+      "id": "tests:distributed",
+      "reason": "Batches 5 (2 GPUs) and 6, 7, 8, 9, 9q (4 GPUs) on both wavefront widths, per the Q3 ruling (option b); commands prepared in notes.md, not yet run (the porter job had one GPU)."
+    },
+    {
+      "id": "tests:apex-gemini",
+      "reason": "Batch 11 (2 GPUs) on both widths, with ROCm apex installed if available, else recorded as skipped; not yet run."
+    },
+    {
+      "id": "tests:largedist",
+      "reason": "Batch 10 (8 GPUs) on wave64 when a whole 8-GPU host is free; not yet run. If no such host becomes available, closing it unrun is a person's decision."
+    }
+  ],
   "removed_from_floor": []
 }

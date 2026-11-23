@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "rocm-10.2-llvm-isel-v4bf16-scalar-to-vector",
+      "kind": "rocm-bug-report",
+      "component": "llvm-project",
+      "summary": "AMD clang 24.0.0git (ROCm 10.2.0a20261022) aborts in the gfx942 device LTO link with 'LLVM ERROR: Cannot select: v4bf16 = scalar_to_vector' in ColossalAI's flash_decoding_attention_kernel_v1<__hip_bfloat16, uint8_t, 128, 32, 128> when fp8 bytes become bf16 through __float2bfloat16(__half2float(x)) stored as bf16x2 pairs. Worked around in the port (exact bit construction). Reproduces with the real TU and hipcc command; not yet reduced (no llc/llvm-reduce in the SDK).",
+      "refs": [
+        "projects/ColossalAI/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-23T23:12:27Z",
+      "decided": null
+    },
+    {
+      "id": "colossalai-upper-triang-softmax-never-loads",
+      "kind": "other",
+      "component": null,
+      "summary": "Upstream bug, every platform: colossalai/nn/layer/scaled_softmax.py ScaledUpperTriangMaskedSoftmax.forward loads its kernel under 'if scaled_upper_triang_masked_softmax:' (should be 'is None'), so the fused causal softmax path raises AttributeError on first use. Not a port defect; reporting upstream is a person's call.",
+      "refs": [
+        "projects/ColossalAI/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-23T23:12:27Z",
+      "decided": null
+    },
+    {
+      "id": "colossalai-softmax-missing-sk-multiple-of-4",
+      "kind": "other",
+      "component": null,
+      "summary": "Upstream bug, every platform: FusedScaleMaskSoftmax.is_kernel_available dropped Megatron's 'sk % 4 == 0' condition; above 64 keys the scaled softmax kernels load 4 elements at a time, so ragged key lengths (127, 129, 511, 2047) give wrong probabilities (measured on gfx942, up to 0.36 absolute) or a misaligned load on NVIDIA. Not a port defect.",
+      "refs": [
+        "projects/ColossalAI/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-23T23:12:27Z",
+      "decided": null
+    },
+    {
+      "id": "colossalai-cpu-adam-fp16-test-unseeded",
+      "kind": "other",
+      "component": null,
+      "summary": "Upstream test fragility, every platform: tests/test_optimizer/test_adam_kernel.py::test_cpu_adam_kernel (fp16 params and grads) draws unseeded data and misses rtol=atol=1e-3 on 27 of 400 seeds; a plain-torch emulation of the same fp16 update misses on exactly the same seeds. Fails depending on test order.",
+      "refs": [
+        "projects/ColossalAI/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-23T23:12:27Z",
+      "decided": null
+    }
+  ]
+}

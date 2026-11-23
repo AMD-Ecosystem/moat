@@ -1,8 +1,8 @@
 # ColossalAI port plan
 
-## Decisions needed from Jeff before a porter starts
+## Rulings (Jeff Daily, 2026-11-23)
 
-Questions Q1 to Q5 are at the top of the planning section in `notes.md` (2026-11-20). In short: (Q1) the windows gate, since upstream refuses Windows outright; (Q2) whether the FlashAttention-2 adapter is enabled on ROCm in this port or deferred, and whether the Hopper-only FA3 adapter is scoped out; (Q3) how much of the multi-GPU suite each platform must run; (Q4) the intake question about an internal AMD ColossalAI effort, still open; (Q5) whether a ROCm Docker image belongs in the port. The plan below assumes the recommended option for each and marks every place a different ruling would change it.
+The planner's questions Q1 to Q5 (`notes.md`, Planning 2026-11-20) are ruled; the full text is in `notes.md` under "Rulings on the planner's questions". Q1: the `windows` gate is waived. Q2: fa2 is enabled on ROCm when the ROCm build of `flash_attn` is installed, behind a ROCm capability check, and fa3 is `scoped_out` (Hopper-only). Q3: option b, both wavefront widths run the full 1-, 2- and 4-GPU batches (see the test plan below). Q4: no internal AMD effort known. Q5: no ROCm Docker image; the docs give the install steps.
 
 ## Project
 
@@ -95,7 +95,7 @@ Python build and loader:
 - `extensions/cuda_extension.py`: `assert_compatible` accepts `torch.version.hip`; `assert_build_compatible` on ROCm checks `ROCM_HOME` instead of `CUDA_HOME`/nvcc; `get_cuda_home_include` returns the ROCm include dir (or nothing; hipcc adds it); `build_jit`/`build_aot` skip `set_cuda_arch_list` on ROCm (torch reads `PYTORCH_ROCM_ARCH` or detects); the `COLOSSAL_WITH_CUDA` define handled per risk 1.
 - `extensions/utils.py`: `set_cuda_arch_list` and `append_nvcc_threads` return early on ROCm.
 - `extensions/pybind/*/*_cuda.py` and `cpu_adam_x86.py`: a ROCm flag list per extension (risk 8). Factor this into one helper in `cuda_extension.py` rather than seven copies.
-- `colossalai/kernel/kernel_loader.py`: ROCm policy for fa2 per Q2 (recommended: allow fa2 when `flash_attn` is installed, fp16/bf16 only, head dim within what the ROCm build supports; the capability check does not apply the SM test on ROCm). fa3 keeps refusing ROCm.
+- `colossalai/kernel/kernel_loader.py`: ROCm policy for fa2 per the Q2 ruling: allow fa2 when `flash_attn` is installed, with the same dtype, mask and head-dimension rules as on CUDA, and in place of the SM test a check that the GPU is one the ROCm build of flash-attn supports. fa3 keeps refusing ROCm.
 - `colossalai/quantization/fp8.py`: fp8 dtype helper and compile gate (risk 9). Any test that hard-codes `float8_e4m3fn` uses the same helper.
 - `colossalai/kernel/triton/rms_layernorm.py`, `no_pad_rotary_embedding.py` (and any other launch above 16 warps): cap `num_warps` (risk 10).
 - `colossalai/accelerator/cuda_accelerator.py`: `get_version` returns `torch.version.hip` when set.
@@ -122,7 +122,7 @@ Docs:
 
 - `README.md` install section and `docs/` (where the CUDA build is documented): a ROCm subsection covering a ROCm torch wheel, `BUILD_EXT=1`, `PYTORCH_ROCM_ARCH`, and where to get flash-attn and bitsandbytes for ROCm. No device-selection env vars in example commands.
 
-Not changed: `docker/` (CUDA images; a ROCm image is not part of this plan, see Q5 in notes.md), `applications/`, `examples/`, `.github/` (fork Actions stay disabled).
+Not changed: `docker/` (CUDA images; no ROCm image per the Q5 ruling), `applications/`, `examples/`, `.github/` (fork Actions stay disabled).
 
 ## Build commands
 
@@ -146,21 +146,27 @@ Wrap builds and tests in `utils/timeit.sh ColossalAI compile|test -- ...`.
 
 GPU tests, by upstream CI batch (`.github/scripts/ci/run_colossalai_batch.sh` defines them; run the same file lists with `python -m pytest -v -ra --tb=short`, since the script itself expects `CUDA_HOME` for some batches):
 
+Validation breadth follows the Q3 ruling (option b): both wavefront widths run every 1-, 2- and 4-GPU batch, each on a host whose GPUs are all free for the run (RCCL collectives need the whole set); the 8-GPU batch runs on wave64 when a whole 8-GPU host is free. The wave32 run needs four working RDNA GPUs on one host.
+
 | batch | GPUs | content | wave64 | wave32 |
 |---|---|---|---|---|
 | 3 | 1 | `tests/test_optimizer/test_adam_kernel.py`, `test_adam_optim.py` (FusedAdam, CPUAdam, HybridAdam) | required | required |
 | 4b | 1 | `tests/test_infer/test_kernels/cuda/` except flash decoding | required | required |
 | 4e | 1 | `tests/test_infer/test_kernels/cuda/test_flash_decoding_attention.py` | required | required |
 | 4c | 1 | `tests/test_infer/test_kernels/triton` | required | required |
-| 4a | 1 | `tests/test_fp8/test_fp8_cast.py`, `test_fp8_hook.py`, `test_fp8_linear.py` | required | required where the arch has fp8 (gfx12); otherwise skips, recorded |
-| new | 1 | the added layernorm/softmax/moe kernel tests | required | required |
+| 4a | 1 | `tests/test_fp8/test_fp8_cast.py`, `test_fp8_hook.py`, `test_fp8_linear.py` | required | required; the GEMM tests skip where the GPU has no fp8 GEMM (gfx11), recorded |
+| new | 1 | `tests/test_kernels` (layernorm, softmax, MoE kernels added by the port) | required | required |
+| attn | 1 | `tests/test_shardformer/test_layer/test_attention_backends.py -k gpu` with `COLOSSALAI_TEST_ATTENTION_BACKEND=fa2`, then `=sdpa` | required | required (fa2 through flash-attn's Triton backend, `FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE`) |
 | 2 | 1 | single-GPU core (accelerator, fp16, lazy, inference structures) | required | required |
-| 4d | 1 | `tests/test_smoothquant` | required | required |
-| 5 | 2 | booster/DDP/FSDP/LowLevelZeRO/LoRA/numerics | required | if the host has 2 GPUs (Q3) |
-| 6, 7, 8, 9, 9q | 4 | distributed tensor, fp8 collectives, Booster/Gemini/ZeRO/MoE/pipeline/checkpoint, ShardFormer/inference engine | required (Q3) | not required (Q3) |
-| 10 | 8 | `-m largedist` | when 8 GPUs are free (Q3) | no |
-| 11 | 2 | apex-dependent Gemini tests | only if ROCm apex is installed; otherwise recorded as skipped | no |
-| 4f | 1 | FA3 strict attention | not applicable (Hopper-only; Q2) | not applicable |
+| 4d | 1 | `tests/test_smoothquant` | required (all four skip at this head on every platform: they import modules upstream removed) | same |
+| 1 | 0 | CPU-only configuration, pipeline and tensor logic, GPUs hidden | required | required |
+| 5 | 2 | booster/DDP/FSDP/LowLevelZeRO/LoRA/numerics | required | required |
+| 6, 7, 8, 9, 9q | 4 | distributed tensor, fp8 collectives, Booster/Gemini/ZeRO/MoE/pipeline/checkpoint, ShardFormer/inference engine | required | required |
+| 10 | 8 | `-m largedist` | when 8 GPUs are free, otherwise recorded as not run | not required |
+| 11 | 2 | apex-dependent Gemini tests | only if ROCm apex is installed; otherwise recorded as skipped | same |
+| 4f | 1 | FA3 strict attention | not applicable (FA3 is Hopper-only, `scoped_out`) | not applicable |
+
+The exact commands for the 2-, 4- and 8-GPU batches are in `notes.md` ("Multi-GPU batch commands for the validators"), prepared by the porter and not yet run.
 
 Record pass/fail/skip counts per batch, and the reason for each skip, in `notes.md`. A batch whose tests skip because `flash_attn` is missing does not count as passing the fa2 path.
 
@@ -170,4 +176,4 @@ CUDA no-regression: compile the extensions with nvcc against a CUDA torch (mi355
 
 ## Open questions
 
-See `notes.md` (Planning, 2026-11-20), Q1 to Q5. Each needs Jeff's ruling before porting starts.
+Q1 to Q5 are ruled (see "Rulings" above). Questions raised in porting round 1 are at the top of that round's section in `notes.md`.

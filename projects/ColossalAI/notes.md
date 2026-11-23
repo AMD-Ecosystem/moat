@@ -93,3 +93,260 @@ After Jeff rules on Q1-Q5, a porter starts from `plan.md`. If the rulings differ
 - Q3 (multi-GPU validation breadth): **b**. Both wavefront widths run the full 4-GPU set (1-, 2- and 4-GPU batches on wave64 and on wave32; the 8-GPU batch on wave64 when a whole host is free). The wave32 run needs four working RDNA GPUs on one host, exclusively; the Radeon fleet host's fourth GPU had its driver reset on 2026-11-23 for this.
 - Q4 (internal AMD effort): Jeff is not aware of any. The port proceeds without coordination.
 - Q5 (ROCm Docker image): **a**, none in this port; the docs give the ROCm install steps.
+
+## Porting round 1 (2026-11-23, linux-gfx942 fleet job, porter role)
+
+### Questions for Jeff (raised in this round; nobody could answer during the job)
+
+1. **Chinese docs.** The CUDA build is also documented in `docs/README-zh-Hans.md` and `docs/source/zh-Hans/get_started/installation.md`. The ROCm section went into `README.md` and `docs/source/en/get_started/installation.md` only, because a Chinese section conflicts with the ASCII-only rule for new upstream prose. Options: (a) leave the zh-Hans docs to upstream's translators (current state); (b) add the same section in English to the zh-Hans files; (c) add a Chinese translation (non-ASCII). Evidence: the zh-Hans install guide mirrors the English one line for line.
+2. **Upstream defects found while testing, none caused by the port.** Each was registered with `utils/deferred.py` (ids below) and needs your defer/now ruling; reporting any of them upstream is a GitHub write and yours to approve.
+   - `colossalai-upper-triang-softmax-never-loads`: `colossalai/nn/layer/scaled_softmax.py` `ScaledUpperTriangMaskedSoftmax.forward` loads its kernel under `if scaled_upper_triang_masked_softmax:` (should be `is None`), so the fused causal softmax always fails with `AttributeError: 'NoneType' object has no attribute 'forward'` on every platform.
+   - `colossalai-softmax-missing-sk-multiple-of-4`: `FusedScaleMaskSoftmax.is_kernel_available` dropped Megatron's `sk % 4 == 0` condition. Above 64 keys the kernels load four elements at a time, so a ragged key length (127, 129, 511, 2047) gives wrong probabilities (measured on gfx942: 13 to 173 mismatched elements per case, up to 0.36 absolute); on NVIDIA the misaligned vector load would fault instead.
+   - `colossalai-cpu-adam-fp16-test-unseeded`: `tests/test_optimizer/test_adam_kernel.py::test_cpu_adam_kernel` (fp16 params and grads) draws unseeded data and misses its `rtol=atol=1e-3` on 27 of 400 seeds. A plain-torch emulation of the same fp16 update misses on exactly the same 27 seeds, so it fails on any platform, depending on test order (it failed here only when run after `tests/test_kernels`).
+3. **ROCm compiler crash** (`rocm-10.2-llvm-isel-v4bf16-scalar-to-vector`, registered as a rocm-bug-report). With ROCm 10.2.0a20261022 (AMD clang 24.0.0git 2792f8ceeb5a), compiling `flash_decoding_attention_kernel_v1<__hip_bfloat16, uint8_t, 128, 32, 128>` aborts in instruction selection: `LLVM ERROR: Cannot select: v4bf16 = scalar_to_vector` (in the device LTO link, `ld.lld -plugin-opt=mcpu=gfx942 -plugin-opt=O3`). The trigger was an fp8-to-bf16 conversion written as `__float2bfloat16(__half2float(...))`; the port now builds the bf16 bits directly (exact for every E5M2 value), which avoids it. Reproduced again with the hipified tree and the exact hipcc command (recipe under "ROCm compiler crash" below); a 20-line kernel with the same conversion does not reproduce it, and the SDK has no `llc`/`llvm-reduce`, so there is no reduced reproducer yet. Should it be reduced and filed (ROCm/llvm-project), and by whom?
+
+### What changed on the fork (`moat-port`, base `main` = upstream `da3df39e`)
+
+The fork's `main` mirror was 34 commits behind upstream; `moatlib.py mirror-branch ColossalAI` fast-forwarded it to upstream `da3df39e66ed` (2026-11-23) and created `moat-port` from it. The CUDA surface did not change between the planned `14d1c151` and `da3df39e` (`git diff` of `extensions/`, `colossalai/kernel`, `colossalai/quantization`, `colossalai/accelerator`, `setup.py`, `requirements`, the kernel tests: empty).
+
+Commits (head `e2b767e85f8b`):
+
+1. `a2c1b5c8` `[ROCm] Build and run the C++/CUDA kernels with a ROCm PyTorch`: loader accepts ROCm torch, checks ROCM_HOME, skips nvcc probing; nvcc flags translated for hipcc (`to_hipcc_flags`: drop `--use_fast_math`, `-lineinfo`, `--expt-*`, `-maxrregcount`; rename CUDA to HIP in `-D`/`-U` like torch's AOT path, so `-DCOLOSSAL_WITH_HIP` in both AOT and JIT; headers accept either macro); no ROCm include dir in `include_dirs`; `.gitignore` for the hipified copies (`extensions/csrc/kernel/hip/`, `*_hip.h`, `*_hip.cpp`, `*.hip`). Kernels: `COLOSSAL_FULL_WARP_MASK` (`0xffffffffull << (__lane_id() & 32)` on ROCm, `0xffffffffu` on CUDA) in `reduce_function.h`, `attention_utils.h` (also width 32), l2norm; layernorm `WARP_SHFL(..., 32)`; softmax `SOFTMAX_WARP_SIZE` 32 on ROCm; software E5M2 conversions and PTX replacements in `cast_functor.h`; HIP-missing bf16 builders in `data_type.h`; `CastFunctor<at::BFloat16, float>` for HIP bf16 lanes; `namespace cub = hipcub` in `moe_kernel.cu`; `general_hipLaunchKernelGGL` forwarder in `rms_layernorm_kernel.cu`; host `rsqrt` templates excluded on ROCm; flash-decoding shared-memory check; fp32 flash-decoding test reference in float64 on ROCm.
+2. `c416f9e3` `[ROCm] Handle fp8 GEMMs, Triton warp limits and ROCm versions`: `scaled_mm_fp8_formats()` (probe, ROCm only; FNUZ on gfx942), `cast_to_fp8` accepts the FNUZ names, fp8 GEMM tests skip by the probe on ROCm; Triton RMSNorm `num_warps` capped at `1024 // warp_size`; `get_version` and `colossalai check -i` report HIP; ten test modules' `version.parse(torch.version.cuda)` gates accept ROCm.
+3. `de7ef000` `[ROCm] Enable the FlashAttention-2 backend on AMD GPUs` (Q2 ruling): fa2 on ROCm with the CUDA dtype/mask/head-dim rules plus an AMD GPU check (gfx90a, gfx942, gfx950 for the CK backend; also gfx11, gfx12 with `FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE`); fa3 keeps refusing ROCm; NVIDIA-emulating CPU tests pin `torch.version.hip = None`; new CPU tests for the ROCm policy.
+4. `df45dd5f` `Add GPU tests for the layernorm, softmax and MoE kernels` (`tests/test_kernels`, 155 tests).
+5. `180c8741` `[ROCm] Hipify the CPU Adam sources in the runtime build too` (`with_cuda=True` on ROCm in `build_jit`).
+6. `e2b767e8` `[ROCm] Document installing on AMD GPUs` (README, `docs/source/en/get_started/installation.md`).
+
+`python3 utils/jargon.py --port ColossalAI`: clean. No non-ASCII in added lines or commit messages; titles 38 to 61 characters.
+
+### Build recipe (linux-gfx942, job venv, no system ROCm)
+
+TheRock nightly index `https://nightly.repo.amd.com/rocm/whl-next/` (the old `rocm.nightlies.amd.com/v2` and `whl-multi-arch` indexes stop before 10.2):
+
+```
+D=10.2.0a20261022
+$FLEET_VENV/bin/python -m pip install --index-url https://nightly.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple \
+  "rocm[libraries,devel]==$D" "rocm-sdk-device-gfx942==$D" "torch==2.13.0+rocm$D" "amd-torch-device-gfx942==2.13.0+rocm$D" "torchvision==0.28.0+rocm$D"
+export ROCM_HOME=$($FLEET_VENV/bin/rocm-sdk path --root) ROCM_PATH=$ROCM_HOME HIP_PATH=$ROCM_HOME
+export PATH=$FLEET_VENV/bin:$ROCM_HOME/bin:/usr/local/bin:/usr/bin:/bin PYTORCH_ROCM_ARCH=gfx942
+# requirements without torch/torchvision/torchaudio/triton/flash_attn, constrained to the installed torch/triton/rocm pins
+$FLEET_VENV/bin/python -m pip install -c constraints.txt -r reqs.txt
+cd projects/ColossalAI/src && BUILD_EXT=1 PYTORCH_ROCM_ARCH=gfx942 MAX_JOBS=48 $FLEET_VENV/bin/python -m pip install --no-build-isolation --no-deps -v -e .
+```
+
+Versions: torch 2.13.0+rocm10.2.0a20261022, HIP 7.17.26422, triton 3.8.0+git66b3f9ff.rocm10.2.0a20261022, AMD clang 24.0.0git, Python 3.11.17, transformers 5.17.0, bitsandbytes 0.50.2 (lazy import; it loads its ROCm 7.15 binary). Full extension build: about 2 minutes at MAX_JOBS=48.
+
+flash-attn for ROCm, built from source in the job directory (CK backend, about 23 minutes):
+
+```
+git clone --depth 1 --branch v2.8.3.post2 https://github.com/Dao-AILab/flash-attention fa2 && cd fa2 && git submodule update --init --depth 1 csrc/composable_kernel
+BUILD_TARGET=rocm GPU_ARCHS=gfx942 MAX_JOBS=48 FLASH_ATTENTION_FORCE_BUILD=TRUE $FLEET_VENV/bin/python -m pip wheel --no-build-isolation --no-deps -v . -w wheels
+$FLEET_VENV/bin/python -m pip install --no-deps wheels/flash_attn-2.8.3.post2-cp311-cp311-linux_x86_64.whl
+```
+
+Host gotchas (this fleet image):
+
+- The job venv sees the base env's ROCm 10.1 `amdsmi` through `venv-base-links`; with the 10.2 wheels, `torch.cuda.device_count()` then returns 0 while kernels run (`torch._C._cuda_getDeviceCount()` is 1). Fix: a `.pth` in the venv putting `$ROCM_HOME/share/amd_smi` (the 10.2 copy) first.
+- `torch.utils.cpp_extension.ROCM_HOME` resolves from `hipcc` on PATH; with `/opt/python-3.11-venv/bin` first it picks the base env's 10.1 SDK. Put the venv's bin and `$ROCM_HOME/bin` first.
+- The GPU this job got (HIP_VISIBLE_DEVICES=2) is a 24 GiB partition (`total: 25767706624`), so the flash-decoding test's own memory guard skips 114 large cases a whole MI300X would run.
+- The fleet guard refuses any shell command whose text contains a pip-install phrase unless it names `$FLEET_VENV/bin/python` literally, including prose inside a heredoc; write such text with the editor tool.
+
+Runtime (JIT) path: a source checkout without `BUILD_EXT`, `HOME` pointed at a job-local directory; all seven extensions build at first use (see results).
+
+Documented install: `BUILD_EXT=1 PYTORCH_ROCM_ARCH=gfx942 pip install --no-build-isolation --no-deps .` from a fresh worktree at `df45dd5f` (non-editable; dependencies already present), then the kernel tests run from outside the tree against site-packages (`colossalai._C/*.so` from the wheel).
+
+### Results at `e2b767e8` (porter evidence, one MI300X partition, gfx942, wave64)
+
+All runs: `ulimit -c 0`, `timeout`, `HIP_VISIBLE_DEVICES=2`, pytest flags as upstream's batch script (`-v -s -ra --tb=short --durations=20`, `FAST_TEST=1`), file lists from `.github/scripts/ci/run_colossalai_batch.sh`.
+
+| batch | result | skips |
+|---|---|---|
+| 3 adam kernels | 62 passed | none |
+| 4b inference CUDA kernels | 60 passed, 108 skipped | 108: upstream skips `test_convert_fp8.py` unconditionally ("FP8 conversion still needs improvement") |
+| 4e flash decoding | 1326 passed, 258 skipped, 0 failed | 114 memory guard (24 GiB partition); 144 "requires vllm" (comparison against vLLM, not installed) |
+| 4c Triton kernels | 372 passed, 65 skipped | 64 "Alibi kernel does not support new kcache layout yet"; 1 unconditional `skip(reason="cuda error")` |
+| 4a fp8 | 22 passed | none |
+| new `tests/test_kernels` | 155 passed | none |
+| attention, `COLOSSALAI_TEST_ATTENTION_BACKEND=fa2 -k gpu` | 185 passed, 383 skipped | the 383 are the fa3/sdpa variants this strict mode deselects |
+| attention, `=sdpa -k gpu` | 198 passed, 370 skipped | fa2/fa3 variants deselected |
+| attention CPU, `-k 'not gpu'` (GPUs hidden) | 87 passed | none |
+| 2 single-GPU core | 23 passed, 2 skipped | upstream HF5 compatibility guards (`test_runtime_compatibility.py:46,100`) |
+| 4d smoothquant | 4 skipped | all four import modules upstream removed (`op_builder.smoothquant`, `inference.quant`, `int8_rotary_embedding_fwd`); they skip on CUDA too |
+| 1 CPU core (`CUDA_VISIBLE_DEVICES= HIP_VISIBLE_DEVICES=`) | 358 passed, 599 skipped | GPU-only cases (568 attention GPU cases, plugins needing a device); 875 s against upstream's 15-minute budget |
+| `python -B -m unittest discover .github/scripts/ci` | 84 OK | |
+| JIT path (no prebuilt kernels): `tests/test_kernels`, adam kernels, rms_layernorm, silu_and_mul, kv_cache_memcpy | 240 passed, 1 failed | the failure is `test_cpu_adam_kernel[fp16-fp16]`, the unseeded fragility above |
+| documented non-editable install, tests from outside the tree: `tests/test_kernels` + adam kernels | 186 passed, 1 failed | same CPU Adam fp16 case; it passes when run alone (32/32 twice) |
+
+Targeted checks (scripts kept in the job's scratch area, described here):
+
+- E5M2 conversions against `torch.float8_e5m2` with saturation: every half and bf16 bit pattern (65,536 each) and 16.7M floats (random, small, random bit patterns, edge values) encode bit-identically; all 256 codes decode identically to half, bf16 and float.
+- The new layernorm test catches the wave64 fault: with the `WARP_SHFL(..., 32)` change reverted, 42 of 45 cases fail; with it, 45 of 45 pass.
+- fp32 flash-decoding cases that missed `atol=1e-7` against the GPU fp32 reference: against a float64 CPU reference the kernel meets the test's tolerance on all three (0 violations), and so does the GPU fp32 reference; they miss only against each other (by up to 1.9e-8 beyond tolerance), because hipBLASLt's fp32 GEMM rounds differently from cuBLAS. `__expf` versus `expf` made no difference.
+- `scaled_mm_fp8_formats()` on gfx942 returns `('e4m3fnuz', 'e5m2fnuz')`; the compiled OCP fp8 casts (`torch.compile`, max-autotune) match eager bit for bit, so the `cuda_arch < 89` compile gate (94 on gfx942) is left as is.
+- Triton RMSNorm at N=16384: 32 warps fail on gfx942 with `OutOfResources ... threads, Required: 2048, Hardware limit: 1024`; the capped launch matches the reference.
+
+### CUDA no-regression compile
+
+Done on this host, which has no NVIDIA GPU, at `e2b767e8` in a scratch worktree. Toolkit: nvcc 12.9.86 assembled per cuda-to-rocm's validation.md (no conda): `cuda_nvcc`, `cuda_cudart`, `cuda_cccl`, `cuda_profiler_api` from NVIDIA's `redistrib_12.9.1.json` (sha256 checked), extracted with `--strip-components=1`, plus `lib64 -> lib` and the cuBLAS/cuSPARSE/cuSOLVER/cuRAND/cuFFT headers linked from the pip wheels. torch 2.13.0+cu129 and its NVIDIA libraries (`cuda-toolkit[...]==12.9.1`, cudnn, cusparselt, nccl, nvshmem) installed with the job venv's pip into a job-local `--target` directory put first on `PYTHONPATH`. Command:
+
+```
+CUDA_HOME=<toolkit> PATH=<toolkit>/bin:$PATH PYTHONPATH=<target> FORCE_CUDA=1 TORCH_CUDA_ARCH_LIST="7.5;8.0;9.0" BUILD_EXT=1 \
+  $FLEET_VENV/bin/python setup.py build_ext --inplace
+```
+
+Result: exit 0; all seven extensions compiled and linked (six carry an `.nv_fatbin` section; `cpu_adam_x86` is host code). The only warning in project code is upstream's missing return after `assert(false)` in the sm_75 branch of the bf16-to-fp8 functor (`cast_functor.h`, CUDA branch unchanged). Compile-checked with nvcc, not run.
+
+### Multi-GPU batch commands for the validators (prepared, not run)
+
+Not run in this job (one GPU).
+
+These mirror `.github/scripts/ci/run_colossalai_batch.sh` at the port head (same file lists, `PYTEST_EXTRA`, `FAST_TEST=1`, per-batch timeouts and pytest flags). Upstream's script itself cannot run on ROCm because batches 5, 8, 9, 9q, 10 and 11 demand `CUDA_HOME/bin/nvcc`, so call pytest directly. Each batch needs exactly the listed number of GPUs, all on one host and not shared with other jobs while it runs (RCCL collectives). Run from the fork checkout at `head_sha`, built as in "Build recipe" above (`BUILD_EXT=1`, job venv with the ROCm torch 2.13 wheel and the ROCm flash-attn build). On a wave32 host use that host's GPU indices and its `PYTORCH_ROCM_ARCH`; on RDNA the fa2 backend also needs `FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE` and a flash-attn built with it.
+
+```bash
+# from projects/ColossalAI/src, with the job venv's python first on PATH and the env of the 1-GPU runs
+ulimit -c 0
+export PYTHONPATH=$PWD FAST_TEST=1 PYTHONDONTWRITEBYTECODE=1 NCCL_DEBUG=WARN TORCH_NCCL_ASYNC_ERROR_HANDLING=1
+export TRITON_CACHE_DIR=<job dir>/cache/triton-dist TORCHINDUCTOR_CACHE_DIR=<job dir>/cache/inductor-dist
+R=<job dir>/results; mkdir -p $R
+run() {  # run <label> <timeout minutes> <comma-separated GPU indices> <pytest args...>
+  local label=$1 tmin=$2 gpus=$3; shift 3
+  HIP_VISIBLE_DEVICES=$gpus timeout --kill-after=60 $((tmin*60)) python -m pytest -v -s -ra --tb=short \
+    --maxfail=${MAXFAIL:-10} --durations=20 --junitxml=$R/$label.xml "$@" > $R/$label.log 2>&1
+  echo "$label exit=$?"; tail -1 $R/$label.log
+}
+
+# 2 GPUs
+run 05-booster-lora-2gpu 90 0,1 \
+  tests/test_benchmark \
+  tests/test_booster/test_plugin/test_dp_plugin_base.py \
+  tests/test_booster/test_plugin/test_torch_ddp_plugin.py \
+  tests/test_booster/test_plugin/test_torch_fsdp_plugin.py \
+  tests/test_booster/test_plugin/test_low_level_zero_plugin.py \
+  tests/test_booster/test_plugin/test_gemma4.py \
+  tests/test_booster/test_plugin/test_gemma4_moe.py \
+  tests/test_booster/test_plugin/test_gemma4_alignment.py \
+  tests/test_booster/test_mixed_precision/test_bf16.py \
+  tests/test_checkpoint_io/test_low_level_zero_master_resume.py \
+  tests/test_checkpoint_io/test_gemini_master_resume.py \
+  tests/test_zero/test_gemini/test_grad_accum_reduction.py \
+  tests/test_zero/test_gemini/test_tied_accumulation_resume.py \
+  tests/test_lora/test_lora.py \
+  tests/test_numerics
+# batch 11 needs apex; without `import apex.amp` working, record it as skipped (upstream treats pytest exit 5 as a skip)
+run 11-apex-gemini-2gpu 150 0,1 tests/test_zero/test_gemini/test_grad_accum.py tests/test_zero/test_gemini/test_grad_clip.py
+
+# 4 GPUs
+run 06-distributed-tensor-4gpu 60 0,1,2,3 \
+  tests/test_cluster/test_device_mesh_manager.py tests/test_cluster/test_process_group_mesh.py \
+  tests/test_device/test_alpha_beta.py tests/test_device/test_device_mesh.py tests/test_device/test_extract_alpha_beta.py \
+  tests/test_device/test_init_logical_pg.py tests/test_device/test_search_logical_device_mesh.py \
+  tests/test_tensor/test_comm_spec_apply.py tests/test_tensor/test_dtensor/test_comm_spec.py \
+  tests/test_tensor/test_dtensor/test_dtensor.py tests/test_tensor/test_dtensor/test_layout_converter.py \
+  tests/test_tensor/test_mix_gather.py tests/test_tensor/test_padded_tensor.py tests/test_tensor/test_shape_consistency_apply.py
+run 07-fp8-collectives-4gpu 45 0,1,2,3 \
+  tests/test_fp8/test_all_to_all_single.py tests/test_fp8/test_fp8_all_to_all.py tests/test_fp8/test_fp8_all_to_all_single.py \
+  tests/test_fp8/test_fp8_allgather.py tests/test_fp8/test_fp8_allreduce.py tests/test_fp8/test_fp8_fsdp_comm_hook.py \
+  tests/test_fp8/test_fp8_reduce_scatter.py
+# batch 7 supplement: the DDP hook file defines no test_ functions at this head, so upstream runs it as a script
+HIP_VISIBLE_DEVICES=0,1,2,3 timeout --kill-after=60 2700 python tests/test_fp8/test_fp8_ddp_comm_hook.py > $R/07-fp8-ddp-hook-4gpu.log 2>&1; echo "07-fp8-ddp-hook-4gpu exit=$?"
+run 08-distributed-training-4gpu 240 0,1,2,3 \
+  tests/test_booster tests/test_checkpoint_io tests/test_pipeline tests/test_optimizer tests/test_zero tests/test_moe \
+  -m "not largedist" \
+  --ignore=tests/test_booster/test_accelerator.py \
+  --ignore=tests/test_booster/test_mixed_precision/test_fp16_torch.py \
+  --ignore=tests/test_booster/test_plugin/test_dp_plugin_base.py \
+  --ignore=tests/test_booster/test_plugin/test_torch_ddp_plugin.py \
+  --ignore=tests/test_booster/test_plugin/test_torch_fsdp_plugin.py \
+  --ignore=tests/test_booster/test_plugin/test_low_level_zero_plugin.py \
+  --ignore=tests/test_booster/test_plugin/test_gemma4.py \
+  --ignore=tests/test_booster/test_plugin/test_gemma4_moe.py \
+  --ignore=tests/test_booster/test_plugin/test_gemma4_alignment.py \
+  --ignore=tests/test_booster/test_mixed_precision/test_bf16.py \
+  --ignore=tests/test_checkpoint_io/test_low_level_zero_master_resume.py \
+  --ignore=tests/test_checkpoint_io/test_gemini_master_resume.py \
+  --ignore=tests/test_zero/test_gemini/test_grad_accum_reduction.py \
+  --ignore=tests/test_zero/test_gemini/test_tied_accumulation_resume.py \
+  --ignore=tests/test_optimizer/test_lr_scheduler.py \
+  --ignore=tests/test_optimizer/test_adam_kernel.py \
+  --ignore=tests/test_optimizer/test_adam_optim.py \
+  --ignore=tests/test_pipeline/test_pipeline_utils/test_t5_pipeline_utils.py \
+  --ignore=tests/test_pipeline/test_pipeline_utils/test_whisper_pipeline_utils.py \
+  --ignore=tests/test_pipeline/test_schedule/test_pipeline_schedule_utils.py \
+  --ignore=tests/test_zero/test_gemini/test_grad_accum.py \
+  --ignore=tests/test_zero/test_gemini/test_grad_clip.py
+# batches 9 and 10 run offline; skip the DeepSeek remote-code files when no local Hub snapshot exists (as upstream does)
+export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+DS=()
+python -c 'from transformers import AutoConfig; AutoConfig.from_pretrained("deepseek-ai/deepseek-moe-16b-base", trust_remote_code=True, local_files_only=True)' >/dev/null 2>&1 \
+  || DS+=(--ignore=tests/test_shardformer/test_model/test_shard_deepseek.py)
+python -c 'from transformers import AutoConfig; AutoConfig.from_pretrained("deepseek-ai/DeepSeek-V3", trust_remote_code=True, local_files_only=True)' >/dev/null 2>&1 \
+  || DS+=(--ignore=tests/test_shardformer/test_model/test_shard_deepseek_v3.py)
+run 09-model-and-inference-4gpu 120 0,1,2,3 tests/test_infer tests/test_lazy tests/test_shardformer \
+  -m "not largedist" "${DS[@]}" \
+  --ignore=tests/test_infer/test_async_engine/test_request_tracer.py \
+  --ignore=tests/test_infer/test_batch_bucket.py \
+  --ignore=tests/test_infer/test_config_and_struct.py \
+  --ignore=tests/test_infer/test_kvcache_manager.py \
+  --ignore=tests/test_infer/test_request_handler.py \
+  --ignore=tests/test_infer/test_kernels/cuda \
+  --ignore=tests/test_infer/test_kernels/triton \
+  --ignore=tests/test_lazy/test_models.py \
+  --ignore=tests/test_lazy/test_ops.py \
+  --ignore=tests/test_shardformer/test_model/test_shard_chatglm2.py \
+  --ignore=tests/test_shardformer/test_model/test_shard_qwen2.py
+unset HF_HUB_OFFLINE TRANSFORMERS_OFFLINE
+run 09q-qwen2-4gpu 240 0,1,2,3 tests/test_shardformer/test_model/test_shard_qwen2.py -m "not largedist"
+
+# 8 GPUs (wave64 only, when a whole 8-GPU host is free)
+export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+run 10-largedist-8gpu 360 0,1,2,3,4,5,6,7 tests/test_infer tests/test_shardformer -m largedist "${DS[@]}"
+unset HF_HUB_OFFLINE TRANSFORMERS_OFFLINE
+```
+
+Record per batch: pass/fail/skip counts, each skip reason, and for a failure the first error. A batch whose fa2 cases skip because flash_attn is missing does not count as passing the fa2 path.
+
+### For the validators
+
+- Wave32: fa2 on RDNA needs flash-attn built with its Triton backend (`FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE` at build and run time); without it the fa2 acceptance must be recorded as not run, not passed. gfx11 has no fp8 GEMM, so the `scaled_mm` tests skip by the probe (recorded skip); gfx12 takes the OCP types. The fp8 collectives (batch 7) compile OCP fp8 casts with Triton (`cuda_arch` reads 110/120 on RDNA); if that fails to compile on gfx11, record the error.
+- Build with `PYTORCH_ROCM_ARCH` set to the host's GPU; the extensions need about 2 minutes, the CK flash-attn build about 23 minutes at MAX_JOBS=48.
+
+### ROCm compiler crash: reproduction recipe
+
+At `a2c1b5c8`, replace the ROCm branch of `CastFunctor<uint8_t, __nv_bfloat16>` in `extensions/csrc/funcs/cast_functor.h` with `return __float2bfloat16(detail::halfraw_to_float(detail::e5m2_to_halfraw(val)));`, run the `BUILD_EXT=1` build once (it hipifies the tree, then fails), and rerun the `hipcc ... flash_decoding_attention_kernel.hip` command from the build log: `LLVM ERROR: Cannot select: ... v4bf16 = scalar_to_vector`, `In function: _Z34flash_decoding_attention_kernel_v1I14__hip_bfloat16hLi128ELi32ELi128EEvPT_PKS1_PKT0_S7_PKiS9_PKfiifiiii`, stack through `SelectionDAGISel::CannotYetSelect` in `ld.lld` (libLLVM.so.24.0git). Compiling the same TU's `--offload-device-only -emit-llvm` bitcode with `clang -O3 -c` or `ld.lld -plugin-opt=O3` does not crash, so the trigger depends on the full offload pipeline.
+
+## Lesson for cuda-to-rocm: torch's runtime extension build hipifies only extensions with CUDA sources
+
+Belongs in strategy-b-torch.md. `torch.utils.cpp_extension.load()` decides `with_cuda` from the source list (any `.cu`/`.cuh`), and hipifies only when it is true, while an ahead-of-time `CUDAExtension` always hipifies. A `CUDAExtension` whose sources are all `.cpp` but include CUDA headers (a CPU optimizer including `cuda_fp16.h`, `cublas_v2.h`) therefore builds with `BUILD_EXT=1` and fails at runtime build with "cublas_v2.h: No such file or directory". Pass `with_cuda=True` to `load()` on ROCm only. Check the runtime build path with nothing prebuilt (a source checkout and a scratch `HOME`), not only the ahead-of-time one. (ColossalAI, torch 2.13)
+
+## Lesson for cuda-to-rocm: torch renames CUDA to HIP in -D flags only in the ahead-of-time build
+
+Belongs in strategy-b-torch.md. `BuildExtension._hipify_compile_flags` rewrites the first `CUDA` in every `nvcc` `-D`/`-U` flag (`-DMYLIB_WITH_CUDA` becomes `-DMYLIB_WITH_HIP`, `-U__CUDA_NO_HALF_OPERATORS__` becomes `-U__HIP_NO_HALF_OPERATORS__`), but `load()` passes `extra_cuda_cflags` through untouched. Headers guarded on the CUDA-named macro then compile empty in the ahead-of-time build (the module imports, the kernels are missing), and the runtime build keeps the half-operator undefines ineffective. Translate the flags yourself on ROCm the same way for both paths, and make the guards accept the HIP spelling. (ColossalAI, found by its planner)
+
+## Lesson for cuda-to-rocm: HIP's OCP fp8 conversions are unusable on gfx942; E5M2 is the top byte of a half
+
+Belongs in faults-numerics.md (fp8). `hip_fp8.h`'s `__hip_cvt_*` functions assert "type is unsupported by current target device" for `__HIP_E5M2`/`__HIP_E4M3` when compiled for gfx942, which supports only the FNUZ encodings, so a CUDA kv cache stored as OCP E5M2 cannot use them there. E5M2 is exactly the upper byte of an IEEE half: decode is `half_bits = byte << 8`; encode from half is round-to-nearest-even on the low byte (`(mag + 0x7f + ((mag >> 8) & 1)) >> 8`) with saturation to 0x7b and NaN to 0x7f; from float, rebias the exponent and round the mantissa to 2 bits, with a separate subnormal branch below 2^-14. Bit-identical to `torch.float8_e5m2` over every half and bf16 pattern. An E5M2 value is also exact in bf16 (the upper half of its float bits), which avoids a rounding conversion entirely. (ColossalAI, ROCm 10.2)
+
+## Lesson for cuda-to-rocm: torch._scaled_mm fp8 types differ by AMD GPU; probe once
+
+Belongs in libraries.md (hipBLASLt). `torch._scaled_mm` on MI300-series (gfx942) accepts only `float8_e4m3fnuz`/`float8_e5m2fnuz` and fails `HIPBLAS_STATUS_NOT_SUPPORTED` for the OCP types; gfx950 and gfx12 take OCP; gfx90a and gfx11 have none. Instead of an architecture list, try a 16x16 `_scaled_mm` with the OCP pair, then the FNUZ pair, once per device (cached, excluded from `torch.compile`), and cast to whatever works; a test of the fp8 GEMM should skip on "no pair works", not on the compute-capability number, which on ROCm is an AMD architecture number. Keep fp8 data exchanged between ranks in the OCP formats so it does not depend on the GPU. (ColossalAI)
+
+## Lesson for cuda-to-rocm: c10::BFloat16 has no conversion from __hip_bfloat16 in an extension
+
+Belongs in strategy-b-torch.md, next to "A torch API used by a ROCm-only branch is a version floor nobody sees". torch 2.13's `torch/headeronly/util/BFloat16.h` declares `BFloat16(const __hip_bfloat16&)` only under `TORCH_HIP_VERSION >= 702`, and no installed header or `cpp_extension` flag defines `TORCH_HIP_VERSION`, so in an extension the guard is always false. CUDA code that passes a `__nv_bfloat16` (hipified to `__hip_bfloat16`) where an `at::BFloat16` is expected compiles on CUDA and fails on ROCm with "no matching function for call". Add an overload or specialization taking the HIP type under `USE_ROCM`. (ColossalAI, torch 2.13)
+
+## Lesson for cuda-to-rocm: hipify breaks token pasting onto a kernel launch, and leaves CUB enumerators unrenamed
+
+Belongs in strategy-b-torch.md ("Headers and functions hipify leaves broken"). (1) A dispatch macro that pastes a prefix onto a launch expression (`general_##__VA_ARGS__` with `kernel<T><<<g, b, 0, s>>>(...)`, choosing `general_kernel`) breaks once hipify rewrites the launch into `hipLaunchKernelGGL((kernel<T>), ...)`: the paste produces `general_hipLaunchKernelGGL`. Define that name under `USE_ROCM` as a forwarder, `#define general_hipLaunchKernelGGL(K, ...) hipLaunchKernelGGL((PASTE K), __VA_ARGS__)` with `#define PASTE(...) general_##__VA_ARGS__`, keeping the parentheses so template commas survive. (2) hipify renames `cub::BlockLoad` to `hipcub::BlockLoad` but not `cub::BLOCK_LOAD_VECTORIZE`; `namespace cub = hipcub;` under `USE_ROCM` fixes all of them. (ColossalAI)
+
+## Lesson for cuda-to-rocm: Triton num_warps above 16 cannot launch on a 64-wide wavefront
+
+Belongs in faults-wavefront.md. Triton's `num_warps` counts wavefronts, so 32 warps on CDNA is 2048 threads; the launch fails with `OutOfResources: out of resource: threads, Required: 2048, Hardware limit: 1024`. Heuristics written for NVIDIA (`min(max(N // 256, 8), 32)`) hit it at large N; cap with `1024 // torch.cuda.get_device_properties(dev).warp_size`, which is unchanged on NVIDIA. Tests often never reach the large-N case, so check it directly. (ColossalAI)
+
+## Lesson for cuda-to-rocm: an LLVM instruction-selection abort on bf16 vector assembly (ROCm 10.2 nightly)
+
+Belongs in diagnosis.md (compiler crashes). `LLVM ERROR: Cannot select: v4bf16 = scalar_to_vector` during the device LTO link for gfx942 (AMD clang 24.0.0git, ROCm 10.2.0a20261022), triggered by bf16 values produced through `__float2bfloat16(__half2float(x))` and stored as bf16x2 pairs in a large kernel. Rewriting the conversion so it does not go through the rounding `__float2bfloat16` (here it was exact, so the bits could be built directly) avoided it. When a ROCm build aborts in ISel, look for the function name in the crash dump, change how that value is produced, and keep the TU and command for a report. (ColossalAI)
+
+## Lesson for moat-porting: a job venv with newer TheRock wheels needs its own amdsmi
+
+Belongs in the "Fleet hosts" section. Fleet job venvs reach the base env's `amdsmi` through `venv-base-links`. After installing newer TheRock wheels into `$FLEET_VENV` (10.2 over a 10.1 base), `torch.cuda.device_count()` returned 0 while kernels ran, because torch counts devices through the old `amdsmi`; tests that check the device count then skip or fail. A `.pth` in the venv's site-packages putting `$(rocm-sdk path --root)/share/amd_smi` first fixes it. Also put the venv's bin and the SDK's bin first on PATH, or `cpp_extension.ROCM_HOME` resolves to the base env's SDK. (ColossalAI)
