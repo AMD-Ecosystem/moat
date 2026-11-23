@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:23:54Z",
-  "updated_at": "2026-11-23T21:00:44Z",
+  "updated_at": "2026-11-23T21:00:53Z",
   "head_sha": "8ee59a5c5cc69491b65819577bcf4110d9891e41",
   "depends_on": [],
   "waivers": {
@@ -19,7 +19,7 @@
   },
   "license_spdx": "MPL-2.0",
   "upstream_repo_id": 782798953,
-  "stage": "ported",
+  "stage": "reviewing",
   "platforms": {
     "linux-gfx942": {
       "blocked": false,
@@ -28,7 +28,7 @@
       "failed_sha": null,
       "started_at": "2026-11-23T20:39:58Z",
       "completed_at": "2026-11-21T03:42:39Z",
-      "updated_at": "2026-11-23T21:00:44Z",
+      "updated_at": "2026-11-23T21:00:53Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -54,7 +54,7 @@
         "detail": "tree-identical squash of the validated head",
         "at": "2026-11-23T20:17:33Z"
       },
-      "last_agent": "porter"
+      "last_agent": "reviewer"
     },
     "linux-gfx90a": {
       "blocked": false,
@@ -144,5 +144,9 @@
     "at": "2026-11-23T21:00:44Z"
   },
   "reviewed_sha": "21bce04cbe4348290ca7300973cafbc1e6cf2a12",
-  "porting": null
+  "porting": {
+    "arch": "linux-gfx942",
+    "since": "2026-11-23T21:00:53Z",
+    "holder": "991049e3c35c"
+  }
 }
