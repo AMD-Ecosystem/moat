@@ -107,3 +107,5 @@
 {"kind":"phase","ts":"2026-11-23T21:53:30Z","phase":"test","seconds":2.065,"exit":1,"cmd":"projects/CV-CUDA/src/build-hip/bin/nvcv_test_cudatools_system"}
 {"kind":"phase","ts":"2026-11-23T22:03:51Z","phase":"test","seconds":621.624,"exit":1,"cmd":"projects/CV-CUDA/src/build-hip/bin/cvcuda_test_system"}
 {"kind":"session","ts":"2026-11-23T22:13:09Z","epoch":1795471989.761558,"event":"end","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-23T22:22:18Z","phase":"cuda-compile","seconds":199.527,"exit":0,"cmd":"bash -c cmake --build ../cvcc/up/build-cuda -j16 -- -k 0 > ../cvcc/up.build.log 2>&1"}
+{"kind":"phase","ts":"2026-11-23T22:25:40Z","phase":"cuda-compile","seconds":201.551,"exit":0,"cmd":"bash -c cmake --build ../cvcc/fork/build-cuda -j16 -- -k 0 > ../cvcc/fork.build.log 2>&1"}

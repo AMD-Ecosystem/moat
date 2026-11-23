@@ -1758,3 +1758,28 @@ I merged main (v0.19.0) into this branch to resolve the conflicts and carried th
 - The CUDA nvcc compile of this round is owed (no toolkit on the gfx90a host; installing one was refused there).
 - jargon.py --port flags an in-house term in the body of published commit b623dffa from June; fixing it would rewrite what the maintainer has read.
 - Do not merge before gfx1100 is re-tested; the reply above names only gfx90a.
+
+## CUDA compile check 2026-11-23 (nvcc 12.8, mi355 host) at `8da17190` vs upstream `3c06df7f` (v0.19.0)
+RESULT: **PASS, no regression from the port.** Both trees build completely with nvcc (exit 0, every target including the libraries, all 12 test executables and the two nested `nvcv_standalone` sub-builds), and neither build prints a compiler diagnostic. The two build logs are identical apart from absolute paths and configure timings. No GPU was used: compile and link only (the host has no NVIDIA GPU, and the AMD GPUs were in use by others).
+
+Toolchain: `/usr/local/cuda/bin/nvcc` 12.8.93 (the image's CUDA toolkit, which ships the static cuBLAS/cuSOLVER/cuSPARSE/cudart libs and `nvtx3/nvToolsExt.h` where CV-CUDA looks, so the 2026-06-18/2026-08-20 conda workarounds were not needed), host gcc 13.3.0, cmake 3.31, ninja. Nothing installed into shared paths. Job-local setup differed from earlier checks in two ways, both of which closed the previously recorded environmental gaps:
+- `git lfs pull upstream` in both checkouts materialized `src/nvcv/util/stubs/lib{dl,pthread,rt}-2.17_stub.so` as real ELF objects, so `libnvcv_types.so` now links (it failed in both earlier checks).
+- The image's GTest 1.14 has no gmock (`tests/CMakeLists.txt:37` wants `GTest::gmock`), so googletest v1.14.0 was built into the job directory and passed with `-DGTest_DIR`. The nested standalone sub-builds found the system GTest and configured, so the "Could NOT find GTest" failure from earlier checks did not recur.
+
+Trees: a fresh clone of the fork detached at `8da17190dd8d61aa83b0dc4136f10106fc5237f3` (moat-fix-293), and a worktree of the same clone at `3c06df7feb75510c3e4a80dfd6da30b8fbed0dd6` (upstream v0.19.0, the second parent of the merge `30096dfc`). Neither has modified tracked files. Each tree was configured and built the same way, one build after the other, at -j16:
+```
+cmake -S <tree> -B <tree>/build-cuda -G Ninja -DUSE_HIP=OFF -DCMAKE_CUDA_ARCHITECTURES=80 \
+  -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc -DCUDAToolkit_ROOT=/usr/local/cuda \
+  -DCMAKE_PREFIX_PATH=<job>/gtest -DGTest_DIR=<job>/gtest/lib/cmake/GTest \
+  -DBUILD_PYTHON=OFF -DBUILD_TESTS=ON -DBUILD_TESTS_CPP=ON -DBUILD_TESTS_PYTHON=OFF \
+  -DBUILD_TESTS_WHEELS=OFF -DBUILD_BENCH=OFF -DBUILD_DOCS=OFF -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ -DPUBLIC_API_COMPILERS=
+bash utils/timeit.sh CV-CUDA cuda-compile -- cmake --build <tree>/build-cuda -j16 -- -k 0   # upstream 200 s, port 202 s, both exit 0
+```
+Compared:
+- Build graph: `build.ninja` declares the same 396 object and library targets on both trees. This includes `OpOSD.cu.o`, `OpBndBox.cu.o`, `OpBoxBlur.cu.o`, `OsdRenderer.cu.o`, `textbackend/{backend,stb}.cpp.o` and their tests (`TestOpOSD`, `TestOpBndBox*`, `TestOpBoxBlur`), so the ROCm scope-out of OSD, bounding box and box blur does not reach the CUDA build.
+- Diagnostics: `grep -iE 'warning|error'` matches only the filenames `CheckError.cpp` / `TestCheckError.cpp` in each log. No compiler output on either tree under upstream's flags (`-Wall -Wmissing-declarations -Wpointer-arith -Wredundant-decls -Wsuggest-override -Wunused ...`). The logs, with build progress lines dropped and paths normalized, differ only in two `Configuring done (0.Ns)` timings.
+- Outputs: `libcvcuda.so.0.19.0` exports the same 217 dynamic symbols on both trees (6 of them OSD/BndBox/BoxBlur entry points), and the binaries are the same set of 12. `cuobjdump --list-elf` gives identical per-arch ELF counts (87 sm_80; upstream compiles some TUs for its own sm_50..sm_120 list, 18-20 each, the same on both).
+
+This covers the CUDA side of every port change in 358edc33..8da17190 (NVCV_SHFL_MASK and explicit shuffle width 32, the `#else` CUDA lines kept beside each HIP alternative, the test min/max rename, the CMake test changes). The "CUDA nvcc compile ... is owed" items in the porter, validator and "For jeff" sections above are now settled by this entry. The fix review PR draft's line "Not yet run at this tip: ... a CUDA compile with nvcc" can drop the CUDA half.
+No platform state changed; nothing pushed to the fork.
