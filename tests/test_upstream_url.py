@@ -34,6 +34,27 @@ class SetUpstreamUrl(unittest.TestCase):
                          (NEW, OLD, "someone", "moved"))
         self.assertEqual(len(saved), 1)
 
+    def test_pull_request_links_follow_the_repository(self):
+        obj = dict(record(), pr_url=OLD + "/pull/9",
+                   landed_via={"url": OLD + "/pull/12"},
+                   pr_history=[{"pr_url": OLD + "/pull/3"},
+                               {"pr_url": "https://github.com/else/proj/pull/1"}])
+        out, _ = self.run_it(obj, {"id": 42, "full_name": "new-org/proj"})
+        self.assertEqual(out["pr_url"], NEW + "/pull/9")
+        self.assertEqual(out["landed_via"]["url"], NEW + "/pull/12")
+        self.assertEqual([h["pr_url"] for h in out["pr_history"]],
+                         [NEW + "/pull/3", "https://github.com/else/proj/pull/1"])
+
+    def test_a_ruling_that_left_the_links_behind_is_finished(self):
+        obj = {"name": "proj", "upstream_url": NEW, "upstream_repo_id": 42,
+               "pr_url": OLD + "/pull/9",
+               "upstream_url_ruling": {"url": NEW, "previous": OLD, "by": "p"}}
+        out, saved = self.run_it(obj, None)
+        self.assertEqual(out["pr_url"], NEW + "/pull/9")
+        self.assertEqual(len(saved), 1)
+        with self.assertRaisesRegex(ValueError, "already"):
+            self.run_it(obj, None)
+
     def test_canonical_case_is_what_gets_written(self):
         out, _ = self.run_it(record(), {"id": 42, "full_name": "New-Org/Proj"})
         self.assertEqual(out["upstream_url"], "https://github.com/New-Org/Proj")

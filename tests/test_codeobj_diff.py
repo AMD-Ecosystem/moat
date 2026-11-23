@@ -1,6 +1,7 @@
 # Copyright Advanced Micro Devices, Inc.
 # SPDX-License-Identifier: MIT
 import os
+import pathlib
 import struct
 import tempfile
 import unittest
@@ -137,6 +138,22 @@ class Gather(unittest.TestCase):
                 with open(os.path.join(d, rel), "wb") as f:
                     f.write(b"\x7fELF" + b"\0" * 60)
             self.assertEqual(sorted(codeobj_diff._gather(d)), ["libfoo.so"])
+
+
+class WindowsBinaries(unittest.TestCase):
+    def test_pe_binaries_are_gathered_and_answered_indeterminate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for side in ("old", "new"):
+                d = pathlib.Path(tmp, side)
+                d.mkdir()
+                (d / "core.dll").write_bytes(b"MZ" + b"\0" * 62)
+            self.assertEqual(sorted(codeobj_diff._gather(str(pathlib.Path(tmp, "old")))),
+                             ["core.dll"])
+            with mock.patch.object(codeobj_diff, "_tool", lambda name: name):
+                verdict, details = codeobj_diff.compare(
+                    str(pathlib.Path(tmp, "old")), str(pathlib.Path(tmp, "new")))
+        self.assertEqual(verdict, "indeterminate")
+        self.assertIn("PE/COFF", details[0])
 
 
 class Tools(unittest.TestCase):

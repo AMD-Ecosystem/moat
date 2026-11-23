@@ -98,6 +98,59 @@ class SetPrLandedVia(unittest.TestCase):
         self.refused("elsewhere", writable=(False, "proj: lives elsewhere"))
 
 
+class LandedViaACommit(unittest.TestCase):
+    """The maintainer took the work in a commit of their own, with no pull request."""
+    SHA = "c" * 40
+    URL = "https://github.com/up/proj/commit/" + "c" * 40
+
+    def run_it(self, pr=None, commit="default", status="ahead", url=None, **kw):
+        obj = record()
+        if commit == "default":
+            commit = {"sha": self.SHA, "html_url": self.URL,
+                      "commit": {"committer": {"date": WHEN}}}
+
+        def gh(*a):
+            if a[0] == "pr":
+                return pr or {"state": "CLOSED", "mergedAt": None}
+            if "/compare/" in a[1]:
+                return {"status": status}
+            if "/commits/" in a[1]:
+                return commit
+            return {"default_branch": "master"}
+        kw.setdefault("content_differs", True)
+        with mock.patch.object(moatlib, "project_record", lambda n: (obj, "main")), \
+                mock.patch.object(moatlib, "_gh_json", gh), \
+                mock.patch.object(moatlib, "record_writable_here",
+                                  lambda n: (True, "here")), \
+                mock.patch.object(moatlib, "save_record", lambda n, ob, msg: None):
+            return moatlib.set_pr_landed_via("proj", url or self.URL, "someone", **kw)
+
+    def test_it_is_recorded_with_the_commit_and_its_date(self):
+        out = self.run_it(note="synced")
+        lv = out["landed_via"]
+        self.assertEqual((lv["url"], lv["commit"], lv["merged_at"], lv["carried"],
+                          lv["note"]),
+                         (self.URL, self.SHA, WHEN, "content-differs", "synced"))
+        self.assertNotIn("number", lv)
+        self.assertEqual((out["pr_state"], out["pr_merged_at"]), ("merged", WHEN))
+
+    def test_a_person_must_say_the_content_differs(self):
+        with self.assertRaisesRegex(ValueError, "--content-differs"):
+            self.run_it(content_differs=False)
+
+    def test_a_commit_off_the_default_branch_is_refused(self):
+        with self.assertRaisesRegex(ValueError, "not on up/proj's default branch"):
+            self.run_it(status="diverged")
+
+    def test_an_open_pr_another_repository_and_an_unreadable_commit_are_refused(self):
+        with self.assertRaisesRegex(ValueError, "not closed unmerged"):
+            self.run_it(pr={"state": "OPEN", "mergedAt": None})
+        with self.assertRaisesRegex(ValueError, "is not in up/proj"):
+            self.run_it(url="https://github.com/else/proj/commit/" + self.SHA)
+        with self.assertRaisesRegex(ValueError, "cannot read"):
+            self.run_it(commit=None)
+
+
 class MergeKeepsTheRuling(unittest.TestCase):
     def test_a_stale_closed_cannot_replace_it(self):
         base = {"schema_version": 3, "name": "proj", "pr_url": OURS, "pr_number": 10,
@@ -134,6 +187,12 @@ class SweepAndBoard(unittest.TestCase):
 
     def test_a_reopened_pr_is_drift_again(self):
         self.assertEqual(len(self.poll(self.row(landed_via=THEIRS), "OPEN")), 1)
+
+    def test_the_board_links_a_commit(self):
+        url = "https://github.com/up/proj/commit/" + "c" * 40
+        p = dict(record(), landed_via={"url": url, "commit": "c" * 40})
+        self.assertEqual(gen_readme.outcome_cell(p),
+                         f"\U0001F7E3 [#10]({OURS}) via [ccccccccc]({url})")
 
     def test_the_board_links_both(self):
         p = dict(record(), landed_via={"url": THEIRS, "number": 12})

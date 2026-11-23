@@ -36,14 +36,31 @@
       "id": "hip-rdna-occupancy-ignores-workgroup-lds-limit",
       "kind": "rocm-bug-report",
       "component": "clr (HIP runtime: hipOccupancyMaxActiveBlocksPerMultiprocessor, kernel launch validation)",
-      "summary": "ROCm 10.1.0 (rocm-sdk wheels), gfx1100 W7800: hipOccupancyMaxActiveBlocksPerMultiprocessor returns 1 for dynamic shared memory between the 64 KiB per-workgroup limit and the 128 KiB per-WGP LDS (MaxSharedMemoryPerMultiprocessor=131072), where CUDA returns 0 for a block that cannot launch. Separately, the launch check compares dynamic shared memory alone against 65536: a kernel with 8 B static LDS launched with 65536 B dynamic is accepted (hipGetLastError success) and the queue then aborts with HSA_STATUS_ERROR_INVALID_ALLOCATION, killing the process, instead of failing with hipErrorInvalidValue as 65544 B does. hipFuncSetAttribute(MaxDynamicSharedMemorySize, 64504) succeeds and is not enforced. 20-line reproducer recipe in projects/oneflow/notes.md (Validation 2026-10-30, fd94e199a). Port-side workaround: check smem + static <= MaxSharedMemoryPerBlock before choosing a shared-memory kernel.",
+      "summary": "gfx1100 (W7800), WGP mode: hipOccupancyMaxActiveBlocksPerMultiprocessor returns 1 for a block whose static plus dynamic LDS is between the 64 KiB per-workgroup limit and the 128 KiB per-WGP LDS (MaxSharedMemoryPerMultiprocessor=131072), where the block cannot launch and CUDA returns 0. Present on ROCm 10.1.0 and on the 10.2.0a20261022 and 10.3.0a20261118 nightlies; reported as ROCm/rocm-systems issue 16142 (related: 12330, the gfx1201 mirror image). The second half of the original finding is fixed in the 10.2 and 10.3 runtimes and was not reported: on 10.1 the launch check compared dynamic LDS alone against 65536, so 65536 B dynamic plus 8 B static was accepted and the queue aborted with HSA_STATUS_ERROR_INVALID_ALLOCATION, and hipFuncSetAttribute(MaxDynamicSharedMemorySize) was not enforced. Port-side workaround (kept): check smem + static <= MaxSharedMemoryPerBlock before choosing a shared-memory kernel. Reproducer and measurements: claude-shared plan hip-occupancy-and-hipblaslt-f64-reproducers-rx7900.",
       "refs": [
         "projects/oneflow/notes.md"
       ],
-      "status": "open",
-      "upstream_issue": null,
+      "status": "filed",
+      "upstream_issue": "https://github.com/ROCm/rocm-systems/issues/16142",
       "created_at": "2026-10-30T05:24:14Z",
-      "decided": null
+      "summary_history": [
+        {
+          "summary": "ROCm 10.1.0 (rocm-sdk wheels), gfx1100 W7800: hipOccupancyMaxActiveBlocksPerMultiprocessor returns 1 for dynamic shared memory between the 64 KiB per-workgroup limit and the 128 KiB per-WGP LDS (MaxSharedMemoryPerMultiprocessor=131072), where CUDA returns 0 for a block that cannot launch. Separately, the launch check compares dynamic shared memory alone against 65536: a kernel with 8 B static LDS launched with 65536 B dynamic is accepted (hipGetLastError success) and the queue then aborts with HSA_STATUS_ERROR_INVALID_ALLOCATION, killing the process, instead of failing with hipErrorInvalidValue as 65544 B does. hipFuncSetAttribute(MaxDynamicSharedMemorySize, 64504) succeeds and is not enforced. 20-line reproducer recipe in projects/oneflow/notes.md (Validation 2026-10-30, fd94e199a). Port-side workaround: check smem + static <= MaxSharedMemoryPerBlock before choosing a shared-memory kernel.",
+          "by": "jeffdaily",
+          "at": "2026-11-18T19:51:25Z",
+          "reason": "retested on three ROCm versions 2026-11-18: the launch-check half is fixed in 10.2 and 10.3; only the occupancy half was reported",
+          "ruling_cleared": {
+            "choice": "now",
+            "by": "jeffdaily",
+            "at": "2026-11-18T18:49:14Z"
+          }
+        }
+      ],
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-11-18T19:51:26Z"
+      }
     },
     {
       "id": "oneflow-upstream-channels-last-native-pooling",
@@ -96,12 +113,17 @@
       "component": "hipBLASLt",
       "summary": "ROCm 10.1.0 SDK, gfx1100 (W7800): hipblasLtMatmul with algo == nullptr returns HIPBLAS_STATUS_INTERNAL_ERROR (6) for every f64 GEMM (COMPUTE_64F, R_64F; 4 shapes from 32x8x16 to 1024^3, TN), while hipblasLtMatmulAlgoGetHeuristic on the same descriptor returns an algo that computes the right result. f32 with a null algo works. Reproducer: agent_space/probe/lt64mm.cpp in the 2026-10-31 gfx1100 validation (notes.md). oneflow's cuBLASLt shim needs a workaround (query the heuristic when algo is null) regardless.",
       "refs": [
-        "projects/oneflow/notes.md#validation-2026-10-31-linux-gfx1100"
+        "projects/oneflow/notes.md#validation-2026-10-31-linux-gfx1100",
+        "fix PR https://github.com/ROCm/rocm-libraries/pull/15807 open; still present on gfx1100 with ROCm 10.1.0, 10.2.0a20261022 and 10.3.0a20261118 (fleet job 2026-11-18)"
       ],
-      "status": "open",
-      "upstream_issue": null,
+      "status": "filed",
+      "upstream_issue": "https://github.com/ROCm/rocm-libraries/issues/14824",
       "created_at": "2026-10-31T17:30:43Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-11-18T18:52:21Z"
+      }
     },
     {
       "id": "rocblas-gemm-ex-longk-16bit-chunk-rounding",
@@ -179,7 +201,11 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-11-02T07:36:55Z",
-      "decided": null
+      "decided": {
+        "choice": "defer",
+        "by": "jeffdaily",
+        "at": "2026-11-18T19:07:30Z"
+      }
     },
     {
       "id": "hip-graphexecupdate-memory-nodes-stale",
@@ -214,9 +240,10 @@
       "component": null,
       "summary": "At the PR-prep squash, correct the de15305bb ([ROCm] Do not link libunwind in the ROCm build) body: it says glog and the backtrace code both fall back to _Unwind_Backtrace from <unwind.h>. With Unwind disabled, glog 0.5.0 leaves HAVE_UNWIND_H undefined and uses glibc backtrace() from <execinfo.h> (stacktrace_generic-inl.h); only backward-cpp (oneflow/extension/stack/stacktrace.h) uses _Unwind_Backtrace. The code comment was fixed in 8d470dcc1; the pushed body is not rewritten (no amend, no force-push).",
       "refs": [
-        "projects/oneflow/notes.md"
+        "projects/oneflow/notes.md",
+        "corrected at the PR-prep squash: the published commit 14801d8a8 in Oneflow-Inc/oneflow#10697 says glog uses glibc backtrace() and only the backtrace code uses _Unwind_Backtrace"
       ],
-      "status": "open",
+      "status": "done",
       "upstream_issue": null,
       "created_at": "2026-11-09T17:44:13Z",
       "decided": null

@@ -158,12 +158,19 @@ class Deferred(unittest.TestCase):
         self.assertIn("summary amended 2x, last by b: wrong option set",
                       self.run_cli("list")[0])
 
-    def test_amend_global_leaves_a_ruling_and_says_so(self):
+    def test_amend_clears_a_ruling_and_says_so(self):
         self.run_cli("decide", "g1", "--choice", "defer", "--by", "someone")
         _, err = self.run_cli("amend", "g1", "--summary", "global one, corrected",
                               "--by", "a", "--reason", "premise was wrong")
         self.assertIn("ruled `defer` by someone", err)
-        self.assertEqual(self.item("g1")["decided"]["choice"], "defer")
+        self.assertIn("is cleared", err)
+        it = self.item("g1")
+        self.assertNotIn("decided", it)
+        cleared = it["summary_history"][0]["ruling_cleared"]
+        self.assertEqual((cleared["choice"], cleared["by"]), ("defer", "someone"))
+        self.assertIn("g1", self.run_cli("pending")[0])
+        self.run_cli("decide", "g1", "--choice", "now", "--by", "someone")
+        self.assertEqual(self.item("g1")["decided"]["choice"], "now")
         self.assertEqual(self.item("g1")["summary_history"][0]["summary"], "global one")
 
     def test_amend_requires_by_reason_and_a_change(self):
