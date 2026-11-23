@@ -2173,7 +2173,7 @@ Clean auto-merges that were wrong and were reverted to upstream in the merge (th
 - `src/force/nep_spin/nep_spin.cu`: git kept `gpuLaneMask(atom_mask)` / `gpuLaneMask(center_mask)` around upstream's new `tile_mask()` values. Those are already 64-bit and in physical lane coordinates, so on lanes 32-63 of a wave64 the macro would shift them by 32 again (to 0 or the wrong half) and trap in `__hip_check_mask`. Took upstream's lines.
 - `src/utilities/nep_utilities.cuh`: upstream added the same `#include "gpu_macro.cuh"`; git kept both. Took upstream.
 - `src/utilities/gpu_macro.cuh`: `gpuLaneMask` had no callers left; removed (upstream's file).
-- `src/integrate/replica/replica_prd.cu`: our `CHECK(gpuDeviceSynchronize())` in `PRD_Driver::initialize_slot` (26547d27). Upstream 00d206ad's `gpuStreamSynchronize(nullptr)` in `Replica_Runtime::initialize` runs after every slot's `initialize_slot` (PRD and REMD, the only callers) and before `compute_force`, so it orders the `force_per_atom.resize(N*3, 0)` fill (default stream, `model/read_xyz.cu:681`) before the first force on the slot stream. Nothing between our sync and theirs touches `force_per_atom` on the slot stream (`initialize_slot` only uploads velocities and builds `PRD_Slot_Data`). Took upstream.
+- `src/integrate/replica/replica_prd.cu`: our `CHECK(gpuDeviceSynchronize())` in `PRD_Driver::initialize_slot` (26547d27). Upstream 00d206ad's `gpuStreamSynchronize(nullptr)` in `Replica_Runtime::initialize` runs after every slot's `initialize_slot` (PRD and REMD, the only callers) and before `compute_force`, so it orders the `force_per_atom.resize(N*3, 0)` fill (default stream, `model/read_xyz.cu:677`) before the first force on the slot stream. Nothing between our sync and theirs touches `force_per_atom` on the slot stream (`initialize_slot` only uploads velocities and builds `PRD_Slot_Data`). Took upstream.
 - `tests_regression/README.md`, `gpumd/CONTRACT_SUITES.md`: case counts back to upstream's 255.
 
 ### HIP build of the merge = upstream's own tip (it fails)
@@ -2273,3 +2273,20 @@ Retested on an AMD Instinct MI300X (gfx942), against the last run on this GPU at
 - Seed test 10 of 10; new TB suite 32 of 32.
 
 Still owed before approval: the CUDA compile comparison on a host with nvcc, the MI250X (gfx90a) batched-versus-per-slot replica check now that `-ffp-contract=on` is gone, and test runs on the RDNA GPUs and on Windows (upstream's `makefile.hip` changed the Windows build procedure).
+
+## Review 2026-11-23 (linux-gfx942, reviewer) -- sync round 3, d3658389..0bb29e76, REVIEW PASSED
+
+Same job as the porter round (jeff's dispatch: porter, then reviewer, then validator on this host). `set-state GPUMD linux-gfx942 reviewing --agent reviewer` took the lock. pr-review skill, local-branch mode, scope `d3658389...0bb29e76` split into upstream's range (d6cd2e36..91287ce2), the merge 88322460 and our commits ea3fa7fa, 0bb29e76. Two independent read-only child reviewers (one on the merge resolution and our commits, one on upstream's new device and stream code for the `cuda-to-rocm` fault classes), each finding re-checked by me against the code.
+
+Verified:
+- `88322460^{tree}` = `91287ce2^{tree}` (f5aabe94); `git diff 91287ce2 0bb29e76` = 3 added lines in `src/utilities/nep_spin/spin_wall.cuh`, under `#ifdef __HIPCC__`, so nvcc and the host compiler (the `c++ -std=c++14 -pedantic-errors` builds in `test_spin_model_format.py`/`test_spin_capacity.py`) see upstream's header.
+- Every dropped port hunk is covered upstream: ILP_NEP (`ilp_nep.cuh:220` float, `ilp_nep.cu:217` `std::max`); lane masks (every masked `*_sync`/`__syncwarp` outside `main_gnep/` takes `tile_mask()` or `warp_ballot()`; early returns before them are tile-uniform; launch blocks are 64 or 128 threads; the one wave-wide-ballot-plus-per-tile-loop combination, `Quadratic && FuseChannels`, is never instantiated in the MD build (`force/nep_spin/nep_spin.cu:1346-1349`) and training uses `FuseChannels=false`); PRD ordering (the only pending default-stream write, the `force_per_atom` fill at `model/read_xyz.cu:677`, is fenced by `replica_common.cu:716` before `compute_force`, for PRD and REMD; slot streams are non-blocking, `utilities/gpu_stream.cuh:155`).
+- `-ffp-contract=on` reasoning holds: per-slot and batched NEP are both in `force/replica/replica_nep.cu` (:109 / :173), but per-slot integration uses the ordinary `integrate/ensemble.cu` `gpu_velocity_verlet` while batched uses `integrate/replica/replica_batch.cu`, so a replica-directory-only flag would not reproduce the old target-wide setting. Deferring to a gfx90a `batched_matches_per_slot` run is the right call.
+- Upstream's new code: no wavefront-width, stream-lifetime, numerics or out-of-bounds problem found (replica async copies are each followed by a stream sync before reuse; new `atomicMax` on device memory; no `__ldg`/fast-math intrinsics).
+- Commits: titles 54/62 chars, `[ROCm]` correct (HIP-only), bodies with rationale, "Authored with Claude.", fenced Test Plans, no trailer, `jargon.py --port GPUMD` clean. The merge message matches what the merge did.
+
+No problems requiring changes. Two things for the next stages, not findings against this delta:
+- Wave32 note for the gfx1100/gfx1151 revalidations: `nep_spin::warp_ballot` (`spin_warp.cuh:47`, upstream's code) passes `~0ULL` and relies on the HIP header's `__hip_adjust_mask_for_wave32` inside `__ballot_sync` (present in this host's SDK, `amd_warp_sync_functions.h`); a HIP header without it would trap there on wave32 since the build has no `-DNDEBUG`. The NEP-spin tests on those platforms show it either way.
+- ea3fa7fa's Test Plan names the spin pytest, which fails at that commit (that is why 0bb29e76 exists; its body says so). Not amendable under the house rule; the next commit records it.
+
+Verdict: **review-passed** at 0bb29e76.
