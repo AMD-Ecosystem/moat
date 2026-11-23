@@ -85,3 +85,11 @@ The plan in `plan.md` assumes the recommended option for each question. A differ
 ### Next
 
 After Jeff rules on Q1-Q5, a porter starts from `plan.md`. If the rulings differ from the recommendations, update the Q-dependent rows in `plan.md` (the test plan table, the `kernel_loader.py` line, `surface.json` for FA3 and Docker) in the first porting round.
+
+## Rulings on the planner's questions (Jeff Daily, 2026-11-23)
+
+- Q1 (windows gate): **waived**; recorded with `approve-waiver ColossalAI windows --by "Jeff Daily"`.
+- Q2 (attention backends): fa2 **a** (enable fa2 on ROCm in this port when the ROCm build of `flash_attn` is installed, with a ROCm capability check); fa3 **a** (recorded `scoped_out` as NVIDIA-architecture-specific).
+- Q3 (multi-GPU validation breadth): **b**. Both wavefront widths run the full 4-GPU set (1-, 2- and 4-GPU batches on wave64 and on wave32; the 8-GPU batch on wave64 when a whole host is free). The wave32 run needs four working RDNA GPUs on one host, exclusively; the Radeon fleet host's fourth GPU had its driver reset on 2026-11-23 for this.
+- Q4 (internal AMD effort): Jeff is not aware of any. The port proceeds without coordination.
+- Q5 (ROCm Docker image): **a**, none in this port; the docs give the ROCm install steps.
