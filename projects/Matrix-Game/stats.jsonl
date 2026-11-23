@@ -17,3 +17,4 @@
 {"kind":"phase","ts":"2026-11-23T23:22:22Z","phase":"test","seconds":350.277,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi355-20261123-144930-port-matrix-game-b-prompt/scripts/queue3.sh"}
 {"kind":"phase","ts":"2026-11-23T23:27:45Z","phase":"test","seconds":303.598,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi355-20261123-144930-port-matrix-game-b-prompt/scripts/queue4.sh"}
 {"kind":"session","ts":"2026-11-23T23:32:35Z","epoch":1795476755.986783,"event":"end","platform":"linux-gfx950"}
+{"kind":"session","ts":"2026-11-23T23:37:36Z","epoch":1795477056.664876,"event":"start","platform":"linux-gfx950"}
