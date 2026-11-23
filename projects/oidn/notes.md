@@ -324,3 +324,64 @@ cmake --build ../oidn-build-head -j 25 -v
 - Device code: the 15 cubins extracted with `cuobjdump -xelf all` from the 4 objects. `cuda_conv` and `cuda_engine` cubins are byte-identical (md5) for all five SMs. The two CUTLASS objects' cubins differ in bytes only through nvcc's per-invocation internal-linkage names (`_INTERNAL_<hash>_..._cu_<random>_<pid>`): recompiling the master object a second time with the identical command also changes the md5. With those names normalised, symbol tables (name, value, size) and section sizes are identical at head and master for all 15 cubins. (`nvdisasm` is not in this toolkit install, so no SASS diff.)
 
 **Verdict: no CUDA regression at 06bdc4c.** The CUDA backend configures, compiles and links the same way as at master, with the same flags, no new warnings and equivalent device code. The port's diff reaches CUDA builds only as one unused cache option.
+
+## Validation 2026-11-23 (linux-gfx1100, AMD Radeon Pro W7800 48GB, fork moat-port 06bdc4c): FAILED, pre-existing upstream
+
+Wave32 gate, RDNA3 WMMA convolution path. One GPU, `HIP_VISIBLE_DEVICES=1` (dispatcher pin). All GPU runs under `ulimit -c 0` and `timeout`. Host note: GPU 1 showed 100% GFX activity, ~116 W and 95-97 C junction from before this job's first GPU command until the end, with 0 GB VRAM and no process visible from this container (another container's tenant, presumably). Correctness should not depend on that, but it is recorded because the failure below is nondeterministic.
+
+### Toolchain (job directory only)
+- ROCm 10.2.0 TheRock SDK and ROCm PyTorch pip-installed into the job venv: `$FLEET_VENV/bin/python -m pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple "rocm[libraries,devel,device-gfx1100]==10.2.0" "torch[device-gfx1100]==2.15.0+rocm10.2.0" OpenImageIO`. `rocm-sdk version` 10.2.0, `hipconfig --version` 7.17.26434. `ROCM_PATH=$(rocm-sdk path --root)`, `PATH` += `$ROCM_PATH/bin:$ROCM_PATH/lib/llvm/bin`, `LD_LIBRARY_PATH` += `$ROCM_PATH/lib`. No system ROCm.
+- ISPC v1.32.0 Linux release tarball under the job directory; oneTBB 2021.11 from the image.
+- Fork clone at 06bdc4c, `protect-fork` installed; weights per the Q4 ruling (`git config submodule.weights.url https://github.com/RenderKit/oidn-weights.git`, `GIT_LFS_SKIP_SMUDGE=1 git submodule update --init --recursive external/composable_kernel weights`, then in `weights/` `git lfs install --local --skip-repo && git lfs pull`; rt_alb.tza 1830792 bytes). `.gitmodules` untouched.
+
+### Build (default target list, all targets)
+```
+cmake -G Ninja -S src -B src/build -DCMAKE_BUILD_TYPE=Release -DOIDN_DEVICE_HIP=ON -DOIDN_DEVICE_CPU=ON \
+      -DROCM_PATH=$ROCM_PATH -DHIP_CLANG_NUM_PARALLEL_JOBS=4 -DISPC_EXECUTABLE=<ispc>
+cmake --build src/build -j 10
+```
+153 s, 132 steps, 0 warnings. Code objects: `ck_conv_mfma.cpp.o` = gfx90a, gfx942, gfx950 only; `ck_conv_wmma.cpp.o` and `ck_conv_dl.cpp.o` = the 19 RDNA/APU targets, no CDNA; `hip_engine.cpp.o` = all 22. The gfx1100 WMMA code object: 192x `v_wmma_f32_16x16x16_f16`, 8 kernels, LDS 12384/18528 bytes, private segment 0, VGPR/SGPR spills 0, VGPRs 117-171.
+
+### Results
+- `oidnDenoise --ld`: Device 0 "AMD Radeon Pro W7800 48GB", Type HIP (`getArch` -> WMMA).
+- `timeout 1800 oidnTest --device hip`: **FAILED, 6 of 20 test cases, 21 of 2475 assertions**. All failures are the output sanity check `isBetween(output, 0.1f, 1.0f)` or `compareImage(...)`: oidnTest.cpp:750 (single filter: 3 frames), :879 x2, :905 x4 (multiple filters), :974 (multiple devices), :1008/:1018 (lazy/eager release), :1126/:1144 (inplace filter: same buffer, aliased shared buffers), :1239 x9 (filter update). The first execute in "single filter" (:741) passes; repeated executes fail.
+- `timeout 3600 oidnTest --device cpu`: **All tests passed (1820 assertions in 20 test cases)**.
+- CPU-reference image differential (same 19 option sets x 3 sizes as the gfx90a/gfx950 runs, fresh numpy PFM inputs at 1920x1080, 1023x577, 257x129, seeds 1234-1236): **57/57 FAIL, every value of every image wrong** (errors == values), avgerror 0.013 to 0.47 (RT hdr+alb+nrm balanced 1920x1080: 0.059).
+- Nondeterministic: three runs of `oidnDenoise -d hip --hdr hdr_257x129.pfm` on identical input give three different images (md5 differ, max abs difference between two runs 6.17, avgerror vs CPU 0.066 / 0.008 / 0.056; output mean 1.52/1.51/1.48 vs CPU 1.43). `AMD_SERIALIZE_KERNEL=3 AMD_SERIALIZE_COPY=3` does not fix it (avgerror 0.063/0.062/0.061), so it is not a cross-kernel or copy ordering race; it is inside a kernel or deterministic-plus-intra-kernel race. `--buffer device` is the same. LDR inputs (no autoexposure) fail too.
+- WMMA path really runs: `rocprofv3 --kernel-trace --stats` on one 1023x577 RT hdr+alb+nrm run shows 20 `ck::kernel_grouped_conv_multiple_d_wmma_cshuffle` dispatches (9 + 7 + 3 + 1 across four instantiations) plus the OIDN input/output/pool/upsample/autoexposure kernels and 18 copyBuffer. No DL or XDL kernel dispatches.
+- The GPU itself computes correctly through other WMMA users: with ROCm PyTorch on the same pin, a 4096^2 fp16 matmul (hipBLASLt) has max relative error 3.5e-4 vs CPU and 20 runs are bit-identical; a 64->64 3x3 fp16 conv on 1x64x577x1023 (MIOpen) has max relative error 1.5e-3 and 20 runs are bit-identical.
+
+### Bisection: not caused by the port
+Same toolchain (ROCm 10.2.0), same GPU, same default target list, separate worktrees of the fork clone:
+- upstream `master` 6602ee2: `oidnTest --device hip` **6 of 20 test cases, 21 of 2242 assertions failed** (same test cases); differential 1023x577 errors=1770813/1770813, avgerror 0.058.
+- PR 302 head 75bc1d9: **6 of 20 test cases, 21 of 2463 assertions failed**; differential 257x129 errors=99459/99459, avgerror 0.060.
+- port 06bdc4c: as above.
+- upstream `master` 6602ee2 built with an older TheRock ROCm, 7.11.0 (`rocm-sdk-devel`/`rocm-sdk-core` 7.11.0 from `https://repo.amd.com/rocm/whl/gfx110X-all/`, `pip install --no-deps --target <jobdir>/deps/rocm711`, `_devel.tar` extracted by hand, AMD clang 22.0.0git, run against its own 7.11 `libamdhip64.so.7`; `HIP_PLATFORM=amd` is needed or `hip-config.cmake` stops with "Unexpected HIP_PLATFORM"): still wrong, 257x129 avgerror 0.034, 1023x577 avgerror 0.050, every value.
+So the wrong output is in upstream's own RDNA3 WMMA path (or the shared kernels on wave32) as built by both current TheRock compilers, before PR 302 and our commit. Our commit and PR 302 add nothing that the gfx1100 build executes differently (the WMMA TU's flags only gained `--no-offload-arch` for CDNA targets).
+
+### Not decided here: toolchain vs upstream code vs this host
+Upstream validates with ROCm 6.4.2+ (README) and ships prebuilt Linux binaries built with the HIP device. Running the v2.5.1 release binaries (`oidn-2.5.1.x86_64.linux.tar.gz`, extracted under the job directory) on this GPU is the decisive check: if they pass, the fault is a compiler change between upstream's toolchain and ROCm 7.11/10.2 against the CK pin 3e6d21ad (a toolchain bug report plus a block); if they fail too, it is upstream code or this GPU. This session's permission classifier refused running downloaded prebuilt binaries, so it was not done. Also worth running on a second gfx1100/gfx1101 card (this job was confined to GPU 1, which ran hot and busy throughout).
+
+### Training smoke run (Q5 ruling) on gfx1100: passes
+ROCm PyTorch 2.15.0+rocm10.2.0, OpenImageIO 3.2.2.0, tensorboard 2.13.0. Synthetic dataset written with OpenImageIO: 24 train and 8 valid scenes, 384x384, `<scene>_0004spp`/`_0016spp`/`_ref` x `.hdr`/`.alb`/`.nrm` `.exr` (half), procedural albedo/normals/lighting with gamma-distributed per-spp noise (48 training, 16 validation images, so validation runs). cwd a scratch directory; `PYTHONPATH=$ROCM_PATH/share/amd_smi` only on the torch processes (`torch.cuda.device_count()` 1, `gfx1100`).
+```
+python training/preprocess.py hdr alb nrm --filter RT -D data -P preproc -t train -v valid
+python training/train.py hdr alb nrm --filter RT -P preproc -t train -v valid -R results -r smoke --seed 1 --epochs 20 --valid_epochs 5 --save_epochs 10
+python training/train.py ... -r cpu_fp32 -d cpu -p fp32 --seed 1 ...      # CPU reference, OMP_NUM_THREADS=16
+python training/infer.py -D data -R results -r smoke -i valid -O infer_gpu --metric psnr ssim
+python training/infer.py -D data -R results -r smoke -i valid -O infer_cpu --metric psnr ssim -d cpu
+python training/export.py -R results -r smoke -o smoke.tza
+oidnDenoise -d cpu --hdr .. --alb .. --nrm .. -w smoke.tza -o ref.pfm; oidnDenoise -d hip ... -w smoke.tza -r ref.pfm
+```
+- Every training step exits 0. GPU run with the defaults (cuda, mixed precision, `torch.compile` reduce-overhead): 38m48s total; epoch 1 took 35m49s (Inductor/Triton compile and MIOpen first-use tuning on a loaded host, load average ~50), later epochs 3-7 s (6-14 images/s). Training loss 0.529486 -> 0.446761, validation loss at epochs 5/10/15/20 0.504455/0.475821/0.459313/0.456841.
+- Seeded CPU fp32 reference, same data, `--seed 1`: epoch 1/2/3 loss 0.529474/0.510556/0.510113 vs GPU 0.529486/0.510546/0.510114 (within 1.2e-5). Stopped after 3 epochs (about 5 min per epoch on this host; the full 20 would have taken 1.5 h more).
+- Inference on the 16 validation images with the GPU-trained checkpoint: GPU psnr_avg 3.7943, ssim_avg 0.3099; CPU identical to four decimals. Per-pixel max abs difference 5.2e-3 on outputs up to 0.78 (fp16 inference on GPU vs fp32 on CPU, as on gfx950). Low PSNR is the 60-step undertrained model.
+- Export: smoke.tza 7698439 bytes. Denoising with it: CPU device fine; the HIP device on gfx1100 is close but not within the default tolerance: 1920x1080 errors=17319/6220800 avgerror 1.63e-3, 1023x577 5738/1770813 avgerror 1.60e-3, 257x129 513/99459 avgerror 2.75e-3. That is the same WMMA-path defect as above, much smaller with these near-initial weights than with the shipped ones; gfx950 gave errors=0 with its smoke weights.
+- Nothing in `training/` needed changing: ROCm PyTorch training, inference and export work on gfx1100.
+
+### Other
+- CUDA no-regression compile: cuda-not-validated: no CUDA toolkit on this host. Still owed at 06bdc4c (mi355 host).
+- Integrity: `git -C projects/oidn/src status --porcelain` empty at 06bdc4c; `jargon.py --port oidn` clean. Bisect worktrees live outside the fork clone's tracked tree.
+
+### Verdict
+`validation-failed` on linux-gfx1100 at 06bdc4c: the HIP device produces wrong, nondeterministic output on RDNA3 with ROCm 10.2 (and 7.11). The fault predates the port (upstream master and PR 302 fail identically), so the porter's job is to find where it lives (start with the release-binary check above, then CK's WMMA grouped-conv kernel vs a newer CK pin), not to revert anything of ours. If the release binaries pass, this becomes a toolchain bug report and a `blocked` flag rather than a code fix.
