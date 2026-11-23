@@ -2813,3 +2813,14 @@ cmake --build build-cuda -j
 
 The space key starts the simulation. The default scene ran with no HIP errors and no NaN on an AMD Radeon AI PRO R9700 (gfx1201) for 56 frames in 300 s, and, built with gfx942 in place of gfx1201, on an AMD Instinct MI300X (gfx942) for 1406 frames in 1200 s. The CUDA build was compiled and linked with nvcc 12.8 (sm_80) before and after this change, with the same warnings, and not run; `-include cstdint` works around load_mesh.h using `uint32_t` without `<cstdint>`, which fails the same way without this change. On Windows the AMD build compiles and links with clang and Ninja; it was not run on a GPU there.
 ~~~~
+
+## Windows compile and link 2026-11-23 at 53d17e2 (windows-gfx1151, build only)
+
+Requested by jeff's checkup session so the PR's Windows sentence rests on the current tree. Compile and link only; `gipc.exe` was not executed and nothing ran on the GPU (the Windows gate is waived). Fresh clone of `moat-port` detached at 53d17e2f0599, same environment and configure line as the c44ed01 build (cmake 3.31.0, ninja 1.13.2, AMD clang 23.0.0git for CXX and HIP, vcpkg x64-windows), `-j8`, no edits to generated files.
+
+- Configure: exit 0, HIP backend, gfx1151, 10 source files.
+- Compile: 10 of 10 translation units (8 HIP including femEnergy.cu, 2 CXX), 0 errors.
+- Link: 12 of 12 ninja steps, `gipc.exe` produced; the `-fgpu-rdc` device link had no undefined symbols.
+- Warnings: 165, the same total and per-file counts as the c44ed01 build.
+
+The tree differs from c44ed01 only in femEnergy.cu and gl_main.cpp. Commands and logs: `agent_space/gpu-ipc-wincompile2/RESULT.md` on the laptop.
