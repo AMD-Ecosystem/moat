@@ -9716,3 +9716,97 @@ for N in [int(float(s)) for s in sys.argv[1:]] or [10**3, 3000, 10**4, 30000, 10
 ## Ruling on session 26's question 11 (jeff, 2026-11-23)
 
 (b): commit the inlined depth-level kernel for winding-number meshes as built, HIP-only, threshold `num_items >= 65536`. Node bounds and every query result match the walk; the solid angle moment data of multi-triangle leaves differs from the walk in the last bits (relative about 1e-7) because the compiler contracts each kernel differently, which is the same size as the difference between the walk's own two leaf copies. The bit-identity condition in the earlier prompt was the coordinator's, not jeff's, and is withdrawn for the solid angle arrays; it still holds for node bounds and query results. The shared-helper variant (a) is not taken.
+
+
+## Porting session 27 (2026-11-23, linux-gfx950 MI355X, porter): winding-number refit committed; final build, wheel and suite; ported
+
+Ruling on question 11: (b). Fork `release/1.14.0.amd0` `bc1ae44b..26be6725` was pushed and `advance-head` recorded. The final step of the round ran on head `26be6725`, and every suite result is clean, so the stage moves to `ported` and the lock is released. `HIP_VISIBLE_DEVICES=1` (amd-smi GPU 0), `ulimit -c 0`; no process was stopped by pattern.
+
+### The commit: `26be6725` [ROCm] Refit large winding-number meshes one depth level at a time (`mesh.cu` +78, `bvh.cu` +13/-7, `bvh.h` +4)
+
+Session 26's patch as built. The `SA_THRESHOLD` placeholder is replaced by `bvh.num_items >= 65536`, with a comment saying why it counts triangles: an LBVH tree counts every item as a leaf. No environment switch or scratch code; clang-format 22.1.2 (the pre-commit version) applied; jargon and prose clean. A winding-number mesh never changes path (`num_items` is fixed), so the walk's use of `node_counts` as counters never meets depths the levels need.
+
+### Correctness on the final code (fork build at the change, against the walk: scratch tree `wrf2` forced onto the walk, whose walk kernel is the same source)
+
+Same configurations and steps as session 26: closed torus meshes with `support_winding_number=True`; lbvh at every size, sah and median to 10^6; with and without groups; leaf sizes 1 and 4. Steps: creation, three moved-point refits, a points replacement, a rebuilt mesh, and a captured graph relaunched three times. Queries checked: winding-number sign, no-sign and ray. Sizes: 10^3, 10^4, **64,980 triangles (just below the threshold) and 66,066 (just above)**, 10^5, 10^6, 10^7. Arrays were kept rather than hashed, so the moments are compared numerically (`sa_check2.py`, described below).
+
+| N (triangles) | constructor | node arrays equal | query result sets equal | solid angle arrays differing | max relative difference | max difference / field scale |
+|---|---|---|---|---|---|---|
+| 990 | lbvh | 28/28 | 4/4 | 0/28 | 0.00e+00 | 0.00e+00 |
+| 990 | median | 28/28 | 4/4 | 0/28 | 0.00e+00 | 0.00e+00 |
+| 990 | sah | 28/28 | 4/4 | 0/28 | 0.00e+00 | 0.00e+00 |
+| 10010 | lbvh | 28/28 | 4/4 | 0/28 | 0.00e+00 | 0.00e+00 |
+| 10010 | median | 28/28 | 4/4 | 0/28 | 0.00e+00 | 0.00e+00 |
+| 10010 | sah | 28/28 | 4/4 | 0/28 | 0.00e+00 | 0.00e+00 |
+| 64980 | lbvh | 28/28 | 4/4 | 0/28 | 0.00e+00 | 0.00e+00 |
+| 64980 | median | 28/28 | 4/4 | 0/28 | 0.00e+00 | 0.00e+00 |
+| 64980 | sah | 28/28 | 4/4 | 0/28 | 0.00e+00 | 0.00e+00 |
+| 66066 | lbvh | 28/28 | 4/4 | 14/28 | 6.71e-05 | 2.86e-07 |
+| 66066 | median | 28/28 | 4/4 | 14/28 | 1.01e-07 | 6.12e-10 |
+| 66066 | sah | 28/28 | 4/4 | 14/28 | 7.58e-08 | 9.61e-11 |
+| 99904 | lbvh | 28/28 | 4/4 | 14/28 | 7.50e-05 | 2.91e-07 |
+| 99904 | median | 28/28 | 4/4 | 14/28 | 1.01e-07 | 3.06e-10 |
+| 99904 | sah | 28/28 | 4/4 | 14/28 | 0.00e+00 | 7.67e-11 |
+| 999696 | lbvh | 28/28 | 4/4 | 14/28 | 6.66e-06 | 6.95e-08 |
+| 999696 | median | 28/28 | 4/4 | 14/28 | 0.00e+00 | 3.91e-11 |
+| 999696 | sah | 28/28 | 4/4 | 14/28 | 0.00e+00 | 1.95e-11 |
+| 9999392 | lbvh | 28/28 | 4/4 | 28/28 | 4.02e-05 | 5.68e-07 |
+
+total: node snapshots equal 532/532 (x2 arrays), query sets equal 76/76 (x3 queries), solid angle arrays differing 154/532, max relative 7.50e-05, non-finite 0
+
+- Node bounds: bit-identical in every snapshot (532 x 2 arrays). Query results: bit-identical in every set (76 x 3). Below the threshold (up to 64,980) everything is identical, solid angle included, because the walk runs.
+- Above the threshold, the solid angle arrays differ only in leaf-size-4 trees (plus every lbvh tree at 10^7). On sah and median trees the largest relative difference is 1.0e-7. On lbvh the largest difference is **5.7e-7 of the field's largest value**, but per element the relative difference reaches **7.5e-5** in 42 of the 532 snapshots. Every such element is a small result of cancellation. The worst case examined (`n_zy`, an internal node at depth 10) has a value of -1.56e-5 against a field scale of 7.7e-3; it sums a child of -3.3e-6, a child of 1.4e-7 that itself differs by 5e-5 relative, and displacement products. The absolute error is at the rounding level of the operands, and no leaf element exceeds 1e-6 relative. Read per element, the ruling's "about 1e-6 relative" is exceeded by those elements; read against the field's magnitude, it holds everywhere.
+- The ruling's own yardstick, "the same size as the difference between the walk's own two leaf copies", measured with the same tool: today's walk against the walk with shared non-inlined helpers (`wrf4`, session 26), whose leaf code is one copy.
+
+| N (triangles) | constructor | node arrays equal | query result sets equal | solid angle arrays differing | max relative difference | max difference / field scale |
+|---|---|---|---|---|---|---|
+| 990 | lbvh | 28/28 | 4/4 | 14/28 | 3.56e-05 | 1.66e-06 |
+| 990 | median | 28/28 | 4/4 | 0/28 | 0.00e+00 | 0.00e+00 |
+| 990 | sah | 28/28 | 4/4 | 0/28 | 0.00e+00 | 0.00e+00 |
+| 10010 | lbvh | 28/28 | 4/4 | 14/28 | 2.19e-04 | 7.52e-07 |
+| 10010 | median | 28/28 | 4/4 | 0/28 | 0.00e+00 | 0.00e+00 |
+| 10010 | sah | 28/28 | 4/4 | 0/28 | 0.00e+00 | 0.00e+00 |
+| 64980 | lbvh | 28/28 | 4/4 | 14/28 | 2.66e-05 | 1.40e-07 |
+| 64980 | median | 28/28 | 4/4 | 0/28 | 0.00e+00 | 0.00e+00 |
+| 64980 | sah | 28/28 | 4/4 | 0/28 | 0.00e+00 | 0.00e+00 |
+| 66066 | lbvh | 28/28 | 4/4 | 14/28 | 6.71e-05 | 2.86e-07 |
+| 66066 | median | 28/28 | 4/4 | 0/28 | 0.00e+00 | 0.00e+00 |
+| 66066 | sah | 28/28 | 4/4 | 0/28 | 0.00e+00 | 0.00e+00 |
+| 99904 | lbvh | 28/28 | 4/4 | 14/28 | 7.50e-05 | 2.91e-07 |
+| 99904 | median | 28/28 | 4/4 | 0/28 | 0.00e+00 | 0.00e+00 |
+| 99904 | sah | 28/28 | 4/4 | 0/28 | 0.00e+00 | 0.00e+00 |
+| 999696 | lbvh | 28/28 | 4/4 | 14/28 | 6.66e-06 | 6.95e-08 |
+| 999696 | median | 28/28 | 4/4 | 0/28 | 0.00e+00 | 0.00e+00 |
+| 999696 | sah | 28/28 | 4/4 | 0/28 | 0.00e+00 | 0.00e+00 |
+| 9999392 | lbvh | 28/28 | 4/4 | 28/28 | 4.02e-05 | 5.68e-07 |
+
+total: node snapshots equal 532/532 (x2 arrays), query sets equal 76/76 (x3 queries), solid angle arrays differing 112/532, max relative 2.19e-04, non-finite 0
+
+  The walk's two copies differ by up to 2.2e-4 per element and 1.7e-6 of field scale, more than the new kernel differs from the walk (7.5e-5, 5.7e-7). Above the threshold on lbvh the two tables carry the same figures: the new kernel's differences there come from the packed leaves, which the walk computes in its other copy. Determinism: two runs of the walk give 1824 of 1824 arrays identical (hashes).
+
+### Tests (fork build at `26be6725`, gfx950)
+
+test_mesh* 49 OK, test_bvh 13 OK, test_grouped_bvh 11 OK, test_graph 35 OK (3 skipped), test_capture_mode 2 OK, test_conditional_captures 32 OK (16 skipped), test_array_fill_capture 3 OK, test_apic_mesh 12 OK.
+
+### nvcc check (as in session 19)
+
+`cuda_pp.sh` (nvcc 12.8, sm_90) of `bc1ae44b` against the change: 20 translation units identical, and `bvh` and `mesh` (device and host) LINE-ONLY. CUDA build of the change (worktree `agent_space/wcuda_s24` at `bc1ae44b` plus the three files; `build_lib.py --cuda-path /usr/local/cuda --no-use-libmathdx -j 32`, every arch sm_52 to sm_120): "Warp build succeeded", warp.so 199,752,736 bytes. Done before the commit, on the same content (`git stash create` object `53f36bcd`, no ref written).
+
+### Release build, wheel and suite (head `26be6725`, clone clean)
+
+- Build: `agent_space/relbuild.sh <clone> 64` = `python build_lib.py --rocm-path "$(python -m rocm_sdk path --root)" -j 64` (the committed defaults: the 25 Linux targets ROCm 10.2 supports, `--offload-compress`). Wall 181 s; 25 `--offload-arch` per HIP compile; 12 of 12 HIP units compressed. `warp.so` 10,947,400 bytes, `warp.so.rocm` records ROCm 10.2.0.
+- Wheel: `python -m build --wheel -C--build-option=-Plinux-x86_64 -o <job>/wheel`. **Kept at `/var/lib/jenkins/fleet/jobs/mi355-20261119-154230-warp114-perf-porter-mi355-prompt/wheel/warp_lang-1.14.0+rocm10.2.0-py3-none-manylinux_2_28_x86_64.whl`: 37,218,821 bytes, sha256 `d083e104a64cee825b70d3ae2edf2d84009731ade960effee27980c34e23fdf9`.** Contents: warp.so 10,947,400, warp-clang.so 67,136,896, warp.so.rocm 140; 548 entries; no nvrtc/libmathdx/cudart/nvJitLink binary. METADATA has `Version: 1.14.0+rocm10.2.0`, `Requires-Dist: rocm<10.3,>=10.2` and no NVIDIA CUDA classifier; tag `py3-none-manylinux_2_28_x86_64`. Session 21's wheel (built at `7059a340`) was moved to `<job>/wheel/old_7059a340/`.
+- Install: `$FLEET_VENV/bin/pip install --force-reinstall --no-deps <wheel>` into the job venv (the guard allows only that venv; deps were already present; `pip check` clean): "Successfully installed warp-lang-1.14.0+rocm10.2.0". **Installed size (`du -sb site-packages/warp`) 106,377,434 bytes**; the installed warp.so sha256 equals the build's.
+- Full default suite from the installed wheel (`agent_space/suite_wheel.sh`: cwd `<job>/wheelrun`, `warp.__file__` in site-packages, `HIP_VISIBLE_DEVICES=1`, fresh kernel cache): banner "Warp 1.14.0+rocm10.2.0 ... ROCm 10.2, HIP runtime 7.17"; **Ran 7558 tests in 576.3 s, OK (skipped=81)**, wall 581 s. Host load average 40 at the start (other users), no other process on the GPU. No failures, so nothing needed a rerun alone.
+
+### Release notes draft
+
+Session 26's draft stands unchanged. The winding-number refit needs no user-visible sentence: it changes refit speed on large meshes, and its last-bit differences sit in internal solid angle data that no query result showed. Nothing about the 1.13 port is in the draft.
+
+### Stage
+
+Every result on head `26be6725` is clean, so the stage moves to `ported` (`set-state warp-1.14 linux-gfx950 ported`, which releases the lock) for the reviewer. Validators revalidate at `26be6725`.
+
+### Scripts
+
+`sa_check2.py` is `sa_check.py` (session 26, inline above) with a `keep()` step after every snapshot: `save` writes each snapshot's node words, solid angle words (written rows; `max_p_dist_sq` of single-triangle leaves zeroed) and query arrays to a directory, and `cmp` compares the running build's against them and deletes them (node words and query words exactly; solid angle values as the largest relative difference over elements of at least 1e-3 of the field's largest value, and the largest difference divided by the field's largest value). Run: `sa_run2.sh <tree> <WP_SA_REFIT_MIN or -> save|cmp <dir> <out.json> <sizes>`; summary `sa_sum2.py`. `sa_dump2.py` reproduces one configuration's creation on moved points, for element-level inspection.

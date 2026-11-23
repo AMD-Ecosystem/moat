@@ -229,3 +229,7 @@
 {"kind":"phase","ts":"2026-11-20T20:45:19Z","phase":"test","seconds":514.863,"exit":0,"cmd":"agent_space/suite.sh"}
 {"kind":"phase","ts":"2026-11-20T22:06:04Z","phase":"test","seconds":2326.168,"exit":0,"cmd":"agent_space/suite.sh"}
 {"kind":"phase","ts":"2026-11-20T22:12:04Z","phase":"build","seconds":26.063,"exit":1,"cmd":"bash agent_space/hipbuild.sh /var/lib/jenkins/fleet/jobs/mi355-20261119-154230-warp114-perf-porter-mi355-prompt/moat/projects/warp-1.14/src"}
+{"kind":"phase","ts":"2026-11-23T19:20:15Z","phase":"build","seconds":27.064,"exit":0,"cmd":"bash agent_space/hipbuild.sh /var/lib/jenkins/fleet/jobs/mi355-20261119-154230-warp114-perf-porter-mi355-prompt/moat/projects/warp-1.14/src"}
+{"kind":"phase","ts":"2026-11-23T19:39:09Z","phase":"test","seconds":70.236,"exit":0,"cmd":"agent_space/runtests.sh /var/lib/jenkins/fleet/jobs/mi355-20261119-154230-warp114-perf-porter-mi355-prompt/moat/projects/warp-1.14/src /var/lib/jenkins/fleet/jobs/mi355-20261119-154230-warp114-perf-porter-mi355-prompt/moat/agent_space/res/s27/tests.log test_mesh*.py test_bvh.py test_grouped_bvh.py test_graph.py test_capture_mode.py test_conditional_captures.py test_array_fill_capture.py test_apic_mesh.py"}
+{"kind":"phase","ts":"2026-11-23T19:56:22Z","phase":"build","seconds":181.149,"exit":0,"cmd":"bash agent_space/relbuild.sh /var/lib/jenkins/fleet/jobs/mi355-20261119-154230-warp114-perf-porter-mi355-prompt/moat/projects/warp-1.14/src 64"}
+{"kind":"phase","ts":"2026-11-23T20:07:01Z","phase":"test","seconds":581.448,"exit":0,"cmd":"bash agent_space/suite_wheel.sh"}
