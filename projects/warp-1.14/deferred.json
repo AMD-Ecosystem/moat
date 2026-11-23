@@ -357,8 +357,8 @@
       "refs": [
         "notes.md Evidence session (2026-11-23, linux-gfx1201) items 3 and 5; rocm-systems projects/clr hipamd/src/hip_gl.cpp, rocclr/device/rocm/rocglinterop.cpp"
       ],
-      "status": "open",
-      "upstream_issue": null,
+      "status": "filed",
+      "upstream_issue": "https://github.com/ROCm/rocm-systems/issues/16597",
       "created_at": "2026-11-23T22:48:03Z",
       "decided": {
         "choice": "now",
