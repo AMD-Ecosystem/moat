@@ -95,22 +95,37 @@ Commits:
 Retested:
 
 - gfx90a (MI250X, ROCm 10.1): clean build from scratch at b61a885e with the architecture auto-detected; ctest 68 pass / 11 skip (RTM dataset not public) / 0 fail of 79. That includes the new CESM CLDHGH matrix with 11 LC-codec cases and the Hurricane and NYX real-data round trips. The last round was 37 / 3 / 1 of 41. The difference is master's new tests, and the old failure (hfr__cauchy_sharp__u2) now passes because master dropped its --assert-brnum-le. CLI sine round trip: CR=27.05 (master's new default HFR-PBKC pipeline), PSNR=70.8, max_error=1.000047e-03.
+- gfx1201 (Radeon AI PRO R9700, wave32, Linux, ROCm 10.1): clean build from scratch at b61a885e with the architecture auto-detected; ctest 68 pass / 11 skip (same RTM cases) / 0 fail of 79, the same tests as gfx90a, including all 11 LC-codec CESM cases. CLI sine round trip identical to gfx90a: CR=27.05, PSNR=70.8, max_error=1.000047e-03.
 - Python binding (`-DPSZ_BUILD_PYBINDING=ON`) builds on HIP; not run (no CuPy wheel for this host's ROCm).
 
 Not yet covered (must close before this merges):
 
 - CUDA no-regression compile with nvcc. Commits 2, 3 and the hfd26 / lc_gen edits touch code nvcc compiles, and the gfx90a host has no CUDA toolkit.
-- wave32 (gfx1100) and Windows (gfx1201) builds and runs at b61a885e. LC is newly built on HIP and is untested on both; the shuffle-width change is a no-op on wave32 by construction.
+- Windows build and run at b61a885e. LC is newly built on HIP and is untested on Windows (cuda_fp8 shim, LC host flags, `__builtin_trap`).
 
 ## Upstream reply
 
-I merged current master into this branch and resolved the conflicts. Master now calls the LC codecs from the compressor, so the HIP backend builds them too, and the HIP shuffle translation now uses CUDA's 32-lane default width, which LC needs on 64-wide GPUs. Retested on MI250X (gfx90a): the full ctest suite passes, including the CESM, Hurricane and NYX round trips.
+I merged current master into this branch and resolved the conflicts. Master now calls the LC codecs from the compressor, so the HIP backend builds them too, and the HIP shuffle translation now uses CUDA's 32-lane default width, which LC needs on 64-wide GPUs. Retested on MI250X (gfx90a) and Radeon AI PRO R9700 (gfx1201) on Linux: the full ctest suite passes on both, including the CESM, Hurricane and NYX round trips.
 
 ## Fix review notes (ours, not upstream)
 
 - The published upstream PR body still says LC is left disabled on HIP and lists the old test results. Once this merges, the upstream PR body needs updating to match; that is an upstream-visible edit and jeff's call.
-- The upstream reply names only gfx90a. Add gfx1100 / gfx1201 only if they complete validation at the new head before the review PR opens.
+- The upstream reply names gfx90a and linux-gfx1201 (both completed at b61a885e). Add gfx1100 or Windows only if they complete validation at the new head before the review PR opens.
 - Review found two Test Plan wording gaps that cannot be fixed without rewriting commits (not done): 6c9293a0, 6d1d4e21 and 16623130 claim an unchanged CUDA build but list only the HIP build command, and 850f79bb's Test Plan has no command. jeff decides whether that matters for upstream.
+
+## Validation 2026-11-23 (linux-gfx1201 @ b61a885e -- PASS, fix round moat-fix-91)
+
+Platform: AMD Radeon AI PRO R9700 (gfx1201, wave32, Linux), ROCm 10.1.0 pip SDK (amdclang 24.0.0, no /opt/rocm), HIP_VISIBLE_DEVICES=2 (dispatcher pin), ulimit -c 0. First validation of linux-gfx1201 (state was port-ready). Fork clone checked out at moat-fix-91 = b61a885e; nothing pushed to the fork.
+
+Build: same commands as the linux-gfx90a entry below (porter recipe minus the arch pin, `-j12`), clean from scratch; cmake auto-detected `gfx1201` (x4). rc=0, 158/158 steps, warnings only, 0 errors; 26 s. `llvm-objdump --offloading build-hip/libpsz_cu_core.so` shows only gfx1201 code objects. Datasets from the Hugging Face mirror (CESM CLDHGH, HURR Uf48, NYX velocity_x); RTM/0480 absent.
+
+Test: `ctest --test-dir build-hip --output-on-failure -j1` -> **68 PASS / 11 SKIP / 0 FAIL of 79**, identical to gfx90a (same 11 skips, the RTM/0480 cases, exit 77 on the missing file). No difference to explain. Spot check `cusz__cesm_cldhgh__lorenzo2d__abs_1e-4__lc`: `[Lorenzo, LC_TCMS] CR=3.27 PSNR=83.8 max_error=1.000166e-04` against eb 1e-4 (the test bounds at 1.001*eb). CLI sine 1M round trip (`cusz -z ... -t f32 -m abs -e 1e-3 -l 1000000`, then `-x --compare`): `[Lorenzo, HFR-PBKC] CR=27.05 PSNR=70.8 max_error=1.000047e-03`, bit-for-bit the same report as gfx90a. On wave32 the shuffle-width default (6695d762) is a no-op by construction; LC built on HIP, with WS forced to 32, runs correctly here.
+
+CUDA no-regression gate: `cuda-not-validated: no CUDA toolkit on this host (no nvcc, no /opt/conda)`. Still owed on the mi355 host at b61a885e.
+
+Jargon: `utils/jargon.py --port cuSZ` clean (needed a local `master` branch in the fork clone to resolve the range). Docs: unchanged this round. Integrity: `git status --porcelain` empty at b61a885e.
+
+Gates at b61a885e: wave64 = linux-gfx90a, wave32 = this run. windows remains unsatisfied at this head (windows-gfx1201 is offline; its last validation is 11140547).
 
 ## Validation 2026-11-23 (linux-gfx90a @ b61a885e -- PASS, fix round moat-fix-91)
 
