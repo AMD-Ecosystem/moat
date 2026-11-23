@@ -213,3 +213,51 @@ cmake --build src/build -j 32
 ### Not run here, and why
 - CUDA no-regression compile: this host has no CUDA toolkit (no nvcc, no conda). Not recorded at this head anywhere yet; it is owed by the mi355 host before the port is presented. The diff touches no CUDA source (one `option()` line inside `if(NOT APPLE)` and pass-through lines inside `if(OIDN_DEVICE_HIP)`).
 - ROCm training smoke run (Q5 ruling): not repeated. The porter ran it on gfx950 (wave64 gate) and the porter's list of what gfx90a still owes does not include it; the request was to run it here only if the notes said it was still needed. Nothing in `training/` is arch-specific (it runs through ROCm PyTorch, not this library's kernels). If Jeff wants it on gfx90a as well, it is the porter's recipe above with `torch[device-gfx90a]==2.15.0+rocm10.2.0`.
+
+## Validation 2026-11-23 (linux-gfx950, AMD Instinct MI355X, fork moat-port 06bdc4c)
+
+Validator run on gfx950, additive to the wave64 gate that linux-gfx90a already satisfies (orient offered nothing for this platform; Jeff Daily asked for it). One GPU, `HIP_VISIBLE_DEVICES=4` (dispatcher pin), shared: another process held it at 100% GFX and 69 GB VRAM throughout, so the timings below are not reference numbers. All GPU runs under `ulimit -c 0` and `timeout`.
+
+### Toolchain (job directory only)
+- ROCm 10.2.0 TheRock SDK and ROCm PyTorch pip-installed into the job venv over the base image's 10.1 links: `$FLEET_VENV/bin/python -m pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple "rocm[libraries,devel,device-gfx90a,device-gfx942,device-gfx950]==10.2.0" "torch[device-gfx950]==2.15.0+rocm10.2.0" OpenImageIO` (OpenImageIO 3.2.2.0). `rocm-sdk version` 10.2.0, `hipconfig --version` 7.17.26434. `ROCM_PATH=$(rocm-sdk path --root)`, `PATH` += `$ROCM_PATH/bin:$ROCM_PATH/lib/llvm/bin`, `LD_LIBRARY_PATH` += `$ROCM_PATH/lib`. No system ROCm used. (The fleet guard refuses a pip command that does not spell `$FLEET_VENV`; a relative path to the same venv is refused.)
+- ISPC v1.32.0 Linux release tarball under the job directory; oneTBB 2021.11 from the image.
+- Fork clone at 06bdc4c, `protect-fork` installed. Weights (Q4 ruling): `git config submodule.weights.url https://github.com/RenderKit/oidn-weights.git`, `GIT_LFS_SKIP_SMUDGE=1 git submodule update --init --recursive external/composable_kernel weights`, then in `weights/` `git lfs install --local --skip-repo && git lfs pull` (rt_alb.tza 1830792 bytes). `.gitmodules` untouched; `git status --porcelain` empty.
+
+### Build (default target list, all targets)
+```
+cmake -G Ninja -S src -B src/build -DCMAKE_BUILD_TYPE=Release -DOIDN_DEVICE_HIP=ON -DOIDN_DEVICE_CPU=ON \
+      -DROCM_PATH=$ROCM_PATH -DHIP_CLANG_NUM_PARALLEL_JOBS=4 -DISPC_EXECUTABLE=<ispc>
+cmake --build src/build -j 21
+```
+73 s, 132 steps, 0 warnings. Code objects (`objcopy --dump-section .hip_fatbin` + `clang-offload-bundler --list`): `ck_conv_mfma.cpp.o` = gfx90a, gfx942, gfx950 only; `ck_conv_wmma.cpp.o` and `ck_conv_dl.cpp.o` = the 19 RDNA/APU targets, no CDNA; `hip_engine.cpp.o` = all 22.
+
+### Results
+- `oidnDenoise --ld`: Device 0 "AMD Instinct MI355X", Type HIP; Device 1 the EPYC 9575F CPU.
+- `timeout 1800 oidnTest --device hip`: **All tests passed (2553 assertions in 20 test cases)**.
+- `timeout 3600 oidnTest --device cpu`: **All tests passed (1820 assertions in 20 test cases)**.
+- CPU-reference image differential (`oidnDenoise -d cpu ... -o ref.pfm`, then `oidnDenoise -d hip ... -r ref.pfm`, default maxerror), freshly written deterministic numpy PFM inputs at 1920x1080, 1023x577, 257x129 (seeds 1234-1236; not the same images as the earlier runs), the same 19 option sets (RT hdr, hdr+alb+nrm, ldr+srgb+alb+nrm at -q high/balanced/fast; hdr+alb; hdr+alb+nrm --clean_aux; ldr+alb; RTLightmap hdr and dir; HIP-only -t half, --maxmem 256, --inplace, --buffer device, --buffer managed): **57/57, errors=0 in every case**. avgerror 1.74e-4 to 6.66e-4 for every set except RTLightmap dir, 1.0e-2 to 1.05e-2 (this run's directional input is unit-variance-scale Gaussian noise, a harder input than before; still errors=0).
+- MFMA path really runs: `rocprofv3 --kernel-trace --stats --output-format csv` on one 1023x577 RT hdr+alb+nrm run: 49 dispatches on the gfx950 agent (wavefront 64), of which **20 are `ck::...::kernel_grouped_conv_fwd_multiple_abd_xdl_cshuffle`** (16 + 4, 4.15 ms + 1.41 ms), plus the OIDN input/output/pool/upsample/autoexposure kernels and 16 copyBuffer. The traced XDL kernel: VGPR 112, AGPR 0, SGPR 112, LDS 25088, scratch 0, workgroup 256. Disassembly of the gfx950 code object from `ck_conv_mfma.cpp.o`: 48x `v_mfma_f32_32x32x16_f16` (the double-rate instruction), `.wavefront_size: 64` on all four kernels, LDS 24768 bytes, private segment 0, VGPR spills 0, AGPRs 0, max workgroup 256, VGPRs 111/64. Two of the four kernels report `.sgpr_spill_count: 16` (spilled to VGPR lanes; private segment is 0, so no scratch traffic); the gfx90a validator reported 0 SGPR spills there. Performance note only.
+- `oidnBenchmark -d hip` (information only, GPU at 100% from another job): RT hdr_alb_nrm 1920x1080 9.78 ms, 3840x2160 20.44 ms, 1280x720 11.69 ms; RT hdr_calb_cnrm 1920x1080 8.91 ms; RTLightmap 2048x2048 8.44 ms. Noisy (1280x720 slower than 1920x1080) because of the co-tenant; the porter's numbers on a less loaded GPU were 2.85 / 11.98 / 1.41 ms.
+- Integrity: `git -C projects/oidn/src status --porcelain` empty at 06bdc4c; `jargon.py --port oidn` clean. ROCm build documentation is upstream's existing README "HIP device" section plus the port's `OIDN_HIP_GFX950`/CDNA text (checked by the review).
+
+### Training smoke run (Q5 ruling), repeated by the validator on gfx950
+
+ROCm PyTorch 2.15.0+rocm10.2.0, OpenImageIO 3.2.2.0, tensorboard 2.13.0 (already in the venv). Synthetic dataset written with OpenImageIO: 24 train and 8 valid scenes, 384x384, `<scene>_0004spp`/`_0016spp`/`_ref` x `.hdr`/`.alb`/`.nrm` `.exr` (half), smooth procedural albedo, normals and lighting with gamma-distributed per-spp noise. 8 validation scenes give 16 validation images, one full batch, so **validation ran this time** (the porter's 4 valid scenes left the validation loader empty). cwd a scratch directory under the job dir, `PYTHONPATH=$ROCM_PATH/share/amd_smi` for the torch processes only (same amdsmi trap as the porter recorded: without it `torch.cuda.device_count()` is 0; with it 1, `gfx950:sramecc+:xnack-`).
+
+```
+python training/preprocess.py hdr alb nrm --filter RT -D data -P preproc -t train -v valid
+python training/train.py hdr alb nrm --filter RT -P preproc -t train -v valid -R results -r smoke --seed 1 --epochs 20 --valid_epochs 5 --save_epochs 10
+python training/train.py ... -r cpu_fp32 -d cpu -p fp32 --seed 1 ...      # CPU reference, OMP_NUM_THREADS=21
+python training/infer.py -D data -R results -r smoke -i valid -O infer_gpu --metric psnr ssim
+python training/infer.py -D data -R results -r smoke -i valid -O infer_cpu --metric psnr ssim -d cpu
+python training/export.py -R results -r smoke -o smoke.tza
+oidnDenoise -d cpu --hdr .. --alb .. --nrm .. -w smoke.tza -o ref.pfm; oidnDenoise -d hip ... -w smoke.tza -r ref.pfm
+```
+- Every step exits 0. GPU run with the defaults (cuda, mixed precision, `torch.compile` reduce-overhead): finished in 1m 4s; epoch 1 56 s (Inductor/Triton compile; a gfx950 MIOpen user find-db from earlier work already existed under `~/.config/miopen`, which is likely why this first epoch took about a minute rather than the porter's 15), later epochs 290-485 images/s.
+- Seeded GPU (mixed + compile) vs CPU fp32, same data, `--seed 1`: training loss 0.550259 -> 0.378758 (GPU) vs 0.550258 -> 0.378677 (CPU), every epoch within 1.3e-4; validation loss at epochs 5/10/15/20 0.531636/0.497990/0.409037/0.388879 (GPU) vs 0.531611/0.497995/0.408897/0.388785 (CPU).
+- Inference on the 16 validation images with the GPU-trained checkpoint: GPU psnr_avg 3.1431, ssim_avg 0.3156; CPU 3.1428, 0.3156. Per-pixel max abs difference 4.5e-3 on outputs up to 0.81 (max relative 2.5%): `infer.py` runs the mixed-precision model in fp16 on the GPU and casts input to fp16 only off-CPU, so this is an fp16-vs-fp32 inference difference, not a GPU fault. Low PSNR is the 60-step undertrained model, identical on CPU.
+- Weights trained on ROCm load into the HIP device: `oidnDenoise -d hip -w smoke.tza` vs `-d cpu -w smoke.tza`, errors=0 at 1920x1080, 1023x577, 257x129, avgerror 1.92e-4, 1.93e-4, 1.78e-4. smoke.tza 7698439 bytes.
+- Nothing in `training/` needed changing.
+
+### Not run here, and why
+- CUDA no-regression compile: **cuda-not-validated: no CUDA toolkit on this host** (no `nvcc`, no `/usr/local/cuda`, no conda; `/opt/conda/envs/cuda-12.8` is absent). Fetching a package manager (micromamba) into the job directory to install `cuda-toolkit=12.8` was refused by this session's permission classifier, so the gate is still not recorded at 06bdc4c on any host. The diff touches no CUDA source (one `option()` line inside `if(NOT APPLE)` and pass-through lines inside `if(OIDN_DEVICE_HIP)`); a person or a session allowed to install the toolkit owes it before the port is presented.
