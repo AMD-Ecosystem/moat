@@ -7,22 +7,22 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:24:38Z",
-  "updated_at": "2026-11-23T20:27:49Z",
+  "updated_at": "2026-11-23T20:28:08Z",
   "head_sha": "b8d1aa911eefe23946cdd1c06160172541028864",
   "depends_on": [],
   "waivers": {},
   "license_spdx": "MIT",
   "upstream_repo_id": 34094271,
-  "stage": "review-passed",
+  "stage": "porting",
   "platforms": {
     "linux-gfx1100": {
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": "b8d1aa911eefe23946cdd1c06160172541028864",
-      "started_at": null,
+      "started_at": "2026-11-23T20:28:08Z",
       "completed_at": "2026-10-31T07:05:55Z",
-      "updated_at": "2026-10-31T07:05:55Z",
+      "updated_at": "2026-11-23T20:28:08Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -36,7 +36,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator"
+      "last_agent": "porter"
     },
     "linux-gfx942": {
       "blocked": false,
@@ -196,5 +196,10 @@
     "base_sha": "b8d1aa911eefe23946cdd1c06160172541028864",
     "review_pr": null,
     "opened_at": "2026-11-23T20:27:49Z"
+  },
+  "porting": {
+    "arch": "linux-gfx1100",
+    "since": "2026-11-23T20:28:08Z",
+    "holder": "91e7461c6e52"
   }
 }
