@@ -52,6 +52,21 @@ Python binding: `-DPSZ_BUILD_PYBINDING=ON -DPython_EXECUTABLE=$FLEET_VENV/bin/py
 - CUDA no-regression compile: no nvcc on this host. The shared edits (template keyword, spline-y24 declarations, `__launch_bounds__` parens, lc_gen `#if`) need the nvcc 12.8 compile on the mi355 host before jeff approves. `cuda-not-validated: no nvcc on the gfx90a host`.
 - wave32 (gfx1100) and Windows (gfx1201): not built or run at 16623130. The shuffle-width change is a no-op on wave32 by construction, but LC is newly built on HIP and the cuda_fp8 shim, LC `-march=native -mno-fma` host flags and `__builtin_trap` are untested on Windows TheRock.
 
+## Review 2026-11-23 (linux-gfx90a, fix round delta 11140547...16623130 -- changes-requested)
+
+Scope: merge 850f79bb (upstream master b63d8c68, 43 commits, reviewed as resolution only: port-vs-old-upstream `git diff e1c0135f 11140547` against port-vs-new-upstream `git diff b63d8c68 16623130`) and our four commits 6c9293a0, 6d1d4e21, 6695d762, 16623130. Independent read-only review pass plus inline fact-check of each finding. `rev-list --count moat-fix-91..upstream/master` = 0.
+
+### Fault Classes
+- cmake/hip-compat/psz_hip_compat.h:15-20 and cmake/hip-compat/cuda_runtime.h:11-15: the `__shfl_*_sync` macros are defined before HIP's bf16 header is parsed, and `amd_hip_bf16.h:695-780` declares its own `__shfl_*_sync(mask, ...)` overloads. Any HIP TU that later includes rocprim, hipcub, rocthrust or `<hip/hip_bf16.h>` fails to compile. Verified: `amdclang++ -x hip --offload-arch=gfx90a -fsyntax-only -include cmake/hip-compat/psz_hip_compat.h` on `#include <rocprim/types.hpp>` gives `amd_hip_bf16.h:715: use of undeclared identifier 'mask'`. No compiled source includes thrust/cub today (`example/src/ex_utils_g.inl` and `psz/src/kernel/rle.cuh` are not built), and the trap predates this round, but the cuda_fp8.h push/pop only covers one path. Fix: include `<hip/hip_bf16.h>` in both headers after `hip_runtime.h` and before the c_cu2hip macros; then cuda_fp8.h needs no push/pop.
+
+### Commit Hygiene (for jeff; not fixable without rewriting commits, which is not done)
+- 6c9293a0, 6d1d4e21, 16623130 claim nvcc/gcc acceptance and an unchanged CUDA build; their Test Plans give only the HIP build. The nvcc compile has not run (no CUDA toolkit on this host) and is owed on the mi355 host before approval.
+- 850f79bb's Test Plan has no command (it points at the series tip, where the tree builds).
+
+Checked clean (independent pass, verified): no port hunk lost in the merge; hip.cmake/utils/test HIP lists mirror master's CUDA lists; cuda.cmake unchanged vs master; test_histsp_cu exclusion still needed (clang rejects test/src/detail/tune_histsp.cu.inl:215); master's new kernels and the LC components are consistent with the 32-lane logical warp; `__any_sync`/`__all_sync`/`__trap`/`atomicOr_block` collide with no HIP header; titles <= 72, `[ROCm]` only on ROCm-specific commits, disclosure present, no trailer, ASCII, jargon clean.
+
+Recommendation: Request Changes (the bf16 include-order trap).
+
 ## Lesson for cuda-to-rocm: default shuffle width must be 32 when the port treats the warp as 32 lanes
 
 For `faults-wavefront.md`. A translation layer that maps `__shfl_sync(mask, v, src)` to `__shfl(v, src)` inherits HIP's default width (the full wavefront, 64 on CDNA). Scans and xor/down reductions survive that, because their reads stay inside a 32-lane half when guarded by `lane % 32`. A call that names an absolute source lane (`__shfl_sync(~0, v, lane / 2)`, a lane-0 broadcast of per-warp data) silently reads the lower half on wave64. If the port's ballot translation already returns the caller's 32-bit half, make the shuffles default to width 32 too, through `__device__` wrappers with a default argument (`T psz_shfl(T v, int src, int w = 32)`), so explicit widths still pass through. Seen as LC-framework output that failed its error bound on gfx90a only (cuSZ, ROCm 10.1). Related: current ROCm clang no longer defines `__AMDGCN_WAVEFRONT_SIZE`, so code that picks a warp width from it at preprocessing time falls to its non-AMD default; check with `amdclang++ -x hip --offload-arch=gfx90a --cuda-device-only -nogpulib -dM -E`.
