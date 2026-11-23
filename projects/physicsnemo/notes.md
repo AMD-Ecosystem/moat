@@ -21,3 +21,7 @@ Origin: Jeff Daily's 2026-11-12 ruling on a third-party "AMD AI software gap" li
 - ROCm risks: Warp ROCm maturity (gate), pyproject pins CUDA torch indices (cu129/cu130) so `uv sync` will not pick ROCm torch without an override, natten and RAPIDS gaps.
 - Windows: no upstream Windows story (README documents Linux CUDA 12/13 backends only; CUDA 12 backend explicitly Linux-only). Suggest a windows waiver; only Jeff approves one.
 - Existing AMD work to back: none found upstream or in the community.
+
+## Decision 2026-11-23 (Jeff Daily): adopt, fork requested now
+
+Asked to adopt or decline, jeff answered "Option A": adopt physicsnemo and add it to the admin fork request now. Work does not start until Warp 1.17 or later runs on ROCm (the `warp` dependency holds it). It is NVIDIA-owned: the fork is the deliverable, with at most one small documentation pull request upstream, which jeff approves like any upstream write. The fork itself is an admin's act and is still outstanding.
