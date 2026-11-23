@@ -141,3 +141,11 @@ From the consumer census below. Under Q1 = A the consumers compile unchanged onl
 - autoware_cuda's notes: hosts with both toolkits need `-DAUTOWARE_CUDA_USE_HIP=ON`, and the consumer must skip `find_package(CUDA)` then; `utils/timeit.sh` `cd`s to the moat root, so wrap `colcon` with explicit `--base-paths/--build-base/--install-base/--log-base`; every colcon build needs `-DPython3_EXECUTABLE=<venv python>`; installed binaries need `$ROCM_SDK/lib` on `LD_LIBRARY_PATH`.
 - cuda_blackboard's `hipStreamLegacy` workaround already covers subscribers built with the deprecated stream-less constructor (ground segmentation uses the deprecated cuda_blackboard API, `-Wno-error=deprecated-declarations`).
 - Ground segmentation is the stage-1 item to get right on both widths; plan.md gives the sub-wave fix and the validator's sector-boundary scene.
+
+## Rulings on the planner's questions (Jeff Daily, 2026-11-23)
+
+- Q1 (ROCm spconv for stage 4): **A**. Take `autowarefoundation/spconv_cpp` up as its own project depending on `spconv` and `cumm`; add it to `depends_on` only when stage 4 starts.
+- Q2 (bevdet): **B**. Screen `autowarefoundation/bevdet_vendor` as a project; its licence clearance is Jeff's decision when intake reaches it. bevdet stays `owed` here meanwhile.
+- Q3 (where the CUDA-to-HIP compat mapping lives): **not ruled yet**; Jeff asked how disjoint autoware_cuda and autoware_universe are and leans to B if they are meant to stand alone. Stage 1 waits for this.
+- Q4 (delivery shape): **iii**, one upstream PR per package, following upstream's norm.
+- Q5 (Agnocast variant): **not ruled yet** (Jeff asked for the question to be explained).
