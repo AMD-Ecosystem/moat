@@ -2277,3 +2277,28 @@ same harness: 125 frames, Newton k 2 / 15 / 64, frames 1-31 identical to every
 earlier run (..., 5, 5, 5, 5, 11), 137.7 ms/frame, no NaN, no HIP error.
 `jargon.py --port GPU_IPC` clean; pushed 8ee59a5..04c121a (plain push);
 `advance-head GPU_IPC 04c121a1b7999282341d609d8533be02854b75bb`.
+
+## Review 2026-11-23 (round 2, delta 8ee59a5..04c121a)
+
+Scope: the one fix commit (femEnergy.cu, +13/-3, all inside the HIP-only
+class). Done inline. No blocking findings.
+
+Checked: CUDA view of femEnergy.cu against main unchanged (one blank line, no
+token difference); the new branch uses only `NumTraits::highest()`,
+`quiet_NaN()` and `setConstant`, which compile for the device (full gfx942
+build exit 0); `mag != mag` survives because the HIP flags carry no
+fast-math; the NaN scale is sticky (`mag > NaN` is false for any later
+finite `mag`); title 67 chars with `[ROCm]`, ASCII, disclosure in prose, no
+trailer, Test Plan with literal Xvfb/gipc/xdotool commands, jargon clean.
+
+Correction to the round-1 finding and to 04c121a's commit message, measured
+with the 8ee59a5 code on the host (same test harness): an inf OFF the
+diagonal already returned NaN at 8ee59a5 (the normalized entry is
+`inf/inf` = NaN and the rotation spreads it). Only an inf ON the diagonal
+returned an all-zero matrix, and a NaN on the diagonal of a diagonal matrix
+returned a FINITE matrix with that direction dropped (not zero). 04c121a's
+message says both returned zero; the commit cannot be amended, and the
+squash message below describes the final code without that history, so the
+inaccuracy does not reach upstream.
+
+Verdict: review passed at 04c121a.
