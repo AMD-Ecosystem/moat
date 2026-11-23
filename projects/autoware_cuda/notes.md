@@ -100,3 +100,10 @@ Nobody could answer these during the planning job. plan.md is written for the re
 - Header checks against the ROCm 10.1 pip SDK on this host: rocThrust's HIP backend has no `thrust::cuda` namespace (`thrust::cuda::par` exists only in the CUDA-backend `thrust/system/cuda/detail/par.h`), so `thrust_utils.hpp` needs one guarded line; `hipHostAllocDefault`, `hipDeviceScheduleBlockingSync`, `hipMemPoolAttrReleaseThreshold`, `hipMallocFromPoolAsync` exist; `hipPointerAttribute_t` uses `type`.
 - MIGraphX is not in the pip ROCm SDK (no `migraphx.hpp` or `libmigraphx*` on this host). MIGraphX C++ API names checked in `src/api/include/migraphx/migraphx.hpp` (develop): `parse_onnx(file, onnx_options)`, `onnx_options::set_dyn_input_parameter_shape`, `set_default_dyn_dim_value`, `program::compile(target, compile_options)`, `quantize_fp16`, `quantize_int8(prog, target, quantize_int8_options)` with `add_calibration_data`/`add_op_name`, `program::eval`, `program::run_async(params, Stream*)`, `migraphx::save`/`load`, `get_parameter_shapes`, `get_output_shapes`, `argument(shape, void*)`, `register_experimental_custom_op`.
 - Wrote plan.md and surface.json (generated floor plus the hand-added tensorrt_common surface, which the census cannot see).
+
+## Rulings on the planner's questions (Jeff Daily, 2026-11-23)
+
+- Q1 (shape of the MIGraphX engine layer): **A**. Same package and classes with a second backend; stand-in `NvInfer.h` value-type headers written from scratch.
+- Q2 (INT8 on MIGraphX): **a**. Approximate through `migraphx::quantize_int8` with the caller's calibration batches; per-layer hints ignored with a logged warning.
+- Q3 (staging): **i**. Two rounds, one upstream PR. Round 1 ports `autoware_cuda_dependency_meta` and `autoware_cuda_utils` with the `autoware_tensorrt_common` surface owed; round 2 adds the MIGraphX layer on the same branch before the PR.
+- Q4 (out of scope): **both cuts confirmed**. TensorRT DLA and TensorRT's built-in plugin library are scoped out; the `plugin_paths` mechanism stays.
