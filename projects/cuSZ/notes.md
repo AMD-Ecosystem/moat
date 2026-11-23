@@ -52,6 +52,57 @@ Python binding: `-DPSZ_BUILD_PYBINDING=ON -DPython_EXECUTABLE=$FLEET_VENV/bin/py
 - CUDA no-regression compile: no nvcc on this host. The shared edits (template keyword, spline-y24 declarations, `__launch_bounds__` parens, lc_gen `#if`) need the nvcc 12.8 compile on the mi355 host before jeff approves. `cuda-not-validated: no nvcc on the gfx90a host`.
 - wave32 (gfx1100) and Windows (gfx1201): not built or run at 16623130. The shuffle-width change is a no-op on wave32 by construction, but LC is newly built on HIP and the cuda_fp8 shim, LC `-march=native -mno-fma` host flags and `__builtin_trap` are untested on Windows TheRock.
 
+## Fix review PR draft
+
+Title: Merge master (0.19) into the HIP backend for szcompressor/cuSZ#91
+
+Body:
+
+Upstream PR szcompressor/cuSZ#91 no longer merges: GitHub reports it CONFLICTING against master. The maintainer has not commented or reviewed, and nobody asked for a code change. This round merges master (b63d8c68, the 0.19 refactor, 43 commits) into the published branch and makes the HIP backend build and pass on the merged tree. The published commit 11140547 is untouched; everything below is new commits on top of it.
+
+Commits:
+
+1. 850f79bb `[ROCm] Merge master (0.19) into the HIP backend`: the merge. Conflicts in CMakeLists.txt, README.md, codec/hf/CMakeLists.txt, psz/src/compressor.inl, utils/include/compare.hh, utils/src/extrema.cu.inl (deleted upstream), utils/src/viewer.cc and test/cmake/cuda-test.cmake, each resolved to master's behavior with the HIP branch kept. The HIP side mirrors master's CUDA-side moves (new sources in cmake/hip.cmake, extrema sources in utils, new GPU tests on the backend's runtime, version 0.19). The port's two wavefront fixes (histsp scan, double atomicAdd) came through master's file renames intact.
+2. 6c9293a0 `Add template keyword to dependent ptr_of calls`: shared C++ fix; clang rejects master's `data().ptr_of<T>` in class templates.
+3. 6d1d4e21 `Match the spline-y24 forward declarations to their definitions`: shared C++ fix; master's definitions no longer match their forward declarations, which clang rejects.
+4. 6695d762 `[ROCm] Default the HIP warp-shuffle width to 32 lanes`: the shuffle translation now defaults to width 32 like CUDA. On wave64 a shuffle naming an absolute source lane read the wrong half, which made LC output fail its error bound on gfx90a.
+5. 16623130 `[ROCm] Build the LC codecs and master's new GPU code on HIP`: master now calls the LC-framework codecs unconditionally, so LC can no longer be left off on HIP. LC builds on HIP with a 32-lane logical warp. Also: cuda_fp8.h / vector_types.h shims, a `__launch_bounds__` fix in hfd26.cu, `__any_sync`/`__all_sync`/`atomicOr_block`/`__trap` translations, and HIP wiring for portable's test_pool and the new py_ext binding.
+6. b61a885e `[ROCm] Parse HIP's bf16 header before the shuffle macros`: from our own review of this round. Any HIP source that included rocprim, hipcub or hip_bf16.h after the prelude failed to compile; nothing built today does, so no output changes.
+
+Retested:
+
+- gfx90a (MI250X, ROCm 10.1): clean build from scratch at b61a885e with the architecture auto-detected; ctest 68 pass / 11 skip (RTM dataset not public) / 0 fail of 79. That includes the new CESM CLDHGH matrix with 11 LC-codec cases and the Hurricane and NYX real-data round trips. The last round was 37 / 3 / 1 of 41. The difference is master's new tests, and the old failure (hfr__cauchy_sharp__u2) now passes because master dropped its --assert-brnum-le. CLI sine round trip: CR=27.05 (master's new default HFR-PBKC pipeline), PSNR=70.8, max_error=1.000047e-03.
+- Python binding (`-DPSZ_BUILD_PYBINDING=ON`) builds on HIP; not run (no CuPy wheel for this host's ROCm).
+
+Not yet covered (must close before this merges):
+
+- CUDA no-regression compile with nvcc. Commits 2, 3 and the hfd26 / lc_gen edits touch code nvcc compiles, and the gfx90a host has no CUDA toolkit.
+- wave32 (gfx1100) and Windows (gfx1201) builds and runs at b61a885e. LC is newly built on HIP and is untested on both; the shuffle-width change is a no-op on wave32 by construction.
+
+## Upstream reply
+
+I merged current master into this branch and resolved the conflicts. Master now calls the LC codecs from the compressor, so the HIP backend builds them too, and the HIP shuffle translation now uses CUDA's 32-lane default width, which LC needs on 64-wide GPUs. Retested on MI250X (gfx90a): the full ctest suite passes, including the CESM, Hurricane and NYX round trips.
+
+## Fix review notes (ours, not upstream)
+
+- The published upstream PR body still says LC is left disabled on HIP and lists the old test results. Once this merges, the upstream PR body needs updating to match; that is an upstream-visible edit and jeff's call.
+- The upstream reply names only gfx90a. Add gfx1100 / gfx1201 only if they complete validation at the new head before the review PR opens.
+- Review found two Test Plan wording gaps that cannot be fixed without rewriting commits (not done): 6c9293a0, 6d1d4e21 and 16623130 claim an unchanged CUDA build but list only the HIP build command, and 850f79bb's Test Plan has no command. jeff decides whether that matters for upstream.
+
+## Validation 2026-11-23 (linux-gfx90a @ b61a885e -- PASS, fix round moat-fix-91)
+
+Platform: AMD Instinct MI250X (gfx90a, wave64), ROCm 10.1.0 pip SDK (amdclang 24.0.0), HIP_VISIBLE_DEVICES=2 (dispatcher pin), ulimit -c 0. Previous validated_sha 11140547 (ROCm 7.2.1).
+
+Build: clean from scratch, arch auto-detected (no CMAKE_HIP_ARCHITECTURES; detected gfx90a x4), recipe as in the porter section above minus the arch pin. rc=0. `llvm-objdump --offloading build-hip/libpsz_cu_core.so` shows a gfx90a code object.
+
+Test: `ctest --test-dir build-hip --output-on-failure -j1` -> **68 PASS / 11 SKIP / 0 FAIL of 79** (SKIP = RTM/0480.f32 absent). Non-GPU tests (portable_*, zigzag, lrz_seq, test_hf_cpu_serial_codebook, test_module) all pass. CLI sine 1M round trip: CR=27.05 PSNR=70.8 max_error=1.000047e-03.
+
+CUDA no-regression gate: `cuda-not-validated: no CUDA toolkit on this host (no /opt/conda; a job-local micromamba install was refused by the session's permission policy; the nvidia-cuda-nvcc-cu12 12.8 wheel ships ptxas but no nvcc driver)`. OWED on the mi355 host at b61a885e before jeff approves: 6c9293a0, 6d1d4e21, the hfd26 `__launch_bounds__` parens and the lc_gen `#if` change touch code nvcc compiles.
+
+Jargon: clean. Docs: unchanged from the published round (README HIP note); no build-doc change needed for this round. Integrity: `git status --porcelain` empty.
+
+Gates at b61a885e: wave64 = this run. wave32 (gfx1100) and windows (gfx1201) are `revalidate` and need real runs (LC newly built on HIP; not carried forward).
+
 ## Porter fix + re-review 2026-11-23 (linux-gfx90a @ b61a885e -- review-passed)
 
 Porter: b61a885e `[ROCm] Parse HIP's bf16 header before the shuffle macros` -- psz_hip_compat.h and cuda_runtime.h include `<hip/hip_bf16.h>` right after hip_runtime.h; cuda_fp8.h drops its push/pop. Probes with the prelude force-included: `<rocprim/types.hpp>`, `<hipcub/hipcub.hpp>`, `<hip/hip_bf16.h>`, `<cuda_fp8.h>` all 0 errors (rocprim was failing before). Incremental build rc=0; ctest 68 PASS / 11 SKIP / 0 FAIL of 79; CLI sine CR=27.05 PSNR=70.8 max_error=1.000047e-03. jargon clean; pushed moat-fix-91 16623130..b61a885e; head_sha advanced.

@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:19:23Z",
-  "updated_at": "2026-11-23T21:13:04Z",
+  "updated_at": "2026-11-23T21:14:57Z",
   "head_sha": "b61a885ead636e9e3d3b2608360883c07ee41314",
   "depends_on": [],
   "pr_url": "https://github.com/szcompressor/cuSZ/pull/91",
@@ -24,10 +24,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "11140547",
+      "validated_sha": "b61a885ead636e9e3d3b2608360883c07ee41314",
       "started_at": "2026-06-25T05:46:25.276181Z",
-      "completed_at": "2026-06-25T21:18:12Z",
-      "updated_at": "2026-11-23T21:13:04Z",
+      "completed_at": "2026-11-23T21:14:57Z",
+      "updated_at": "2026-11-23T21:14:57Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -41,7 +41,10 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "reviewer"
+      "last_agent": "validator",
+      "validated_prior": [
+        "11140547"
+      ]
     },
     "linux-gfx1100": {
       "state": "completed",
