@@ -722,3 +722,20 @@ While retesting, NPT runs changed after #561: volume moves are now always accept
 - The reply names the W7800 and the MI300X, the GPUs completed at 25ba089d so far. Once Windows validates this head, add it if you want.
 - The second paragraph of the reply reports an upstream bug the maintainer did not ask about. Cut it if you would rather file a separate issue, or not raise it at all.
 - The fork's `development` mirror is still at 09ec304e (not touched here). Until it is fast-forwarded to 411b8a73, `audit-commits` and a fresh clone's `jargon.py --port` count upstream's three new commits as ours (set a local `development` to `upstream/development` first).
+
+## CUDA compile check 2026-11-23 (mi355 host, nvcc 12.8.93): moat-fix-562 head 25ba089d vs upstream 411b8a73
+
+Requested by jeff. Compile and link only (no NVIDIA GPU on the host; nothing run on any GPU). Toolkit: the host's CUDA 12.8 at `/usr/local/cuda-12.8` (nvcc V12.8.93, the same release as the earlier redist-archive checks). Same procedure as the earlier CUDA compile gates, but `-j 16`, run on two detached worktrees of a fresh fork clone: the fork's `moat-fix-562` at 25ba089d (= recorded head_sha) and upstream `development` at 411b8a73 (the commit 25ba089d merged; still upstream's tip today).
+```bash
+C=/usr/local/cuda-12.8
+cmake -S <tree> -B <build> -DCMAKE_CUDA_COMPILER=$C/bin/nvcc -DCUDAToolkit_ROOT=$C \
+  -DCMAKE_CUDA_ARCHITECTURES=80 -DCMAKE_BUILD_TYPE=Release
+cmake --build <build> -j 16
+```
+
+| tree | rc | executables | compiler warnings | errors | wall |
+|---|---|---|---|---|---|
+| 25ba089d (port) | 0 | 8 (GOMC_{CPU,GPU}_{NVT,NPT,GCMC,GEMC}) | 0 | 0 | 122 s |
+| 411b8a73 (upstream) | 0 | 8 | 0 | 0 | 115 s |
+
+The only warning in either log is CMake's identical "Manually-specified variables were not used: CUDAToolkit_ROOT". The GPU targets' `CUDA_FLAGS` are byte-identical between the trees (`-O3 -std=c++17 -arch=all -DENSEMBLE=1..4 ... -DGOMC_CUDA`; upstream's `-arch=all` override as recorded before). Result: PASS, the port adds no nvcc error or warning on the CUDA path.
