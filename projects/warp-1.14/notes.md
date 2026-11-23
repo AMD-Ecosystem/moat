@@ -7578,3 +7578,7 @@ Archive note (session 28): the push of this session's notes was refused by the p
 ## Ruling on OpenGL interop (jeff, 2026-11-23)
 
 Surface item `feature:gl-interop`: try a headless (EGL) run on a Linux Radeon fleet host now; do one short windowed run on the Windows laptop during the Windows round, with jeff present; where a run cannot be made to work, the release notes say GL interop is untested on that platform and falls back to copying when registration fails.
+
+## Ruling on session 28's question 12 (jeff, 2026-11-23)
+
+(b), conditional on a measurement: on HIP, `fast_math` gets only what NVRTC's `--use_fast_math` has (approximate functions, reciprocal division, denormal flushing: `-fapprox-func -freciprocal-math -fgpu-flush-denormals-to-zero`, with `-fno-finite-math-only` no longer needed), not Clang's whole `-ffast-math` (no reassociation; signed zeros kept). Same principle as the contraction ruling: match what CUDA does. The porter measures fast-math kernels before and after; if any is slower by more than noise the number goes to jeff before the commit. The release notes get one sentence either way.
