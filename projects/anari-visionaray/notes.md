@@ -1459,6 +1459,12 @@ Next steps for whoever has a healthy gfx1201 (and the same applies on gfx90a, wh
 
 `anari_validate.cpp` is the 2nd job's harness (itself the first gfx1201 job's, plus RENDERER) with: the splat scene fixed (scale 0.05, opacity 0.9, linear), PPM output (`PPM_PREFIX`), per-case wall time, the header comment documenting every env var. `run_all.sh` builds it and runs each scene/renderer in its own process under `timeout -k 30 $TIMEOUT` (default 600) and `ulimit -c 0`, surface last so a hang or wedge costs nothing else. README.md explains the scenes, the PASS rule and the warning about killing hung cases. Counts from earlier harness versions are comparable for every scene except gaussian-splat (scene changed).
 
+## Review 2026-11-23 round 4 (linux-gfx1201, reviewer, 3rd job) -- moat-fix-10 6f1e7937..fd2375aa -- PASS
+
+Scope: `git diff 6f1e7937 fd2375a` (DeviceArray.h, 12 lines changed, HIP arm only), read with the pr-review checklist inline, every candidate finding re-read against the code. No problems found in the delta. Checked and dropped: the explicit `hipMemcpyDeviceToDevice` / `HostToDevice` kinds that now name pinned host buffers (the same kinds CUDA passes for its pinned buffers; the pathtrace surface run at fd2375a exercises HostDeviceArray::updateOnDevice into pinned memory and matches the CPU device); host reads of `group.lights` (filled by the blocking hipMemcpy in HostDeviceArray::updateOnDevice, so ordered); rebuildDeviceBVH2's staging buffer, which pinned primitives now always take on HIP (freed with hipFree, which synchronizes the device first); the multi-GPU selection from be630da (hipHostMallocDefault memory is mapped for every device, like cudaHostAllocDefault under UVA). Commit: title 51 chars with [ROCm] on a HIP-only change, AI disclosure, Test Plan with literal commands, no Co-Authored-By; `jargon.py --port anari-visionaray` clean.
+
+Not a review finding, recorded for the validator and the next porter: the raycast surface hang (porter section round 4) is a GPU-run failure at this head with no root cause; whether this delta causes it or only exposes it (raycast with a light never ran on HIP before, it crashed in commit() first) is open.
+
 ## Fix review PR draft
 
 Title: Merge upstream main into the HIP device PR (#10)
