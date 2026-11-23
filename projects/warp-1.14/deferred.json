@@ -317,6 +317,19 @@
         "by": "jeff",
         "at": "2026-11-20T20:40:56Z"
       }
+    },
+    {
+      "id": "warp-hip-gfx1250-fp32-wmma",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "tile_matmul fp32 WMMA on gfx1250 ships off: the fragment layout is known from documentation only and no gfx1250 hardware run measured it; the scalar path is used. jeff's Q3 ruling asked for fp32 where the target has it.",
+      "refs": [
+        "notes.md Review 2026-11-23 finding 14; warp/native/tile_matmul_mma.h"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-23T20:37:52Z",
+      "decided": null
     }
   ]
 }

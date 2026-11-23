@@ -9870,3 +9870,7 @@ The port is HIP for Warp 1.14's native library, runtime compiler, tiles, texture
 
 - The `jargon.py --port warp-1.14` run needs a local `release-1.14` branch in the clone (`git branch release-1.14 origin/release-1.14`); with it: `jargon: clean`.
 - Commit hygiene across the 71 commits holds: titles at most 72 characters, `[ROCm]` only on ROCm-specific commits, AI disclosure and Test Plans, no Co-Authored-By trailer, no noreply address, no non-ASCII.
+
+## Coordinator routing of the 2026-11-23 review (2026-11-23)
+
+Findings 1 to 13, 15 and 16 go to the porter as a fix round. Finding 14 is registered as deferred item `warp-hip-gfx1250-fp32-wmma` for jeff to rule. Finding 17 (the `dd41f3d2` commit body) is with jeff; the porter does not touch history. For finding 2 the porter adds `-fno-finite-math-only` now and reports what else clang's `-ffast-math` changes that NVRTC's `--use_fast_math` does not, as a question, without implementing a wider remap.
