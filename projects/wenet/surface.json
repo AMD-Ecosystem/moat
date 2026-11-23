@@ -454,7 +454,224 @@
       "note": "ROCm install path beside the CUDA and NPU sections; mark NVIDIA-only deploy paths"
     }
   ],
-  "covered": [],
+  "covered": [
+    {
+      "id": "python:wenet-train",
+      "evidence": "torch_ddp on 1 GPU (RCCL backend), fp32 / --use_amp fp16 / --dtype bf16, conformer and u2++ configs converge (notes table); official torch 2.8.0+rocm6.4 with speed perturb + AMP too. 2-GPU DDP not run (job pinned to one GPU)"
+    },
+    {
+      "id": "python:wenet-train-fsdp",
+      "evidence": "torch_fsdp fp32 and bf16 converge (u2++); needs a harness shim for wenet_join's ProcessGroup.options (torch-version break, deferral wenet-processgroup-options-removed)"
+    },
+    {
+      "id": "python:wenet-train-deepspeed",
+      "evidence": "DeepSpeed 0.17.1 ZeRO-1/2/3 with wenet's ds_stage*.json (bf16) converge; >= 0.17.2 breaks wenet's autocast on any vendor (deferral wenet-deepspeed-0172-autocast)"
+    },
+    {
+      "id": "python:wenet-recognize",
+      "evidence": "recognize.py --device cuda == --device cpu in ctc_greedy_search, ctc_prefix_beam_search, attention, attention_rescoring (conformer, u2++, both torch builds); alignment.py is broken upstream on every device (deferral wenet-upstream-device-independent-bugs), its force_align runs on CPU by design"
+    },
+    {
+      "id": "python:wenet-cli",
+      "evidence": "wenet CLI transcribe --device cuda with the downloaded WenetSpeech u2++ model prints the reference transcript, same as cpu"
+    },
+    {
+      "id": "python:model-families",
+      "evidence": "fwdbwd harness: 93 configs/variants PASS CPU-vs-GPU loss (<= 3e-7 rel) and grad norm (<= 1.3e-4 rel), sdpa on and off; whisper NaN on CPU too, paraformer needs LFR input, efficonformer v1 upstream bug, rnnt needs k2 (notes)"
+    },
+    {
+      "id": "python:k2-optional",
+      "evidence": "k2 master built for ROCm (gfx942) against torch 2.8; transducer training with enable_k2: true converges; k2.rnnt_loss_smoothed GPU == CPU. LF-MMI/HLG decoding not exercised (needs lexicon and LM graphs)"
+    },
+    {
+      "id": "python:lora-finetune",
+      "evidence": "train.py --use_lora --only_optimize_lora --lora_reinit (gradient init: estimate_gradient, svd_lowrank on .cuda() grads) runs and converges on GPU"
+    },
+    {
+      "id": "python:onnx-gpu-export",
+      "evidence": "export_onnx_gpu.py offline and --streaming pass the script's own torch-vs-onnxruntime check on MIGraphXExecutionProvider; recognize_onnx_gpu.py MIGraphX == CPU provider (fork ff6185b). --fp16 blocked by onnxmltools/onnx version rot (not ROCm)"
+    },
+    {
+      "id": "test:pytest-suite",
+      "evidence": "official torch 2.8.0+rocm6.4: 78 passed, 1 failed (test_init_model: upstream sensevoice tokenizer gap, same on CPU)"
+    },
+    {
+      "id": "docs:rocm-install",
+      "evidence": "README AMD GPU (ROCm) section, docs/python_package.md, runtime/libtorch README and README_CN, runtime/gpu NVIDIA-only note (fork 15c6342, ff6185b, 110f06c)"
+    },
+    {
+      "id": "executable:decoder_main",
+      "evidence": "GPU runtime build (-DGPU=ON -DTorch_DIR=<ROCm torch LibTorch>, fork 15c6342) on MI300X: decoder_main GPU == GPU=OFF build on the same LibTorch (chunk -1 and 16), reference transcript on WenetSpeech u2++, 1854 GPU kernel dispatches"
+    },
+    {
+      "id": "executable:label_checker_main",
+      "evidence": "GPU runtime build (-DGPU=ON -DTorch_DIR=<ROCm torch LibTorch>, fork 15c6342) on MI300X: built and linked"
+    },
+    {
+      "id": "executable:api_main",
+      "evidence": "GPU runtime build (-DGPU=ON -DTorch_DIR=<ROCm torch LibTorch>, fork 15c6342) on MI300X: built and linked"
+    },
+    {
+      "id": "executable:websocket_client_main",
+      "evidence": "GPU runtime build (-DGPU=ON -DTorch_DIR=<ROCm torch LibTorch>, fork 15c6342) on MI300X: built and linked"
+    },
+    {
+      "id": "executable:websocket_server_main",
+      "evidence": "GPU runtime build (-DGPU=ON -DTorch_DIR=<ROCm torch LibTorch>, fork 15c6342) on MI300X: built and linked"
+    },
+    {
+      "id": "library:decoder",
+      "evidence": "GPU runtime build (-DGPU=ON -DTorch_DIR=<ROCm torch LibTorch>, fork 15c6342) on MI300X: TorchAsrModel USE_GPU path ran on the GPU in decoder_main"
+    },
+    {
+      "id": "library:frontend",
+      "evidence": "GPU runtime build (-DGPU=ON -DTorch_DIR=<ROCm torch LibTorch>, fork 15c6342) on MI300X: feature_pipeline_test 2/2"
+    },
+    {
+      "id": "library:post_processor",
+      "evidence": "GPU runtime build (-DGPU=ON -DTorch_DIR=<ROCm torch LibTorch>, fork 15c6342) on MI300X: built; post_processor_test fails ProcessSpacek* identically in the unchanged CPU build (upstream)"
+    },
+    {
+      "id": "library:utils",
+      "evidence": "GPU runtime build (-DGPU=ON -DTorch_DIR=<ROCm torch LibTorch>, fork 15c6342) on MI300X: utils_test 1/1"
+    },
+    {
+      "id": "library:websocket",
+      "evidence": "GPU runtime build (-DGPU=ON -DTorch_DIR=<ROCm torch LibTorch>, fork 15c6342) on MI300X: built"
+    },
+    {
+      "id": "library:wenet_api",
+      "evidence": "GPU runtime build (-DGPU=ON -DTorch_DIR=<ROCm torch LibTorch>, fork 15c6342) on MI300X: built (libwenet_api.so)"
+    },
+    {
+      "id": "library:kaldi-decoder",
+      "evidence": "GPU runtime build (-DGPU=ON -DTorch_DIR=<ROCm torch LibTorch>, fork 15c6342) on MI300X: built"
+    },
+    {
+      "id": "library:kaldi-util",
+      "evidence": "GPU runtime build (-DGPU=ON -DTorch_DIR=<ROCm torch LibTorch>, fork 15c6342) on MI300X: built"
+    },
+    {
+      "id": "option:GPU",
+      "evidence": "GPU runtime build (-DGPU=ON -DTorch_DIR=<ROCm torch LibTorch>, fork 15c6342) on MI300X"
+    },
+    {
+      "id": "option:TORCH",
+      "evidence": "GPU runtime build (-DGPU=ON -DTorch_DIR=<ROCm torch LibTorch>, fork 15c6342) on MI300X"
+    },
+    {
+      "id": "option:BUILD_TESTING",
+      "evidence": "GPU runtime build (-DGPU=ON -DTorch_DIR=<ROCm torch LibTorch>, fork 15c6342) on MI300X with -DBUILD_TESTING=ON"
+    },
+    {
+      "id": "option:WEBSOCKET",
+      "evidence": "GPU runtime build (-DGPU=ON -DTorch_DIR=<ROCm torch LibTorch>, fork 15c6342) on MI300X (default ON)"
+    },
+    {
+      "id": "test:UTILS_TEST",
+      "evidence": "utils_test 1/1 on the GPU runtime build"
+    },
+    {
+      "id": "test:utils_test",
+      "evidence": "utils_test 1/1 on the GPU runtime build"
+    },
+    {
+      "id": "test:FEATURE_PIPELINE_TEST",
+      "evidence": "feature_pipeline_test 2/2 on the GPU runtime build"
+    },
+    {
+      "id": "test:feature_pipeline_test",
+      "evidence": "feature_pipeline_test 2/2 on the GPU runtime build"
+    },
+    {
+      "id": "test:CTC_PREFIX_BEAM_SEARCH_TEST",
+      "evidence": "ctc_prefix_beam_search_test 1/1 on the GPU runtime build"
+    },
+    {
+      "id": "test:ctc_prefix_beam_search_test",
+      "evidence": "ctc_prefix_beam_search_test 1/1 on the GPU runtime build"
+    },
+    {
+      "id": "test:POST_PROCESSOR_TEST",
+      "evidence": "post_processor_test built and run on the GPU runtime build; 2 cases fail identically on the unchanged CPU build (upstream)"
+    },
+    {
+      "id": "test:post_processor_test",
+      "evidence": "post_processor_test built and run on the GPU runtime build; 2 cases fail identically on the unchanged CPU build (upstream)"
+    },
+    {
+      "id": "executable:arpa2fst",
+      "evidence": "GPU runtime build (-DGPU=ON -DTorch_DIR=<ROCm torch LibTorch>, fork 15c6342) on MI300X with -DHTTP=ON -DGRAPH_TOOLS=ON: built and linked (host-side code, no GPU path)"
+    },
+    {
+      "id": "option:GRAPH_TOOLS",
+      "evidence": "GPU runtime build (-DGPU=ON -DTorch_DIR=<ROCm torch LibTorch>, fork 15c6342) on MI300X with -DHTTP=ON -DGRAPH_TOOLS=ON: built and linked (host-side code, no GPU path)"
+    },
+    {
+      "id": "executable:http_client_main",
+      "evidence": "GPU runtime build (-DGPU=ON -DTorch_DIR=<ROCm torch LibTorch>, fork 15c6342) on MI300X with -DHTTP=ON -DGRAPH_TOOLS=ON: built and linked (host-side code, no GPU path)"
+    },
+    {
+      "id": "executable:http_server_main",
+      "evidence": "GPU runtime build (-DGPU=ON -DTorch_DIR=<ROCm torch LibTorch>, fork 15c6342) on MI300X with -DHTTP=ON -DGRAPH_TOOLS=ON: built and linked (host-side code, no GPU path)"
+    },
+    {
+      "id": "library:http",
+      "evidence": "GPU runtime build (-DGPU=ON -DTorch_DIR=<ROCm torch LibTorch>, fork 15c6342) on MI300X with -DHTTP=ON -DGRAPH_TOOLS=ON: built and linked (host-side code, no GPU path)"
+    },
+    {
+      "id": "option:HTTP",
+      "evidence": "GPU runtime build (-DGPU=ON -DTorch_DIR=<ROCm torch LibTorch>, fork 15c6342) on MI300X with -DHTTP=ON -DGRAPH_TOOLS=ON: built and linked (host-side code, no GPU path)"
+    },
+    {
+      "id": "test:algo_test_lexicographic",
+      "evidence": "openfst's own CPU test (wenet's patched openfst, no torch link, same tree for CPU and GPU builds): PASS"
+    },
+    {
+      "id": "test:algo_test_lexicographic-test",
+      "evidence": "openfst's own CPU test (wenet's patched openfst, no torch link, same tree for CPU and GPU builds): PASS"
+    },
+    {
+      "id": "test:algo_test_log",
+      "evidence": "openfst's own CPU test (wenet's patched openfst, no torch link, same tree for CPU and GPU builds): PASS"
+    },
+    {
+      "id": "test:algo_test_log-test",
+      "evidence": "openfst's own CPU test (wenet's patched openfst, no torch link, same tree for CPU and GPU builds): PASS"
+    },
+    {
+      "id": "test:algo_test_minmax",
+      "evidence": "openfst's own CPU test (wenet's patched openfst, no torch link, same tree for CPU and GPU builds): PASS"
+    },
+    {
+      "id": "test:algo_test_minmax-test",
+      "evidence": "openfst's own CPU test (wenet's patched openfst, no torch link, same tree for CPU and GPU builds): PASS"
+    },
+    {
+      "id": "test:algo_test_power",
+      "evidence": "openfst's own CPU test (wenet's patched openfst, no torch link, same tree for CPU and GPU builds): PASS"
+    },
+    {
+      "id": "test:algo_test_power-test",
+      "evidence": "openfst's own CPU test (wenet's patched openfst, no torch link, same tree for CPU and GPU builds): PASS"
+    },
+    {
+      "id": "test:algo_test_tropical",
+      "evidence": "openfst's own CPU test (wenet's patched openfst, no torch link, same tree for CPU and GPU builds): PASS"
+    },
+    {
+      "id": "test:algo_test_tropical-test",
+      "evidence": "openfst's own CPU test (wenet's patched openfst, no torch link, same tree for CPU and GPU builds): PASS"
+    },
+    {
+      "id": "test:weight_test",
+      "evidence": "openfst's own CPU test (wenet's patched openfst, no torch link, same tree for CPU and GPU builds): PASS"
+    },
+    {
+      "id": "test:weight_test-test",
+      "evidence": "openfst's own CPU test (wenet's patched openfst, no torch link, same tree for CPU and GPU builds): PASS"
+    }
+  ],
   "scoped_out": [
     {
       "id": "library:bpu_asr_model",
@@ -491,8 +708,61 @@
     {
       "id": "test:xpu_conformer_test",
       "reason": "Kunlun XPU runtime: another vendor's or a mobile backend, no CUDA and no GPU path a ROCm port touches; built and tested by upstream as is"
+    },
+    {
+      "id": "option:GRPC",
+      "reason": "upstream gRPC pin v1.37.1 (2021) does not compile with gcc 13: its bundled abseil str_format/extension.h lacks <cstdint>; fails the same in any build, host-side code with no GPU path"
+    },
+    {
+      "id": "executable:grpc_client_main",
+      "reason": "upstream gRPC pin v1.37.1 (2021) does not compile with gcc 13: its bundled abseil str_format/extension.h lacks <cstdint>; fails the same in any build, host-side code with no GPU path"
+    },
+    {
+      "id": "executable:grpc_server_main",
+      "reason": "upstream gRPC pin v1.37.1 (2021) does not compile with gcc 13: its bundled abseil str_format/extension.h lacks <cstdint>; fails the same in any build, host-side code with no GPU path"
+    },
+    {
+      "id": "library:wenet_grpc",
+      "reason": "upstream gRPC pin v1.37.1 (2021) does not compile with gcc 13: its bundled abseil str_format/extension.h lacks <cstdint>; fails the same in any build, host-side code with no GPU path"
+    },
+    {
+      "id": "library:fstspecial",
+      "reason": "openfst 'special' extension is not enabled by any wenet option (runtime/core/cmake/openfst.cmake), so no wenet build produces it; host-side code"
+    },
+    {
+      "id": "executable:fstspecial-bin",
+      "reason": "openfst 'special' extension binaries are not enabled by any wenet option; host-side code"
+    },
+    {
+      "id": "test:fst_test",
+      "reason": "openfst's own CPU test (wenet's patched openfst, no torch link, same tree for CPU and GPU builds): aborts 'Fst::Read: Unknown FST type vector' reading /tmp/test.fst independent of the GPU option; not port surface"
+    },
+    {
+      "id": "test:fst_test-test",
+      "reason": "openfst's own CPU test (wenet's patched openfst, no torch link, same tree for CPU and GPU builds): same fst_test abort; not port surface"
+    },
+    {
+      "id": "cuda:tensorrt-layernorm-plugin",
+      "reason": "Jeff Daily's ruling Q1=b (2026-11-23, notes 'Rulings on the planner's questions'): runtime/gpu is scoped out and documented as NVIDIA-only; TensorRT IPluginV2 has no ROCm API"
+    },
+    {
+      "id": "deploy:triton-gpu-runtime",
+      "reason": "Jeff Daily's ruling Q1=b (2026-11-23, notes 'Rulings on the planner's questions'): runtime/gpu is scoped out and documented as NVIDIA-only; Triton/TensorRT/FasterTransformer/Riva CUDA decoder stack"
+    },
+    {
+      "id": "option:ONNX",
+      "reason": "upstream option broken on every platform: its pinned onnxruntime-linux-x64-1.13.1.tgz release asset returns HTTP 404; CPU onnxruntime with no GPU path, untouched by the port"
+    },
+    {
+      "id": "option:CXX11_ABI",
+      "reason": "only selects which upstream LibTorch zip is downloaded; a ROCm build passes Torch_DIR and takes that LibTorch's own ABI flags; unchanged by the port"
     }
   ],
-  "owed": [],
+  "owed": [
+    {
+      "id": "python:transducer-torchaudio-rnnt",
+      "reason": "torchaudio's ROCm builds have no GPU rnnt_loss (deferral torchaudio-rocm-no-gpu-rnnt-forced-align); docs point transducer training at enable_k2 (validated). Whether wenet gets a CPU fallback is open for jeff (notes, porter round 1, Question 1)"
+    }
+  ],
   "removed_from_floor": []
 }

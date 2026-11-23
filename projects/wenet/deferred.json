@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "wenet-torchaudio-29-removed-apis",
+      "kind": "other",
+      "component": null,
+      "summary": "wenet calls torchaudio APIs that torchaudio 2.9 removed: torchaudio.info (wenet/dataset/processor.py:149 segment reads, tools/compute_cmvn_stats.py:32, tools/compute_fbank_feats.py:107) and torchaudio.sox_effects.apply_effects_tensor (processor.py:226 speed perturbation); test/tools/test_make_shard.py uses torchaudio.utils.sox_utils. requirements.txt/setup.py put no upper bound on torchaudio, so a fresh install pulls 2.9+ and breaks on CUDA and ROCm alike (upstream CI too). The ROCm port pins torch/torchaudio 2.8 in its docs (2.8 is the newest line with all of them) instead of migrating; the migration (soundfile/torchcodec for info, a resample-based speed perturb) is an upstream change of its own.",
+      "refs": [
+        "projects/wenet/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-23T21:53:23Z",
+      "decided": null
+    },
+    {
+      "id": "torchaudio-rocm-no-gpu-rnnt-forced-align",
+      "kind": "rocm-bug-report",
+      "component": "torchaudio",
+      "summary": "torchaudio's ROCm builds ship no GPU kernel for torchaudio::rnnt_loss or torchaudio::forced_align (checked: download.pytorch.org 2.8.0+rocm6.4, TheRock 2.8.0a0+rocm7.12 and 2.11.0+rocm7.2; libtorchaudio.so has no HIP code). On a GPU tensor: 'Could not run torchaudio::rnnt_loss with arguments from the CUDA backend ... only available for these backends: [CPU, Meta, ...]'. wenet's default transducer loss (wenet/models/transducer/transducer.py:180,495) therefore fails on AMD GPUs; the documented workaround is enable_k2 with a ROCm build of k2 (validated on MI300X). torchaudio is in maintenance mode, so a fix there is unlikely; whether wenet should fall back to a CPU loss is a ruling for jeff (notes question).",
+      "refs": [
+        "projects/wenet/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-23T21:53:23Z",
+      "decided": null
+    },
+    {
+      "id": "wenet-processgroup-options-removed",
+      "kind": "other",
+      "component": null,
+      "summary": "wenet_join (wenet/utils/train_utils.py:657) passes group_join.options._timeout to dist.monitored_barrier; current torch's ProcessGroup has no options attribute (AttributeError on torch 2.8), so torch_fsdp and deepspeed training die after the first batch on any GPU vendor (torch_ddp skips the join). Validation used a harness-only shim restoring the attribute. Upstream fix: keep the timedelta passed to dist.new_group in train.py and hand it to wenet_join.",
+      "refs": [
+        "projects/wenet/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-23T21:53:23Z",
+      "decided": null
+    },
+    {
+      "id": "wenet-deepspeed-0172-autocast",
+      "kind": "other",
+      "component": null,
+      "summary": "DeepSpeed >= 0.17.2 (torch_autocast feature, deepspeed/runtime/torch_autocast.py) disables an outer torch.autocast unless the DeepSpeed config has a torch_autocast section, so wenet's bf16/fp16 ZeRO configs (examples/*/whisper/conf/ds_stage*.json) feed fp32 inputs into bf16 weights: 'RuntimeError: Input type (float) and bias type (c10::BFloat16) should be the same' (seen on DeepSpeed 0.20.0, any GPU vendor). requirements.txt says deepspeed>=0.14.0. Validated ZeRO-1/2/3 on DeepSpeed 0.17.1. Upstream fix: a torch_autocast section in the ds configs or an upper bound.",
+      "refs": [
+        "projects/wenet/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-23T21:53:23Z",
+      "decided": null
+    },
+    {
+      "id": "wenet-wetextprocessing-floating-master",
+      "kind": "other",
+      "component": null,
+      "summary": "runtime/core/cmake/wetextprocessing.cmake fetches WeTextProcessing at GIT_TAG origin/master; since 2026-06 (160a126 runtime deps/C++20 update) master no longer compiles against wenet's openfst 1.7.2.1 ('no matching function for call to fst::StringCompiler<...>::StringCompiler()' in wetext_processor.cc), so every runtime/libtorch build (CPU default included) fails. Validated with WeTextProcessing fd9026c through FETCHCONTENT_SOURCE_DIR_WETEXTPROCESSING. Upstream fix: pin a tag/commit.",
+      "refs": [
+        "projects/wenet/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-23T21:53:23Z",
+      "decided": null
+    },
+    {
+      "id": "therock-torch-wheel-runpath-ci-paths",
+      "kind": "rocm-bug-report",
+      "component": "TheRock",
+      "summary": "TheRock's torch wheels (seen on torch 2.8.0+rocm7.12.0 from repo.amd.com gfx94X-dcgpu) set RUNPATH on libtorch_cpu.so/libtorch_hip.so to TheRock's CI tree ('$ORIGIN:/opt/python/cp311-cp311/lib/python3.11/site-packages/_rocm_sdk_devel/lib/host-math/lib:...'), so a C++ program linking the wheel's LibTorch cannot find librocm-openblas.so.0, librocm_sysdeps_liblzma.so.5 or the ROCm runtime at link or run time (Python hides it: rocm_sdk preloads them). Building wenet's LibTorch runtime against it needed LD_LIBRARY_PATH to the pip SDK's lib, lib/host-math/lib and lib/rocm_sysdeps/lib. download.pytorch.org ROCm wheels bundle these next to libtorch with $ORIGIN.",
+      "refs": [
+        "projects/wenet/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-23T21:53:24Z",
+      "decided": null
+    },
+    {
+      "id": "wenet-upstream-device-independent-bugs",
+      "kind": "other",
+      "component": null,
+      "summary": "Upstream wenet bugs met while validating, all reproducible on CPU and unrelated to ROCm: (1) check_modify_and_save_config sets input_dim only for model: asr_model, so model: transducer configs die with KeyError input_dim in train.py; (2) efficient_conformer/attention.py:218 calls cache.size() on the tuple the shared encoder layer now passes (efficonformer v1 configs fail forward); (3) wenet/bin/alignment.py:233 unpacks a 5-tuple but the dataset yields dicts; (4) train.py:182 links final.pt -> <n>.pt while checkpoints are epoch_<n>.pt; (5) --lora_init_yaml defaults to wenet/finetune/lora/config.yaml, now wenet/models/finetune/lora/config.yaml; (6) test_init_model has no branch for the sentencepiece tokenizer of examples/aishell/sensevoice; (7) export_onnx_gpu.py --fp16 imports onnxmltools.utils.float16_converter, gone from current onnxmltools; (8) post_processor_test ProcessSpacek* fail; (9) openai-whisper==20231117 pins triton<3, unsatisfiable next to current torch. Candidates for separate upstream issues, a person's call.",
+      "refs": [
+        "projects/wenet/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-23T21:53:24Z",
+      "decided": null
+    }
+  ]
+}
