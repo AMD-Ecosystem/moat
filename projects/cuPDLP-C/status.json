@@ -7,8 +7,8 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T07:45:23Z",
-  "updated_at": "2026-08-07T07:04:57Z",
-  "head_sha": "d380bcab9f7bf75bbaa7b14366f6c7902c2a8f91",
+  "updated_at": "2026-11-04T23:18:22Z",
+  "head_sha": "f56941f4f6b8c3e4113f8a481b9b8c10f4ebcfd2",
   "depends_on": [],
   "pr_url": "https://github.com/COPT-Public/cuPDLP-C/pull/41",
   "pr_number": 41,
@@ -24,10 +24,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "d380bcab9f7bf75bbaa7b14366f6c7902c2a8f91",
+      "validated_sha": "f56941f4f6b8c3e4113f8a481b9b8c10f4ebcfd2",
       "started_at": "2026-06-05T07:50:17Z",
-      "completed_at": "2026-06-08T15:23:53Z",
-      "updated_at": "2026-06-23T22:21:06Z",
+      "completed_at": "2026-11-04T08:30:17Z",
+      "updated_at": "2026-11-04T18:45:30Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -41,22 +41,24 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "planner",
+      "last_agent": "reviewer",
       "carry_forward": {
-        "to": "d380bcab9f7bf75bbaa7b14366f6c7902c2a8f91",
+        "from": "8f43bf8401712e7ce342cc52a412872f09f22069",
+        "to": "f56941f4f6b8c3e4113f8a481b9b8c10f4ebcfd2",
         "method": "source-class",
-        "detail": "gfx90a pin removal; CMake dead-code/default-path change, build byte-identical, no GPU re-run",
-        "at": "2026-06-23T22:21:06Z"
+        "class": "comment-only",
+        "detail": "FindHIPConf.cmake: comment-only (comments/format only); cupdlp/cuda/cuda_to_hip.h: comment-only (comments/format only); cupdlp/cuda/cupdlp_cuda_kernels.cu: comment-only (comments/format only)",
+        "at": "2026-11-04T18:38:47Z"
       }
     },
     "linux-gfx1100": {
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "d380bcab9f7bf75bbaa7b14366f6c7902c2a8f91",
-      "started_at": null,
-      "completed_at": "2026-06-23T22:21:06Z",
-      "updated_at": "2026-06-23T22:21:06Z",
+      "validated_sha": "f56941f4f6b8c3e4113f8a481b9b8c10f4ebcfd2",
+      "started_at": "2026-11-04T07:38:28Z",
+      "completed_at": "2026-11-04T08:36:11Z",
+      "updated_at": "2026-11-04T18:39:01Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -70,11 +72,14 @@
         "first_session_at": null,
         "last_session_at": null
       },
+      "last_agent": "validator",
       "carry_forward": {
-        "to": "d380bcab9f7bf75bbaa7b14366f6c7902c2a8f91",
+        "from": "8f43bf8401712e7ce342cc52a412872f09f22069",
+        "to": "f56941f4f6b8c3e4113f8a481b9b8c10f4ebcfd2",
         "method": "source-class",
-        "detail": "gfx90a pin removal; CMake dead-code/default-path change, build byte-identical, no GPU re-run",
-        "at": "2026-06-23T22:21:06Z"
+        "class": "comment-only",
+        "detail": "FindHIPConf.cmake: comment-only (comments/format only); cupdlp/cuda/cuda_to_hip.h: comment-only (comments/format only); cupdlp/cuda/cupdlp_cuda_kernels.cu: comment-only (comments/format only)",
+        "at": "2026-11-04T18:38:47Z"
       }
     },
     "windows-gfx1101": {
@@ -134,7 +139,68 @@
         "detail": "gfx90a pin removal; CMake dead-code/default-path change, build byte-identical, no GPU re-run",
         "at": "2026-06-23T22:21:06Z"
       }
+    },
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-04T08:21:24Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "reviewer"
+    },
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "f56941f4f6b8c3e4113f8a481b9b8c10f4ebcfd2",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-11-04T18:53:48Z",
+      "updated_at": "2026-11-04T18:53:48Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "last_agent": "validator"
     }
   },
-  "published_sha": "d380bcab9f7bf75bbaa7b14366f6c7902c2a8f91"
+  "published_sha": "f56941f4f6b8c3e4113f8a481b9b8c10f4ebcfd2",
+  "fix": null,
+  "porting_released": {
+    "arch": "linux-gfx90a",
+    "since": "2026-11-04T18:43:54Z",
+    "at": "2026-11-04T18:45:30Z"
+  },
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-11-04T23:11:04Z",
+    "head_sha": "f56941f4f6b8c3e4113f8a481b9b8c10f4ebcfd2",
+    "content_sha256": "3f1f44b1247d713f09ddbb4c6f80ae8f71d7ac310daff3574798238ac7ed3676",
+    "review_pr": "https://github.com/AMD-Ecosystem/cuPDLP-C/pull/1"
+  },
+  "fix_merged_at": "2026-11-04T23:18:22Z"
 }
