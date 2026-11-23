@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "codegen",
   "adopted_at": "2026-06-05T04:44:12Z",
-  "updated_at": "2026-11-23T20:58:59Z",
+  "updated_at": "2026-11-23T21:06:37Z",
   "head_sha": "77e096c6d87924b9062c31b349a12ecacd73e007",
   "depends_on": [],
   "pr_url": "https://github.com/brian-team/brian2cuda/pull/327",
@@ -30,10 +30,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "1c9536f5ea33193aaf4383580900cc2aa35a99fb",
+      "validated_sha": "77e096c6d87924b9062c31b349a12ecacd73e007",
       "started_at": "2026-06-05T08:30:52Z",
-      "completed_at": "2026-11-20T22:21:58Z",
-      "updated_at": "2026-11-23T20:58:59Z",
+      "completed_at": "2026-11-23T21:06:37Z",
+      "updated_at": "2026-11-23T21:06:37Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -47,9 +47,10 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "reviewer",
+      "last_agent": "validator",
       "validated_prior": [
-        "90d6d7cf13b1dd9cfb814b157c1b357395115f56"
+        "90d6d7cf13b1dd9cfb814b157c1b357395115f56",
+        "1c9536f5ea33193aaf4383580900cc2aa35a99fb"
       ]
     },
     "linux-gfx1100": {
