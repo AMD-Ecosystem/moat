@@ -20,3 +20,12 @@
 {"kind":"phase","ts":"2026-11-23T21:40:52Z","phase":"test","seconds":1051.007,"exit":0,"cmd":"bash agent_space/humans_numerics.sh"}
 {"kind":"session","ts":"2026-11-23T21:45:49Z","epoch":1795470349.139075,"event":"end","platform":"linux-gfx950"}
 {"kind":"session","ts":"2026-11-23T22:05:25Z","epoch":1795471525.700218,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-23T22:06:25Z","epoch":1795471585.969502,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-23T22:06:34Z","phase":"compile","seconds":0.013,"exit":2,"cmd":"timeout 1800 python setup.py build install"}
+{"kind":"phase","ts":"2026-11-23T22:07:07Z","phase":"test","seconds":32.547,"exit":1,"cmd":"timeout 3600 python /var/lib/jenkins/fleet/jobs/mi300c-20261123-135230-fix-liveportrait-prompt/moat/projects/LivePortrait/src/src/utils/dependencies/XPose/models/UniPose/ops/test.py"}
+{"kind":"phase","ts":"2026-11-23T22:07:34Z","phase":"compile","seconds":3.317,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi300c-20261123-135230-fix-liveportrait-prompt/moat/projects/LivePortrait/src/src/utils/dependencies/XPose/models/UniPose/ops && timeout 1800 python setup.py build install"}
+{"kind":"phase","ts":"2026-11-23T22:17:23Z","phase":"test","seconds":573.92,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300c-20261123-135230-fix-liveportrait-prompt/work/scripts/humans.sh"}
+{"kind":"phase","ts":"2026-11-23T22:22:35Z","phase":"test","seconds":224.376,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300c-20261123-135230-fix-liveportrait-prompt/work/scripts/animals.sh"}
+{"kind":"phase","ts":"2026-11-23T22:28:15Z","phase":"test","seconds":328.605,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300c-20261123-135230-fix-liveportrait-prompt/work/scripts/animals.sh"}
+{"kind":"phase","ts":"2026-11-23T22:41:17Z","phase":"test","seconds":743.384,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300c-20261123-135230-fix-liveportrait-prompt/work/scripts/humans_cmp.sh"}
+{"kind":"session","ts":"2026-11-23T22:46:05Z","epoch":1795473965.728009,"event":"end","platform":"linux-gfx942"}

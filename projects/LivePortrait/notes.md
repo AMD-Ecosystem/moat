@@ -298,3 +298,78 @@ Porter check on AMD Instinct MI300X (gfx942, `HIP_VISIBLE_DEVICES=1`), TheRock 1
 Reviewed the one-commit delta (`git diff 00f208c...874215c`, `reviewed_sha` was `00f208c`) with the pr-review skill, inline (12 lines; each check re-read against the code). Verdict: **no findings; review passed.**
 
 Checked: the `setdefault` runs at module level right after the imports in both Animals entry points, before `main()` / the module-level Gradio setup, and no imported `src` module runs a convolution at import time, so MIOpen has not read the variable yet (runtime confirmation in the porter note above: no Winograd solver with the default, Winograd back with a user `=1`). Guard is `torch.version.hip is not None`, the same test the provider helper uses, so CUDA and CPU-only torch never touch the environment. The only other Animals-pipeline users (`src/gradio_pipeline.py`, `src/live_portrait_pipeline_animal.py`) are reached only through these two entry points; Humans entry points and `speed.py` untouched, as ruled. The variable is process-wide, which is the ruled trade-off (the gfx950 addendum measured no end-to-end cost). README paragraphs in both languages describe the default and the precedence of a user value, and no longer tell users to set it; the Chinese text says the same as the English. Commit: title 57 chars, `[ROCm]` earned (ROCm-only behaviour), "Authored with Claude.", Test Plan with literal command, no trailer, ASCII in code; `jargon.py --port LivePortrait` clean. Left to validation: whether a MIOpen find-db that already holds Winograd records for these shapes (from a run with Winograd allowed) is still overridden by the default, and the black-box comparison on this GPU.
+
+## Validation 2026-11-23 (linux-gfx942, validator role, fleet job): head 874215c
+
+AMD Instinct MI300X (gfx942:sramecc+:xnack-, wave64) in a CPX compute partition: 24 GiB, 38 CUs visible. Job GPU pin `HIP_VISIBLE_DEVICES=1`; every GPU run under `ulimit -c 0` and `timeout`. Fork `moat-port` at `874215c` (= `head_sha`, = `reviewed_sha`), built in `projects/LivePortrait/src`. Verdict: **pass**. **This platform demonstrates the fix**: without the change, the default Animals FP16 command overflows here (black boxes); with it, it does not.
+
+### Environment (job-local; nothing in the image's shared paths)
+
+- `$FLEET_VENV` (Python 3.11.17): `torch[device-gfx942]==2.16.0a0+rocm10.2.0a20261022`, `torchvision==0.30.0a0+rocm10.2.0a20261022`, `rocm[libraries,devel,device-gfx942]==10.2.0a20261022` from `https://nightly.repo.amd.com/rocm/whl-next/` (HIP 7.17.26422); then `requirements_rocm.txt` (onnxruntime-migraphx 1.27.1, onnx 1.16.1, numpy 1.26.4) and the gradio pins (`huggingface_hub<1` -> 0.36.2, `fastapi==0.115.2`, `pydantic==2.10.6`). The venv still sees the image's 10.1 device wheels for other gfx targets through its base-links `.pth`; the gfx942 core, libraries and device wheels are 10.2.
+- MIGraphX `f0239c9` built per the gfx1100 recipe with `-DGPU_TARGETS=gfx942`; nlohmann/json v3.8.0, msgpack-c cpp-3.3.0, rocm-cmake 6a7c5b73 and protobuf v3.21.12 (no system protobuf headers here, as on gfx950) built first into a job-local prefix; MAX_JOBS=64. Run time `LD_LIBRARY_PATH=<migraphx-install>/lib:<venv>/_rocm_sdk_core/lib:<venv>/_rocm_sdk_libraries/lib`, `ORT_MIGRAPHX_MODEL_CACHE_PATH=<job dir>`.
+- `ffmpeg` from the `imageio-ffmpeg` wheel, `ffprobe` built from FFmpeg `n7.1` (same configure line as gfx950). Weights: `snapshot_download('KwaiVGI/LivePortrait', ignore_patterns=['*.git*','README.md','docs/*'])` into the job dir, symlinked into `pretrained_weights/` for the runs and removed afterwards.
+- MIOpen user db: job-local `MIOPEN_USER_DB_PATH` for the Animals and comparison runs (the container's shared `~/.config/miopen` holds other jobs' records), emptied before the first Animals run.
+- Instrumentation (container-local scripts, not committed): a wrapper that runs an entry point with `runpy`, forward hooks on every loaded network reporting the first module whose inputs are finite and output is not, saves the first N `SPADEDecoder` outputs, logs each ORT session's providers, prints `os.environ['MIOPEN_DEBUG_CONV_WINOGRAD']` as seen inside the process when the wrapper is constructed, and sets no MIOpen variable itself; and a comparer (x255 generator tensors and decoded video; "dark block" = 16x16 block mean < 8 in the candidate and > 40 in the reference, as before).
+
+### X-Pose op
+
+`ROCM_HOME=$(rocm-sdk path --root) PATH=$ROCM_HOME/bin:$PATH PYTORCH_ROCM_ARCH=gfx942 python setup.py build install` in `ops/`: rc 0, deprecation warnings only, `llvm-objdump --offloading` shows `hip-amdgcn-amd-amdhsa--gfx942`. `python test.py` (unmodified): forward double True (max abs 8.67e-19, rel 2.35e-16), float True (4.66e-10, 1.13e-07), `check_gradient_numerical` True for D = 30, 32, 64, 71, 1025; D = 2048 runs out of memory in the test's slow-mode dense double Jacobians on the 24 GiB partition (as on the 48 GB gfx1100; passed on the 288 GB gfx950). `gradcheck(fast_mode=True)`: D = 30 and 2048 True; D = 1025 and 3096 fail only the reentrancy check ("analytical gradient matches numerical") and are True with `nondet_tol=1e-12`, exactly the gfx1100 pattern (atomicAdd ordering).
+
+### Humans mode (MIGraphX EP active; 0 provider-fallback messages)
+
+| run | rc | wall |
+|---|---|---|
+| `python inference.py` (s0/d0, fp16), MIGraphX compile cold | 0 | 204 s |
+| same, warm | 0 | 22.1 s |
+| `-s s9.jpg -d d0.mp4` | 0 | 22.0 s |
+| `-s s13.mp4 -d d0.mp4` | 0 | 33.3 s |
+| `-s s9.jpg -d d12.jpg` | 0 | 16.5 s |
+| `-s s9.jpg -d d0.pkl` | 0 | 20.7 s |
+| `--no_flag_use_half_precision` | 0 | 78.1 s (cold FP32 find) |
+| `--flag_do_torch_compile` | 0 | 177 s; one inductor autotune candidate rejected ("Runtime error during autotuning ... Ignoring this choice"), as on the other platforms |
+
+Humans mode is unchanged by the delta: with `MIOPEN_LOG_LEVEL=5` the default Humans run still chooses `ConvWinoRageRxS<2-3>` 19 times (the variable is not set in that process).
+
+FP16 vs FP32 vs CPU (ONNX forced to the CPU EP in all three so the crops are identical; 4 sources x `d0.mp4`; generator: first 8 frames, 3x512x512, x255; video: 78 frames):
+
+| source | GPU FP32 vs CPU FP32, generator max / mean | GPU FP16 vs CPU FP32, generator max / mean / p99.9 | video GPU FP32 vs CPU mean / max | video GPU FP16 vs CPU mean / max |
+|---|---|---|---|---|
+| s0 | 0.003 / 0.0001 | 1.39 / 0.064 / 0.58 | 0.353 / 27 | 0.530 / 27 |
+| s5 | 0.003 / 0.0001 | 3.00 / 0.080 / 0.91 | 0.439 / 20 | 0.534 / 28 |
+| s7 | 0.030 / 0.0001 | 14.87 / 0.100 / 2.83 | 0.794 / 27 | 0.929 / 34 |
+| s9 | 0.021 / 0.0002 | 15.93 / 0.113 / 1.97 | 0.523 / 28 | 0.699 / 25 |
+
+No NaN/Inf (78 of 78 generator calls finite in all 12 runs) and 0 dark blocks anywhere. Wall: GPU FP16 28-40 s, GPU FP32 36-87 s, CPU FP32 101-108 s per video.
+
+ONNX provider parity (26 bundled `.jpg`, 24 with faces; MIGraphX vs CPU EP, sessions report `['MIGraphXExecutionProvider', 'CPUExecutionProvider']` vs `['CPUExecutionProvider']`): same face counts, boxes within 1.2e-4 px, scores within 6.6e-7, 106-point within 0.094 px, 203-point (crop) within 0.051 px; 20.8 ms vs 199 ms per image (median, steady).
+
+### Animals mode: the change
+
+`python inference_animals.py -s assets/examples/source/s39.jpg -d assets/examples/driving/wink.pkl --driving_multiplier 1.75 --no_flag_stitching` (57 frames), MIOpen user db emptied before A0. "Previous code" is `git show 00f208c:inference_animals.py` saved as an untracked copy in the checkout (removed afterwards), run from the same tree.
+
+| run | in-process value | Winograd chosen (`MIOPEN_LOG_LEVEL=5` "FW Chosen Algorithm") | non-finite generator outputs | first non-finite module | vs FP32: generator max / mean (16 frames) | vs FP32: video mean / max / dark blocks |
+|---|---|---|---|---|---|---|
+| A0 previous code (00f208c), FP16 default | unset | `ConvWinoRageRxS<2-3>` x19 | 40 of 57; "invalid value encountered in cast" | `spade_generator.G_middle_5.conv_1` (Conv2d, input absmax 38336) | 9.49 / 0.30 (finite part; 1572864 non-finite values) | **96.0 / 252 / 36301** (black boxes) |
+| A1 head, FP16 default (db holds A0's Winograd records) | `'0'` | none | 0 of 57 | none | 9.69 / 0.28 | 1.33 / 27 / 0 |
+| A2 head, `--no_flag_use_half_precision` (reference) | `'0'` | none | 0 | none | -- | -- |
+| A3 head, FP16, user sets `MIOPEN_DEBUG_CONV_WINOGRAD=1` | `'1'` | `ConvWinoRageRxS<2-3>` x19 | 40 of 57 | `G_middle_5.conv_1` (input absmax 38304) | 9.94 / 0.33 (finite part) | 96.1 / 252 / 36301 |
+| A4 head, FP16 default, empty db | `'0'` | none | 0 | none | 8.55 / 0.33 | 1.35 / 31 / 0 |
+
+So: the default is really in effect in the Animals process (in-process value `'0'`, no Winograd solver chosen); a user value wins (A3 restores the previous behaviour exactly); a MIOpen find-db that already holds Winograd records for these shapes does not defeat it (A1); and the previous default overflowed on this GPU, with the same first layer, magnitude and dark-block count as the gfx1100 report (36307 there). gfx950 differs only because MIOpen does not pick Winograd for that shape there. Timing, warm, plain runs: default 22.2 / 22.2 s, with `MIOPEN_DEBUG_CONV_WINOGRAD=1` 22.4 / 22.1 s: no measurable cost.
+
+Synthetic reproducer (the draft issue's code, at MIOpen defaults on gfx942): mag 16000 finite (err 1.41); 30000 (exact max 3360) 1048576 inf + 1048576 NaN; 40000 2097152 NaN; MIOpen chose `ConvWinoRageRxS<2-3>`. With `MIOPEN_DEBUG_CONV_WINOGRAD=0` (`ConvHipImplicitGemmGroupFwdXdlops`): all finite, err 0.48 / 0.97 / 0.99. For the draft MIOpen issue: on MI300X (gfx942) the overflowing solver is chosen by default, not only when forced, so the issue can say it is hit by default on RDNA3 (W7800) and CDNA3 (MI300X).
+
+### Gradio
+
+`app.py` HTTP 200 after 11 s; `app_animals.py` HTTP 200 after 14 s, in-process value `'0'`. One Animals request driven through `gradio_client` (`/gpu_wrapped_execute_video`, s39.jpg + wink.pkl, Pickle tab, multiplier 1.75, crop on, stitching off): ORT sessions on MIGraphX, no Winograd solver chosen, no "invalid value" warning, 0 non-finite generator outputs; video vs the CLI FP32 run mean 1.36/255, max 38, 0 dark blocks.
+
+### Gates
+
+- CUDA no-regression compile: not re-run (no nvcc on this host). The delta `00f208c..874215c` changes only `inference_animals.py`, `app_animals.py` and the two READMEs; no compiled source changed, so the nvcc 12.8 build recorded at `00f208c` in the gfx950 review still describes every compiled file. The new Python lines are inside `if torch.version.hip is not None`, which a CUDA torch never enters (code reading).
+- `python3 utils/jargon.py --port LivePortrait`: clean. Docs: both READMEs describe the default.
+- Integrity: `git status --porcelain --untracked-files=no` empty; untracked files are hipify build output only.
+
+### Still for a person / other platforms
+
+- `moatlib.py classify LivePortrait 00f208c 874215c`: `mixed`, not inert, so linux-gfx950 now reads `revalidate` and needs a real run (a host-side Python behaviour change; a binary-equivalence carry-forward would not see it). The wave32 gate needs a gfx1100 (or other RDNA) run at `874215c`; that run is also the second platform where the fix is visible. Windows stays last per the standing ruling.
+- Unchanged: `benchmark:speed` owed in surface.json, and the draft MIOpen issue (now with gfx950 forced-solver rows and the gfx942 default-choice evidence above) awaiting Jeff's approval to post.
