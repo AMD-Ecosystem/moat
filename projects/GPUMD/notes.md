@@ -2290,3 +2290,25 @@ No problems requiring changes. Two things for the next stages, not findings agai
 - ea3fa7fa's Test Plan names the spin pytest, which fails at that commit (that is why 0bb29e76 exists; its body says so). Not amendable under the house rule; the next commit records it.
 
 Verdict: **review-passed** at 0bb29e76.
+
+## Validation 2026-11-23 (linux-gfx942, validator) -- sync round 3 at 0bb29e76, PASSED
+
+Same job, after review-passed. Host and toolchain as in the porter section above (MI300X gfx942, HIP 7.16.26385, `HIP_VISIBLE_DEVICES=1`, `ulimit -c 0`, GPU 1 idle before and after). No carry-forward: the delta is an upstream merge, so a full run.
+
+Evidence at 0bb29e76 (all from the porter section's runs on binaries built from this exact tree: the release build in the clone after 0bb29e76's edit and the DEBUG worktree at 0bb29e76): full `tests_regression` 249/255 + relations 25/25 (the 5 rand()-reseed cases and `qnep_pppm_future_bec`; 0/6 plain, 5/6 under the srand shim on rerun); `-m "not slow"` 937 passed / 2 failed / 638 skipped / 30 deselected (`test_prediction_wall[1]`, HIP has no runtime specialization, deferral `gpumd-hip-nep-runtime-specialization`; `test_input_errors[nan lambda_d]`, upstream code/test mismatch, platform-independent); seed test 10/10; replica batched/qnep-resume subset 3/3 on three repeats; TB suite 32/32.
+
+Independent rebuild for this stage: a fresh detached worktree `agent_space/val` at 0bb29e76 (the clone's `make clean` was refused by the harness's removal check, so no tree was cleaned):
+
+    utils/timeit.sh GPUMD compile -- make -C agent_space/val/src -f makefile.hip HIP_ARCH=gfx942 -j56
+
+rc 0, 0 errors; gpumd 19169920 B, nep 2886016 B, tb 315784 B (identical sizes to the porter's build). On it: `python3 -m pytest tests_pytest/test_replica.py` **20 passed**; `python3 -m pytest tests_pytest/test_spin_*.py` **173 passed, 1 failed** (`test_prediction_wall[1]`, as above).
+
+Against the last gfx942 record (d3658389): no regression attributable to the port; every count difference is explained in the porter section's table (upstream's test growth, upstream fixing the 4 rand() spin cases, upstream's new JIT test and its `is_valid_real` change, our dropped ILP case).
+
+Gates:
+- CUDA compile: **not run here (no nvcc on this host); the mi355 nvcc 12.8 comparison is owed at 0bb29e76.**
+- `python3 utils/jargon.py --port GPUMD`: clean.
+- Documentation: upstream's `doc/installation.rst` AMD section matches `makefile.hip`.
+- Integrity: `git status --porcelain --untracked-files=no` empty in the clone and both worktrees, all at 0bb29e76.
+
+Result: **completed** at 0bb29e76 on linux-gfx942. Other platforms read revalidate (gfx90a: the `-ffp-contract` replica check; gfx1100 and windows-gfx1151: wave32 and the new Windows makefile procedure).
