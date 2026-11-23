@@ -7,7 +7,7 @@
   "priority": 4.792,
   "ext_type": "unknown",
   "adopted_at": "2026-05-30T00:36:13Z",
-  "updated_at": "2026-08-12T22:10:50Z",
+  "updated_at": "2026-11-23T20:27:40Z",
   "head_sha": "df10bfe",
   "depends_on": [
     "STRUMPACK"
@@ -161,5 +161,11 @@
       }
     }
   },
-  "published_sha": "df10bfe27ccff8b7095b459a018417c22bdd093c"
+  "published_sha": "df10bfe27ccff8b7095b459a018417c22bdd093c",
+  "fix": {
+    "branch": "moat-fix-73",
+    "base_sha": "df10bfe27ccff8b7095b459a018417c22bdd093c",
+    "review_pr": null,
+    "opened_at": "2026-11-23T20:27:40Z"
+  }
 }
