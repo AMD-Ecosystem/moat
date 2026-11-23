@@ -9712,3 +9712,7 @@ for N in [int(float(s)) for s in sys.argv[1:]] or [10**3, 3000, 10**4, 30000, 10
         record(area="refit", op="noise_query_point", N=N, constructor=con, med=m, min=mn, max=mx, reps=7)
         del mesh
 ```
+
+## Ruling on session 26's question 11 (jeff, 2026-11-23)
+
+(b): commit the inlined depth-level kernel for winding-number meshes as built, HIP-only, threshold `num_items >= 65536`. Node bounds and every query result match the walk; the solid angle moment data of multi-triangle leaves differs from the walk in the last bits (relative about 1e-7) because the compiler contracts each kernel differently, which is the same size as the difference between the walk's own two leaf copies. The bit-identity condition in the earlier prompt was the coordinator's, not jeff's, and is withdrawn for the solid angle arrays; it still holds for node bounds and query results. The shared-helper variant (a) is not taken.
