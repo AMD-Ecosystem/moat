@@ -2370,6 +2370,36 @@ python3 utils/prose.py <commit message>             # prose: clean
 python3 utils/moatlib.py set-state GPU_IPC linux-gfx950 delta-ported --agent porter
 ```
 
+## Review 2026-11-23 (round 3, delta 04c121a..53d17e2)
+
+Scope: the one commit (GPU_IPC/gl_main.cpp, +5/-1), with the pr-review
+skill, done inline (a one-hunk delta). No blocking findings.
+
+Checked: with the HIP guard not taken, gl_main.cpp is upstream's text
+except the two include lines jeff ruled to keep (item 3 of the porter
+round's list: `#include <cuda_runtime.h>` -> `#include "cuda_to_hip.h"`,
+and `#include "device_launch_parameters.h"` removed):
+
+```bash
+unifdef -UUSE_HIP -U__HIP_PLATFORM_AMD__ GPU_IPC/gl_main.cpp | diff <(git show main:GPU_IPC/gl_main.cpp) -
+# 15c15 <cuda_runtime.h> vs "cuda_to_hip.h"; 18d17 device_launch_parameters.h; nothing else
+```
+
+The message line itself is byte-identical to upstream's (`od -c` of both
+lines compared equal; both files ASCII, LF endings), and the CUDA-side
+gl_main.o carries exactly upstream's string. The guard
+`defined(USE_HIP) || defined(__HIP_PLATFORM_AMD__)` is the one
+`cuda_to_hip.h` uses; CMake defines `USE_HIP` for the target and
+`hip::host` brings `__HIP_PLATFORM_AMD__` to the plain C++ sources, so the
+HIP branch is taken in the AMD build (`strings build/gipc` shows only the
+HIP message). Under HIP `cudaSetDevice` is `#define`d to `hipSetDevice`
+(cuda_to_hip.h:26), so the AMD text names the failing call. No other file
+touched. Commit: title 58 chars, `[ROCm]` correct (the added lines name HIP
+and AMD), ASCII, AI disclosure in prose, no trailer, Test Plan with literal
+commands, `jargon.py --port GPU_IPC` clean.
+
+Verdict: review passed at 53d17e2.
+
 ## Upstream PR draft
 
 Status (2026-11-23, head 04c121a): replaces the two earlier draft sections.
