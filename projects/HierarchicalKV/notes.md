@@ -101,5 +101,5 @@ Options:
 ## Rulings on the planner's questions (Jeff Daily, 2026-11-23)
 
 - Decision 1 (scope): **C**. Port the header library, every default CMake target (the gtest executables and the 3 default benchmarks), the opt-in research benchmarks (`-DHKV_BUILD_REPRO_BENCHMARKS=ON`), and a ROCm Bazel path (a `rocm_configure` equivalent beside `cuda_configure`). `benchmark/native_tbe` and `baselines/` stay out (outside every option the planner offered).
-- Decision 2 (windows gate): **not ruled yet**. Jeff asked what a waiver would cost; the Linux port proceeds meanwhile. Do not assume a waiver or a Windows filter.
+- Decision 2 (windows gate): **b** (ruled later the same day). Validate on the Windows laptop with a named gtest filter that excludes the large cases (64M-key tables, 16-100 GB `max_hbm_for_vectors`). No waiver. The laptop run comes last, after wave64 and wave32 pass at the same head, and the validator must read each remaining test for repeated CAS/spin loops and reduce repetition counts in a driver before running (a repeated atomicCAS test hard-froze this laptop on 2026-11-20).
 - Decision 3 (base branch): **yes**. `set-base-branch HierarchicalKV master --by jeffdaily` was run on 2026-11-23.
