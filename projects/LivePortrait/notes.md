@@ -205,3 +205,78 @@ Lesson checks: the MIGraphX EP lesson's NEEDED libraries are right; its RUNPATH 
 ## Ruling on the porter's Question 1 (Jeff Daily, 2026-11-23)
 
 **B, guarded code workaround.** On ROCm PyTorch only (`torch.version.hip`), the Animals entry points default `MIOPEN_DEBUG_CONV_WINOGRAD=0` (`os.environ.setdefault`, so a user's own setting wins) before the first convolution, so the documented Animals command works in half precision. Jeff also asked for the MIOpen issue draft to be prepared (not posted without his approval) and set `moat-port` as the fork's GitHub default branch (done 2026-11-23).
+## Validation 2026-11-23 (linux-gfx950, validator role, fleet job)
+
+AMD Instinct MI355X (gfx950:sramecc+:xnack-, wave64), job GPU pin `HIP_VISIBLE_DEVICES=7`, every GPU run under `ulimit -c 0` and `timeout`. Fork `moat-port` at `00f208cdf0e7` (= `head_sha`), built in `projects/LivePortrait/src`. Verdict: **pass**.
+
+### Environment (job-local; nothing in the image's shared paths)
+
+- `$FLEET_VENV` (Python 3.11.17): `torch[device-gfx950]==2.16.0a0+rocm10.2.0a20261022`, `torchvision==0.30.0a0+rocm10.2.0a20261022`, `rocm[libraries,devel,device-gfx950]==10.2.0a20261022` from `https://nightly.repo.amd.com/rocm/whl-next/` (HIP 7.17.26422); then `requirements_rocm.txt` (resolved `onnxruntime-migraphx` 1.27.1, `onnx` 1.16.1, numpy 1.26.4) plus the gradio pins the porter recorded (`huggingface_hub<1`, `fastapi==0.115.2`, `pydantic==2.10.6`).
+- MIGraphX runtime: AMDMIGraphX `f0239c9` built per the porter's recipe with `-DGPU_TARGETS=gfx950` (93 s at -j18). This host has no system protobuf headers, so protobuf v3.21.12 was built first into the same deps prefix (`cmake -S protobuf/cmake ... -Dprotobuf_BUILD_TESTS=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON`, its `bin/` first on PATH for `protoc`). Run time: `LD_LIBRARY_PATH=<migraphx-install>/lib:<venv>/_rocm_sdk_core/lib:<venv>/_rocm_sdk_libraries/lib`, `ORT_MIGRAPHX_MODEL_CACHE_PATH=<job dir>`.
+- FFmpeg: the host has none. `ffmpeg` = the binary shipped in the `imageio-ffmpeg` wheel (4.2.2) on PATH; `ffprobe` built from FFmpeg `n7.1` source (`./configure --disable-x86asm --disable-doc --disable-ffplay --disable-ffmpeg --enable-ffprobe`). Without `ffprobe` the inference scripts still run (audio detection logs an error and turns audio off) but the Gradio apps die at start (`FFExecutableNotFoundError: Executable 'ffprobe' not found` in gradio's `video_is_playable`); upstream's own install note asks for both.
+- Weights: `snapshot_download('KwaiVGI/LivePortrait', ignore_patterns=['*.git*','README.md','docs/*'])` into the job dir, symlinked into `pretrained_weights/` for the runs and removed afterwards.
+- ORT prints about 56 `device_discovery.cc ... Failed to open file "/sys/class/drm/cardN/device/vendor"` warnings per process on this container; harmless noise, providers load.
+
+### X-Pose op
+
+`cd src/utils/dependencies/XPose/models/UniPose/ops && ROCM_HOME=$(rocm-sdk path --root) PATH=$ROCM_HOME/bin:$PATH PYTORCH_ROCM_ARCH=gfx950 python setup.py build install`: rc 0, deprecation warnings only, `hipcc` from the venv SDK, `--offload-arch=gfx950`; `llvm-objdump --offloading` shows `hip-amdgcn-amd-amdhsa--gfx950`. Untracked hipify output (`src/hip/`, `*_hip.cpp/h`) is the only tree change.
+
+`python test.py` (unmodified, default slow-mode gradcheck): **9/9 True**. Forward double True (max abs 8.67e-19, rel 2.35e-16), float True (max abs 4.66e-10, rel 1.13e-07); `check_gradient_numerical` True for D = 30, 32, 64, 71, 1025, 2048 and 3096. The 288 GB card fits the dense double Jacobians that ran out of memory on the 48 GB gfx1100, so the multi-block (>1024) backward path passes the test as written here.
+
+### Humans mode (MIGraphX EP active; 0 provider-fallback messages in every log)
+
+| run | rc | wall |
+|---|---|---|
+| `python inference.py` (s0/d0, fp16), first run, MIGraphX compile cold | 0 | 161 s |
+| same, warm cache | 0 | 15.5 s |
+| `-s s9.jpg -d d0.mp4` | 0 | 14.9 s |
+| `-s s13.mp4 -d d0.mp4` (video source) | 0 | 19.1 s |
+| `-s s9.jpg -d d12.jpg` (image driving) | 0 | 13.2 s |
+| `-s s9.jpg -d d0.pkl` | 0 | 14.4 s |
+| `-s s9.jpg -d talking.pkl` | 1 | `KeyError: 'c_d_eyes_lst'`, upstream data (porter saw the same) |
+| `--no_flag_use_half_precision` | 0 | 64.7 s (cold FP32 MIOpen find) |
+| `--flag_do_torch_compile` | 0 | 133 s; one autotune candidate rejected (`permute(sparse_coo) ... input.dim() = 5 is not equal to len(dims) = 4. Ignoring this choice`), as on gfx1100 |
+| `python speed.py` | 0 | 151 s; no autotune error, no hipError. Appearance 0.68 ms, Motion 1.34 ms, Warping 4.26 ms, SPADE 3.42 ms, Stitching+Retargeting 0.17 ms (100-run means) |
+
+`speed.py` passes on gfx950 where it aborted on gfx1100; `benchmark:speed` stays `owed` in surface.json because changing that record is not the validator's call; this run is the evidence for whoever rules it.
+
+### FP16 vs FP32 vs CPU (Humans)
+
+ONNX forced to the CPU EP for all three modes (identical crops); 4 sources (s0, s5, s7, s9) x `d0.mp4`; generator output captured for the first 8 frames per run (32 tensors of 3x512x512), x255; decoded output video 78 frames. "dark block" = 16x16 block mean < 8 in the candidate and > 40 in the reference.
+
+| source | GPU FP32 vs CPU FP32, generator max / mean | GPU FP16 vs CPU FP32, generator max / mean / p99.9 | video GPU FP32 vs CPU mean / max | video GPU FP16 vs CPU mean / max |
+|---|---|---|---|---|
+| s0 | 0.004 / 0.0001 | 1.57 / 0.056 / 0.55 | 0.066 / 27 | 0.540 / 27 |
+| s5 | 0.004 / 0.0001 | 2.56 / 0.070 / 0.75 | 0.444 / 22 | 0.514 / 20 |
+| s7 | 0.023 / 0.0001 | 14.75 / 0.097 / 2.98 | 0.791 / 29 | 0.925 / 34 |
+| s9 | 0.020 / 0.0002 | 9.83 / 0.108 / 1.70 | 0.484 / 27 | 0.678 / 31 |
+
+No NaN/Inf and 0 dark blocks in any tensor or video. CPU FP32 wall 70-373 s per video vs 15-20 s on the GPU.
+
+ONNX provider parity (26 bundled `.jpg` sources, 24 with faces; MIGraphX vs CPU EP, `get_providers()` confirmed): same face counts, boxes within 7.6e-5 px, scores within 6.9e-7, 106-point within 0.0088 px, 203-point within 0.067 px; 15.3 ms vs 109 ms per image steady (MIGraphX session build + 26 images 14.2 s with the cache populated).
+
+### Animals mode
+
+`python inference_animals.py -s assets/examples/source/s39.jpg -d assets/examples/driving/wink.pkl --driving_multiplier 1.75 --no_flag_stitching` (57 frames), with forward hooks on all four networks reporting the first module whose inputs are finite and output is not:
+
+| run | rc | wall | non-finite | vs FP32: generator max / mean (16 frames) | vs FP32: video mean / max / dark blocks |
+|---|---|---|---|---|---|
+| default FP16 | 0 | 58 s | none, no `invalid value encountered in cast` | 13.2 / 0.35 | 1.35 / 29 / 0 |
+| `--no_flag_use_half_precision` | 0 | 65 s | none | -- | -- |
+| FP16 + `MIOPEN_DEBUG_CONV_WINOGRAD=0` (README workaround) | 0 | 31 s | none | 13.4 / 0.44 | 1.38 / 23 / 0 |
+
+**No black boxes on gfx950 with the default command.** `MIOPEN_LOG_LEVEL=5` over the FP16 run: MIOpen chose `ConvAsmImplicitGemmGTCDynamicFwdXdlopsNHWC` (11), `ConvHipImplicitGemm3DGroupFwdXdlops` (11), `ConvWinoRageRxS<2-3>` (16), `GemmFwd1x1_0_1` (7), `GemmFwdRest` (5), `ConvDirectNaiveConvFwd` (3), `ConvHipImplicitGemmGroupFwdXdlops` (2). Winograd is used for some layers but not for the overflowing `G_middle_5.conv_1` shape, whose FP16 find-db record (`512-64-64-3x3-512-64-64-...-FP16`) lists only ConvHipConv, GemmFwdRest, ConvHipImplicitGemmGroupFwdXdlops and ConvAsmImplicitGemmGTCDynamicFwdXdlopsNHWC (no FP16 Winograd records exist in the user find-db at all, so the reviewer's forced-solver experiment left nothing behind). The README text ("on some AMD GPUs (seen on a Radeon PRO W7800)") is accurate for this card too. CPU FP32 for Animals is not possible: the extension's CPU path is `AT_ERROR("Not implement on cpu")` upstream.
+
+### Gradio
+
+`app.py` and `app_animals.py` each serve `/` with HTTP 200 (18 s and 16 s after start) once `ffprobe` is on PATH. No request driven through the UI.
+
+### Gates
+
+- CUDA no-regression compile at `00f208c`: done in the review above (nvcc 12.8, torch 2.11.0+cu128, sm_80/sm_90, imports).
+- `python3 utils/jargon.py --port LivePortrait`: clean. Documentation: ROCm install and op build documented beside the CUDA ones in both READMEs.
+- Integrity: `git status --porcelain --untracked-files=no` empty; untracked files are hipify build output only.
+
+### Still for a person (unchanged by this run)
+
+Porter Question 1 (FP16 Animals workaround in code or docs; gfx950 needs none), the fork default branch (`moat-port`), `benchmark:speed` owed in surface.json (passes here), the draft MIOpen issue (add the gfx950 forced-solver rows from the review above), and Windows last.
