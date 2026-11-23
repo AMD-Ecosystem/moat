@@ -1359,6 +1359,47 @@ Against the last linux-gfx90a record (c7ac989c, 2026-06-25, older harness that c
 
 Content checks: `jargon.py --port anari-visionaray` clean (after creating a local `main` branch from origin/main in the fork clone so the range resolves); README documents the HIP device build. Recorded: `set-state anari-visionaray linux-gfx90a completed` (validated_sha 6f1e7937). wave64 gate satisfied at this head. Still owed at 6f1e7937: linux-gfx1100 and windows-gfx1201 GPU runs (and linux-gfx1201 once a healthy GPU is pinned).
 
+## Validation 2026-11-23 (linux-gfx1201, validator, 2nd job) -- FAIL at 6f1e7937: HIP device segfaults on any scene with a light
+
+Head 6f1e7937 on moat-fix-10 (fork clone at projects/anari-visionaray/src, `git rev-parse HEAD` = 6f1e7937b823184cbc34a3296a65ca273a249861, `git status --porcelain` empty), stage review-passed, platform port-ready. GPU: AMD Radeon AI PRO R9700 (gfx1201), HIP_VISIBLE_DEVICES=2 (dispatcher pin, kept), ROCm 10.1.0 pip SDK. Everything under `ulimit -c 0`.
+
+Device check first: the 64-thread smoke kernel on the pinned GPU passes (`timeout 60 ./smoke` -> `AMD Radeon AI PRO R9700 gfx1201 h[63]=126`, rc 0). This card works (the first gfx1201 job's GPU 0 hung).
+
+Build: the porter section's recipe unchanged (gfx1201, -j12), fresh deps in this job dir: ANARI-SDK next_release @ 47b22af (rc 0), visionaray master @ 99d4829c plus the hip_bvh.h assign_indices fix (rc 0). Fork configure + `utils/timeit.sh anari-visionaray compile -- cmake --build $J/build -j12` (144 s) + install: rc 0, 0 errors. libanari_library_visionaray_hip.so: 8 offload bundles, `.hip_fatbin` 7.1 MB, exports `anari_library_visionaray_hip_new_library` only -- identical to the porter's build numbers.
+
+Harness: the porter's own agent_space/anari_validate.cpp (copied read-only from the first gfx1201 job dir on this host), with one change: `RENDERER` env selects the renderer subtype (default = pathtrace, or raycast), as the gfx90a run did. Scene names: surface (2 triangles, matte, vertex colours, one directional light), volume-nearest/-linear (32^3 structuredRegular), nanovdb-nearest/-linear (createFogVolumeSphere(50)), gaussian-splat (216 splats); 256x256 UFIXED8_RGBA_SRGB, RUNS=8, PASS = every run nonzero and more than one distinct colour. One scene per process; HIP then CPU in the same process; HIP only for gaussian-splat (the CPU device segfaults on splats upstream, gfx90a section).
+```
+ulimit -c 0
+for r in default raycast; do for sc in surface volume-nearest volume-linear nanovdb-nearest nanovdb-linear gaussian-splat; do
+  devs="visionaray_hip visionaray"; [ $sc = gaussian-splat ] && devs=visionaray_hip
+  RENDERER=$r ONLY=$sc RUNS=8 ANARI_LIBRARY_PATH=$J/build/install/lib \
+    LD_LIBRARY_PATH=$J/build/install/lib:$J/deps/anari-install/lib timeout 600 ./anari_validate $devs
+done; done
+```
+
+Results, HIP device (nonzero / distinct, all 8 runs identical in every scene):
+
+| scene | pathtrace (default) | raycast | HIP vs CPU meanAbsDiff (pt / rc) | result |
+|---|---|---|---|---|
+| surface | SIGSEGV | SIGSEGV | -- | FAIL |
+| volume-nearest | 2071 / 510 | 9099 / 2701 | 2.617 / 1.756 | PASS |
+| volume-linear | 2086 / 710 | 8996 / 961 | 2.628 / 1.728 | PASS |
+| nanovdb-nearest | 6265 / 1597 | 15180 / 4526 | 7.533 / 16.472 | PASS |
+| nanovdb-linear | 6242 / 2092 | 15011 / 6149 | 7.489 / 15.645 | PASS |
+| gaussian-splat | 0 / 1 (black) | 65536 / 6465 | no CPU reference | pt FAIL, rc PASS |
+
+CPU device: every scene above PASS with both renderers; CPU surface (pathtrace) nonzero=10581 distinct=10151, exactly the porter's CPU number at 6ad03010. Raycast coverage matches CPU (volume 9099 vs 9102, NanoVDB 15180 vs 15180, 15011 vs 15011). Linear-filtered structured volumes work on gfx1201 (they fault only on gfx90a, deferral visionaray-hip-texture-linear-float-cdna).
+
+Against the last records: gfx90a at this head passed surface and pathtrace splats with a harness rewritten there (format FLOAT32_VEC4, its scene details not on this host), so its counts are not comparable number for number; the last linux-gfx1201 record is windows-gfx1201 at 1b6b35a8 (pre-merge) and the first gfx1201 job never ran a GPU program. Volumes and NanoVDB agree with the earlier PASS records; surface and pathtrace splats are the differences.
+
+### Cause of the surface crash (found, not fixed: porter work)
+
+gdb: SIGSEGV in `visionaray::VisionarayScene::commit()+690` <- `World::rebuildTLS()` <- `Frame::renderFrame()`, before any kernel. Only scenes with a light crash (the volume scenes have none). scene/VisionarayScene.cpp:45-55 (upstream code) reads `group.lights[i]` on the host, and VisionarayScene.cpp:246 sets `group.lights = m_lights.devicePtr()`, a `DeviceArray` buffer. Upstream d5339fc "Use pinned memory in device arrays" (in the 139 merged commits) switched the CUDA `DeviceArray` (DeviceArray.h) from cudaMalloc to `cudaHostAlloc`/`cudaFreeHost` -- host-readable pinned memory that the host code now relies on -- and left the HIP arm on `hipMalloc`/`hipFree` (device memory). DeviceArray.h is identical to upstream c1aa91b on moat-fix-10, so the merge kept the CUDA-only change: the same fault class as review round 1 (upstream CUDA-only change without a HIP arm). d5339fc also moved rebuildDeviceIndexBVH2's staging buffer in DeviceBVH.h to cudaHostAlloc for CUDA only.
+
+Confirmation (scratch worktree of the fork, built to a separate dir, removed afterwards; nothing committed or pushed): the HIP arm of DeviceArray.h (lines 152-277) switched to `hipHostMalloc(&p, n*sizeof(T), hipHostMallocDefault)` / `hipHostFree` -> pathtrace surface PASS on HIP (nonzero=10584 distinct=10168, 8/8 identical; CPU 10581/10151). But with that change the raycast surface run did not finish within `timeout 600` (killed), and pathtrace gaussian-splat stayed black (0 / 1). So the pinned-memory arm is the cause of the crash and the direction of the fix, but it is not the complete fix: the raycast hang under pinned memory and the black pathtrace splat image still need a porter's diagnosis. Why gfx90a did not crash was not verified here; one possibility is that its harness's surface scene had no light, another that large-BAR VRAM on that host is CPU-mapped (this R9700 has a 256 MB BAR0).
+
+Recorded: `set-state anari-visionaray linux-gfx1201 validation-failed` at 6f1e7937. The fork clone is clean; nothing pushed to the fork. The Upstream reply section is unchanged (no pass on this GPU). The fix review PR draft's linux-gfx1201 "Retested" bullet is stale and should be rewritten with the next round's result.
+
 ## Fix review PR draft
 
 Title: Merge upstream main into the HIP device PR (#10)
