@@ -7,7 +7,7 @@
   "priority": 6.146,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T00:04:57Z",
-  "updated_at": "2026-11-05T07:12:24Z",
+  "updated_at": "2026-11-23T21:44:18Z",
   "head_sha": "83be197816b2ce57303c29dda35b7c56d8d9209b",
   "pr_url": "https://github.com/arrayfire/arrayfire/pull/3708",
   "pr_number": 3708,
@@ -185,7 +185,14 @@
     "at": "2026-09-10T19:41:38Z",
     "note": "upstream hosts the identical commits itself on arrayfire/arrayfire branch experimental/hip; the fork branch stays a mirror of it"
   },
-  "fix": null,
+  "fix": {
+    "branch": "moat-sync-b11d700",
+    "base_sha": "83be197816b2ce57303c29dda35b7c56d8d9209b",
+    "review_pr": null,
+    "opened_at": "2026-11-23T21:44:18Z",
+    "kind": "sync",
+    "upstream_sha": "b11d7007980bee208f8e1c89dfbd9131790110f8"
+  },
   "porting_released": {
     "arch": "linux-gfx1100",
     "since": "2026-11-04T20:58:13Z",
