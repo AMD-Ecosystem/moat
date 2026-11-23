@@ -7,7 +7,7 @@
   "priority": 4.792,
   "ext_type": "unknown",
   "adopted_at": "2026-05-30T00:36:13Z",
-  "updated_at": "2026-11-23T21:06:41Z",
+  "updated_at": "2026-11-23T21:23:48Z",
   "head_sha": "091056d7eff6e385a2684be4aa6c9c1fcec55426",
   "depends_on": [
     "STRUMPACK"
@@ -156,6 +156,29 @@
         "detail": "CMake default-path change (drop gfx90a pin, rely on project(LANGUAGES HIP) auto-detect); explicit -D builds byte-identical",
         "at": "2026-06-23T21:32:38Z"
       }
+    },
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "091056d7eff6e385a2684be4aa6c9c1fcec55426",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-11-23T21:23:48Z",
+      "updated_at": "2026-11-23T21:23:48Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed"
     }
   },
   "published_sha": "df10bfe27ccff8b7095b459a018417c22bdd093c",

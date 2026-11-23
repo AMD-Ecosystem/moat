@@ -1078,6 +1078,35 @@ Docs: README keeps the one-line AMD support note (the README defers build steps 
 
 Verdict: linux-gfx1100 completed at 091056d7. wave64 (gfx90a) and windows platforms read revalidate at this head and still need their own runs; the delta includes upstream's whole tet feature, so no carry-forward applies to them.
 
+## Validation 2026-11-23 (linux-gfx942) -- moat-fix-73 at 091056d7, real GPU run
+
+Platform: linux-gfx942, AMD Instinct MI300X (CDNA3, wave64), HIP_VISIBLE_DEVICES=7 (pinned by the dispatcher; the binary saw one device, "AMD Instinct MI300X"), ROCm pip SDK 10.1.0 (`_rocm_sdk_devel`, no /opt/rocm), amdgpu kernel driver 6.16.13. Fork: AMD-Ecosystem/RXMesh moat-fix-73 @ 091056d7eff6e385a2684be4aa6c9c1fcec55426, fresh clone, clean tree. First validation on this platform (no earlier gfx942 record); the comparison is against the linux-gfx1100 run at this head and the last wave64 record (gfx90a, 25 tests at df10bfe).
+
+Build: the gfx1100 entry's cmake line with `-DCMAKE_HIP_ARCHITECTURES=gfx942`, fresh directory `projects/RXMesh/build-val`:
+
+```
+R=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+ROCM_PATH=$R cmake -S projects/RXMesh/src -B projects/RXMesh/build-val -G Ninja \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 \
+  -DCMAKE_HIP_COMPILER=$R/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R \
+  -DRX_USE_POLYSCOPE=OFF -DRX_BUILD_APPS=OFF -DRX_BUILD_TESTS=ON \
+  -DCMAKE_BUILD_TYPE=Release
+ninja -C projects/RXMesh/build-val -j 38 RXMesh RXMesh_test
+(ulimit -c 0; cd agent_space/run && <moat>/projects/RXMesh/build-val/bin/RXMesh_test)
+```
+
+125/125 steps, 0 errors (158 s). `llvm-objdump --offloading bin/RXMesh_test`: exactly one bundle, `hip-amdgcn-amd-amdhsa--gfx942`. The test ran from a scratch cwd so the Export test's sphere3.obj/.vtk did not land in the checkout.
+
+Tests (one run, full binary, no filter): 30/30 PASSED, 30 tests from 4 suites, 2810 ms. Same 30 names as the gfx1100 run at this head. Against the last wave64 record (gfx90a, 25/25 then 24/25 at df10bfe): +5 upstream tet tests (TetBoundaryVertex, ForEachTet, ForEachOnDeviceTet, TetQueries, TetVerticesOrientation) and the upstream renames recorded above; nothing lost, nothing failed. RXMeshDynamic.PatchLock passed (93 ms); its documented flake has only been seen on gfx90a, and one run here says nothing about its rate.
+
+Disabled count: gtest reports 3 DISABLED tests (DISABLED_HigherQueries, DISABLED_MeasureWastedWork, DISABLED_BenchmarkLPHashTable), and the source at 091056d7 has exactly those 3 `DISABLED_` TESTs. The "4 DISABLED_" in the porter and gfx1100 entries above is a miscount, not a difference between hosts.
+
+CUDA no-regression gate: already recorded at this head (porter and gfx1100 entries); not rerun.
+
+Docs and jargon: README line 16 keeps the AMD/ROCm support note; `jargon.py --port RXMesh`: clean (local `main` set to upstream/main in the fork clone first, as the porter did).
+
+Verdict: linux-gfx942 completed at 091056d7. This satisfies the wave64 gate at this head. gfx90a and the Windows platforms still read revalidate.
+
 ## Fix review PR draft
 
 Title: Merge upstream main into the ROCm port (resolve #73 conflicts)
@@ -1095,16 +1124,17 @@ Commits:
 Retested:
 
 - AMD Radeon Pro W7800 (gfx1100, Linux, ROCm 10.1): fresh build, full `RXMesh_test` 30/30 twice (the previous 25 plus 5 new upstream tet tests).
+- AMD Instinct MI300X (gfx942, Linux, ROCm 10.1): fresh build, full `RXMesh_test` 30/30.
 - CUDA compile (nvcc 12.8, sm_80, no GPU): library and `RXMesh_test` build and link, with upstream's device LTO active.
-- Not yet at this head: gfx90a (wave64) and the Windows hosts. Windows could not be tested here. The round changes Windows-relevant code only through the merged upstream sources and the HIP-only headers above.
+- Not yet at this head: gfx90a and the Windows hosts. Windows could not be tested here. The round changes Windows-relevant code only through the merged upstream sources and the HIP-only headers above.
 
 Our own changes against upstream are the same file set as before, moved where upstream moved code.
 
 ## Upstream reply
 
-Merged current main into the branch, so this should be mergeable again. The new tet code needed a few small HIP additions (a `cuda::std::array` stand-in, a couple of runtime/hipSPARSE aliases, two `.template` keywords); the CUDA path is unchanged and still builds with your new device LTO. Retested on an AMD Radeon Pro W7800 (gfx1100): all 30 tests in RXMesh_test pass, including the new tet tests.
+Merged current main into the branch, so this should be mergeable again. The new tet code needed a few small HIP additions (a `cuda::std::array` stand-in, a couple of runtime/hipSPARSE aliases, two `.template` keywords); the CUDA path is unchanged and still builds with your new device LTO. Retested on an AMD Radeon Pro W7800 (gfx1100) and an AMD Instinct MI300X (gfx942): all 30 tests in RXMesh_test pass on both, including the new tet tests.
 
 ## Notes for us (not upstream)
 
-- Before the reply is posted, the reply text must name only GPUs completed at the merged head. Today that is the W7800 (linux-gfx1100). Add gfx90a and the Windows cards to the reply if they validate at 091056d7 before the review PR is opened.
+- Before the reply is posted, the reply text must name only GPUs completed at the merged head. Today that is the W7800 (linux-gfx1100) and the MI300X (linux-gfx942). Add gfx90a and the Windows cards to the reply if they validate at 091056d7 before the review PR is opened.
 - Deferred registered this round: `rxmesh-hip-installed-package-config` (pre-existing CUDA-only RXMeshConfig.cmake.in).
