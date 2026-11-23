@@ -9077,6 +9077,64 @@ print("registered; kernel read mismatches", int(bad.numpy()[0]), "GL read-back m
 del r; glfw.terminate()
 ```
 
+### Addendum: trimmed reproducer
+
+jeff's follow-up: confirm his trimmed reproducer for the HIP GL interop lookup defect exactly as written, for the upstream issue. Evidence only, same rules as above. Ran it with the unmodified ROCm 10.2 runtime (`rocm-sdk-core 10.2.0`, `HIP Version: 7.17.26434`), with no Warp involved. Setup: my Weston/Xwayland from the section above, restarted (`Using rendering device: /dev/dri/renderD131`, `xserver listening on display :0`), with `DISPLAY=:0 DRI_PRIME=pci-0000_c3_00_0 HIP_VISIBLE_DEVICES=1` (the dispatcher pin, kept). The file was saved unchanged as `<job>/gl/repro/repro.py` (sha256 `125803638f509f7cf5c1f332f24fb239485742b685e684208416059a0f85bd80`) and run from `/tmp`. Afterwards I stopped Weston by recorded PID (2631516; its children Xwayland 2631629 and the two helpers 2631532 and 2631533 exited with it). The X177 socket in `/tmp/.X11-unix` belongs to someone else and was not touched.
+
+**Finding `libamdhip64.so.7`.** As written, with nothing else set, the script fails at `hip = ctypes.CDLL("libamdhip64.so.7")` with `OSError: libamdhip64.so.7: cannot open shared object file: No such file or directory`. The container has no system ROCm (no `/opt/rocm*/lib/libamdhip64.so.7`, nothing in `ldconfig -p`), only the pip SDK. What was needed is one environment variable, with no script change: `LD_LIBRARY_PATH=<venv>/lib/python3.11/site-packages/_rocm_sdk_core/lib`, the rocm_sdk core lib directory. `libamdhip64.so.7`'s RPATH (`$ORIGIN/rocm_sysdeps/lib:$ORIGIN/llvm/lib:...:$ORIGIN`) resolves its own dependencies. The library loaded from that directory (checked in `/proc/self/maps`). No `rocm_sdk.initialize_process(...)` line was used. For the issue text: "with a pip-installed ROCm SDK, set `LD_LIBRARY_PATH` to the `_rocm_sdk_core/lib` directory of the environment; with a system install, `/opt/rocm/lib` on the loader path."
+
+Command (`L=<venv>/lib/python3.11/site-packages/_rocm_sdk_core/lib`):
+
+```bash
+DISPLAY=:0 DRI_PRIME=pci-0000_c3_00_0 HIP_VISIBLE_DEVICES=1 LD_LIBRARY_PATH=$L python repro.py
+DISPLAY=:0 DRI_PRIME=pci-0000_c3_00_0 HIP_VISIBLE_DEVICES=1 LD_LIBRARY_PATH=$L GL_GLOBAL=1 python repro.py
+```
+
+| run | printed line | exit |
+|---|---|---|
+| plain, 1 | `hipGraphicsGLRegisterBuffer: 1 hipErrorInvalidValue` | 0 |
+| plain, 2 | `hipGraphicsGLRegisterBuffer: 1 hipErrorInvalidValue` | 0 |
+| `GL_GLOBAL=1`, 1 | `hipGraphicsGLRegisterBuffer: 0 hipSuccess` | 0 |
+| `GL_GLOBAL=1`, 2 | `hipGraphicsGLRegisterBuffer: 0 hipSuccess` | 0 |
+
+The two plain runs set `GL_GLOBAL` to an empty string, which the script treats as unset. The `AMD_LOG_LEVEL=4` run used `env -u GL_GLOBAL` and printed the same line. That run's log (31 lines), from the register call to its return:
+
+```
+:3:hip_gl.cpp               :715 : ... hipGraphicsGLRegisterBuffer ( 0x7766c23a7fa0, 2, 0 )
+:1:rocdevice.cpp            :2019: ... Failed GlInterop::glAssociate()
+:1:hip_gl.cpp               :89  : ... Context setup failed: create
+:1:hip_gl.cpp               :720 : ... No GL context is current
+:3:hip_gl.cpp               :721 : ... hipGraphicsGLRegisterBuffer: Returned hipErrorInvalidValue :
+```
+
+The three error lines are `Failed GlInterop::glAssociate()`, `Context setup failed: create` and `No GL context is current`; timestamp, pid and tid prefixes are elided above.
+
+The script runs as written; no correction is needed beyond the `LD_LIBRARY_PATH` above.
+
+**Map after registration.** `repro_map.py` is `repro.py` with these lines appended (`repro.py` itself unchanged):
+
+```python
+if r == 0:
+    r = hip.hipGraphicsMapResources(1, ctypes.byref(res), None)
+    print("hipGraphicsMapResources:", r, hip.hipGetErrorName(r).decode())
+    ptr = ctypes.c_void_p(); size = ctypes.c_size_t()
+    r = hip.hipGraphicsResourceGetMappedPointer(ctypes.byref(ptr), ctypes.byref(size), res)
+    print("hipGraphicsResourceGetMappedPointer:", r, hip.hipGetErrorName(r).decode(), hex(ptr.value or 0), size.value)
+    r = hip.hipGraphicsUnmapResources(1, ctypes.byref(res), None)
+    print("hipGraphicsUnmapResources:", r, hip.hipGetErrorName(r).decode())
+    r = hip.hipGraphicsUnregisterResource(res)
+    print("hipGraphicsUnregisterResource:", r, hip.hipGetErrorName(r).decode())
+```
+
+With `GL_GLOBAL=1`, all four calls return `hipSuccess`: `hipGraphicsGLRegisterBuffer: 0 hipSuccess`, `hipGraphicsMapResources: 0 hipSuccess`, `hipGraphicsResourceGetMappedPointer: 0 hipSuccess 0x72558f080000 4096`, `hipGraphicsUnmapResources: 0 hipSuccess`, `hipGraphicsUnregisterResource: 0 hipSuccess`.
+
+**Environment for the issue.**
+- OS: `/etc/os-release`: `PRETTY_NAME="Ubuntu 24.04.5 LTS"`, `VERSION_ID="24.04"`, `VERSION_CODENAME=noble` (container).
+- Kernel: `6.11.0-26-generic`.
+- Mesa: `libgl1-mesa-dri` and `libglx-mesa0` 25.2.8-0ubuntu0.24.04.4; GL context `GL_VERSION 4.6 (Core Profile) Mesa 25.2.8-0ubuntu0.24.04.4`, `GL_RENDERER AMD Radeon Graphics (radeonsi, gfx1201, LLVM 20.1.2, DRM 3.64, 6.11.0-26-generic)`. libglvnd 1.7.0-1build1.
+- GPU: HIP device 0 name `AMD Radeon AI PRO R9700`, PCI `0000:c3:00.0`, gfx1201.
+- Python 3.11.17, pyglet 2.1.19, numpy 1.26.4. Display: Xwayland 23.2.6 under headless Weston 13.0.0.
+
 ## Rulings on GL interop follow-ups (jeff, 2026-11-23)
 
 - The condition of the GL fix ruling is met (evidence session 2). The porter commits the form without `RTLD_NOLOAD` (it also covers GLFW-only applications); jeff was told and may ask for the narrower form.
