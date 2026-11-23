@@ -1,2 +1,9 @@
 {"kind":"session","ts":"2026-11-20T21:18:44Z","epoch":1795209524.761691,"event":"start","platform":"linux-gfx90a"}
 {"kind":"session","ts":"2026-11-20T21:25:22Z","epoch":1795209922.996547,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-11-23T19:18:11Z","epoch":1795461491.503541,"event":"start","platform":"linux-gfx950"}
+{"kind":"phase","ts":"2026-11-23T19:26:23Z","phase":"compile","seconds":68.807,"exit":0,"cmd":"cmake --build projects/oidn/src/build-pr302 -j 16"}
+{"kind":"phase","ts":"2026-11-23T19:29:54Z","phase":"compile","seconds":68.036,"exit":0,"cmd":"cmake --build projects/oidn/src/build -j 16"}
+{"kind":"phase","ts":"2026-11-23T19:30:31Z","phase":"test","seconds":1.904,"exit":0,"cmd":"bash -c cd projects/oidn/src/build && timeout 900 ./oidnTest --device hip"}
+{"kind":"phase","ts":"2026-11-23T19:32:16Z","phase":"test","seconds":28.406,"exit":0,"cmd":"timeout 3000 /var/lib/jenkins/fleet/jobs/mi355-20261123-111609-port-oidn-prompt/venv/bin/python -I agent_space/diff_run.py projects/oidn/src/build agent_space/diff agent_space/diff-port.log"}
+{"kind":"phase","ts":"2026-11-23T19:32:44Z","phase":"test","seconds":7.494,"exit":0,"cmd":"bash -c cd projects/oidn/src/build && timeout 1800 ./oidnTest --device cpu"}
+{"kind":"session","ts":"2026-11-23T20:16:27Z","epoch":1795464987.035254,"event":"end","platform":"linux-gfx950"}

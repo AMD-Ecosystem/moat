@@ -227,7 +227,84 @@
       "where": "devices/CMakeLists.txt ROCm discovery on WIN32, hip_device.cpp LUID and D3D external memory"
     }
   ],
-  "covered": [],
+  "covered": [
+    {
+      "id": "library:OpenImageDenoise",
+      "evidence": "built; exercised by oidnTest/oidnDenoise on HIP and CPU; gfx950 run at 06bdc4c (notes, porter section 2026-11-23)"
+    },
+    {
+      "id": "library:OpenImageDenoise_common",
+      "evidence": "built and linked into every run; gfx950 run at 06bdc4c (notes, porter section 2026-11-23)"
+    },
+    {
+      "id": "library:OpenImageDenoise_core",
+      "evidence": "built and linked into every run; gfx950 run at 06bdc4c (notes, porter section 2026-11-23)"
+    },
+    {
+      "id": "library:OpenImageDenoise_device_cpu",
+      "evidence": "oidnTest --device cpu 20/20 test cases, and the CPU reference of the image differential; gfx950 run at 06bdc4c (notes, porter section 2026-11-23)"
+    },
+    {
+      "id": "library:OpenImageDenoise_device_hip",
+      "evidence": "oidnTest --device hip 20/20, 57/57 CPU-reference image cases, kernel trace shows CK XDL dispatches; gfx950 run at 06bdc4c (notes, porter section 2026-11-23)"
+    },
+    {
+      "id": "library:OpenImageDenoise_utils",
+      "evidence": "linked into the apps used for every run; gfx950 run at 06bdc4c (notes, porter section 2026-11-23)"
+    },
+    {
+      "id": "library:OpenImageDenoise_weights",
+      "evidence": "built-in RT/RTLightmap weights used by every image case; gfx950 run at 06bdc4c (notes, porter section 2026-11-23)"
+    },
+    {
+      "id": "option:OIDN_APPS",
+      "evidence": "ON in every build; gfx950 run at 06bdc4c (notes, porter section 2026-11-23)"
+    },
+    {
+      "id": "option:OIDN_DEVICE_CPU",
+      "evidence": "ON (CPU reference and oidnTest --device cpu); gfx950 run at 06bdc4c (notes, porter section 2026-11-23)"
+    },
+    {
+      "id": "option:OIDN_DEVICE_HIP",
+      "evidence": "ON; gfx950 run at 06bdc4c (notes, porter section 2026-11-23)"
+    },
+    {
+      "id": "option:OIDN_FILTER_RT",
+      "evidence": "ON; RT image cases; gfx950 run at 06bdc4c (notes, porter section 2026-11-23)"
+    },
+    {
+      "id": "option:OIDN_FILTER_RTLIGHTMAP",
+      "evidence": "ON; RTLightmap hdr and dir image cases; gfx950 run at 06bdc4c (notes, porter section 2026-11-23)"
+    },
+    {
+      "id": "option:OIDN_LIBRARY_VERSIONED",
+      "evidence": "default ON in every build (versioned .so names); gfx950 run at 06bdc4c (notes, porter section 2026-11-23)"
+    },
+    {
+      "id": "option:OIDN_WARN_AS_ERRORS",
+      "evidence": "HIP device built with -DOIDN_WARN_AS_ERRORS=ON at 06bdc4c (all default targets), clean"
+    },
+    {
+      "id": "executable:oidnTest",
+      "evidence": "run on HIP and CPU; gfx950 run at 06bdc4c (notes, porter section 2026-11-23)"
+    },
+    {
+      "id": "executable:oidnDenoise",
+      "evidence": "57-case CPU-reference differential and trained-weights run; gfx950 run at 06bdc4c (notes, porter section 2026-11-23)"
+    },
+    {
+      "id": "executable:oidnBenchmark",
+      "evidence": "run once on HIP (informational, shared GPU); gfx950 run at 06bdc4c (notes, porter section 2026-11-23)"
+    },
+    {
+      "id": "feature:hip-cdna-conv",
+      "evidence": "gfx950 run; gfx90a/gfx942 code objects built and inspected only (their GPU runs belong to those validators); gfx950 run at 06bdc4c (notes, porter section 2026-11-23)"
+    },
+    {
+      "id": "python:training",
+      "evidence": "ROCm PyTorch 2.15 training smoke run (preprocess, train 20 epochs, infer, export, oidnDenoise -w on HIP); gfx950 run at 06bdc4c (notes, porter section 2026-11-23)"
+    }
+  ],
   "scoped_out": [
     {
       "id": "library:OpenImageDenoise_device_cuda",
@@ -270,10 +347,23 @@
       "reason": "Apple BNNS CPU path, macOS only"
     },
     {
-      "id": "python:training",
-      "reason": "PyTorch training scripts, outside the HIP-device ruling; they use only torch device strings ('cuda') and torch.distributed NCCL, which a ROCm PyTorch maps to HIP/RCCL unchanged, so there is no source to port (see notes, planner section)"
+      "id": "option:OIDN_APPS_OPENIMAGEIO",
+      "reason": "image file I/O in the example apps through OpenImageIO; host-only, independent of the GPU backend and of this port (PFM inputs are used instead)"
+    },
+    {
+      "id": "option:OIDN_INSTALL_DEPENDENCIES",
+      "reason": "packaging switch that copies TBB/SYCL runtimes on install; host-only, untouched by the port"
+    },
+    {
+      "id": "option:OIDN_STATIC_LIB",
+      "reason": "static/hybrid linkage of the core library; host-only, untouched by the port, and the HIP device stays a separately loaded module either way"
     }
   ],
-  "owed": [],
+  "owed": [
+    {
+      "id": "platform:windows-hip",
+      "reason": "Windows validation is queued for later by Jeff Daily's 2026-11-23 ruling (Windows laptop runs go last); nothing was built or run on Windows in the porter round"
+    }
+  ],
   "removed_from_floor": []
 }

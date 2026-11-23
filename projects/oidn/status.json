@@ -6,16 +6,12 @@
   "fork_default_branch": "master",
   "priority": 0.0,
   "ext_type": "cmake",
-  "stage": "porting",
+  "stage": "ported",
   "adopted_at": "2026-11-06T02:27:16Z",
-  "updated_at": "2026-11-23T19:18:08Z",
-  "head_sha": null,
+  "updated_at": "2026-11-23T20:16:27Z",
+  "head_sha": "06bdc4c46ce3be658f25598f5af6db01febc78d8",
   "depends_on": [],
-  "porting": {
-    "arch": "linux-gfx950",
-    "since": "2026-11-23T19:18:08Z",
-    "holder": "b8c95dda5cb0"
-  },
+  "porting": null,
   "waivers": {},
   "platforms": {
     "linux-gfx942": {
@@ -70,7 +66,7 @@
       "failed_sha": null,
       "started_at": "2026-11-23T19:18:08Z",
       "completed_at": null,
-      "updated_at": "2026-11-23T19:18:08Z",
+      "updated_at": "2026-11-23T20:16:27Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -104,9 +100,9 @@
     "at": "2026-11-10T18:16:24Z"
   },
   "porting_released": {
-    "arch": "linux-gfx90a",
-    "since": "2026-11-20T21:18:44Z",
-    "at": "2026-11-20T21:25:22Z"
+    "arch": "linux-gfx950",
+    "since": "2026-11-23T19:18:08Z",
+    "at": "2026-11-23T20:16:27Z"
   },
   "base_branch_ruling": {
     "branch": "master",
