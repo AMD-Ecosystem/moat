@@ -81,3 +81,110 @@ Not blocking a porter: the licence is AGPL-3.0 (tier 3), so a person must record
 - Q3 (validation depth): **a**. Gate on T1 and T2; one T3 smoke per platform for image, whisper, TTS, embeddings and vision; music and the two-GPU split recorded `owed` with a reason where the model or hardware is missing.
 - Standing ruling of the same day: Windows laptop GPU runs go last across all ports; they are queued, not started.
 - Still open for a person: the AGPL-3.0 licence clearance before anything is offered upstream.
+
+## Porter round 1 (2026-11-23, linux-gfx942 fleet worker)
+
+### For a person (open questions; nothing below was assumed)
+
+1. **Q1 (Windows route) is still unruled.** No Windows route was built or edited, no waiver was assumed, and every Windows/CMake surface entry is `owed`. What this round learned that bears on the choice:
+   - R1 still holds at fork head `0fff6ace6` (base `0382471c`): `CMakeLists.txt:217` is `add_library(ggml-rocm ${GGML_SOURCES_CUDA})`, and lines 219-227 append sources to `GGML_SOURCES_ROCM` after the target already exists, so even the ROCm list is never used. `option(LLAMA_CUBLAS ... ON)` (line 39) still defaults on, and ROCm is still found with the PowerShell glob of `C:/Program Files/AMD/ROCm/` (line 181). Option (a) means rewriting this block; it is not a one-line fix.
+   - The three fixes on `moat-port` are route-independent: the hipBLAS compute-type fix (legacy GGML v2) applies to any HIP build, including Windows; the rocminfo regex fix matters on Windows too, because TheRock ships `rocminfo` for Windows since rocm-systems #9598 (2026-08-07), and its output uses the same `N (0xH) KB` format; the gfx950 target only affects `LLAMA_PORTABLE` Makefile builds.
+   - The Makefile's ROCm discovery already handles a TheRock pip SDK on Linux: with `ROCM_PATH=$(rocm-sdk path --root)` it finds `bin/hipcc`, `bin/hipconfig`, `lib/llvm/bin/amdgpu-arch` and `lib/`, with no other setting. Option (b) (w64devkit + Makefile) inherits that discovery, but R2 (MinGW g++ objects linked by an MSVC-ABI hipcc, `-Wl,-rpath=` rejected by lld-link) was not tested here, since that needs Windows.
+   - R3 is unchanged: `koboldcpp.py:1091` adds only `%HIP_PATH%\bin` to the DLL search path, and a TheRock pip SDK does not set `HIP_PATH`.
+2. **CUDA no-regression compile is owed on the mi355 host (real nvcc).** This host has no nvcc. The only CUDA-compiled files changed are `otherarch/ggml_v2-cuda.cu` and `otherarch/ggml_v2-cuda-legacy.cu`, and only inside their `#if defined(GGML_USE_HIP)` blocks. With `#include` lines stripped, `cpp -P -x c++` (no `GGML_USE_HIP`) gives byte-identical output for base and port (sha256 prefix `b305bd90fc51e312` and `4cfd311705246476` for both), while the HIP preprocessed output differs, as intended. The Makefile change is inside `ifdef LLAMA_HIPBLAS`, and `koboldcpp.py` changes only the rocminfo (AMD) branch. This is supporting evidence, not the nvcc compile the standing rule asks for before presenting.
+3. **Shared-code finding R6 (not fixed, per plan): the legacy pool's size counter underflows, and its destructor asserts on it.** `ggml_cuda_pool_leg::alloc` (`ggml-cuda.cu:607-616`, a koboldcpp patch) zeroes `b.size` and then does `pool_size -= size` with the *requested* size, not the freed buffer's size. A temporary trace (reverted, never committed) in a nommq `--benchmark` run hit the path 4 times; the first was `requested=8716288 freed=1686016 pool_size_before=1748224`, so the `size_t` counter wraps below zero and stays off by `requested - freed`. `~ggml_cuda_pool_leg()` asserts `pool_size == 0`, so destroying the backend context after this path has run should abort. The destructor did not run at process exit here (no trace line), so this was not observed as a crash. On HIP this pool is the only pool (`GGML_HIP_NO_VMM`); on CUDA it is used only without VMM. The fix would be `pool_size -= b.size` before `b.size = 0`. That is a koboldcpp shared-code bug, so telling upstream is a person's call (AGPL clearance still open).
+4. Licence clearance (AGPL-3.0) is still open before anything is offered upstream (unchanged).
+
+### What R4 found (upstream's published binary)
+
+`koboldcpp-linux-x64-rocm` from the `rocm-rolling` release (asset updated 2026-11-23T14:33Z, 577,818,120 bytes, sha256 `4049d047...24a7fd`) is a PyInstaller one-file build. Extracted with PyInstaller 6.22.3's `CArchiveReader` (no execution), then `llvm-objdump --offloading koboldcpp_hipblas.so`. ggml code objects are present for gfx803, gfx900, gfx906, gfx908, gfx90a, gfx942, gfx1100, gfx1101, gfx1102, gfx1151, gfx10-1-generic, gfx10-3-generic and gfx12-generic (144 each). **There are none for gfx950 (MI350/MI355), gfx1103, gfx1150, gfx1152 or gfx1153**, while the bundled rocBLAS `library/` ships Tensile files for gfx908, gfx90a, gfx942, gfx950, gfx1010-1012, gfx1030-1036, gfx1100-1103, gfx1150-1153, gfx1200, gfx1201 and gfx1250. (Also noticed, not a port item: gfx803/gfx900/gfx906 have ggml code objects but no rocBLAS kernels in the bundle.) Upstream added gfx1151 and the generic targets today (`ee4727c64`, "try to optimize rocm", 2026-11-23), after the planner read `concedo`. The port adds gfx950 only (CDNA4; `vendors/hip.h` already maps it). gfx1103 and gfx1150/1152/1153 are RDNA3/3.5 iGPUs that upstream's own comment chose to keep specialized and limited to gfx1151. Adding them costs compile time and binary size, which is the maintainer's trade-off, so they are noted here and not added.
+
+### Environment
+
+- Host: AMD Instinct MI300X in a CPX partition (24,574 MiB per device, gfx942:sramecc+:xnack-), `HIP_VISIBLE_DEVICES=1` as pinned by the dispatcher, `ulimit -c 0` and `timeout` on every GPU run.
+- ROCm: TheRock 10.2.0 SDK (HIP 7.17.26434) installed into the job venv: `$FLEET_VENV/bin/python -m pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ "rocm[libraries,devel]==10.2.0" "rocm-sdk-device-gfx942==10.2.0"`. `R=$($FLEET_VENV/bin/rocm-sdk path --root)` is `.../site-packages/_rocm_sdk_devel`. No system ROCm (`/opt/rocm` absent).
+- gcc 13.3.0 (Ubuntu 24.04), `make -j96`.
+
+### Build (fork `moat-port` at 0fff6ace6, base `concedo_experimental` 0382471c)
+
+```
+make -j96 LLAMA_HIPBLAS=1 ROCM_PATH=$R          # GPU_TARGETS auto-detected: gfx942; 48 s; koboldcpp_hipblas.so 117 MB
+make -j96 LLAMA_HIPBLAS=1 LLAMA_PORTABLE=1 LLAMA_HIP_GENERIC_TARGETS=1 LLAMA_HIP_OFFLOAD_COMPRESS=1 ROCM_PATH=$R koboldcpp_hipblas
+                                                 # release recipe flags, in a separate worktree: 581 s, 137 MB, 14 code objects incl. gfx950
+```
+
+Warnings only: `-s` unused for the hipcc compile steps (149), `loop not unrolled` (device), `-Winvalid-noreturn`, and pre-existing host format warnings. The RUNPATH points at the SDK's `lib/`, and `ldd` resolves every ROCm library from the SDK.
+
+### Fixes on `moat-port` (4 commits)
+
+| commit | change | evidence |
+|---|---|---|
+| 92a47669c | `otherarch/ggml_v2-cuda.cu`, `ggml_v2-cuda-legacy.cu`: in the HIP >= 6.5 branch map `CUBLAS_COMPUTE_32F_FAST_16F` to `HIPBLAS_COMPUTE_32F` (comment on the same line, so CUDA line numbers stay put) | Before: a GGML v2 model's first >=32-token prompt aborted the server with `cuBLAS error 7 at otherarch/ggml_v2-cuda.cu:672`. A standalone reproducer (hipblasGemmEx FP16 x FP16 -> FP32, OP_T/OP_N, 64x48x32) gives `HIPBLAS_COMPUTE_32F status=0`, `HIPBLAS_COMPUTE_32F_FAST_16F status=7 (HIPBLAS_STATUS_NOT_SUPPORTED)`. After: both v2 layouts are 64/64 identical to the CPU |
+| c128de20e | `Makefile`: gfx950 in the `LLAMA_PORTABLE` list | R4 above; the portable build carries gfx950 |
+| aa98b0c58 | `koboldcpp.py:2167`: rocminfo size regex accepts `N (0xH) KB` | rocminfo from ROCm 10.1 (on PATH) and 10.2 both print `25163776 (0x17ff800) KB` (rocm-systems `rocminfo.cc` `int_to_string` writes `dec << " "` then `"(0x"`). Before: `Unable to detect VRAM.`, no auto backend, no layer estimate. After: `Detected AMD GPU VRAM from rocminfo: [('AMD Instinct MI300X', '24574'), ...]`, `Auto Recommended GPU Layers: 25` |
+| 0fff6ace6 | README: GPU_TARGETS / LLAMA_PORTABLE / ROCM_PATH (pip SDK) sentence under the build table; `--usecuda` "(Nvidia, or AMD with a ROCm build)" | documented commands were the ones used here |
+
+`python3 utils/jargon.py --port koboldcpp`: clean. `utils/prose.py` on all four messages: clean.
+
+### T1: llama.cpp `test-backend-ops` against koboldcpp's ggml
+
+- llama.cpp `a8f8294c` (second parent of `8b5f1208`, "Merge branch 'upstream'", 2026-11-23) is in the fork's own history; two worktrees of it. Overlay: koboldcpp's `ggml/include/`, `ggml/src/ggml-cuda/` (llama.cpp's `ggml-cuda/CMakeLists.txt` restored), `ggml/src/*.c *.cpp *.h`, except `ggml-backend-reg.cpp`, which was kept pristine because koboldcpp's copy inlines `dl_error()` and collides with llama.cpp's `ggml-backend-dl.cpp`. koboldcpp's `ggml.c` needs `-I ggml/src/ggml-cpu`. The FA instances must match koboldcpp's five pairs: `-DGGML_CUDA_FA_QUANTS=q4_0-q4_0,q5_1-q5_1,q8_0-q8_0,bf16-bf16` (otherwise the q5_1 vec instances are missing at link). The CPU backend is llama.cpp's.
+- `cmake -G Ninja -DGGML_HIP=ON -DGPU_TARGETS=gfx942 -DGGML_HIP_NO_VMM=ON -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R -DROCM_PATH=$R ...; cmake --build . --target test-backend-ops`; run `test-backend-ops test -b ROCm0`.
+- **Overlay: 20806/20806 passed**, 7209 cases not supported (OUT_PROD 1472, FLASH_ATTN_EXT 1405, CONV_2D 1138, IM2COL_3D 1024, SET_ROWS 607, ...), 603 s. **Pristine: 20806/20806 passed**, the same 7209 not supported, 610 s. FA with K=V types f16/q8_0/q4_0/q5_1/bf16 passed 1925/374/349/336/343 cases (hsk=64 included).
+
+### T2: greedy HIP vs CPU (Qwen2.5-0.5B-Instruct GGUFs from Qwen/Qwen2.5-0.5B-Instruct-GGUF; BF16 made with `quantize_gguf ... BF16` from the f16 file)
+
+Harness: a koboldcpp server per config, `/api/v1/generate` with `top_k 1, rep_pen 1, seed 42, max_length 64`, two prompts (5 tokens; 120-token paragraph), `--gpulayers 99`, compared with the same flags under `--usecpu`. Same results on two runs (GPU deterministic). Rerun at the head (0fff6ace6) after a clean rebuild:
+
+| config | p0 | p1 |
+|---|---|---|
+| Q4_K_M mmq / nommq | diverge@19 / @28 | diverge@21 / identical |
+| Q8_0 mmq / nommq | identical / identical | identical / diverge@0 |
+| BF16 mmq, BF16 nommq, F16 nommq | identical | identical |
+| Q4_K_M FA off | diverge@19 | identical |
+| Q4_K_M `--quantkv` q8_0 / bf16 | diverge@19 / @19 | identical / identical |
+| Q4_K_M `--quantkv` q5_1 / q4_0 | diverge@5 / @1 | diverge@7 / @1 |
+| pythia-160m GGML v3 Q4_0 / Q5_1 | identical / diverge@13 | diverge@7 / diverge@21 |
+| pythia-160m GGML v2 quant-v1 / quant-v0 Q4_0 | identical / identical | identical / identical |
+
+Every divergence was checked for a near-tie: the top-3 at the divergence point from both backends, and for legacy v3 at the actual decode step (temperature 0.01, top_k 5, log-prob gaps rescaled). The f16/q8_0/bf16-KV and mmq/nommq cases have top-2 gaps of 0.01-0.11 nats on both sides. The v3 Q4_0 decode step has a 0.026-nat gap (' who' vs ' then'). The q5_1/q4_0 KV cases are not ties at the token level (CPU and GPU disagree by up to 1.3 nats), so perplexity decided them (`llama-perplexity`, koboldcpp ggml overlay, `-c 512 -fa on`, LICENSE.md+README.md as corpus, `-ngl 99` vs `--device none`): f16 5.8775/5.8995, q8_0 6.1851/6.1954, q5_1 26.11/27.16, q4_0 108.64/108.34 (GPU/CPU). The backends agree; q4_0/q5_1 KV wrecks this 2-KV-head model on either one. No HIP defect.
+
+`--benchmark` (Q8_0, ctx 4096): nommq 27,184 T/s prompt, 331 T/s generation; mmq 22,834 / 327 T/s. No `--quantkv` value aborted with FA on (R7).
+
+R5 (BF16 compute-type revert) is not exercised on gfx942, which has fast BF16; the BF16 rows above cover the plain path. A gfx90a or gfx1030 run is needed for the revert path.
+
+Legacy models: `rustformers/pythia-ggml` `pythia-160m-q4_0.bin` and `-q5_1.bin` (quantization V2, GGML v3 backend); the two GGML v2 files were converted from `pythia-160m-f16.bin` by a validator-side script (all 2-D weights to Q4_0 with float scale; quant-version-1 = ftype 1002 with low/high-half nibbles, NEOX_4 -> `ggml_v2-cuda.cu`; quant-version-0 = header without par_res, ftype 2, interleaved nibbles, NEOX_2 -> `ggml_v2-cuda-legacy.cu`). On the GPU the v2 path offloads only batched (>=32-token) prompt matmuls, so p1 is the test.
+
+### T3 modality smoke (one server, all modalities; GPU vs CPU)
+
+| modality | model | GPU result | CPU result | GPU evidence |
+|---|---|---|---|---|
+| image | koboldcpp/imgmodel sdxs-512-tinySDdistilled_Q8_0 (1 step, 512x512) | PNG of a red apple on a table, 0.5 s | PNG, 8.4 s | diffusion model 488 MB + VAE in ROCm0 VRAM, `unet compute buffer ... on ROCm0` (text encoder on CPU by default) |
+| vision | ggml-org SmolVLM-256M-Instruct Q8_0 + mmproj | "In the foreground of the picture there is an apple and a apple on the table." | "A red apple and an apple on a wooden table." | `mtmd_backends: using ROCm0 backend` |
+| whisper | koboldcpp/whisper tiny.en q5_1, whisper.cpp jfk.wav | exact JFK quote | same | `whisper_backend_init: using backend ROCm0` |
+| TTS | OuteTTS-0.2-500M Q4_0 + WavTokenizer-Large-75 Q4_0, `--ttsgpu` | 3.09 s WAV, RMS 2986 | 2.98 s, RMS 2806 | both models offloaded to ROCm0 |
+| embeddings | second-state all-MiniLM-L6-v2 Q8_0, `--embeddingsgpu` | dim 384, cos 0.9386 / 0.0599 | 0.9374 / 0.0586 | 7/7 layers on ROCm0 |
+
+Music (ACE-Step) and the two-GPU split: `owed` (model set not downloaded; one GPU pinned).
+
+### Other observations (no change made)
+
+- `resolve_fused_ops: ... Flash Attention over K/V rows is assigned to device CPU ... set to disabled` appears on every HIP load. This is llama.cpp's own probe: `ggml_cuda_get_best_fattn_kernel` gives the `kv_rows` variant only to NVIDIA Turing+ MMA, the probe turns the fused op off, and ordinary FlashAttention stays on ROCm0 (`flash_attn = enabled`). Inherited, the same as pristine llama.cpp.
+- rocminfo ignores `HIP_VISIBLE_DEVICES` and lists all 63 partitions; the launcher uses the smallest of the first four only for its VRAM estimate. Harmless here.
+- Non-GPU tests: upstream deleted `tests/` (`36253efd1`, "fix lookup race", 2026-11-20), so the plan's four Python tests do not exist at the base; recorded as scoped out with that reason. `python -m py_compile koboldcpp.py` passes.
+
+### Validator-side material (not in the fork)
+
+T1 overlay recipe above; T2/T3 harness scripts, the legacy-model converter and the hipBLAS reproducer were in this job's `agent_space/` (wiped with the job). Their behaviour is described above in enough detail to rebuild them.
+
+## Lesson for cuda-to-rocm: hipblasGemmEx rejects HIPBLAS_COMPUTE_32F_FAST_16F for FP16 inputs
+
+For `references/libraries.md` (cuBLAS section). Symptom: a cuBLAS-to-hipBLAS shim that maps `CUBLAS_COMPUTE_32F_FAST_16F` to `HIPBLAS_COMPUTE_32F_FAST_16F` (the natural spelling once HIP 6.5 introduced `hipblasComputeType_t`) fails at run time with `HIPBLAS_STATUS_NOT_SUPPORTED` (7) on an FP16 x FP16 -> FP32 `hipblasGemmEx`, while the CUDA build of the same code runs (not re-verified against current cuBLAS here). Cause: hipBLAS's header documents FAST_16F as "32-bit input can use 16-bit compute" (`hipblas-common.h`), and the rocBLAS backend and does not take it with 16-bit inputs. Fix: map it to `HIPBLAS_COMPUTE_32F` for those GEMMs (before HIP 6.5 the shims used `HIPBLAS_R_32F`, which is why older builds worked). Seen with ROCm 10.2 (HIP 7.17) on gfx942 (koboldcpp legacy GGML v2 path). Check every compute-type enum a shim maps, not just the ones the main path uses.
+
+## Lesson for cuda-to-rocm: rocminfo prints pool sizes as "N (0xH) KB"
+
+For `references/platform-limits.md` (device queries). Symptom: a launcher that scrapes `rocminfo` for VRAM finds nothing on ROCm 10.1/10.2 (koboldcpp: "Unable to detect VRAM", no GPU auto-selection). Cause: rocminfo writes `Size: 25163776 (0x17ff800) KB` with a space before the parenthesis; parsers written against `25163776(0x17ff800) KB` (regex `(\d+)\(0x`) miss it. Fix: allow optional whitespace (`(\d+)\s*\(0x[0-9a-fA-F]+\)\s*KB`), or query the HIP runtime (`hipMemGetInfo`) instead of scraping text. rocminfo also ignores `HIP_VISIBLE_DEVICES` (it lists every agent), so it is a poor source for the devices a process will see.
+
+## Lesson for moat-porting: TheRock ROCm 10.x release wheels live on stable.repo.amd.com
+
+For the "Fleet hosts" section. `repo.amd.com/rocm/whl/<family>/` stops at 7.13 and `repo.amd.com/rocm/whl-multi-arch/` at 7.14.1; the ROCm 10.x release wheels are on `https://stable.repo.amd.com/rocm/whl-next/` (nightlies on `nightly.repo.amd.com/rocm/whl-next/`). A job dispatched with `FLEET_VENV` may install them into that venv (`$FLEET_VENV/bin/python -m pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ "rocm[libraries,devel]==10.2.0" "rocm-sdk-device-<gfx>==10.2.0"`); the job guard refuses an install outside it, and also refuses any shell command whose text merely contains the two words of a pip install, even inside a grep pattern.

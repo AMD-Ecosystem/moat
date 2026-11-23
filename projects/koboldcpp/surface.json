@@ -665,7 +665,84 @@
    "added_by": "planner"
   }
  ],
- "covered": [],
+ "covered": [
+  {
+   "id": "target:koboldcpp_hipblas-linux",
+   "evidence": "make LLAMA_HIPBLAS=1 ROCM_PATH=<sdk> builds koboldcpp_hipblas.so clean (fork 0fff6ace6, linux-gfx942 (MI300X CPX partition), TheRock ROCm 10.2.0 SDK (HIP 7.17)); T1/T2/T3 below run on it"
+  },
+  {
+   "id": "build:makefile-gpu-targets",
+   "evidence": "amdgpu-arch detection resolves gfx942 from the SDK's lib/llvm/bin; gfx950 added to the LLAMA_PORTABLE list (c128de20e); portable build with LLAMA_HIP_GENERIC_TARGETS=1 LLAMA_HIP_OFFLOAD_COMPRESS=1 completes on ROCm 10.2 and carries 14 code objects incl. gfx950 (llvm-objdump --offloading)"
+  },
+  {
+   "id": "build:makefile-rocm-discovery",
+   "evidence": "ROCM_PATH=$(rocm-sdk path --root) finds hipcc, hipconfig, amdgpu-arch and lib/ with no other setting; rocm-check passes; RUNPATH points at the SDK; README documents it (0fff6ace6)"
+  },
+  {
+   "id": "runtime:koboldcpp.py-hipblas-loader",
+   "evidence": "Linux: lib_hipblas selected by --usecuda; rocminfo VRAM parse fixed for the spaced ROCm 10.x format (aa98b0c58): 'Unable to detect VRAM' -> 'Detected AMD GPU VRAM ... 24574 MB', auto layers 25. The Windows DLL-directory part is tracked under target:koboldcpp_hipblas-windows (owed)"
+  },
+  {
+   "id": "cuda:ggml-cuda-backend",
+   "evidence": "T1 test-backend-ops -b ROCm0 against koboldcpp's ggml overlaid on llama.cpp a8f8294c: 20806/20806 passed (pristine llama.cpp at a8f8294c: 20806/20806, same 7209 unsupported); T2 GGUF text runs below"
+  },
+  {
+   "id": "cuda:otherarch/ggml_v3-cuda.cu",
+   "evidence": "T2 pythia-160m GGML v3 (quant v2) Q4_0 and Q5_1, 99 layers offloaded: runs, divergences are near-ties (decode-step gap 0.026 nats at the q4_0 divergence)"
+  },
+  {
+   "id": "cuda:otherarch/ggml_v2-cuda.cu",
+   "evidence": "crashed with cuBLAS error 7 (hipblasGemmEx HIPBLAS_COMPUTE_32F_FAST_16F unsupported) on the first >=32-token prompt; fixed in 92a47669c; T2 quant-version-1 Q4_0 NeoX now 64/64 tokens identical to CPU on both prompts"
+  },
+  {
+   "id": "cuda:otherarch/ggml_v2-cuda-legacy.cu",
+   "evidence": "same crash and fix (92a47669c); T2 interleaved (quant v0) Q4_0 NeoX now 64/64 identical to CPU on both prompts"
+  },
+  {
+   "id": "capability:text-gguf-mmq",
+   "evidence": "T2 Qwen2.5-0.5B Q4_K_M/Q8_0/BF16 --usecuda mmq vs --usecpu: identical or near-tie divergences (top-2 within 0.1 nats); benchmark 22.8k T/s prompt, 327 T/s gen (Q8_0)"
+  },
+  {
+   "id": "capability:text-gguf-hipblas",
+   "evidence": "T2 nommq Q4_K_M/Q8_0/BF16/F16 vs CPU: BF16 and F16 identical 64/64 on both prompts, others near-ties; benchmark 27.2k T/s prompt, 331 T/s gen (Q8_0). gfx942 has fast BF16, so the BF16 compute-type revert path (R5) is not exercised here"
+  },
+  {
+   "id": "capability:text-flashattn-quantkv",
+   "evidence": "FA on with --quantkv f16/q8_0/q5_1/q4_0/bf16 and FA off: no abort. llama-perplexity (koboldcpp ggml) GPU vs CPU: f16 5.88/5.90, q8_0 6.19/6.20, q5_1 26.1/27.2, q4_0 108.6/108.3 -- backends agree; q4_0/q5_1 KV is lossy for this 2-KV-head model on both"
+  },
+  {
+   "id": "capability:text-legacy-ggml",
+   "evidence": "GGML v3 and v2 (both quant layouts) NeoX models run on the GPU; v2 needed 92a47669c"
+  },
+  {
+   "id": "capability:image-sdcpp",
+   "evidence": "T3 sdxs-512 Q8_0, 1 step 512x512: sane PNG (red apple) in 0.5 s GPU vs 8.4 s CPU; diffusion model and VAE in ROCm0 VRAM (text encoder on CPU by default)"
+  },
+  {
+   "id": "capability:whisper",
+   "evidence": "T3 whisper-tiny.en on jfk.wav: exact transcript, whisper_backend_init: using backend ROCm0; same text as CPU"
+  },
+  {
+   "id": "capability:tts",
+   "evidence": "T3 OuteTTS-0.2-500M + WavTokenizer --ttsgpu: 3.1 s WAV, RMS 2986 (CPU 3.0 s, RMS 2806); both models offloaded to ROCm0"
+  },
+  {
+   "id": "capability:embeddings",
+   "evidence": "T3 all-MiniLM-L6-v2 Q8_0 --embeddingsgpu: dim 384, cos(similar)=0.9386 vs CPU 0.9374, cos(unrelated)=0.0599 vs 0.0586"
+  },
+  {
+   "id": "capability:multimodal-mtmd",
+   "evidence": "T3 SmolVLM-256M + mmproj on the generated image: 'an apple ... on the table'; mtmd_backends: using ROCm0 backend"
+  },
+  {
+   "id": "test:llama.cpp-test-backend-ops",
+   "evidence": "built from llama.cpp a8f8294c with koboldcpp's ggml overlay (GGML_CUDA_FA_QUANTS matching koboldcpp's five FA pairs): 20806/20806 on ROCm0"
+  },
+  {
+   "id": "docs:readme-rocm",
+   "evidence": "README build section documents GPU_TARGETS, LLAMA_PORTABLE and ROCM_PATH incl. a pip ROCm SDK; --usecuda wording covers ROCm builds (0fff6ace6). Windows ROCm docs wait on the Windows route ruling"
+  }
+ ],
  "scoped_out": [
   {
    "id": "option:LLAMA_AVX",
@@ -702,8 +779,113 @@
   {
    "id": "option:LLAMA_BUILD_MTMD",
    "reason": "standalone mtmd library build switch; the GPU path is accounted as capability:multimodal-mtmd"
+  },
+  {
+   "id": "test:tests/test_koboldcpp.py",
+   "reason": "deleted upstream in 36253efd1 (2026-11-20); no Python tests remain at base 0382471c"
+  },
+  {
+   "id": "test:tests/test_numeric_parsing.py",
+   "reason": "deleted upstream in 36253efd1 (2026-11-20); no Python tests remain at base 0382471c"
+  },
+  {
+   "id": "test:tests/test_anthropic_tool_choice.py",
+   "reason": "deleted upstream in 36253efd1 (2026-11-20); no Python tests remain at base 0382471c"
+  },
+  {
+   "id": "test:tests/test_autoguess.py",
+   "reason": "deleted upstream in 36253efd1 (2026-11-20); no Python tests remain at base 0382471c"
   }
  ],
- "owed": [],
+ "owed": [
+  {
+   "id": "target:koboldcpp_hipblas-windows",
+   "reason": "Windows ROCm route not ruled yet (notes.md, Q1); Linux uses the Makefile"
+  },
+  {
+   "id": "library:ggml-rocm",
+   "reason": "Windows ROCm route not ruled yet (notes.md, Q1); Linux uses the Makefile"
+  },
+  {
+   "id": "library:ggml-v2-legacy-rocm",
+   "reason": "Windows ROCm route not ruled yet (notes.md, Q1); Linux uses the Makefile"
+  },
+  {
+   "id": "library:ggml-v2-rocm",
+   "reason": "Windows ROCm route not ruled yet (notes.md, Q1); Linux uses the Makefile"
+  },
+  {
+   "id": "library:ggml-v3-rocm",
+   "reason": "Windows ROCm route not ruled yet (notes.md, Q1); Linux uses the Makefile"
+  },
+  {
+   "id": "option:LLAMA_HIPBLAS",
+   "reason": "Windows ROCm route not ruled yet (notes.md, Q1); Linux uses the Makefile"
+  },
+  {
+   "id": "option:LLAMA_CUBLAS",
+   "reason": "Windows ROCm route not ruled yet (notes.md, Q1); Linux uses the Makefile"
+  },
+  {
+   "id": "library:audiocpp",
+   "reason": "Windows ROCm route not ruled yet (notes.md, Q1); Linux uses the Makefile"
+  },
+  {
+   "id": "library:common2",
+   "reason": "Windows ROCm route not ruled yet (notes.md, Q1); Linux uses the Makefile"
+  },
+  {
+   "id": "library:embeddings_adapter",
+   "reason": "Windows ROCm route not ruled yet (notes.md, Q1); Linux uses the Makefile"
+  },
+  {
+   "id": "library:ggml",
+   "reason": "Windows ROCm route not ruled yet (notes.md, Q1); Linux uses the Makefile"
+  },
+  {
+   "id": "library:ggml_v1",
+   "reason": "Windows ROCm route not ruled yet (notes.md, Q1); Linux uses the Makefile"
+  },
+  {
+   "id": "library:ggml_v2",
+   "reason": "Windows ROCm route not ruled yet (notes.md, Q1); Linux uses the Makefile"
+  },
+  {
+   "id": "library:ggml_v3",
+   "reason": "Windows ROCm route not ruled yet (notes.md, Q1); Linux uses the Makefile"
+  },
+  {
+   "id": "library:gpttype_adapter",
+   "reason": "Windows ROCm route not ruled yet (notes.md, Q1); Linux uses the Makefile"
+  },
+  {
+   "id": "library:music_adapter",
+   "reason": "Windows ROCm route not ruled yet (notes.md, Q1); Linux uses the Makefile"
+  },
+  {
+   "id": "library:sdtype_adapter",
+   "reason": "Windows ROCm route not ruled yet (notes.md, Q1); Linux uses the Makefile"
+  },
+  {
+   "id": "library:tts_adapter",
+   "reason": "Windows ROCm route not ruled yet (notes.md, Q1); Linux uses the Makefile"
+  },
+  {
+   "id": "library:whisper_adapter",
+   "reason": "Windows ROCm route not ruled yet (notes.md, Q1); Linux uses the Makefile"
+  },
+  {
+   "id": "capability:music-acestep",
+   "reason": "not run on linux-gfx942 this round: the ACE-Step model set was not downloaded (multi-GB); one smoke owed per the validation-depth ruling"
+  },
+  {
+   "id": "capability:multi-gpu-split",
+   "reason": "this job was pinned to one GPU on a shared host; needs a run with two GPUs assigned"
+  },
+  {
+   "id": "packaging:koboldcpp.sh-rocm",
+   "reason": "the conda-based KCPP_CUDA=rocm KCPP_PORTABLE=1 ./koboldcpp.sh dist packaging check was not run this round; the portable make build it wraps was"
+  }
+ ],
  "removed_from_floor": []
 }

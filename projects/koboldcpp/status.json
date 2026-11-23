@@ -8,8 +8,8 @@
   "ext_type": "make",
   "stage": "porting",
   "adopted_at": "2026-11-06T01:28:57Z",
-  "updated_at": "2026-11-23T19:26:11Z",
-  "head_sha": null,
+  "updated_at": "2026-11-23T20:20:42Z",
+  "head_sha": "0fff6ace646ba4c58b022317bca9007fb08478ae",
   "depends_on": [],
   "porting": {
     "arch": "linux-gfx942",
