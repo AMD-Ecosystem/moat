@@ -329,7 +329,12 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-11-23T20:37:52Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-11-23T21:06:45Z",
+        "note": "2026-11-23: measure on the gfx1250 host now, assuming the GPU is available; turn it on if the layout checks pass"
+      }
     }
   ]
 }
