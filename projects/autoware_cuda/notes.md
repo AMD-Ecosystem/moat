@@ -365,3 +365,25 @@ Scope: round 1 (`autoware_cuda_dependency_meta`, `autoware_cuda_utils`); `autowa
 - Docs: the package README has the "AMD GPUs (ROCm)" section (the repository has no other build doc). `utils/jargon.py --port autoware_cuda`: clean.
 
 Result: completed for linux-gfx950 at 992d703.
+
+## Validation attempt 2026-11-23 (validator, linux-gfx1100 fleet job; AMD Radeon Pro W7800 48GB gfx1100, HIP_VISIBLE_DEVICES=3) for 992d703: not run, GPU wedged
+
+Not a port result. Jeff Daily asked for a GPU health check first on this pinned GPU (wedged for days, driver reset 2026-11-23) and for the run to stop without moving to another GPU if the check failed. It failed, so nothing was built and no state was recorded for linux-gfx1100; the platform still owes its wave32 validation at 992d703.
+
+Check 1, the image's installed torch (2.16.0a0+git6c3af02, HIP 7.16.26385), run from /tmp under `ulimit -c 0`:
+
+```
+timeout 120 python3 gpucheck.py   # 4 MiB float32 tensor .to("cuda:0"), sync, (y*2+1).sum(), sync, .cpu()
+```
+
+It printed the device (1 visible, W7800 gfx1100) and `H2D done 0.04s`, then hung on the first kernel launch plus synchronize: exit 124 at the 120 s timeout.
+
+Check 2, a minimal HIP program with no torch (`hipcc --offload-arch=gfx1100 -O2 k.hip`: hipMalloc, hipMemcpy H2D, one elementwise kernel of 4096x256 threads, hipDeviceSynchronize):
+
+```
+timeout 120 ./k
+```
+
+It printed `dev AMD Radeon Pro W7800 48GB gfx1100` and `H2D ok`, then hung in the kernel's hipDeviceSynchronize: exit 124. So torch is not the cause.
+
+amd-smi at the time showed GPU 3 at 0% GFX activity, 29 MB VRAM used, no running processes. dmesg cannot be read from the container. Since the reset the symptom has changed: the host-to-device copy now completes, and the hang moved to the first kernel dispatch. The GPU needs another look from a person before this host can validate.
