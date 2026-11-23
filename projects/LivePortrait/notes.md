@@ -168,3 +168,36 @@ For `libraries.md` (ONNX Runtime). `onnxruntime-migraphx` (PyPI 1.27.1, Linux x8
 ### Lesson for moat-porting: fleet guard reads command text, not intent
 
 For the "Fleet hosts" section. The fleet guard refuses any shell command whose text contains `pip install`, including prose inside a heredoc (a README edit with an install line was refused); write such text with the Write tool and run the script. It judges `git push` by the repository the command starts in, so `cd <moat checkout> && ... && cd projects/<name>/src && git push` is refused as a push to the MOAT origin; run the push as its own command from inside the fork clone. (LivePortrait)
+
+## Review 2026-11-23 (linux-gfx950, reviewer role, fleet job)
+
+Reviewed `moat-port` at `00f208cdf0e7` (4 commits on `main` 9b294b3) with the pr-review skill; every point below was re-checked against the code. Porter Question 1 (FP16 Animals-mode workaround: docs only vs code) is Jeff's and still open; reviewed as the branch stands (option A, documentation only) and not treated as a finding.
+
+Verdict: **no findings; review passed.**
+
+Checked and clean: provider helper `src/utils/human_landmark_runner.py:26-32` returns `CUDAExecutionProvider` whenever `torch.version.hip is None`, so CUDA and CPU-only torch behave as before in both `cropper.py:59,62` and `LandmarkRunner`; ROCm without MIGraphX reaches the existing CPU branch with its 4 intra-op threads; mps and `flag_force_cpu` untouched; InsightFace never passed `device_id` to the detector on CUDA either, so the MIGraphX path matches it. `ops/setup.py:39` CUDA clause byte-identical inside an `or`; the ROCm clause needs no visible GPU (plan risk 6). `requirements_rocm.txt`: `onnxruntime-migraphx` 1.27.1 has cp310-cp314 manylinux_2_34 wheels; `onnxruntime` 1.27.0 has `win_amd64` and requires Python >= 3.11, which the README states. `https://download.pytorch.org/whl/rocm7.2` serves cp311 torch 2.11-2.14.1 and torchvision; torchaudio exists there only as 2.11.0, so the README's three-package command resolves to torch 2.11.0 (consistent, same pattern as upstream's CUDA command; torchaudio is unused by the code). Branch is 0 commits behind `origin/main` (fetched). `utils/jargon.py --port LivePortrait`: clean. Titles <= 72, `[ROCm]` earned on all four, "Authored with Claude.", Test Plans present, no trailer, ASCII. Strategy B (torch hipify) is right for the setup.py extension; kernels have no warp intrinsics or width assumptions (re-read, matches plan).
+
+### CUDA no-regression compile (owed by the porter): done
+
+Real nvcc 12.8 (V12.8.93, `/usr/local/cuda-12.8`) against `torch 2.11.0+cu128` in a job-local venv (`venv-cuda`), on a `git archive 00f208c` export of `ops/`:
+
+```
+CUDA_HOME=/usr/local/cuda-12.8 TORCH_CUDA_ARCH_LIST="8.0;9.0" python setup.py build
+```
+
+As-is this raises `NotImplementedError('Cuda is not availabel')` because the host has no NVIDIA GPU and the unchanged upstream CUDA clause requires `torch.cuda.is_available()`; same on upstream `main`. Rerun with `torch.cuda.is_available` patched to `True` in a wrapper that runs `setup.py` (so the unchanged CUDA branch is taken): build rc=0 in 15 s, 59 warnings (unused `q_col`, deprecated `Tensor::type()` / `data<T>()`; no errors), `.so` carries `sm_80` and `sm_90` cubins (`cuobjdump --list-elf`), and `import MultiScaleDeformableAttention` in the CUDA torch exports `ms_deform_attn_forward/backward`. Not checked: running it (no NVIDIA GPU); the Python provider helper on a CUDA host (by code reading only). `ROCM_HOME` imports cleanly from a CUDA torch's `cpp_extension`.
+
+### Porter's MIOpen FP16 Winograd claim, checked on gfx950 (AMD Instinct MI355X, wave64)
+
+TheRock ROCm 10.2.0a20261022 (HIP 7.17.26422), torch 2.16.0a0+rocm10.2.0a20261022 in `$FLEET_VENV`. The porter's synthetic reproducer (512x512x3x3 FP16, one input channel at +-mag, `padding=1`; reference in float64):
+
+| mag | exact max | default (`ConvAsmImplicitGemmGTCDynamicFwdXdlopsNHWC`, also with `cudnn.benchmark`) | Winograd forced: `ConvWinoRageRxS<2-3>` | `..._RAGE_RXS_F2X3=0` -> `ConvBinWinogradRxSf2x3g1` | also `RXS_F2X3=0 RXS_F2X3_G1=0` -> `ConvBinWinogradRxSf3x2` |
+|---|---|---|---|---|---|
+| 16000 | 1792 | finite, err 0.95 | finite, 1.41 | finite, 1.58 | finite, 0.76 |
+| 30000 | 3360 | finite, 2.00 | 1048576 inf + 1048576 NaN | finite, 2.89 | finite, 1.42 |
+| 40000 | 4480 | finite, 3.86 | 2097152 NaN | 2097152 inf | 273861 inf + 1758267 NaN |
+| 60000 | 6720 | finite, 3.99 | 2097152 NaN | 2097152 inf | same as 40000 |
+
+"Winograd forced" = `MIOPEN_DEBUG_CONV_IMPLICIT_GEMM=0 MIOPEN_DEBUG_CONV_DIRECT=0 MIOPEN_DEBUG_CONV_GEMM=0 MIOPEN_DEBUG_CONV_FFT=0`; solver names from `MIOPEN_LOG_LEVEL=5` "FW Chosen Algorithm". Conclusions: the root cause holds and is not RDNA-only: every FP16 Winograd solver MIOpen has for this shape on gfx950 overflows at the same thresholds as on gfx1100 (the f2x3 kernels at 30000-40000, consistent with an FP16 input transform of up to four summed inputs: 4 x 16000 < 65504 < 4 x 30000). On gfx950 MIOpen does not pick Winograd for this shape (it is the same shape as `G_middle_5.conv_1`), so the default FP16 path does not overflow here; the end-to-end Animals FP16 run in validation below is the evidence for the real layer. For the draft MIOpen issue and the `miopen-fp16-winograd-overflow` deferral this adds: reproduced on gfx950 with the solvers forced (`ConvWinoRageRxS<2-3>`, `ConvBinWinogradRxSf2x3g1`, `ConvBinWinogradRxSf3x2`). For the lesson's promotion: the overflow is a property of MIOpen's FP16 Winograd solvers on both RDNA and CDNA; which GPUs hit it by default depends on solver selection. Script: `agent_space/wino_synth.py` (container-local; the code is the draft issue's reproducer looped over magnitudes).
+
+Lesson checks: the MIGraphX EP lesson's NEEDED libraries are right; its RUNPATH is `/opt/rocm-7.2.4/lib:/opt/rocm-7.2.4/lib/migraphx/lib:/opt/rocm/lib` (`readelf -d`), one entry more than quoted, immaterial. The guard lesson matches this job's experience (a `grep` whose text contained the install phrase was refused).
