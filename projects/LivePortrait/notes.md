@@ -70,3 +70,7 @@ No other decision is needed: the ONNX Runtime route follows the standing rule (R
 - `ops/setup.py:38` builds only with `torch.cuda.is_available() and CUDA_HOME is not None`; ROCm torch has `CUDA_HOME=None`, so the extension cannot be built on AMD today without the gate change.
 - `ops/test.py` is the only real test in the repository: forward double/float vs `ms_deform_attn_core_pytorch`, and gradcheck for channels 30..3096 (covers all six backward kernels). Humans mode has no tests; validation is the inference scripts (plan.md, Test plan).
 - `deformable_transformer.py:1052` turns autocast off only around the FFN; the attention op (float/double dispatch only) runs inside the runner's fp16 autocast. Same on CUDA; flagged as risk 7 in plan.md, not a port change.
+
+## Ruling on Question 1 (Jeff Daily, 2026-11-23)
+
+**A, full port.** Humans mode, ONNX provider selection, ROCm requirements and README, and Animals mode: a ROCm branch in the vendored X-Pose `ops/setup.py` gate, validated with the op's own `ops/test.py` (forward parity and gradcheck) and `inference_animals.py`. Standing ruling of the same day: Windows laptop GPU runs go last across all ports; they are queued, not started.
