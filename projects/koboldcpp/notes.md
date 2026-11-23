@@ -76,7 +76,7 @@ Not blocking a porter: the licence is AGPL-3.0 (tier 3), so a person must record
 
 ## Rulings on the planner's questions (Jeff Daily, 2026-11-23)
 
-- Q1 (Windows route): **not ruled yet** (Jeff asked a question about option a). Linux work proceeds; do not build a Windows route or assume a waiver until this is ruled.
+- Q1 (Windows route): **a** (ruled later the same day). Fix the CMake `LLAMA_HIPBLAS` MSVC branch: build `ggml-rocm` from the ROCm source list, discover the current ROCm SDK (TheRock) instead of only the legacy `C:/Program Files/AMD/ROCm/` path, add the clang toolchain setup, add Windows DLL loading in `koboldcpp.py`, and document it. The first porter job was dispatched before this ruling and does Linux only; the Windows route is a follow-up porter round. No waiver.
 - Q2 (PR base): **a**, `concedo_experimental`. Upstream's branch was mirrored unmodified to the fork at 0382471c8b72474b45537280404606d29d5f2cae and `set-base-branch koboldcpp concedo_experimental --by jeffdaily` was run on 2026-11-23. `moat-port` is cut from it.
 - Q3 (validation depth): **a**. Gate on T1 and T2; one T3 smoke per platform for image, whisper, TTS, embeddings and vision; music and the two-GPU split recorded `owed` with a reason where the model or hardware is missing.
 - Standing ruling of the same day: Windows laptop GPU runs go last across all ports; they are queued, not started.
