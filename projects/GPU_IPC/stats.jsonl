@@ -93,3 +93,6 @@
 {"kind":"phase","ts":"2026-11-23T23:04:55Z","phase":"test","seconds":310.038,"exit":1,"cmd":"bash agent_space/run.sh 300 agent_space/run1"}
 {"kind":"phase","ts":"2026-11-23T23:10:15Z","phase":"test","seconds":311.048,"exit":0,"cmd":"bash agent_space/run.sh 300 agent_space/run1"}
 {"kind":"session","ts":"2026-11-23T23:11:21Z","epoch":1795475481.607198,"event":"end","platform":"linux-gfx1201"}
+{"kind":"session","ts":"2026-11-23T22:58:59Z","epoch":1795474739.83585,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-23T22:59:19Z","phase":"compile","seconds":19.458,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300c-20261123-145546-val-gpu-ipc-prompt/moat/agent_space/build.sh"}
+{"kind":"phase","ts":"2026-11-23T23:19:45Z","phase":"test","seconds":1205.05,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300c-20261123-145546-val-gpu-ipc-prompt/moat/agent_space/run_gipc.sh /var/lib/jenkins/fleet/jobs/mi300c-20261123-145546-val-gpu-ipc-prompt/moat/projects/GPU_IPC/src/build val 1200 :77"}
