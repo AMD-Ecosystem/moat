@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "codegen",
   "adopted_at": "2026-06-05T04:44:12Z",
-  "updated_at": "2026-11-23T19:46:12Z",
+  "updated_at": "2026-11-23T20:13:49Z",
   "head_sha": "1c9536f5ea33193aaf4383580900cc2aa35a99fb",
   "depends_on": [],
   "pr_url": "https://github.com/brian-team/brian2cuda/pull/327",
@@ -191,5 +191,12 @@
     "since": "2026-11-20T22:19:04Z",
     "at": "2026-11-20T22:20:11Z"
   },
-  "reviewed_sha": "1c9536f5ea33193aaf4383580900cc2aa35a99fb"
+  "reviewed_sha": "1c9536f5ea33193aaf4383580900cc2aa35a99fb",
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-11-23T20:12:27Z",
+    "head_sha": "1c9536f5ea33193aaf4383580900cc2aa35a99fb",
+    "content_sha256": "09c726826efcd60dae2f4674ab24ffd60a54700960f9a5fc5a1644a015e3fe4e",
+    "review_pr": "https://github.com/AMD-Ecosystem/brian2cuda/pull/2"
+  }
 }
