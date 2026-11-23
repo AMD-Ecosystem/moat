@@ -756,13 +756,12 @@
     {
       "id": "option:CXX11_ABI",
       "reason": "only selects which upstream LibTorch zip is downloaded; a ROCm build passes Torch_DIR and takes that LibTorch's own ABI flags; unchanged by the port"
-    }
-  ],
-  "owed": [
+    },
     {
       "id": "python:transducer-torchaudio-rnnt",
-      "reason": "torchaudio's ROCm builds have no GPU rnnt_loss (deferral torchaudio-rocm-no-gpu-rnnt-forced-align); docs point transducer training at enable_k2 (validated). Whether wenet gets a CPU fallback is open for jeff (notes, porter round 1, Question 1)"
+      "reason": "Jeff Daily, 2026-11-23: torchaudio's ROCm builds have no GPU rnnt_loss; no code change in wenet, the docs point to enable_k2 with a ROCm k2 build (validated)"
     }
   ],
+  "owed": [],
   "removed_from_floor": []
 }

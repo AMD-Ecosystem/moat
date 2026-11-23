@@ -204,3 +204,8 @@ cmake --build build-gpu -j12 -- VERBOSE=1
    - head: step 2 keeps `2.2.0+cpu` (the cached `Torch_DIR` from step 1 sends it to the local branch); `decoder_main` NEEDED only `libtorch_cpu.so libtorch.so`, yet the decoder is still compiled with `-DUSE_GPU`. **Confirmed: a CUDA regression on reconfigure**, exactly as the review describes (it would throw "CUDA is not available!" at startup; not run here).
 
 **Verdict: fresh-configure CUDA builds do not regress at 110f06c** (with and without a CUDA `Torch_DIR`, same compile commands and warnings as base, and a user-given CUDA LibTorch is used as intended). **Reconfiguring an existing build dir does regress**: review finding 1 reproduces with real nvcc and a real CUDA LibTorch, so the CUDA gate is not met at this head; re-run case 3 (and cases 1 and 2) after the fix.
+
+## Rulings on the porter's questions (Jeff Daily, 2026-11-23)
+
+- Question 1 (transducer loss on AMD GPUs): **a**, as shipped. No code change; document `enable_k2: true` with a ROCm k2 build. Jeff recalls an earlier attempt to get the RNN-T loss into torchaudio's ROCm build and believes torchaudio is now deprecated, so option c is not pursued. `python:transducer-torchaudio-rnnt` moves from `owed` to `scoped_out` with this ruling as the reason.
+- Question 2 (TheRock LibTorch RUNPATH): **a**, no workaround in wenet. A TheRock issue is to be drafted for Jeff (not posted without his approval).
