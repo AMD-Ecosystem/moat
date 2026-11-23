@@ -183,3 +183,24 @@ Verdict: **changes requested** (4 findings). The porter's two open questions for
 ## Lesson for moat-porting: tests that pip-install into "the" environment, and the fleet guard (Fleet hosts)
 
 **Put the job venv's `bin` first on PATH before running a project's test suite on a fleet host.** wenet's `test_hugging_face_tokenizer.py` runs `os.system('pip install ... transformers')` when the import fails; with the image's `pip` first on PATH that installed seven packages into the shared base env (see the incident above). Pre-install what tests install for themselves, and run them with `PATH=$FLEET_VENV/bin:$PATH`. Separately, the fleet guard refuses `pip` into any venv other than `$FLEET_VENV`, even one inside the job directory, and it matches the word in command text (a heredoc writing notes that mention it was refused): write notes with the editor tool, and plan a second Python environment as a swap of `$FLEET_VENV` at the end of the round. (wenet)
+
+## CUDA no-regression configure and build, head 110f06c vs base be6ad97 (linux mi355 host, nvcc 12.8, 2026-11-23)
+
+Compile and link only; no GPU used. CUDA run-time behaviour of `decoder_main`: **cuda-not-validated**.
+
+Toolchain: the host's CUDA 12.8 (`/usr/local/cuda-12.8`, nvcc V12.8.93), gcc/g++ 13.3.0 (Ubuntu 24.04), CMake 3.31.6 from the job venv, Unix Makefiles. Two worktrees of a fresh fork clone (base be6ad97, head 110f06c), each with its own `fc_base`. WeTextProcessing pinned at fd9026c through a copy inside each tree (`fc_base/wetextprocessing-src-fd9026c`; the porter's workaround for the floating `origin/master`, and `FETCHCONTENT_SOURCE_DIR_*` must be inside the source tree or `add_subdirectory` refuses it). CUDA LibTorch for the `Torch_DIR` case: `libtorch-shared-with-deps-2.8.0+cu128.zip` from download.pytorch.org (sha256 a7ae1862...4e17), unpacked into the job directory.
+
+`TORCH_CUDA_ARCH_LIST="8.0;8.6;9.0"` is set for every configure. Without it, LibTorch 2.2.0's `select_compute_arch.cmake` falls back (no GPU visible) to an autodetected list containing `9.0a`, which it does not know (`Unknown CUDA Architecture Name 9.0a`), so configure fails identically at base and head. That is the 2.2.0 LibTorch with CUDA 12.8 on a GPU-less host, not this change.
+
+1. `-DGPU=ON`, no `Torch_DIR` (downloads LibTorch 2.2.0+cu118):
+```
+cmake -B build-gpu -DGPU=ON -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=Release -DFETCHCONTENT_SOURCE_DIR_WETEXTPROCESSING=$PWD/fc_base/wetextprocessing-src-fd9026c
+cmake --build build-gpu -j12 -- VERBOSE=1
+```
+   Both configure and build rc 0 (about 72 s each). Configure logs identical except two `libtorch.cmake` line numbers in CMake dev warnings; both fetch `2.2.0+cu118`, Caffe2 finds CUDA 12.8 and nvcc, `-gencode` sm_80/86/90. Binaries at both: `decoder_main`, `api_main`, `label_checker_main`, `websocket_client_main`, `websocket_server_main`; `decoder_main` NEEDED `libtorch.so libtorch_cpu.so libtorch_cuda.so libc10.so`. The 112 sorted compile commands (paths normalised, all with `-DUSE_GPU`) are **identical**; 50 warning lines at each, the sorted lists **identical** (pre-existing: openfst `replace.h:804` "expected 'template' keyword", `frontend/wav.h` unused `fread` results, and similar).
+2. `-DGPU=ON -DTorch_DIR=<job>/libtorch-cu128/libtorch/share/cmake/Torch` (same command plus `Torch_DIR`, fresh build dir `build-gpu-td`): both rc 0; both report `Found Torch: <job>/libtorch-cu128/libtorch/lib/libtorch.so` and link `decoder_main` against it (RUNPATH into the 2.8.0+cu128 tree). Sorted compile commands **identical**, warnings **identical** (50 each). The one difference is the intended one: base still runs the FetchContent populate of the cu118 zip before `find_package` takes the cached `Torch_DIR`, head skips the download.
+3. Reviewer's finding 1 re-checked with the real CUDA toolchain, one build dir, `cmake -B build-reconf` (GPU off), then `cmake -B build-reconf -DGPU=ON`, then `cmake --build build-reconf --target decoder_main`:
+   - base: step 1 fetches `2.2.0+cpu`, step 2 re-fetches `2.2.0+cu118`; `decoder_main` NEEDED `libtorch.so libtorch_cpu.so libtorch_cuda.so`, decoder built with `-DUSE_GPU`.
+   - head: step 2 keeps `2.2.0+cpu` (the cached `Torch_DIR` from step 1 sends it to the local branch); `decoder_main` NEEDED only `libtorch_cpu.so libtorch.so`, yet the decoder is still compiled with `-DUSE_GPU`. **Confirmed: a CUDA regression on reconfigure**, exactly as the review describes (it would throw "CUDA is not available!" at startup; not run here).
+
+**Verdict: fresh-configure CUDA builds do not regress at 110f06c** (with and without a CUDA `Torch_DIR`, same compile commands and warnings as base, and a user-given CUDA LibTorch is used as intended). **Reconfiguring an existing build dir does regress**: review finding 1 reproduces with real nvcc and a real CUDA LibTorch, so the CUDA gate is not met at this head; re-run case 3 (and cases 1 and 2) after the fix.
