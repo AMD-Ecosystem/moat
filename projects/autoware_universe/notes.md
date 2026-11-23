@@ -309,7 +309,7 @@ All three configure with `cuda was not found, building <pkg> with HIP 7.17.26434
 
 ### Gates
 
-- CUDA compile check: **not run here.** This host has no nvcc (no `/opt/conda/envs/cuda-12.8`), and Jeff's instruction puts the CUDA compile check on another host. It is still owed at the fixed head.
+- CUDA compile check: not run on this host (no nvcc; Jeff's instruction puts it elsewhere). It was recorded at 9574fe1 by the nvcc 12.8 job (`## CUDA compile check` section, commit efd4791b, merged while this validation ran) and is owed again at the head that carries the downsample fix.
 - `jargon.py --port autoware_universe`: clean. README ROCm sections present in all three packages. Fork clone clean at 9574fe1 (`git status --porcelain` empty).
 
 ## Lesson for cuda-to-rocm: hipMemcpyToSymbol rejects hipMemcpyDefault
