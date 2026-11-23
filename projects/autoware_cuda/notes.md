@@ -242,7 +242,7 @@ TheRock `rocm[devel,device-gfx950]==10.2.0` into `$FLEET_VENV` (HIP 7.17.26434),
 colcon build --packages-up-to autoware_cuda_utils autoware_lint_common --cmake-args -DCMAKE_BUILD_TYPE=Release -DAUTOWARE_CUDA_USE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx950 -DCMAKE_PREFIX_PATH=$ROCM_SDK -DPython3_EXECUTABLE=$FLEET_VENV/bin/python
 timeout 1800 colcon test --packages-select autoware_cuda_dependency_meta autoware_cuda_utils --event-handlers console_direct+ --ctest-args --repeat until-fail:20 --timeout 300
 ```
-rc 0; `-- cuda is not found, building autoware_cuda_utils with HIP 7.17.26434`; installed `check_gpu_backend.cmake` has `set(autoware_cuda_utils_USE_HIP TRUE)`. `[  PASSED  ] 17 tests.` on 20/20 runs, 0 skipped/failed. `colcon test-result`: 51 tests, 0 errors, 0 failures, 11 skipped (cppcheck 2.13 skips; 51 vs 50 is the copyright test counting the new file). (`autoware_cmake` must be named in `--packages-up-to` or listed through `autoware_lint_common`; colcon did not pull it in for `--packages-up-to autoware_cuda_utils` alone here.)
+rc 0; `-- cuda is not found, building autoware_cuda_utils with HIP 7.17.26434`; installed `check_gpu_backend.cmake` has `set(autoware_cuda_utils_USE_HIP TRUE)`. `[  PASSED  ] 17 tests.` on 20/20 runs, 0 skipped/failed. `colcon test-result`: 51 tests, 0 errors, 0 failures, 11 skipped (cppcheck 2.13 skips; 51 vs 50 is lint_cmake now checking 4 files, the new `.cmake.in` included; copyright 13, cppcheck 11 skipped, xmllint 1, gtest 17). (`autoware_cmake` must be named in `--packages-up-to` or listed through `autoware_lint_common`; colcon did not pull it in for `--packages-up-to autoware_cuda_utils` alone here.)
 
 ### CUDA 12.8 compile check at 0842236 (nvcc V12.8.93, no NVIDIA GPU: compile/link only)
 
