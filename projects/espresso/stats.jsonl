@@ -154,3 +154,5 @@
 {"kind":"phase","ts":"2026-11-23T23:18:00Z","phase":"test","seconds":14.361,"exit":1,"cmd":"cmake --build agent_space/cmp/head-hip1 -j 8 --target sphinx"}
 {"kind":"phase","ts":"2026-11-23T23:18:33Z","phase":"test","seconds":11.384,"exit":0,"cmd":"cmake --build agent_space/cmp/head-hip1 -j 8 --target sphinx"}
 {"kind":"phase","ts":"2026-11-23T23:22:08Z","phase":"compile","seconds":282.476,"exit":0,"cmd":"agent_space/cuda-build.sh /var/lib/jenkins/fleet/jobs/mi300-20261123-144239-espresso-roles3-prompt/moat/projects/espresso/src /var/lib/jenkins/fleet/jobs/mi300-20261123-144239-espresso-roles3-prompt/moat/agent_space/build-cuda"}
+{"kind":"session","ts":"2026-11-23T23:25:20Z","epoch":1795476320.804418,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-23T23:26:31Z","epoch":1795476391.747534,"event":"end","platform":"linux-gfx942"}
