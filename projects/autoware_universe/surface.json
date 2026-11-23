@@ -1,0 +1,1544 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "6cea1ac7b729",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor. Planner (2026-11-23): components carry a stage (1-4, or the pending question); stage 2-4 and pending items are owed until their stage runs.",
+  "cuda": {
+    "files": [
+      "e2e/autoware_tensorrt_vad/lib/networks/postprocess/map_postprocess_kernel.cu",
+      "e2e/autoware_tensorrt_vad/lib/networks/postprocess/object_postprocess_kernel.cu",
+      "e2e/autoware_tensorrt_vad/lib/networks/preprocess/multi_camera_preprocess_kernel.cu",
+      "e2e/autoware_tensorrt_vad/src/networks/postprocess/cuda_utils.hpp",
+      "perception/autoware_bevfusion/lib/camera/camera_preprocess_kernel.cu",
+      "perception/autoware_bevfusion/lib/postprocess/circle_nms_kernel.cu",
+      "perception/autoware_bevfusion/lib/postprocess/postprocess_kernel.cu",
+      "perception/autoware_bevfusion/lib/preprocess/preprocess_kernel.cu",
+      "perception/autoware_camera_streampetr/include/autoware/camera_streampetr/network/memory.cuh",
+      "perception/autoware_camera_streampetr/include/autoware/camera_streampetr/postprocess/circle_nms_kernel.hpp",
+      "perception/autoware_camera_streampetr/lib/network/ego_mask_kernel.cu",
+      "perception/autoware_camera_streampetr/lib/network/memory.cu",
+      "perception/autoware_camera_streampetr/lib/network/preprocess_kernel.cu",
+      "perception/autoware_camera_streampetr/lib/postprocess/circle_nms_kernel.cu",
+      "perception/autoware_camera_streampetr/lib/postprocess/postprocess_kernel.cu",
+      "perception/autoware_ground_segmentation_cuda/include/autoware/cuda_scan_ground_segmentation/cuda_common.hpp",
+      "perception/autoware_ground_segmentation_cuda/include/autoware/cuda_scan_ground_segmentation/cuda_utility.cuh",
+      "perception/autoware_ground_segmentation_cuda/src/cuda_scan_ground_segmentation/cuda_scan_ground_segmentation_filter.cu",
+      "perception/autoware_image_projection_based_fusion/src/pointpainting_fusion/preprocess_kernel.cu",
+      "perception/autoware_lidar_centerpoint/include/autoware/lidar_centerpoint/postprocess/circle_nms_kernel.hpp",
+      "perception/autoware_lidar_centerpoint/include/autoware/lidar_centerpoint/utils.hpp",
+      "perception/autoware_lidar_centerpoint/lib/network/scatter_kernel.cu",
+      "perception/autoware_lidar_centerpoint/lib/postprocess/circle_nms_kernel.cu",
+      "perception/autoware_lidar_centerpoint/lib/postprocess/postprocess_kernel.cu",
+      "perception/autoware_lidar_centerpoint/lib/preprocess/preprocess_kernel.cu",
+      "perception/autoware_lidar_centerpoint/test/test_preprocess_kernel.cpp",
+      "perception/autoware_lidar_frnet/include/autoware/lidar_frnet/preprocess_kernel.hpp",
+      "perception/autoware_lidar_frnet/lib/postprocess/postprocess_kernel.cu",
+      "perception/autoware_lidar_frnet/lib/preprocess/preprocess_kernel.cu",
+      "perception/autoware_lidar_transfusion/include/autoware/lidar_transfusion/postprocess/circle_nms_kernel.hpp",
+      "perception/autoware_lidar_transfusion/lib/postprocess/circle_nms_kernel.cu",
+      "perception/autoware_lidar_transfusion/lib/postprocess/postprocess_kernel.cu",
+      "perception/autoware_lidar_transfusion/lib/preprocess/preprocess_kernel.cu",
+      "perception/autoware_lidar_transfusion/test/test_preprocess_kernel.cpp",
+      "perception/autoware_probabilistic_occupancy_grid_map/include/autoware/probabilistic_occupancy_grid_map/utils/utils_kernel.hpp",
+      "perception/autoware_probabilistic_occupancy_grid_map/lib/costmap_2d/occupancy_grid_map_fixed_kernel.cu",
+      "perception/autoware_probabilistic_occupancy_grid_map/lib/costmap_2d/occupancy_grid_map_projective_kernel.cu",
+      "perception/autoware_probabilistic_occupancy_grid_map/lib/updater/binary_bayes_filter_updater_kernel.cu",
+      "perception/autoware_probabilistic_occupancy_grid_map/lib/updater/log_odds_bayes_filter_updater_kernel.cu",
+      "perception/autoware_probabilistic_occupancy_grid_map/lib/utils/utils_kernel.cu",
+      "perception/autoware_ptv3/include/autoware/ptv3/postprocess/detection3d_postprocess.hpp",
+      "perception/autoware_ptv3/lib/postprocess/detection3d_postprocess.cu",
+      "perception/autoware_ptv3/lib/postprocess/postprocess_kernel.cu",
+      "perception/autoware_ptv3/lib/preprocess/preprocess_kernel.cu",
+      "perception/autoware_ptv3/lib/preprocess/sweep_kernel.cu",
+      "perception/autoware_tensorrt_bevformer/TensorRT/common/checkMacrosPlugin.cpp",
+      "perception/autoware_tensorrt_bevformer/TensorRT/common/cuda_helper.cu",
+      "perception/autoware_tensorrt_bevformer/TensorRT/common/cuda_helper.h",
+      "perception/autoware_tensorrt_bevformer/TensorRT/common/cuda_int8.h",
+      "perception/autoware_tensorrt_bevformer/TensorRT/cudaComputeVersion.cu",
+      "perception/autoware_tensorrt_bevformer/TensorRT/plugin/modulated_deformable_conv2d/modulatedDeformableConv2dKernel.cu",
+      "perception/autoware_tensorrt_bevformer/TensorRT/plugin/modulated_deformable_conv2d/modulatedDeformableConv2dKernel.h",
+      "perception/autoware_tensorrt_bevformer/TensorRT/plugin/modulated_deformable_conv2d/modulatedDeformableConv2dPlugin.cpp",
+      "perception/autoware_tensorrt_bevformer/TensorRT/plugin/modulated_deformable_conv2d/modulatedDeformableConv2dPlugin.h",
+      "perception/autoware_tensorrt_bevformer/TensorRT/plugin/multi_scale_deformable_attn/multiScaleDeformableAttnKernel.cu",
+      "perception/autoware_tensorrt_bevformer/TensorRT/plugin/multi_scale_deformable_attn/multiScaleDeformableAttnPlugin.cpp",
+      "perception/autoware_tensorrt_bevformer/TensorRT/plugin/multi_scale_deformable_attn/multiScaleDeformableAttnPlugin.h",
+      "perception/autoware_tensorrt_bevformer/TensorRT/plugin/rotate/rotateKernel.cu",
+      "perception/autoware_tensorrt_bevformer/TensorRT/plugin/rotate/rotatePlugin.cpp",
+      "perception/autoware_tensorrt_bevformer/TensorRT/plugin/rotate/rotatePlugin.h",
+      "perception/autoware_tensorrt_classifier/include/autoware/tensorrt_classifier/preprocess.h",
+      "perception/autoware_tensorrt_classifier/src/preprocess.cu",
+      "perception/autoware_tensorrt_plugins/include/autoware/multi_scale_deform_attn_ops/ms_deform_attn_kernel.hpp",
+      "perception/autoware_tensorrt_plugins/include/autoware/scatter_ops/atomics.cuh",
+      "perception/autoware_tensorrt_plugins/include/autoware/scatter_ops/reduction.cuh",
+      "perception/autoware_tensorrt_plugins/include/autoware/scatter_ops/utils.cuh",
+      "perception/autoware_tensorrt_plugins/include/autoware/tensorrt_plugins/kernel_utils.hpp",
+      "perception/autoware_tensorrt_plugins/src/argsort_ops/argsort.cu",
+      "perception/autoware_tensorrt_plugins/src/bev_ops/bev_pool_cuda.cu",
+      "perception/autoware_tensorrt_plugins/src/multi_scale_deform_attn_ops/ms_deform_attn_kernel.cu",
+      "perception/autoware_tensorrt_plugins/src/multi_scale_deform_attn_ops/ms_deform_attn_kernel.cuh",
+      "perception/autoware_tensorrt_plugins/src/rotate_ops/rotate_kernel.cu",
+      "perception/autoware_tensorrt_plugins/src/scatter_ops/segment_csr.cu",
+      "perception/autoware_tensorrt_plugins/src/select_and_pad_ops/select_and_pad_kernel.cu",
+      "perception/autoware_tensorrt_plugins/src/unique_ops/unique.cu",
+      "perception/autoware_tensorrt_yolox/src/preprocess.cu",
+      "sensing/autoware_calibration_status_classifier/lib/preprocess/preprocess_cuda.cu",
+      "sensing/autoware_cuda_pointcloud_preprocessor/include/autoware/cuda_pointcloud_preprocessor/cuda_downsample_filter/thrust_custom_allocator.hpp",
+      "sensing/autoware_cuda_pointcloud_preprocessor/include/autoware/cuda_pointcloud_preprocessor/cuda_outlier_filter/cuda_polar_voxel_noise_filter.hpp",
+      "sensing/autoware_cuda_pointcloud_preprocessor/include/autoware/cuda_pointcloud_preprocessor/cuda_outlier_filter/cuda_polar_voxel_outlier_filter.hpp",
+      "sensing/autoware_cuda_pointcloud_preprocessor/include/autoware/cuda_pointcloud_preprocessor/cuda_pointcloud_preprocessor.hpp",
+      "sensing/autoware_cuda_pointcloud_preprocessor/include/autoware/cuda_pointcloud_preprocessor/undistort_kernels.hpp",
+      "sensing/autoware_cuda_pointcloud_preprocessor/src/cuda_concatenate_data/cuda_combine_cloud_handler_kernel.cu",
+      "sensing/autoware_cuda_pointcloud_preprocessor/src/cuda_downsample_filter/cuda_voxel_grid_downsample_filter.cu",
+      "sensing/autoware_cuda_pointcloud_preprocessor/src/cuda_outlier_filter/cuda_polar_voxel_noise_filter.cu",
+      "sensing/autoware_cuda_pointcloud_preprocessor/src/cuda_outlier_filter/cuda_polar_voxel_outlier_filter.cu",
+      "sensing/autoware_cuda_pointcloud_preprocessor/src/cuda_pointcloud_preprocessor/common_kernels.cu",
+      "sensing/autoware_cuda_pointcloud_preprocessor/src/cuda_pointcloud_preprocessor/cuda_pointcloud_preprocessor.cu",
+      "sensing/autoware_cuda_pointcloud_preprocessor/src/cuda_pointcloud_preprocessor/undistort_kernels.cu"
+    ],
+    "markers": {
+      "kernel": 177,
+      "device_code": 291,
+      "launch": 185,
+      "warp_intrinsic": 18
+    },
+    "libraries": {
+      "cub": 65,
+      "thrust": 220,
+      "cublas": 150,
+      "cudnn": 12,
+      "curand": 1
+    }
+  },
+  "components": [
+    {
+      "id": "component:cuda_concatenate_and_time_sync_node",
+      "kind": "component",
+      "where": "sensing/autoware_cuda_pointcloud_preprocessor/CMakeLists.txt",
+      "stage": 1,
+      "added_by": "planner",
+      "note": "rclcpp component/executable of cuda_pointcloud_preprocessor"
+    },
+    {
+      "id": "component:cuda_pointcloud_preprocessor_node",
+      "kind": "component",
+      "where": "sensing/autoware_cuda_pointcloud_preprocessor/CMakeLists.txt",
+      "stage": 1,
+      "added_by": "planner",
+      "note": "rclcpp component/executable of cuda_pointcloud_preprocessor"
+    },
+    {
+      "id": "component:cuda_polar_voxel_noise_filter_node",
+      "kind": "component",
+      "where": "sensing/autoware_cuda_pointcloud_preprocessor/CMakeLists.txt",
+      "stage": 1,
+      "added_by": "planner",
+      "note": "rclcpp component/executable of cuda_pointcloud_preprocessor"
+    },
+    {
+      "id": "component:cuda_polar_voxel_outlier_filter_node",
+      "kind": "component",
+      "where": "sensing/autoware_cuda_pointcloud_preprocessor/CMakeLists.txt",
+      "stage": 1,
+      "added_by": "planner",
+      "note": "rclcpp component/executable of cuda_pointcloud_preprocessor"
+    },
+    {
+      "id": "component:cuda_scan_ground_segmentation_filter_node",
+      "kind": "component",
+      "where": "perception/autoware_ground_segmentation_cuda/CMakeLists.txt",
+      "stage": 1,
+      "added_by": "planner",
+      "note": "rclcpp component/executable"
+    },
+    {
+      "id": "component:cuda_voxel_grid_downsample_filter_node",
+      "kind": "component",
+      "where": "sensing/autoware_cuda_pointcloud_preprocessor/CMakeLists.txt",
+      "stage": 1,
+      "added_by": "planner",
+      "note": "rclcpp component/executable of cuda_pointcloud_preprocessor"
+    },
+    {
+      "id": "feature:ground_segmentation-subwave-sector-kernel",
+      "kind": "feature",
+      "where": "perception/autoware_ground_segmentation_cuda/src/cuda_scan_ground_segmentation/cuda_scan_ground_segmentation_filter.cu",
+      "stage": 1,
+      "added_by": "planner",
+      "note": "32-lane warp-synchronous sectorProcessingKernel: shfl width 32, per-half 64-bit ballot, 64-bit mask on HIP; must be correct on wave64 and wave32"
+    },
+    {
+      "id": "feature:pointcloud_preprocessor-constant-symbols",
+      "kind": "feature",
+      "where": "sensing/autoware_cuda_pointcloud_preprocessor/src",
+      "stage": 1,
+      "added_by": "planner",
+      "note": "__constant__ + cudaMemcpyToSymbolAsync (downsample, undistort) need HIP_SYMBOL"
+    },
+    {
+      "id": "feature:pointcloud_preprocessor-libcuxx",
+      "kind": "feature",
+      "where": "sensing/autoware_cuda_pointcloud_preprocessor/src/cuda_outlier_filter",
+      "stage": 1,
+      "added_by": "planner",
+      "note": "cuda/std/optional, cuda::std::less/not_equal_to, cuda/functional in device and host code; shim to std or libhipcxx"
+    },
+    {
+      "id": "feature:pointcloud_preprocessor-thrust-par_nosync",
+      "kind": "feature",
+      "where": "sensing/autoware_cuda_pointcloud_preprocessor/src/cuda_downsample_filter/cuda_voxel_grid_downsample_filter.cu",
+      "stage": 1,
+      "added_by": "planner",
+      "note": "thrust::cuda::par_nosync(alloc).on(stream) x4 -> thrust::hip::par_nosync; device_vector members in host-compiled header"
+    },
+    {
+      "id": "library:autoware_probabilistic_occupancy_grid_map_common",
+      "kind": "library",
+      "where": "perception/autoware_probabilistic_occupancy_grid_map/CMakeLists.txt",
+      "stage": 1,
+      "added_by": "planner",
+      "note": "base/BBF updater/utils; USE_CUDA split"
+    },
+    {
+      "id": "library:autoware_probabilistic_occupancy_grid_map_cuda",
+      "kind": "library",
+      "where": "perception/autoware_probabilistic_occupancy_grid_map/CMakeLists.txt",
+      "stage": 1,
+      "added_by": "planner",
+      "note": "cuda_add_library of 5 .cu (13 kernels), CUDA_SEPARABLE_COMPILATION"
+    },
+    {
+      "id": "library:cuda_ground_segmentation",
+      "kind": "library",
+      "where": "perception/autoware_ground_segmentation_cuda/CMakeLists.txt",
+      "stage": 1
+    },
+    {
+      "id": "library:cuda_ground_segmentation_lib",
+      "kind": "library",
+      "where": "perception/autoware_ground_segmentation_cuda/CMakeLists.txt",
+      "stage": 1
+    },
+    {
+      "id": "library:cuda_pointcloud_preprocessor",
+      "kind": "library",
+      "where": "sensing/autoware_cuda_pointcloud_preprocessor/CMakeLists.txt",
+      "stage": 1
+    },
+    {
+      "id": "library:cuda_pointcloud_preprocessor_lib",
+      "kind": "library",
+      "where": "sensing/autoware_cuda_pointcloud_preprocessor/CMakeLists.txt",
+      "stage": 1
+    },
+    {
+      "id": "library:laserscan_based_occupancy_grid_map",
+      "kind": "library",
+      "where": "perception/autoware_probabilistic_occupancy_grid_map/CMakeLists.txt",
+      "stage": 1
+    },
+    {
+      "id": "library:pointcloud_based_occupancy_grid_map",
+      "kind": "library",
+      "where": "perception/autoware_probabilistic_occupancy_grid_map/CMakeLists.txt",
+      "stage": 1
+    },
+    {
+      "id": "library:synchronized_grid_map_fusion",
+      "kind": "library",
+      "where": "perception/autoware_probabilistic_occupancy_grid_map/CMakeLists.txt",
+      "stage": 1
+    },
+    {
+      "id": "test:ground_segmentation-validator-scene",
+      "kind": "test",
+      "where": "perception/autoware_ground_segmentation_cuda",
+      "stage": 1,
+      "added_by": "planner",
+      "note": "no upstream tests; validator synthetic multi-sector scene, wave64 vs wave32 label agreement (plan.md Test plan)"
+    },
+    {
+      "id": "test:occupancy_grid_map-disabled-tests",
+      "kind": "test",
+      "where": "perception/autoware_probabilistic_occupancy_grid_map/CMakeLists.txt",
+      "stage": 1,
+      "added_by": "planner",
+      "note": "test_utils, cost_value_test, fusion_policy_test, test_pointcloud_based_method.py, test_synchronized_grid_map_fusion_node.py commented out upstream (#7724); validator builds/runs them out of tree"
+    },
+    {
+      "id": "test:test_cuda_combine_cloud_handler",
+      "kind": "test",
+      "where": "sensing/autoware_cuda_pointcloud_preprocessor/CMakeLists.txt",
+      "stage": 1,
+      "added_by": "planner",
+      "note": "ament_add_gtest, 8 GPU TEST_F on CudaTest; GPU gate"
+    },
+    {
+      "id": "test:test_cuda_pointcloud_preprocessor",
+      "kind": "test",
+      "where": "sensing/autoware_cuda_pointcloud_preprocessor/CMakeLists.txt",
+      "stage": 1,
+      "added_by": "planner",
+      "note": "12 GPU TEST_F + 8 CPU TEST; GPU gate"
+    },
+    {
+      "id": "feature:diffusion_planner-cuda-graph",
+      "kind": "feature",
+      "where": "planning/autoware_diffusion_planner/src/inference/utils.cpp",
+      "stage": 2,
+      "added_by": "planner",
+      "note": "cudaStreamBeginCapture around enqueueV3; hipGraph capture of MIGraphX run_async or refuse"
+    },
+    {
+      "id": "feature:diffusion_planner-onnxruntime",
+      "kind": "feature",
+      "where": "planning/autoware_diffusion_planner/src/inference/onnxruntime_inference.cpp",
+      "stage": 2,
+      "added_by": "planner",
+      "note": "optional ORT path with CUDA/TensorRT EPs -> MIGraphX EP when an ORT ROCm build is found"
+    },
+    {
+      "id": "feature:streampetr-fp32-sigmoid-softmax",
+      "kind": "feature",
+      "where": "perception/autoware_camera_streampetr/lib/network/network.cpp",
+      "stage": 2,
+      "added_by": "planner",
+      "note": "getNetwork() layer walk without null check; HIP: quantize_fp16 op exclusion via engine-layer config"
+    },
+    {
+      "id": "feature:yolox-classifier-int8-calibrators",
+      "kind": "feature",
+      "where": "perception/autoware_tensorrt_yolox/include/autoware/tensorrt_yolox/calibrator.hpp",
+      "stage": 2,
+      "added_by": "planner",
+      "note": "Legacy/Entropy2/MinMax calibrator subclasses; int8 approximate on MIGraphX (autoware_cuda Q2 = a)"
+    },
+    {
+      "id": "feature:yolox-efficientnms-trt-custom-op",
+      "kind": "feature",
+      "where": "perception/autoware_tensorrt_yolox/README.md",
+      "stage": 2,
+      "added_by": "planner",
+      "note": "default yolox-tiny.onnx carries built-in EfficientNMS_TRT; MIGraphX custom op in the plugin library"
+    },
+    {
+      "id": "library:autoware_bytetrack",
+      "kind": "library",
+      "where": "perception/autoware_bytetrack/CMakeLists.txt",
+      "stage": 2,
+      "added_by": "planner",
+      "note": "library:autoware_bytetrack (no GPU code; confirm builds with ROCm workspace)"
+    },
+    {
+      "id": "library:autoware_calibration_status_classifier",
+      "kind": "library",
+      "where": "sensing/autoware_calibration_status_classifier/CMakeLists.txt",
+      "stage": 2,
+      "added_by": "planner",
+      "note": "library:autoware_calibration_status_classifier (+_cuda_lib, _filters_lib, _component)"
+    },
+    {
+      "id": "library:autoware_camera_streampetr",
+      "kind": "library",
+      "where": "perception/autoware_camera_streampetr/CMakeLists.txt",
+      "stage": 2,
+      "added_by": "planner",
+      "note": "library:autoware_camera_streampetr (+_cuda_lib, _component)"
+    },
+    {
+      "id": "library:autoware_diffusion_planner_component",
+      "kind": "library",
+      "where": "planning/autoware_diffusion_planner/CMakeLists.txt",
+      "stage": 2
+    },
+    {
+      "id": "library:autoware_lidar_apollo_instance_segmentation",
+      "kind": "library",
+      "where": "perception/autoware_lidar_apollo_instance_segmentation/CMakeLists.txt",
+      "stage": 2,
+      "added_by": "planner",
+      "note": "library:autoware_lidar_apollo_instance_segmentation"
+    },
+    {
+      "id": "library:autoware_lidar_centerpoint",
+      "kind": "library",
+      "where": "perception/autoware_lidar_centerpoint/CMakeLists.txt",
+      "stage": 2,
+      "added_by": "planner",
+      "note": "library:autoware_lidar_centerpoint (+_cuda_lib, _component)"
+    },
+    {
+      "id": "library:autoware_lidar_frnet",
+      "kind": "library",
+      "where": "perception/autoware_lidar_frnet/CMakeLists.txt",
+      "stage": 2,
+      "added_by": "planner",
+      "note": "library:autoware_lidar_frnet (+_cuda_lib, _component)"
+    },
+    {
+      "id": "library:autoware_lidar_transfusion",
+      "kind": "library",
+      "where": "perception/autoware_lidar_transfusion/CMakeLists.txt",
+      "stage": 2,
+      "added_by": "planner",
+      "note": "library:autoware_lidar_transfusion (+_cuda_lib, _component)"
+    },
+    {
+      "id": "library:autoware_shape_estimation",
+      "kind": "library",
+      "where": "perception/autoware_shape_estimation/CMakeLists.txt",
+      "stage": 2,
+      "added_by": "planner",
+      "note": "library:autoware_shape_estimation (USE_CUDA tensorrt_shape_estimator)"
+    },
+    {
+      "id": "library:autoware_simpl_prediction",
+      "kind": "library",
+      "where": "perception/autoware_simpl_prediction/CMakeLists.txt",
+      "stage": 2,
+      "added_by": "planner",
+      "note": "library:autoware_simpl_prediction (+node)"
+    },
+    {
+      "id": "library:autoware_tensorrt_classifier",
+      "kind": "library",
+      "where": "perception/autoware_tensorrt_classifier/CMakeLists.txt",
+      "stage": 2,
+      "added_by": "planner",
+      "note": "library:autoware_tensorrt_classifier (+_gpu_preprocess)"
+    },
+    {
+      "id": "library:autoware_tensorrt_yolox",
+      "kind": "library",
+      "where": "perception/autoware_tensorrt_yolox/CMakeLists.txt",
+      "stage": 2,
+      "added_by": "planner",
+      "note": "library:autoware_tensorrt_yolox (+_gpu_preprocess)"
+    },
+    {
+      "id": "library:autoware_traffic_light_classifier",
+      "kind": "library",
+      "where": "perception/autoware_traffic_light_classifier/CMakeLists.txt",
+      "stage": 2,
+      "added_by": "planner",
+      "note": "library:autoware_traffic_light_classifier"
+    },
+    {
+      "id": "library:autoware_traffic_light_fine_detector",
+      "kind": "library",
+      "where": "perception/autoware_traffic_light_fine_detector/CMakeLists.txt",
+      "stage": 2,
+      "added_by": "planner",
+      "note": "library:autoware_traffic_light_fine_detector"
+    },
+    {
+      "id": "library:autoware_traffic_light_recognition",
+      "kind": "library",
+      "where": "perception/autoware_traffic_light_pipeline/CMakeLists.txt",
+      "stage": 2
+    },
+    {
+      "id": "library:autoware_traffic_light_recognition_node",
+      "kind": "library",
+      "where": "perception/autoware_traffic_light_pipeline/CMakeLists.txt",
+      "stage": 2
+    },
+    {
+      "id": "library:pointpainting_cuda_lib",
+      "kind": "library",
+      "where": "perception/autoware_image_projection_based_fusion/CMakeLists.txt",
+      "stage": 2
+    },
+    {
+      "id": "library:pointpainting_lib",
+      "kind": "library",
+      "where": "perception/autoware_image_projection_based_fusion/CMakeLists.txt",
+      "stage": 2
+    },
+    {
+      "id": "library:single_image_debug_inference_node",
+      "kind": "library",
+      "where": "perception/autoware_traffic_light_classifier/CMakeLists.txt",
+      "stage": 2
+    },
+    {
+      "id": "library:yolox_single_image_inference_node",
+      "kind": "library",
+      "where": "perception/autoware_tensorrt_yolox/CMakeLists.txt",
+      "stage": 2
+    },
+    {
+      "id": "test:centerpoint-test_voxel_generator",
+      "kind": "test",
+      "where": "perception/autoware_lidar_centerpoint/CMakeLists.txt",
+      "stage": 2,
+      "added_by": "planner",
+      "note": "commented out (#7724); built out of tree by the validator"
+    },
+    {
+      "id": "test:pointpainting-and-cpu-tests",
+      "kind": "test",
+      "where": "perception/autoware_image_projection_based_fusion/CMakeLists.txt",
+      "stage": 2,
+      "added_by": "planner",
+      "note": "test_pointpainting + 3 CPU tests"
+    },
+    {
+      "id": "test:simpl-shape-diffusion-cpu-tests",
+      "kind": "test",
+      "where": "perception",
+      "stage": 2,
+      "added_by": "planner",
+      "note": "test_simpl, test_shape_estimation, test_diffusion_planner must pass on the HIP build"
+    },
+    {
+      "id": "test:test_calibration_status_classifier",
+      "kind": "test",
+      "where": "sensing/autoware_calibration_status_classifier/CMakeLists.txt",
+      "stage": 2
+    },
+    {
+      "id": "test:test_filters",
+      "kind": "test",
+      "where": "sensing/autoware_calibration_status_classifier/CMakeLists.txt",
+      "stage": 2
+    },
+    {
+      "id": "test:test_model_inference",
+      "kind": "test",
+      "where": "sensing/autoware_calibration_status_classifier/CMakeLists.txt",
+      "stage": 2
+    },
+    {
+      "id": "test:test_postprocess_kernel",
+      "kind": "test",
+      "where": "perception/autoware_lidar_centerpoint/CMakeLists.txt",
+      "stage": 2,
+      "note": "commented out upstream (issue #7724); GPU kernel test, built out of tree by the validator"
+    },
+    {
+      "id": "test:test_preprocess_kernel",
+      "kind": "test",
+      "where": "perception/autoware_lidar_centerpoint/CMakeLists.txt",
+      "stage": 2,
+      "note": "commented out upstream (issue #7724, no GPU in upstream CI); GPU kernel test, validator builds it from the fork test sources out of tree"
+    },
+    {
+      "id": "test:test_preprocessing",
+      "kind": "test",
+      "where": "sensing/autoware_calibration_status_classifier/CMakeLists.txt",
+      "stage": 2
+    },
+    {
+      "id": "test:test_ros_utils",
+      "kind": "test",
+      "where": "sensing/autoware_calibration_status_classifier/CMakeLists.txt",
+      "stage": 2
+    },
+    {
+      "id": "test:traffic_light_classifier-gpu-tests",
+      "kind": "test",
+      "where": "perception/autoware_traffic_light_classifier/CMakeLists.txt",
+      "stage": 2,
+      "added_by": "planner",
+      "note": "test_cnn_classifier, test_cnn_lamp_recognizer (GPU + model)"
+    },
+    {
+      "id": "test:traffic_light_recognition_node",
+      "kind": "test",
+      "where": "perception/autoware_traffic_light_pipeline/CMakeLists.txt",
+      "stage": 2,
+      "added_by": "planner",
+      "note": "GPU + models, is_cuda_runtime_available skip"
+    },
+    {
+      "id": "test:transfusion-disabled-kernel-tests",
+      "kind": "test",
+      "where": "perception/autoware_lidar_transfusion/CMakeLists.txt",
+      "stage": 2,
+      "added_by": "planner",
+      "note": "test_voxel_generator/preprocess/postprocess commented out (#7724); built out of tree by the validator"
+    },
+    {
+      "id": "test:yolox-gpu-tests",
+      "kind": "test",
+      "where": "perception/autoware_tensorrt_yolox/CMakeLists.txt",
+      "stage": 2,
+      "added_by": "planner",
+      "note": "test_tensorrt_yolox_node, test_tensorrt_yolox_detector (GPU + model)"
+    },
+    {
+      "id": "custom-op:Argsort",
+      "kind": "custom-op",
+      "where": "perception/autoware_tensorrt_plugins",
+      "stage": 3,
+      "added_by": "planner",
+      "note": "hipCUB radix sort int64"
+    },
+    {
+      "id": "custom-op:CustomUnique",
+      "kind": "custom-op",
+      "where": "perception/autoware_tensorrt_plugins",
+      "stage": 3,
+      "added_by": "planner",
+      "note": "hipCUB sort/scan/RLE; data-dependent size -> padded + count"
+    },
+    {
+      "id": "custom-op:MultiScaleDeformableAttentionPlugin",
+      "kind": "custom-op",
+      "where": "perception/autoware_tensorrt_plugins",
+      "stage": 3,
+      "added_by": "planner",
+      "note": "fp32/half; __CUDA_ARCH__ >= 530 path"
+    },
+    {
+      "id": "custom-op:QuickCumsumCuda",
+      "kind": "custom-op",
+      "where": "perception/autoware_tensorrt_plugins",
+      "stage": 3,
+      "added_by": "planner",
+      "note": "bev_pool"
+    },
+    {
+      "id": "custom-op:RotatePlugin",
+      "kind": "custom-op",
+      "where": "perception/autoware_tensorrt_plugins",
+      "stage": 3,
+      "added_by": "planner",
+      "note": "fp32/fp16"
+    },
+    {
+      "id": "custom-op:SegmentCSR",
+      "kind": "custom-op",
+      "where": "perception/autoware_tensorrt_plugins",
+      "stage": 3,
+      "added_by": "planner",
+      "note": "64-bit mask or drop dead shuffle loop"
+    },
+    {
+      "id": "custom-op:SelectAndPadPlugin",
+      "kind": "custom-op",
+      "where": "perception/autoware_tensorrt_plugins",
+      "stage": 3,
+      "added_by": "planner",
+      "note": "fix workspace overrun and query temp size"
+    },
+    {
+      "id": "feature:bevformer-model-artifact",
+      "kind": "feature",
+      "where": "perception/autoware_tensorrt_bevformer/README.md",
+      "stage": 3,
+      "added_by": "planner",
+      "note": "ONNX only on a personal SharePoint link; export or obtain for validation"
+    },
+    {
+      "id": "library:autoware_tensorrt_bevformer",
+      "kind": "library",
+      "where": "perception/autoware_tensorrt_bevformer/CMakeLists.txt",
+      "stage": 3,
+      "added_by": "planner",
+      "note": "own TensorRT engine code -> MIGraphX; tensorrt_ops (ModulatedDeformableConv2d, MultiScaleDeformableAttn, Rotate; TRT and TRT2) as custom ops; cuBLAS -> hipBLAS"
+    },
+    {
+      "id": "library:autoware_tensorrt_plugins-migraphx",
+      "kind": "library",
+      "where": "perception/autoware_tensorrt_plugins/CMakeLists.txt",
+      "stage": 3,
+      "added_by": "planner",
+      "note": "HIP branch: custom-op library at share/autoware_tensorrt_plugins/plugins/libautoware_tensorrt_plugins.so"
+    },
+    {
+      "id": "library:autoware_tensorrt_vad",
+      "kind": "library",
+      "where": "e2e/autoware_tensorrt_vad/CMakeLists.txt",
+      "stage": 3,
+      "added_by": "planner",
+      "note": "3 engines; MSDA, Rotate, SelectAndPad custom ops"
+    },
+    {
+      "id": "library:cuda_ops",
+      "kind": "library",
+      "where": "perception/autoware_tensorrt_plugins/CMakeLists.txt",
+      "stage": 3
+    },
+    {
+      "id": "option:CUDA_AVAIL",
+      "kind": "option",
+      "where": "e2e/autoware_tensorrt_vad/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "CUDA available",
+      "stage": 3,
+      "note": "VAD CUDA gate; HIP branch sets the equivalent"
+    },
+    {
+      "id": "option:CUDA_VERBOSE",
+      "kind": "option",
+      "where": "e2e/autoware_tensorrt_vad/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Verbose output of CUDA modules",
+      "stage": 3
+    },
+    {
+      "id": "option:TRT_AVAIL",
+      "kind": "option",
+      "where": "e2e/autoware_tensorrt_vad/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "TensorRT available",
+      "stage": 3,
+      "note": "VAD TensorRT gate; HIP branch keys off autoware_tensorrt_common backend"
+    },
+    {
+      "id": "test:reference_kernels_test",
+      "kind": "test",
+      "where": "perception/autoware_tensorrt_plugins/CMakeLists.txt",
+      "stage": 3,
+      "added_by": "planner",
+      "note": "argsort/segment_csr/unique GPU tests; plus new HIP-side op reference tests"
+    },
+    {
+      "id": "custom-op:GetIndicePairs",
+      "kind": "custom-op",
+      "where": "perception/autoware_tensorrt_plugins",
+      "stage": 4,
+      "added_by": "planner",
+      "note": "spconv_cpp/cumm generated kernels; Q1"
+    },
+    {
+      "id": "custom-op:GetIndicePairsImplicitGemm",
+      "kind": "custom-op",
+      "where": "perception/autoware_tensorrt_plugins",
+      "stage": 4,
+      "added_by": "planner",
+      "note": "spconv_cpp/cumm generated kernels; Q1"
+    },
+    {
+      "id": "custom-op:ImplicitGemm",
+      "kind": "custom-op",
+      "where": "perception/autoware_tensorrt_plugins",
+      "stage": 4,
+      "added_by": "planner",
+      "note": "spconv_cpp/cumm generated kernels; Q1"
+    },
+    {
+      "id": "custom-op:IndiceConv",
+      "kind": "custom-op",
+      "where": "perception/autoware_tensorrt_plugins",
+      "stage": 4,
+      "added_by": "planner",
+      "note": "spconv_cpp/cumm generated kernels; Q1"
+    },
+    {
+      "id": "library:autoware_bevfusion",
+      "kind": "library",
+      "where": "perception/autoware_bevfusion/CMakeLists.txt",
+      "stage": 4,
+      "added_by": "planner",
+      "note": "spconv Point2Voxel voxeliser, sparse conv, QuickCumsumCuda; Q1"
+    },
+    {
+      "id": "library:autoware_ptv3",
+      "kind": "library",
+      "where": "perception/autoware_ptv3/CMakeLists.txt",
+      "stage": 4,
+      "added_by": "planner",
+      "note": "SegmentCSR + sparse conv; int64/optional IO"
+    },
+    {
+      "id": "option:SPCONV_AVAIL",
+      "kind": "option",
+      "where": "perception/autoware_bevfusion/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "spconv available",
+      "stage": 4,
+      "note": "bevfusion spconv gate; stage 4 (Q1)"
+    },
+    {
+      "id": "test:ptv3-gpu-kernel-tests",
+      "kind": "test",
+      "where": "perception/autoware_ptv3/CMakeLists.txt",
+      "stage": 4,
+      "added_by": "planner",
+      "note": "5 synthetic GPU tests (no model); runnable from stage 2 once the package builds"
+    },
+    {
+      "id": "library:autoware_tensorrt_bevdet",
+      "kind": "library",
+      "where": "perception/autoware_tensorrt_bevdet/CMakeLists.txt",
+      "stage": "Q2",
+      "added_by": "planner",
+      "note": "all GPU code in bevdet_vendor (no licence)"
+    },
+    {
+      "id": "feature:agnocast",
+      "kind": "feature",
+      "where": "sensing/autoware_cuda_pointcloud_preprocessor/CMakeLists.txt",
+      "stage": "Q5",
+      "added_by": "planner",
+      "note": "optional ENABLE_AGNOCAST build (pointcloud preprocessor, occupancy grid); pending Q5"
+    }
+  ],
+  "covered": [],
+  "scoped_out": [],
+  "owed": [
+    {
+      "id": "library:autoware_diffusion_planner_component",
+      "reason": "stage 2: needs autoware_cuda round 2 (MIGraphX TrtCommon)"
+    },
+    {
+      "id": "library:autoware_traffic_light_recognition",
+      "reason": "stage 2: needs autoware_cuda round 2 (MIGraphX TrtCommon)"
+    },
+    {
+      "id": "library:autoware_traffic_light_recognition_node",
+      "reason": "stage 2: needs autoware_cuda round 2 (MIGraphX TrtCommon)"
+    },
+    {
+      "id": "library:cuda_ops",
+      "reason": "stage 3: MIGraphX custom ops"
+    },
+    {
+      "id": "library:pointpainting_cuda_lib",
+      "reason": "stage 2: needs autoware_cuda round 2 (MIGraphX TrtCommon)"
+    },
+    {
+      "id": "library:pointpainting_lib",
+      "reason": "stage 2: needs autoware_cuda round 2 (MIGraphX TrtCommon)"
+    },
+    {
+      "id": "library:single_image_debug_inference_node",
+      "reason": "stage 2: needs autoware_cuda round 2 (MIGraphX TrtCommon)"
+    },
+    {
+      "id": "library:yolox_single_image_inference_node",
+      "reason": "stage 2: needs autoware_cuda round 2 (MIGraphX TrtCommon)"
+    },
+    {
+      "id": "option:CUDA_AVAIL",
+      "reason": "stage 3: MIGraphX custom ops"
+    },
+    {
+      "id": "option:CUDA_VERBOSE",
+      "reason": "stage 3: MIGraphX custom ops"
+    },
+    {
+      "id": "option:SPCONV_AVAIL",
+      "reason": "stage 4: needs a ROCm spconv (Q1)"
+    },
+    {
+      "id": "option:TRT_AVAIL",
+      "reason": "stage 3: MIGraphX custom ops"
+    },
+    {
+      "id": "test:test_calibration_status_classifier",
+      "reason": "stage 2: needs autoware_cuda round 2 (MIGraphX TrtCommon)"
+    },
+    {
+      "id": "test:test_filters",
+      "reason": "stage 2: needs autoware_cuda round 2 (MIGraphX TrtCommon)"
+    },
+    {
+      "id": "test:test_model_inference",
+      "reason": "stage 2: needs autoware_cuda round 2 (MIGraphX TrtCommon)"
+    },
+    {
+      "id": "test:test_postprocess_kernel",
+      "reason": "stage 2: needs autoware_cuda round 2 (MIGraphX TrtCommon)"
+    },
+    {
+      "id": "test:test_preprocess_kernel",
+      "reason": "stage 2: needs autoware_cuda round 2 (MIGraphX TrtCommon)"
+    },
+    {
+      "id": "test:test_preprocessing",
+      "reason": "stage 2: needs autoware_cuda round 2 (MIGraphX TrtCommon)"
+    },
+    {
+      "id": "test:test_ros_utils",
+      "reason": "stage 2: needs autoware_cuda round 2 (MIGraphX TrtCommon)"
+    },
+    {
+      "id": "feature:agnocast",
+      "reason": "awaiting Jeff ruling Q5 (Agnocast)"
+    },
+    {
+      "id": "library:autoware_tensorrt_classifier",
+      "reason": "stage 2: needs autoware_cuda round 2 (MIGraphX TrtCommon)"
+    },
+    {
+      "id": "library:autoware_tensorrt_yolox",
+      "reason": "stage 2: needs autoware_cuda round 2 (MIGraphX TrtCommon)"
+    },
+    {
+      "id": "library:autoware_traffic_light_classifier",
+      "reason": "stage 2: needs autoware_cuda round 2 (MIGraphX TrtCommon)"
+    },
+    {
+      "id": "library:autoware_traffic_light_fine_detector",
+      "reason": "stage 2: needs autoware_cuda round 2 (MIGraphX TrtCommon)"
+    },
+    {
+      "id": "library:autoware_lidar_centerpoint",
+      "reason": "stage 2: needs autoware_cuda round 2 (MIGraphX TrtCommon)"
+    },
+    {
+      "id": "library:autoware_lidar_transfusion",
+      "reason": "stage 2: needs autoware_cuda round 2 (MIGraphX TrtCommon)"
+    },
+    {
+      "id": "library:autoware_lidar_frnet",
+      "reason": "stage 2: needs autoware_cuda round 2 (MIGraphX TrtCommon)"
+    },
+    {
+      "id": "library:autoware_calibration_status_classifier",
+      "reason": "stage 2: needs autoware_cuda round 2 (MIGraphX TrtCommon)"
+    },
+    {
+      "id": "library:autoware_camera_streampetr",
+      "reason": "stage 2: needs autoware_cuda round 2 (MIGraphX TrtCommon)"
+    },
+    {
+      "id": "library:autoware_simpl_prediction",
+      "reason": "stage 2: needs autoware_cuda round 2 (MIGraphX TrtCommon)"
+    },
+    {
+      "id": "library:autoware_shape_estimation",
+      "reason": "stage 2: needs autoware_cuda round 2 (MIGraphX TrtCommon)"
+    },
+    {
+      "id": "library:autoware_lidar_apollo_instance_segmentation",
+      "reason": "stage 2: needs autoware_cuda round 2 (MIGraphX TrtCommon)"
+    },
+    {
+      "id": "library:autoware_bytetrack",
+      "reason": "stage 2: needs autoware_cuda round 2 (MIGraphX TrtCommon)"
+    },
+    {
+      "id": "feature:yolox-efficientnms-trt-custom-op",
+      "reason": "stage 2: needs autoware_cuda round 2 (MIGraphX TrtCommon)"
+    },
+    {
+      "id": "feature:yolox-classifier-int8-calibrators",
+      "reason": "stage 2: needs autoware_cuda round 2 (MIGraphX TrtCommon)"
+    },
+    {
+      "id": "feature:streampetr-fp32-sigmoid-softmax",
+      "reason": "stage 2: needs autoware_cuda round 2 (MIGraphX TrtCommon)"
+    },
+    {
+      "id": "feature:diffusion_planner-cuda-graph",
+      "reason": "stage 2: needs autoware_cuda round 2 (MIGraphX TrtCommon)"
+    },
+    {
+      "id": "feature:diffusion_planner-onnxruntime",
+      "reason": "stage 2: needs autoware_cuda round 2 (MIGraphX TrtCommon)"
+    },
+    {
+      "id": "test:yolox-gpu-tests",
+      "reason": "stage 2: needs autoware_cuda round 2 (MIGraphX TrtCommon)"
+    },
+    {
+      "id": "test:traffic_light_classifier-gpu-tests",
+      "reason": "stage 2: needs autoware_cuda round 2 (MIGraphX TrtCommon)"
+    },
+    {
+      "id": "test:traffic_light_recognition_node",
+      "reason": "stage 2: needs autoware_cuda round 2 (MIGraphX TrtCommon)"
+    },
+    {
+      "id": "test:pointpainting-and-cpu-tests",
+      "reason": "stage 2: needs autoware_cuda round 2 (MIGraphX TrtCommon)"
+    },
+    {
+      "id": "test:transfusion-disabled-kernel-tests",
+      "reason": "stage 2: needs autoware_cuda round 2 (MIGraphX TrtCommon)"
+    },
+    {
+      "id": "test:centerpoint-test_voxel_generator",
+      "reason": "stage 2: needs autoware_cuda round 2 (MIGraphX TrtCommon)"
+    },
+    {
+      "id": "test:simpl-shape-diffusion-cpu-tests",
+      "reason": "stage 2: needs autoware_cuda round 2 (MIGraphX TrtCommon)"
+    },
+    {
+      "id": "library:autoware_tensorrt_plugins-migraphx",
+      "reason": "stage 3: MIGraphX custom ops"
+    },
+    {
+      "id": "custom-op:Argsort",
+      "reason": "stage 3: MIGraphX custom ops"
+    },
+    {
+      "id": "custom-op:CustomUnique",
+      "reason": "stage 3: MIGraphX custom ops"
+    },
+    {
+      "id": "custom-op:SegmentCSR",
+      "reason": "stage 3: MIGraphX custom ops"
+    },
+    {
+      "id": "custom-op:QuickCumsumCuda",
+      "reason": "stage 3: MIGraphX custom ops"
+    },
+    {
+      "id": "custom-op:MultiScaleDeformableAttentionPlugin",
+      "reason": "stage 3: MIGraphX custom ops"
+    },
+    {
+      "id": "custom-op:RotatePlugin",
+      "reason": "stage 3: MIGraphX custom ops"
+    },
+    {
+      "id": "custom-op:SelectAndPadPlugin",
+      "reason": "stage 3: MIGraphX custom ops"
+    },
+    {
+      "id": "test:reference_kernels_test",
+      "reason": "stage 3: MIGraphX custom ops"
+    },
+    {
+      "id": "library:autoware_tensorrt_vad",
+      "reason": "stage 3: MIGraphX custom ops"
+    },
+    {
+      "id": "library:autoware_tensorrt_bevformer",
+      "reason": "stage 3: MIGraphX custom ops"
+    },
+    {
+      "id": "feature:bevformer-model-artifact",
+      "reason": "stage 3: MIGraphX custom ops"
+    },
+    {
+      "id": "custom-op:GetIndicePairsImplicitGemm",
+      "reason": "stage 4: needs a ROCm spconv (Q1)"
+    },
+    {
+      "id": "custom-op:GetIndicePairs",
+      "reason": "stage 4: needs a ROCm spconv (Q1)"
+    },
+    {
+      "id": "custom-op:ImplicitGemm",
+      "reason": "stage 4: needs a ROCm spconv (Q1)"
+    },
+    {
+      "id": "custom-op:IndiceConv",
+      "reason": "stage 4: needs a ROCm spconv (Q1)"
+    },
+    {
+      "id": "library:autoware_bevfusion",
+      "reason": "stage 4: needs a ROCm spconv (Q1)"
+    },
+    {
+      "id": "library:autoware_ptv3",
+      "reason": "stage 4: needs a ROCm spconv (Q1)"
+    },
+    {
+      "id": "test:ptv3-gpu-kernel-tests",
+      "reason": "stage 4: needs a ROCm spconv (Q1)"
+    },
+    {
+      "id": "library:autoware_tensorrt_bevdet",
+      "reason": "awaiting Jeff ruling Q2 (bevdet_vendor has no licence)"
+    }
+  ],
+  "removed_from_floor": [
+    {
+      "id": "benchmark:benchmark",
+      "where": "common/autoware_grid_map_utils/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "benchmark:collision_benchmark",
+      "where": "planning/motion_velocity_planner/autoware_motion_velocity_obstacle_velocity_limiter_module/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "executable:accel_brake_map_calibrator",
+      "where": "vehicle/autoware_accel_brake_map_calibrator/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "executable:concatenate_without_ros_node",
+      "where": "sensing/autoware_pointcloud_preprocessor/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "executable:free1",
+      "where": "system/autoware_system_monitor/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "executable:hdd_reader",
+      "where": "system/autoware_system_monitor/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "executable:msr_reader",
+      "where": "system/autoware_system_monitor/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "executable:traffic_reader",
+      "where": "system/autoware_system_monitor/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "executable:tree",
+      "where": "system/autoware_diagnostic_graph_aggregator/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:abstract_corrector",
+      "where": "localization/yabloc/yabloc_particle_filter/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:acados_interface",
+      "where": "planning/autoware_path_optimizer/src/acados_mpc/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:acados_interface_temporal",
+      "where": "planning/autoware_trajectory_modifier/src/acados_mpt/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:actuation_map_converter",
+      "where": "vehicle/autoware_raw_vehicle_cmd_converter/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:aggregator",
+      "where": "system/autoware_diagnostic_graph_aggregator/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:autoware_autonomous_emergency_braking_helpers",
+      "where": "control/autoware_autonomous_emergency_braking/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:autoware_bezier_sampler",
+      "where": "planning/sampling_based_planner/autoware_bezier_sampler/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:autoware_control_validator_component",
+      "where": "control/autoware_control_validator/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:autoware_control_validator_helpers",
+      "where": "control/autoware_control_validator/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:autoware_crosswalk_traffic_light_estimator",
+      "where": "perception/autoware_crosswalk_traffic_light_estimator/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:autoware_crosswalk_traffic_light_estimator_node",
+      "where": "perception/autoware_crosswalk_traffic_light_estimator/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:autoware_dummy_infrastructure_node_component",
+      "where": "simulator/autoware_dummy_infrastructure/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:autoware_external_cmd_converter",
+      "where": "vehicle/autoware_external_cmd_converter/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:autoware_frenet_planner",
+      "where": "planning/sampling_based_planner/autoware_frenet_planner/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:autoware_joy_controller_node",
+      "where": "control/autoware_joy_controller/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:autoware_operation_mode_transition_manager_node",
+      "where": "control/autoware_operation_mode_transition_manager/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:autoware_path_sampler",
+      "where": "planning/sampling_based_planner/autoware_path_sampler/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:autoware_path_smoother",
+      "where": "planning/autoware_path_smoother/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:autoware_pcl_extensions",
+      "where": "sensing/autoware_pcl_extensions/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:autoware_planning_validator_component",
+      "where": "planning/planning_validator/autoware_planning_validator/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:autoware_raw_vehicle_cmd_converter_node_component",
+      "where": "vehicle/autoware_raw_vehicle_cmd_converter/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:autoware_rtc_interface",
+      "where": "planning/autoware_rtc_interface/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:autoware_sampler_common",
+      "where": "planning/sampling_based_planner/autoware_sampler_common/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:autoware_trajectory_modifier_component",
+      "where": "planning/autoware_trajectory_modifier/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:autoware_trajectory_modifier_plugins",
+      "where": "planning/autoware_trajectory_modifier/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:autoware_trajectory_modifier_utils",
+      "where": "planning/autoware_trajectory_modifier/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:autoware_trajectory_optimizer_plugins",
+      "where": "planning/autoware_trajectory_modifier/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:autoware_trajectory_validator_plugins",
+      "where": "planning/autoware_trajectory_validator/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:autoware_universe_utils",
+      "where": "common/autoware_universe_utils/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:boundary_departure_checker",
+      "where": "common/autoware_deprecated_boundary_departure_checker/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:boundary_departure_checker_utils",
+      "where": "common/autoware_deprecated_boundary_departure_checker/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:concatenate_core",
+      "where": "sensing/autoware_pointcloud_preprocessor/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:concatenate_data",
+      "where": "sensing/autoware_pointcloud_preprocessor/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:control_evaluator_node",
+      "where": "evaluator/autoware_control_evaluator/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:control_performance_analysis_core",
+      "where": "control/autoware_control_performance_analysis/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:control_performance_analysis_node",
+      "where": "control/autoware_control_performance_analysis/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:converter",
+      "where": "system/autoware_diagnostic_graph_aggregator/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:costmap_generator_lib",
+      "where": "planning/autoware_costmap_generator/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:costmap_generator_node",
+      "where": "planning/autoware_costmap_generator/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:cpu_monitor_lib",
+      "where": "system/autoware_system_monitor/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:distortion_corrector_core",
+      "where": "sensing/autoware_pointcloud_preprocessor/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:dummy_validator_plugin",
+      "where": "planning/autoware_trajectory_selector/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:example_rule",
+      "where": "localization/autoware_pose_estimator_arbiter/example_rule/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:external_velocity_limit_selector_node",
+      "where": "planning/autoware_external_velocity_limit_selector/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:faster_voxel_grid_downsample_filter",
+      "where": "sensing/autoware_pointcloud_preprocessor/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:freespace_planner_node",
+      "where": "planning/autoware_freespace_planner/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:gpu_monitor_lib",
+      "where": "system/autoware_system_monitor/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:gyro_bias_estimator",
+      "where": "sensing/autoware_imu_corrector/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:hdd_monitor_lib",
+      "where": "system/autoware_system_monitor/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:imu_corrector",
+      "where": "sensing/autoware_imu_corrector/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:invalid_trajectory_publisher_node",
+      "where": "planning/planning_validator/autoware_planning_validator/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:landmark_manager",
+      "where": "localization/autoware_landmark_based_localizer/autoware_landmark_manager/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:low_intensity_cluster_filter",
+      "where": "perception/autoware_raindrop_cluster_filter/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:map_based_prediction_node",
+      "where": "perception/autoware_map_based_prediction/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:mem_monitor_lib",
+      "where": "system/autoware_system_monitor/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:net_monitor_lib",
+      "where": "system/autoware_system_monitor/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:ntp_monitor_lib",
+      "where": "system/autoware_system_monitor/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:object_lanelet_filter",
+      "where": "perception/autoware_detected_object_validation/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:object_position_filter",
+      "where": "perception/autoware_detected_object_validation/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:obstacle_collision_checker",
+      "where": "control/autoware_obstacle_collision_checker/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:obstacle_pointcloud_based_validator",
+      "where": "perception/autoware_detected_object_validation/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:occupancy_grid_based_validator",
+      "where": "perception/autoware_detected_object_validation/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:pcd_map_tf_generator_node",
+      "where": "map/autoware_map_tf_generator/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:planning_evaluator_node",
+      "where": "evaluator/autoware_planning_evaluator/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:pointcloud_preprocessor_filter",
+      "where": "sensing/autoware_pointcloud_preprocessor/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:pointcloud_preprocessor_filter_base",
+      "where": "sensing/autoware_pointcloud_preprocessor/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:pointcloud_preprocessor_memory_utils",
+      "where": "sensing/autoware_pointcloud_preprocessor/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:predictor",
+      "where": "localization/yabloc/yabloc_particle_filter/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:process_monitor_lib",
+      "where": "system/autoware_system_monitor/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:reeds_shepp",
+      "where": "planning/autoware_freespace_planning_algorithms/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:rrtstar_core",
+      "where": "planning/autoware_freespace_planning_algorithms/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:simple_switcher_node_component",
+      "where": "system/autoware_redundancy_switcher_interface_plugins/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:spheric_collision_detector",
+      "where": "control/autoware_spheric_collision_detector/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:start_planner_test_helper",
+      "where": "planning/behavior_path_planner/autoware_behavior_path_start_planner_module/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:tier4_manual_lane_change_rviz_plugin",
+      "where": "visualization/tier4_manual_lane_change_rviz_plugin/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:tier4_planning_factor_rviz_plugin",
+      "where": "visualization/tier4_planning_factor_rviz_plugin/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:tier4_vehicle_rviz_plugin",
+      "where": "visualization/tier4_vehicle_rviz_plugin/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:traffic_light_map_visualizer",
+      "where": "perception/autoware_traffic_light_visualization/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:traffic_light_roi_visualizer",
+      "where": "perception/autoware_traffic_light_visualization/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:uncrossable_boundary_checker",
+      "where": "common/autoware_boundary_departure_checker/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:uncrossable_boundary_departure_checker",
+      "where": "common/autoware_deprecated_boundary_departure_checker/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:utils",
+      "where": "common/autoware_boundary_departure_checker/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:vector_map_tf_generator_node",
+      "where": "map/autoware_map_tf_generator/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:vehicle_adaptor",
+      "where": "vehicle/autoware_raw_vehicle_cmd_converter/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:vehicle_cmd_gate_node",
+      "where": "control/autoware_vehicle_cmd_gate/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "library:voltage_monitor_lib",
+      "where": "system/autoware_system_monitor/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "option:BUILD_EXAMPLES",
+      "where": "common/autoware_universe_utils/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "option:EXPORT_TEST_PLOT_FIGURE",
+      "where": "common/autoware_deprecated_boundary_departure_checker/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "python_module:_concatenate_pointclouds_pybind",
+      "where": "sensing/autoware_pointcloud_preprocessor/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "python_module:_distortion_corrector_pybind",
+      "where": "sensing/autoware_pointcloud_preprocessor/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    },
+    {
+      "id": "python_module:proxima_calc",
+      "where": "control/autoware_smart_mpc_trajectory_follower/CMakeLists.txt",
+      "reason": "package has no CUDA, TensorRT or GPU dependency; the port does not touch it (non-GPU package of the monorepo)"
+    }
+  ]
+}

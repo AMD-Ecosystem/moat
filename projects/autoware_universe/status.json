@@ -5,20 +5,16 @@
   "fork_url": "https://github.com/AMD-Ecosystem/autoware_universe",
   "fork_default_branch": "main",
   "priority": 0.0,
-  "ext_type": "unknown",
-  "stage": "planning",
+  "ext_type": "cmake",
+  "stage": "planned",
   "adopted_at": "2026-11-05T23:13:25Z",
-  "updated_at": "2026-11-23T20:31:22Z",
+  "updated_at": "2026-11-23T20:47:52Z",
   "head_sha": null,
   "depends_on": [
     "autoware_cuda",
     "cuda_blackboard"
   ],
-  "porting": {
-    "arch": "linux-gfx942",
-    "since": "2026-11-23T20:31:22Z",
-    "holder": "5a908097caea"
-  },
+  "porting": null,
   "waivers": {
     "windows": {
       "reason": "Autoware is a Linux-only ROS 2 (Humble/Jazzy) stack; no Windows build exists upstream. Approved 2026-11-11 with the full-scope ruling.",
@@ -57,7 +53,7 @@
       "failed_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-11-23T20:31:22Z",
+      "updated_at": "2026-11-23T20:47:52Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -90,5 +86,10 @@
     "viable": true,
     "summary": "Autoware ROS 2 monorepo, 797 KB CUDA; 69% is pre/post kernels around TensorRT (needs a MIGraphX backend, defer); fork for the pure-CUDA unit (pointcloud preprocessor, CUDA ground seg, occupancy grid, ~250 KB) plus companion repos autoware_cuda and cuda_blackboard; scope cut and Silo AI coordination need jeff",
     "at": "2026-11-06T00:02:59Z"
+  },
+  "porting_released": {
+    "arch": "linux-gfx942",
+    "since": "2026-11-23T20:31:22Z",
+    "at": "2026-11-23T20:47:52Z"
   }
 }
