@@ -162,3 +162,24 @@ Belongs in `references/libraries.md`, "Generic GEMM on CK device operations". Sy
 ## Lesson for moat-porting: `git lfs install --local` in a fork clone collides with the fork pre-push hook
 
 Belongs in "Fleet hosts" or "Traps in MOAT's own tools". After `protect-fork`, `git lfs install --local` stops with "Hook already exists: pre-push" (and a submodule update that needs LFS then leaves pointer files). Use `GIT_LFS_SKIP_SMUDGE=1 git submodule update --init ...`, then inside the LFS submodule `git lfs install --local --skip-repo && git lfs pull`; never `git lfs update --force`, which would replace the freeze hook. (oidn)
+
+## Review 2026-11-23 (linux-gfx90a, fork moat-port 06bdc4c vs master 6602ee2)
+
+### Port Review: oidn (moat-port vs master)
+
+#### Summary
+Upstream PR 302 (75bc1d9, wensongc) adds a Composable Kernel XDL/MFMA convolution TU for gfx950; our commit 06bdc4c builds the same TU for gfx90a and gfx942, maps those archs to `HIPArch::MFMA` under per-target defines, and guards the TU's `#define warpSize 64` with an `#error` for any non-CDNA device pass. Verdict: **Approve** (review-passed). No defect found in 06bdc4c. The real-GPU runs on gfx90a are the validator's next step.
+
+#### What was checked (by reading the code, not the porter's summary)
+- Wavefront: the only host-side subgroup value is `subgroupSize = prop.warpSize` (`devices/hip/hip_device.cpp:179`); `gpu_input_process.h:148-165` and `:234-254` use it generically and need only `subgroupSize % dstPaddedC == 0` (64 % 32 holds). `suggestWorkGroupSize` 32x32 is width-independent. No hard-coded 32 in the diff or the code around it.
+- `#define warpSize 64` (`ck_conv_mfma.cpp:16`) comes after `hip_runtime.h` and `hip_conv.h`, and the TU is fed only `--offload-arch` for gfx90a/gfx942/gfx950 (CMake `_oidn_mfma_flags`); the `#error` at `:12-15` makes any other device pass fail.
+- CK at the pin 3e6d21ad: `xdlops_gemm.hpp:964-971` selects `mfma_f32_32x32x16f16` under `__gfx950__` and `mfma_f32_32x32x8f16` otherwise; `IsSupportedArgument` (`device_grouped_conv_fwd_multiple_abd_xdl_cshuffle.hpp:1193-1213`) has no gfx90a/gfx942-specific refusal beyond `is_xdl_supported()` (`device_prop.hpp:55-59`, lists gfx908/90a/942/950); the kernel body is compiled under `__gfx9__`, which `ck.hpp:54` defines for these targets, and `CK_BUFFER_RESOURCE_3RD_DWORD` is 0x00020000 for `__gfx9__` (`ck.hpp:79-80`). The lesson "one CK XDL tile can serve every CDNA generation" is accurate against these lines (the only other device check, a gfx908 fp64 refusal, does not apply to fp16/fp32-acc).
+- `getArchName` strips `:sramecc+:xnack-` (`hip_device.cpp:85-94`), so the new `gfx90a`/`gfx942` comparisons match a real `gcnArchName`.
+- `hip_conv.cpp` dispatch under `OIDN_HIP_MFMA`; `tensorBlockC` 32 is one of the two `newInputProcess` instantiations (`hip_engine.cpp:183`).
+- CMake: default list = 19 RDNA/APU targets + probed CDNA targets; CDNA targets get `--no-offload-arch` on DL and WMMA, non-CDNA on MFMA. CUDA, SYCL, CPU and `devices/gpu`/`core`/`common` untouched; additive and opt-out via `OIDN_HIP_TARGETS`.
+- Branch currency: `rev-list --count moat-port..origin/master` = 0; upstream `master` is still 6602ee2 and PR 302's head is still 75bc1d9 (`git ls-remote`, 2026-11-23). `jargon.py --port oidn` clean. Diff is ASCII. 06bdc4c: `[ROCm]` title (54 chars), AI disclosure in prose, Test Plan, no trailer.
+
+#### Observations on PR 302's own commit (75bc1d9; kept as written per the ruling, not ours to fix)
+- Commit hygiene against our gate: no `[ROCm]` prefix, no Test Plan, a `Co-authored-by: Cursor <cursoragent@cursor.com>` trailer (`audit-commits` reports these four). Already raised as P3/P4 for a person; nothing new.
+- `OIDN_HIP_TARGETS` is a working user override (top-level pass-through in `devices/CMakeLists.txt`) but has no documentation entry of its own and no `option`/cache declaration at the top level; it is described only inside the `OIDN_HIP_GFX950` entry (README and, since 06bdc4c, `doc/compilation.md`). Worth mentioning to the author if upstream wants it documented; not a correctness issue.
+- With an `OIDN_HIP_TARGETS` that names only CDNA targets, the DL/WMMA TUs get no offload arch and clang falls back to its default target (dead code). The porter recorded this; same behaviour in PR 302 alone.
