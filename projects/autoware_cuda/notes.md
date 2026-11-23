@@ -268,3 +268,29 @@ Finding 2: `cmake -S autoware_cuda_utils -B <b> -DAUTOWARE_CUDA_USE_HIP=ON` with
 ### Open for a person (carried, unchanged)
 
 Porter round 1 items 1-4 (DCO sign-off, copyright holder line, upstream defects, cspell) and the review's finding-3 choice (reword 2290174 at the same-tree re-creation, or correct it in the PR body only) still need Jeff. Nothing in this round depends on them.
+
+## Review 2026-11-23b (reviewer, linux-gfx950 fleet job, delta 2290174...0842236)
+
+Scope: `git diff 2290174...0842236` (20be73c, 0842236), the answer to "Review 2026-11-23". The porter of this delta and the reviewer were the same job, so the review was done by an independent child agent with no part in writing it and every finding was then re-run by the reviewer (configure-only probes, `ulimit -c 0`, against the HIP install of 0842236, nvcc 12.8 on PATH; probe sources in the job's `review-scratch/{fn,fncuda,optcuda}`). **Verdict: changes requested.** The previous findings 2 and 4 are resolved; finding 1 is resolved for the usual Autoware path (`autoware_package()` and the ament `find_*_dependencies` helpers are macros) but not in general (finding A).
+
+### Findings
+
+A. **The deferred check reads `autoware_cuda_utils_USE_HIP` from the wrong scope** (`autoware_cuda_utils/cmake/check_gpu_backend.cmake.in:18` and `:40`). The variable is set where the config file runs; `cmake_language(DEFER CALL ...)` runs at the end of the directory. When a consumer calls `find_package(autoware_cuda_utils)` inside a `function()` (a helper in the consumer, or a dependency's config loaded from one), the variable is gone by then, the deferred check takes the CUDA-build branch, and both directions go wrong. Reproduced:
+   - HIP install, `function(f) find_package(autoware_cuda_utils REQUIRED) endfunction()`, `f()`, `enable_language(HIP)`, `-DAUTOWARE_CUDA_USE_HIP=ON` (a correct HIP consumer): rc 1, `check_gpu_backend.cmake:30: autoware_cuda_utils was built with CUDA, but probe_consumer is configured for HIP.` (false positive with a wrong message).
+   - HIP install, same function, then `find_package(CUDA REQUIRED)`: rc 0, `CUDA_FOUND=TRUE` (the mixed-runtime case gets through).
+   Fix: do not depend on the caller's scope at deferred time, e.g. bake the value into the function body (`if(@autoware_cuda_utils_USE_HIP@)`) or pass it as an argument of the deferred call (`cmake_language(DEFER CALL autoware_cuda_utils_check_gpu_backend ${autoware_cuda_utils_USE_HIP})`), and add the in-function case to the probe matrix.
+B. **The HIP-build message gives the wrong remedy when the consumer already set the option** (`check_gpu_backend.cmake.in:22-28`). The HIP branch fires on `CUDA_FOUND`/`CUDAToolkit_FOUND`/CUDA language without regard to `AUTOWARE_CUDA_USE_HIP`, and always says "Configure <pkg> with -DAUTOWARE_CUDA_USE_HIP=ON". Reproduced: HIP install, `find_package(autoware_cuda_utils)` then `find_package(CUDAToolkit)`, configured with `-DAUTOWARE_CUDA_USE_HIP=ON`: rc 1 with that advice. Blocking is right (the consumer did find CUDA), but the message must say what was detected (`CUDA_FOUND`, `CUDAToolkit_FOUND`, or the CUDA language) so the user can find the `find_package(CUDA...)` responsible, e.g. a dependency exporting `CUDAToolkit` (`autoware_tensorrt_common/CMakeLists.txt:94-95` exports `CUDA` and `CUDAToolkit` today; round 2 will need to keep that in mind).
+C. **0842236 Test Plan: "nvcc compiles the five test sources with no compiler warnings"** is not exact: the CUDA 12.8 build log has 20 `nvcc warning : Support for offline compilation for architectures prior to '<compute/sm/lto>_75' will be removed` lines (same 20 at 2290174, so not a regression). Rewording an existing body is a history rewrite; same handling as the earlier finding 3 (Jeff's call at the same-tree re-creation). The fix commit for A/B should word its own Test Plan as "no warnings beyond nvcc's deprecated-GPU-target notice, as on the unmodified package".
+
+### Checked, no finding
+
+- ament configures the `.cmake.in` extra with `@ONLY` (`ament_package.cmake:103-113`), so `${PROJECT_NAME}`/`${_languages}` survive; installed files read `set(autoware_cuda_utils_USE_HIP TRUE)` (HIP) and `FALSE` (CUDA); the Config lists it after the `find_*` extra.
+- The deferred check still runs after a consumer's top-level `return()`. Repeated loads: ament's `_CONFIG_INCLUDED` guard prevents duplicate deferrals in one scope. `cmake_language(DEFER)` needs CMake 3.19; upstream requires 3.22.
+- The package's own build and tests are unaffected (the extra runs only in consumers). CUDA build: only addition is the extra; 20be73c fires only with the option ON, option OFF keeps upstream's warn-and-return.
+- Commit titles 57 and 64 chars, `[ROCm]` appropriate, AI disclosed in prose, no trailer; `utils/jargon.py --port autoware_cuda` clean. Other body claims match the porter evidence above.
+
+### For a person
+
+- C joins the earlier finding 3 and the DCO sign-off question: options (a) reword both bodies at the same-tree re-creation for sign-off (recommended), or (b) correct them in the PR body only.
+
+Validator not run: the review requested changes. Per the dispatch, the job stops here; the next porter round fixes A and B on top of 0842236.
