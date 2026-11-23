@@ -7625,3 +7625,9 @@ The round fixes findings 1 to 13. Verdict: **Request Changes**, for one regressi
   - Every commit has the AI disclosure and a Test Plan, with no Co-Authored-By trailer and no non-ASCII characters.
   - `jargon.py --port warp-1.14`: clean.
   - The branch is 0 commits behind `release-1.14`.
+
+## Coordinator finding: the new `tile_matmul` fragment tests fail on NVIDIA with libmathdx (2026-11-23)
+
+The second review recorded as a gap that `3c6714b8`'s new block sizes are also registered for NVIDIA devices and that no NVIDIA GPU had run them. Run by the coordinator on a V100 (CUDA 12.9, driver 575.57.08): upstream `warp-lang==1.14.0` from PyPI (which has libmathdx) with the fork's `warp/tests/tile/test_tile_matmul.py` at `3c6714b8` copied over the installed one, `python -m warp.tests -s autodetect -p "test_tile_matmul.py"`: Ran 21 tests, FAILED (failures=4 with the log level raised; errors=3 without), skipped=1 (the bf16 case: no suitable device). The fp16, fp32 and fp64 fragment tests fail at `block_dim` 16: "Failed to compile LTO 'dot_16_16_16_70_16_...'", and with `LIBMATHDX_LOG_LEVEL=5`: `cublasdx/detail/blas_execution.hpp(142): error: static assertion failed with "Provided block dimension is invalid, BlockDim<> must have at least 32 threads, and can't have more than 1024 threads."` The run stops a test at its first failing launch, so `block_dim` 48 has not been shown to work there either.
+
+This is a CUDA regression of the port's test suite that the nvcc check cannot see, because that check builds with `--no-use-libmathdx`. Fix owed by the porter: launch block sizes below 32 only on HIP devices (cuBLASDx needs at least 32 threads), keep every block size on the CPU reference, and the coordinator re-runs the file on the V100 to confirm 48, 64 and 96 pass there.
