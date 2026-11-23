@@ -1027,3 +1027,31 @@ Result: PASS, 137/137 steps, 0 errors, RXMesh_test linked. Device LTO is active 
 ### Push
 
 `git push origin moat-fix-73` (new branch, fd6cd893). `moat-port` unchanged at df10bfe. `jargon.py --port RXMesh`: clean (local `main` set to upstream/main first so upstream's commits are not scanned as ours). advance-head -> fd6cd893; stage -> ported.
+
+## Review 2026-11-23 (moat-fix-73 delta df10bfe..fd6cd893, linux-gfx1100 reviewer)
+
+Scope: merge 3183c34d (upstream main 3990228e) + fd6cd893. Upstream's 77 commits were read for interactions with port surfaces; our own changes were isolated by comparing `git diff 30a4137 df10bfe` with `git diff upstream/main HEAD`, plus fd6cd893. Three investigations (merge fidelity, wave64/fault-class sweep of upstream's new device code, build/compat/commit hygiene), each finding re-checked.
+
+### Port Correctness / Fault Classes
+
+1. `include/rxmesh/hip_compat/cuda/std/array` (fd6cd893): aliasing `std::array` ties device code to the host standard library's `operator[]`. `t_e()` (`kernels/rxmesh_queries.cuh:701`, device code reached from the tet prologues in query.cu) indexes `tet_edges()[e][0]` with a runtime index. MSVC STL puts `_STL_VERIFY` in `array::operator[]` when `_CONTAINER_DEBUG_LEVEL > 0` (Debug, `_ITERATOR_DEBUG_LEVEL != 0`), which calls host-only CRT reporting functions. So a Windows Debug HIP build is expected to fail with a host-function-from-device error. Not reproducible here: libstdc++ with `-D_GLIBCXX_ASSERTIONS` compiles, because clang's `cuda_wrappers/bits/c++config.h` supplies a device `__glibcxx_assert_fail` (checked: query.cu with `-D_GLIBCXX_ASSERTIONS` builds). Fix: make the redirect a small self-contained aggregate `cuda::std::array<T, N>` with `__host__ __device__ constexpr` `operator[]` (const and non-const), `size()`, `begin()`/`end()` (the uses are subscripts, `.size()` and range-for: rxmesh.cpp:767,771,1158, patcher.cu:753, rxmesh_test.h, test_queries.h:249, test_tet.cu:57).
+
+### Dropped (failed fact-check)
+
+- "attach_device_buffer() exits on a host pointer because hipPointerGetAttributes returns hipErrorInvalidValue for pageable memory": invalid on ROCm 10.1. A probe on the W7800 returned `hipSuccess` with `type=hipMemoryTypeUnregistered(0)` for a std::vector buffer, `type=2` for hipMalloc, `type=3` for hipMallocManaged, which matches CUDA 11+; the function returns false as intended.
+- "DenseMatrix::abs_max/abs_min read the host result after cudaMemcpyAsync without a sync": upstream's own code, the same on CUDA (D2H into pageable memory returns after completion) and HIP (copies to unpinned host memory are synchronous); only NeoHookean uses it. Not a port issue.
+
+### Not blockers, recorded
+
+- Pre-existing, registered as deferred `rxmesh-hip-installed-package-config`: `cmake/RXMeshConfig.cmake.in` is CUDA-only, so a HIP install plus find_package consumer does not work (in-tree and FetchContent consumers do).
+- Coverage gap, pre-existing: test_attribute.cu, test_indices.cu and test_dense_matrix.cu stay excluded on HIP (they call `for_each_*(DEVICE, lambda)`, which HIP cannot gate). So the new row-major `cusparseCreateDnMat` (`CUSPARSE_ORDER_ROW` alias) and `attach_device_buffer` have no HIP test run.
+- 3183c34d's Test Plan builds only at fd6cd893 (the merge alone lacks the `<cuda/std/array>` redirect). The body says the next commit adapts the new code; no amend (published-round rule), so this is stated in the fix review PR draft.
+- patch_scheduler.h `size()`: the port's 3-line explanatory comment did not follow the moved code; the guard did. Behavior unaffected.
+
+### Verified clean (summary)
+
+Branch contains upstream/main (0 behind) and descends from df10bfe. Every port edit has a counterpart after the merge; moved device code carries the HIP guards; explicit instantiations carry matching target attributes; no `.dispatch<` without `.template` in library or HIP tests; no split-form ShmemMutex lock/unlock; no new warp-width assumptions (new tet queries are block-strided; the tet participation bitmask goes through ballot_sub_warp_32); upstream device LTO only on the CUDA path (nvcc build shows `lto_80`, `-dlto`); no gfx pin; aliases name the right HIP symbols; commit titles 44/57 chars, `[ROCm]`, AI disclosure, Test Plan, ASCII, no in-house vocabulary.
+
+### Recommendation
+
+Request Changes (finding 1).

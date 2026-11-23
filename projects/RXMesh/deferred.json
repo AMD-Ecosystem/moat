@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "rxmesh-hip-installed-package-config",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "cmake/RXMeshConfig.cmake.in (upstream, untouched by the port) is CUDA-only: find_dependency(CUDAToolkit), CUDA::cusparse/cusolver, no USE_HIP define, no -fgpu-rdc/--hip-link, no hip_compat include dir, no roc::hip* libs; it now also include()s RXMeshApp.cmake whose CUDA branch needs numeric CUDA archs. A HIP install-and-find_package consumer does not work; in-tree and FetchContent/add_subdirectory consumers do. Pre-existing since the first port; found in the moat-fix-73 review.",
+      "refs": [
+        "projects/RXMesh/notes.md#review-2026-11-23"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-23T20:56:48Z",
+      "decided": null
+    }
+  ]
+}
