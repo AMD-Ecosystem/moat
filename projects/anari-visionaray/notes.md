@@ -1058,3 +1058,134 @@ No port-introduced CUDA regression. The shared/unguarded edits (Connectivity.h
 VSNRAY_FUNC swap, VisionarayScene.cpp World-TLS unification, Frame.cpp/.h) compile
 and link under nvcc identically to base; all WITH_HIP-specific edits are guarded
 out of the CUDA preprocessor. Safe for the "CUDA build preserved" PR claim.
+
+## Fix round moat-fix-10 2026-11-23 (linux-gfx1201, porter) -- merge upstream main
+
+Trigger: upstream PR szellmann/anari-visionaray#10 reported CONFLICTING / DIRTY against
+main. The thread has no comments, reviews or line comments (read 2026-11-23 with
+`gh pr view 10 --repo szellmann/anari-visionaray --json comments,reviews` and
+`gh api repos/szellmann/anari-visionaray/pulls/10/comments`). PR head = recorded head =
+1b6b35a8. Nobody asked for a code change; the round absorbs main.
+
+Setup: the project folder was trunk-resident; re-homed with `moatlib.ensure_port_branch`
+(same trap as cuBQL: set-state on main would commit the lock to the trunk), then
+`set-state anari-visionaray linux-gfx1201 porting` and `fix-branch` -> moat-fix-10, base
+1b6b35a8.
+
+Upstream moved 139 commits (7edfca5 -> c1aa91b): device objects split out of
+DeviceCopyableObjects.h into dco/*.h, DirectLight renderer renamed Pathtrace, copy stream
++ SyncContext, CWBVH for all GPU geometry (421e404), Gaussian splats, configurable
+library names (f3bbc36), and a requirement of visionaray 0.7.0 (master).
+
+### Commits on moat-fix-10 (published tip 1b6b35a8 -> 6ad03010)
+
+1. 5906f35 Merge branch 'main' of szellmann/anari-visionaray. Conflicts: DeviceBVH.h,
+   DeviceCopyableObjects.h, frame/Frame.h, scene/VisionarayScene.cpp,
+   BlockStructuredField.{h,cpp}, UnstructuredField.{h,cpp}. Resolution detail is in the
+   commit message. Clean-auto-merge trap caught: frame/Frame.cpp merged textually but
+   kept the port's `deviceState()->currentFrame = nullptr` lines in Frame::wait(); main
+   removed currentFrame with the waitOnCurrentFrame logic (69d5372), so Frame.cpp is
+   main's version. The port's get_bounds(BLS) `!__HIP_DEVICE_COMPILE__` guard moved
+   with the code into dco/BLS.h.
+2. 9e6399e [ROCm] Use compressed-wide BVHs on the HIP device. Main's own HIP arms had
+   bit-rotted: HIP refs declared hip_bvh but traversed with intersect_ray1_cwbvh,
+   DeviceCWBVH for HIP was a host cwbvh, DeviceBVH.h included a nonexistent
+   `hip_lbvh.h`, the two HIP copy-stream syncs were guarded `#elif defined(WITH_CUDA)`
+   (dead), and copyBVH had no HIP arm (cwbvh_t has no converting ctor). HIP now mirrors
+   CUDA: hip_cwbvh alias in dco/common.h (beside upstream's own hip_bvh alias),
+   hip_cwbvh refs in BLS/Volume/SpatialField, Gaussian splat traversal shares the CUDA
+   arm, HIP copyBVH = resize + hipMemcpyAsync on the copy stream, hip_bvh.h included
+   in DeviceBVH.h and UnstructuredField.cpp.
+3. 6ad0301 [ROCm] Export the HIP library entry point under its configured name. f3bbc36
+   left the HIP build exporting `anari_library_ANARI_VISIONARAY_HIP_LIBRARY_NAME_new_library`
+   (unexpanded macro) plus a duplicate under the CPU name, so `anariLoadLibrary("visionaray_hip")`
+   failed: "failed to find entrypoint function for visionaray_hip library". Now exports
+   `anari_library_visionaray_hip_new_library` only.
+
+Observation, not changed (shared CMake, affects CUDA equally, only custom names):
+`set_source_files_properties(VisionarayLibrary.cpp PROPERTIES COMPILE_DEFINITIONS ...)` is
+set once per device in the same directory, so the last call wins for every target; a
+custom ANARI_VISIONARAY_LIBRARY_NAME is ignored when CUDA or HIP is also enabled. Defaults
+are unaffected.
+
+### Dependency defect: visionaray hip_bvh.h (registered: visionaray-hip-lbvh-assign-indices)
+
+visionaray master (99d4829c) `include/visionaray/detail/bvh/hip_bvh.h` declares
+`assign_indices(cuda_index_bvh<P>&)` and `assign_indices(cuda_bvh<P>&)` (copy of
+cuda_lbvh.h from 38d88eb7); under hipcc: "no template named 'cuda_index_bvh'". Nothing in
+visionaray includes the header, so its CI never sees it. Upstream anari-visionaray's
+DeviceBVH.h already wants `hip::lbvh_builder`, so the HIP device cannot build against
+unpatched visionaray master. Built here with the 2-line fix applied to a job-local
+visionaray checkout (patch saved as deps/visionaray-hip_bvh-assign_indices.patch in the
+job dir; the fix is: parameter types -> `hip_index_bvh<P>&` / `hip_bvh<P>&`). Getting it
+into szellmann/visionaray is a follow-up on the visionaray project and jeff's call. Until
+then the anari-visionaray HIP device documents nothing new; every host validating this
+head must build visionaray master with that fix.
+
+### Build (linux-gfx1201, ROCm 10.1 pip SDK, NanoVDB ON)
+
+Deps in the job dir (not the image): ANARI-SDK next_release @ 47b22af, visionaray master
+@ 99d4829c + the hip_bvh.h fix.
+```
+ROCM=$(rocm-sdk path --root)   # _rocm_sdk_devel, ROCm 10.1.0
+cmake -S ANARI-SDK -B ANARI-SDK_build -G Ninja -DCMAKE_INSTALL_PREFIX=$PWD/anari-install \
+  -DCMAKE_BUILD_TYPE=Release -DBUILD_EXAMPLES=OFF -DBUILD_VIEWER=OFF \
+  -DBUILD_HELIDE_DEVICE=OFF -DINSTALL_VIEWER_LIBRARY=OFF -DBUILD_TESTING=OFF
+cmake --build ANARI-SDK_build -j12 --target install
+cmake -S visionaray -B visionaray_build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX=$PWD/visionaray-install -DVSNRAY_ENABLE_HIP=ON \
+  -DVSNRAY_ENABLE_CUDA=OFF -DVSNRAY_ENABLE_COMMON=OFF -DVSNRAY_ENABLE_VIEWER=OFF \
+  -DVSNRAY_ENABLE_EXAMPLES=OFF -DVSNRAY_ENABLE_UNITTESTS=OFF -DVSNRAY_ENABLE_TBB=OFF \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1201 -DCMAKE_HIP_COMPILER=$ROCM/llvm/bin/clang++ \
+  -DCMAKE_PREFIX_PATH=$ROCM
+cmake --build visionaray_build -j12 --target install
+cmake -S projects/anari-visionaray/src -B $J/build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DANARI_VISIONARAY_ENABLE_HIP=ON -DANARI_VISIONARAY_ENABLE_CUDA=OFF \
+  -DANARI_VISIONARAY_ENABLE_NANOVDB=ON -DCMAKE_HIP_ARCHITECTURES=gfx1201 \
+  -DCMAKE_HIP_COMPILER=$ROCM/llvm/bin/clang++ -DCMAKE_INSTALL_PREFIX=$J/build/install \
+  "-DCMAKE_PREFIX_PATH=$J/deps/visionaray-install;$J/deps/anari-install;$ROCM"
+utils/timeit.sh anari-visionaray compile -- cmake --build $J/build -j12
+cmake --build $J/build --target install
+```
+Result at 6ad03010: both libraries build, 0 errors (168 warnings, nodiscard and the like).
+libanari_library_visionaray_hip.so: 8 gfx1201 code objects (`.hip_fatbin` 7.1 MB), same
+count as the NanoVDB-ON builds recorded on gfx90a/gfx1100. At the merge commit alone
+(5906f35) the CPU library builds and the HIP library does not (fixed by 9e6399e).
+CUDA: no nvcc on this host; the CUDA compile check of this head is owed on a host with
+the toolkit (all three new commits touch only WITH_HIP arms or HIP-only includes; the
+merge carries main's CUDA code unchanged plus the port's previously nvcc-checked edits).
+
+### GPU test -- NOT RUN: the pinned GPU hangs (environment, not the port)
+
+This job is pinned to HIP_VISIBLE_DEVICES=0. Any HIP program hangs at runtime init on that
+GPU: a 64-thread smoke kernel (agent_space/smoke/smoke.hip) times out on device 0 and
+passes on device 1 (`h[63]=126`). The harness hang is in hipStreamCreate ->
+hsa_executable_freeze -> BlitKernel::SubmitLinearCopyCommand waiting forever (gdb
+backtrace), before any project kernel runs. amd-smi shows no process on GPU 0. Another
+fleet job on this host records that an earlier job stopped because device 0 hung on a 1 MB
+copy, so the card was bad before this job. GPU 1 is pinned to that other job and GPU 2 is
+busy, so no GPU run was made: the pin stays (jeff's rule), and a re-dispatch on a healthy
+pin owes the run.
+
+Harness written for that run (agent_space/anari_validate.cpp in the job dir, reproduces
+the recorded scenes): triangle surface, 32^3 structuredRegular radial blob (nearest and
+linear), NanoVDB createFogVolumeSphere(50) (nearest and linear), plus a 216-splat
+gaussianSplat volume (new upstream feature on the HIP CWBVH path); 256x256, RUNS
+repetitions, PASS = nonzero and varied each run, plus run-to-run identity and a HIP vs
+CPU mean-abs-diff. CPU device (visionaray) at 6ad03010: surface PASS
+(nonzero=10581 distinct=10151).
+```
+c++ -O2 -std=c++17 anari_validate.cpp -I<anari-install>/include -I<src>/external \
+  -L<anari-install>/lib -lanari -Wl,-rpath,<anari-install>/lib -o anari_validate
+ulimit -c 0
+RUNS=8 ANARI_LIBRARY_PATH=$J/build/install/lib \
+  LD_LIBRARY_PATH=$J/build/install/lib:$J/deps/anari-install/lib \
+  stdbuf -oL ./anari_validate visionaray_hip visionaray
+```
+
+### Windows risk (cannot test here)
+
+The HIP device now compiles visionaray's intersect_ray1_cwbvh.inl in HIP device code.
+Its non-CUDA find_first_set_bit uses `__lzcnt` under `_WIN32` (`__builtin_clz`
+otherwise); whether the Windows HIP device pass accepts `__lzcnt` is unknown. If the
+windows-gfx1201 revalidation fails there, the fix is in visionaray, not this fork.

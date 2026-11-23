@@ -7,8 +7,8 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-23T14:02:30Z",
-  "updated_at": "2026-11-23T20:28:03Z",
-  "head_sha": "1b6b35a8115e27f1facba0e5db6b1c061086590c",
+  "updated_at": "2026-11-23T20:57:45Z",
+  "head_sha": "6ad03010f8027e65ff3b9e041211535c518b1c8d",
   "depends_on": [
     "visionaray"
   ],
@@ -131,5 +131,11 @@
       "last_agent": "porter"
     }
   },
-  "published_sha": "1b6b35a8115e27f1facba0e5db6b1c061086590c"
+  "published_sha": "1b6b35a8115e27f1facba0e5db6b1c061086590c",
+  "fix": {
+    "branch": "moat-fix-10",
+    "base_sha": "1b6b35a8115e27f1facba0e5db6b1c061086590c",
+    "review_pr": null,
+    "opened_at": "2026-11-23T20:28:06Z"
+  }
 }

@@ -14,6 +14,19 @@
       "upstream_issue": null,
       "created_at": "2026-06-23T14:24:42Z",
       "decided": null
+    },
+    {
+      "id": "visionaray-hip-lbvh-assign-indices",
+      "kind": "other",
+      "component": null,
+      "summary": "visionaray master include/visionaray/detail/bvh/hip_bvh.h (hip::lbvh_builder, added in 38d88eb7 'Refactor lbvh builders into separate namespaces') declares assign_indices(cuda_index_bvh<P>&) and assign_indices(cuda_bvh<P>&), copied from cuda_lbvh.h; under hipcc those names do not exist, so any TU including the header fails ('no template named cuda_index_bvh'). Nothing inside visionaray includes it, so its CI never compiles it. anari-visionaray main (moat-fix-10) includes it for the HIP device, so the HIP device cannot build against unpatched visionaray master. Fix: change the two parameter types to hip_index_bvh<P>& / hip_bvh<P>& (2 lines). Needs a visionaray change upstream (szellmann/visionaray), which is a person's call: the visionaray port's PR is merged, so this would be a follow-up round on that project.",
+      "refs": [
+        "projects/anari-visionaray/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-23T20:58:00Z",
+      "decided": null
     }
   ]
 }
