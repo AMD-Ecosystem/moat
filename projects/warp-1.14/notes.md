@@ -8567,3 +8567,7 @@ index 727148c7..808dd763 100644
 - Jeff rules question 13 (item 2). If (a): one commit of the patch above plus the release-notes sentence, nvcc check, and a wheel rebuild; the stage would go back through review as a delta.
 - A gfx1250 fp32 WMMA measurement (deferral `warp-hip-gfx1250-fp32-wmma`, ruled "now") is still running on another host and may add one more small commit after this round, which also means a wheel rebuild.
 - Validators revalidate at `b51b1987`.
+
+## Ruling on session 29's question 13 (jeff, 2026-11-23)
+
+(a): commit the `fast_math` patch as measured (`-fapprox-func -freciprocal-math -fgpu-flush-denormals-to-zero` in place of `-ffast-math -fno-finite-math-only`), with the release-notes sentence for (a). The 2% losses on example_dem and example_raycast are accepted.
