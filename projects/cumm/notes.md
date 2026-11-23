@@ -178,6 +178,13 @@ index-pair bug" (gfx942, cumm v0.7.13, spconv `263d6b4`).
 The intake queue issue was not published (`intake_queue.py publish --apply` is a GitHub
 write outside this job's limits); run it from a session that may.
 
+### Rulings 2026-11-23 (Jeff Daily)
+
+- Licence: cleared with a condition (`record-license-clearance`): the port must not modify the four GPL-headed nvrtc files; a hipRTC path goes in new files.
+- ZJLi2013: proceed independently, do not use the package names `cumm-rocm` and `spconv-rocm`.
+- 2026-11-23, Jeff Daily: scope ruling "Option B". The port is not complete until an AMD matrix-instruction kernel family (MFMA and WMMA, for fp16 and bf16) exists beside the plain kernels, as with Quest prefill. No pull request, review page or wheels before then; the planner plans both families.
+- ccimport: declined as already supported, installed from PyPI.
+
 ### Questions for jeff
 
 1. Licence clearance for the GPL-3.0-or-later WITH GCC-exception-3.1 headers
