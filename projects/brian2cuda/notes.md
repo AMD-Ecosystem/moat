@@ -1635,8 +1635,31 @@ Not covered: the wave32 and Windows platforms still have to be re-tested at 77e0
 
 ## Upstream reply
 
-The HIP backend could not compile models that use a TimedArray, `poisson()` with a per-neuron lambda, or a BinomialFunction: the generated function code selects its device branch with `__CUDA_ARCH__`, which hipcc never defines. With the HIP backend active, the code generator now also accepts hipcc's device pass (`__HIP_DEVICE_COMPILE__`) at that one point; the code generated for nvcc is unchanged. Tested on an AMD Instinct MI250X: TimedArray values and per-neuron Poisson and binomial samples check out on the GPU, the TimedArray and Poisson tests in `run_test_suite.py` now pass with the HIP backend, and the earlier LIF, delayed-synapse and recurrent-network runs still pass. Binomial and PoissonInput still stop in `BinomialFunction.__init__` with Brian 2.10.1, because brian2cuda's binomial code generator returns three values and that release unpacks two; that happens with CUDA as well.
+The HIP backend could not compile models that use a TimedArray, `poisson()` with a per-neuron lambda, or a BinomialFunction: the generated function code selects its device branch with `__CUDA_ARCH__`, which hipcc never defines. With the HIP backend active, the code generator now also accepts hipcc's device pass (`__HIP_DEVICE_COMPILE__`) at that one point; the code generated for nvcc is unchanged. Tested on an AMD Instinct MI250X and an AMD Radeon AI PRO R9700: TimedArray values and per-neuron Poisson and binomial samples check out on the GPU, the TimedArray and Poisson tests in `run_test_suite.py` now pass with the HIP backend, and the earlier LIF, delayed-synapse and recurrent-network runs still pass. Binomial and PoissonInput still stop in `BinomialFunction.__init__` with Brian 2.10.1, because brian2cuda's binomial code generator returns three values and that release unpacks two; that happens with CUDA as well.
 
 ## Notes for our eyes (fix round 2026-11-23)
 
-Before the review PR opens, update the Upstream reply to name every GPU that has completed validation at the round's final head (today only the MI250X), and drop anything that has not run. The reply's last sentence reports an upstream issue (brian2 version vs the 3-tuple) that exists on CUDA too; jeff may prefer to drop it or file it separately.
+Before the review PR opens, update the Upstream reply to name every GPU that has completed validation at the round's final head (today the MI250X and the R9700), and drop anything that has not run. The reply's last sentence reports an upstream issue (brian2 version vs the 3-tuple) that exists on CUDA too; jeff may prefer to drop it or file it separately.
+
+## Validation 2026-11-23 (linux-gfx1201) -- PASS at 77e096c
+
+- GPU: AMD Radeon AI PRO R9700 (gfx1201, RDNA4, wave32), HIP_VISIBLE_DEVICES=2 (dispatcher pin, kept). ROCm 10.1.0 pip SDK (HIP 7.16.26385), the same toolchain as the linux-gfx90a entry. brian2 2.10.1, numpy 2.5.5, Python 3.12 venv `$FLEET_VENV/py312` (`/usr/bin/python3.12 -m venv`, `pip install brian2==2.10.1 pytest`).
+- Startup check first (another job saw a GPU on this host hang every HIP program): a trivial hipcc kernel built for gfx1201 ran on the pinned GPU in 0.24 s, device = R9700 gfx1201 warpSize 32, results correct. No hang.
+- `projects/brian2cuda/src`: fresh clone, `moat-fix-327` at head_sha 77e096c, `git status --porcelain` clean. Fork `moat-port` still 1c9536f; nothing pushed.
+- Build: `utils/timeit.sh brian2cuda compile -- $FLEET_VENV/py312/bin/pip install -q --no-deps -e projects/brian2cuda/src`. All 32 generated makefiles use `--offload-arch=gfx1201`; `llvm-objdump --offloading` on the t4 binary shows the `hip-amdgcn-amd-amdhsa--gfx1201` code object.
+- `ulimit -c 0; USE_HIP=1 utils/timeit.sh brian2cuda test -- bash projects/brian2cuda/gpu_tests/run_all.sh $FLEET_VENV/py312/bin/python /tmp/b2c_val_gfx1201`: 7/7 PASS (`failed: 0`), every number identical to the gfx90a run:
+  - t1 LIF: 106 spikes = CPU 106 per neuron, quiet err 2.44e-15
+  - t2 Poisson + 1 ms delay (spike-queue lock, wave32): 997 syn, 417 src spikes, 0 early, 50/50, input 4029 = expected 4029
+  - t3 recurrent: syn 12017/11907/11970, GPU 957/946/930 vs CPU 964/955/987 (2.5%)
+  - t4 TimedArray 1-D + 2-D: x, y err 0, v vs CPU err 0
+  - t5 poisson(lambda_i) 0..500: max z 1.97, scalar control 2.9987
+  - t6 binomial (adapter; brian2 2.10.1 still refuses the generator): inversion 2.0015 (z 1.66), normal 4000.032 (z 0.94)
+  - t7 int math: 3.55e-15
+  - Why identical, not merely close: the cases use fixed seeds, the random draws come from the per-thread generator state that the seed sets (not from the wavefront width), and t1-t3 are integer spike counts on the same generated code. A wave64/wave32 difference would show up in t2/t3 (spike-queue lock) as a deadlock or as wrong input counts, and none appears.
+- Upstream tests with HIP (from /tmp/b2c_up_gfx1201): test_logging.py::{test_codegen_log_level_flags,test_file_log_level,test_log_level_gating} + test_cuda_standalone.py::test_codegen_and_compile: 4 passed in 15.4 s. No `output/` left in the moat checkout (rootdir set to /tmp).
+- `cd /tmp/b2c_suite_gfx1201; USE_HIP=1 utils/timeit.sh brian2cuda test -- python <src>/brian2cuda/tools/test_suite/run_test_suite.py -k "timedarray or poisson" -c /tmp/b2c_suite_gfx1201/cache` (no `-j`): 4 failed + 23 passed / 6 passed / 1 passed, same as gfx90a. The 4 failures are test_poissoninput x2 and the two `test_random_binomial_poisson_*_set_synapses_fixed_seed`, all `ValueError: too many values to unpack (expected 2)` at brian2/input/binomial.py:208 (brian2 2.10.1 vs brian2cuda's 3-value generator, also on CUDA).
+- CUDA no-regression gate: not run here (no nvcc); still owed by the nvcc host at 77e096c, as in the gfx90a entry.
+- Jargon: `jargon.py --port brian2cuda` clean (after `git remote add upstream` and pointing local `master` at upstream/master 1d7c251, as in the 2026-11-20 gfx1201 entry).
+- Upstream reply above updated to name the R9700 as well as the MI250X. The fix review PR draft body still says "Retested on MI250X" and "the wave32 and Windows platforms still have to be re-tested"; wave32 is now done, Windows is not.
+
+Verdict: completed at 77e096c.
