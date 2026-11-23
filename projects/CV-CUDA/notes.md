@@ -1592,3 +1592,100 @@ index 77b5b4a4..c5daea89 100644
  
  A platform is `<os>-<gfx>`, and the set is open: whatever GPU your host reports is a
 ```
+
+## Fix round 2026-11-23 (linux-gfx90a): merge upstream v0.18.0 + v0.19.0 into moat-fix-293
+
+WHY: CVCUDA/CV-CUDA#293 reports CONFLICTING/DIRTY again after upstream released v0.18.0 (`d32e8931`, merged `b051f32d`) and v0.19.0 (`e36f84de`, merged `3c06df7f`). Thread read in full (`gh pr view 293 --repo CVCUDA/CV-CUDA --json comments,reviews`, `gh api repos/CVCUDA/CV-CUDA/pulls/293/comments`): no comments, no reviews, no line comments. PR head = `642b3526` = recorded `published_sha`, so nothing moved outside the flow. Nobody asked for a code change; the round is absorbing the base.
+
+Lock: `set-state CV-CUDA linux-gfx90a porting` took it cleanly (last holder linux-gfx1100 had released it 2026-08-20). The existing staging branch `moat-fix-293` (tip `358edc33`, from the 2026-08-20 v0.17 round, validated on both Linux arches) was reused, NOT re-cut; `fix-branch` was not run.
+
+Host setup notes: fresh fork clone; git-lfs installs its own `.git/hooks/pre-push` on clone, which made `moatlib.py protect-fork` refuse to install the freeze hook ("NON-moat pre-push hook ... UNPROTECTED"). Moved it aside to `pre-push.lfs` and re-ran protect-fork -> installed. The LFS hook only uploads LFS objects; the fork already carries upstream's LFS pointers without objects (see the earlier CUDA gate notes), so nothing is lost. Local `main` in the clone set to `upstream/main` so `jargon.py --port` does not rescan upstream's own commits.
+
+### Commits on moat-fix-293 (pushed; `358edc33..8da17190`)
+- `30096dfc` [ROCm] Merge upstream main (v0.19.0) into the AMD/HIP branch -- 12 conflicts: 8 modify/delete in `src/cvcuda/priv/legacy/` (upstream deleted the directory), 4 content (MathWrappersImpl.hpp, OpBrightnessContrast.cu, OpCropFlipNormalizeReformat.cu, OpHQResizeKernel.cuh).
+- `5f91964a` [ROCm] Map the runtime APIs the v0.18 and v0.19 code newly uses -- compat header (device attrs, func attrs, arrays, graph exec/node APIs, cudaLaunchHostFunc, CUDART_CB, __grid_constant__, __vcmpgeu2/4, 32-lane group vote), `cmake/hip/cuda.h` (CUDA_KERNEL_NODE_PARAMS + cuGraphKernelNodeGetParams over hipGraphKernelNodeGetParams), `cmake/hip/cuda_fp16.h` (__double2half via _Float16).
+- `7cef6957` [ROCm] Compile the operators added or rewritten in v0.18 and v0.19 -- PTX asm alternatives (BrightnessContrast/Solarize bitcasts, AdjustSharpness cvt.rzi.sat), PadAndStack device memcpy, CvtColor/Flip toolkit-version workarounds CUDA-only, Normalize L4-name probe -> false, TvResize hipFuncSetAttribute pointer, TypeTraits HalfMax/HalfLowest raw bits, MathOps half-compound overloads + promoting unary -/~ for char/short HIP_vector_types, GaussianNoise Box-Muller predicate, Resize `{}` accumulators, OSD filters extended to OsdRenderer/textbackend.
+- `7133a17b` [ROCm] Keep the new warp-level code in 32-lane groups on wave64 -- ChannelCopy, OpThreshold (Otsu, re-applied from legacy threshold.cu), NMS group vote, Posterize (width 32 + scalar half path), AutoContrast (width 32 + __fdiv_rn), Inpaint mask.
+- `2c08d77c` [ROCm] Build the half-precision tests on the host with the HIP compiler -- test CMake (cvcuda_test_system .cpp all HIP; cudatools: TestMathOps/TestMathWrappers/TestSaturateCast/TestStaticCast), min/max -> minValue/maxValue in two tests, `__half_raw{bits}` -> `__ushort_as_half` under HIP in 3 tests, FindHomography test pragma, OSD unit tests filtered.
+- `8da17190` [ROCm] Update the build command for the top-level build.sh -- docs: upstream moved `ci/build.sh` to `build.sh`; command now also passes `-DBUILD_PYTHON=0` (BUILD_PYTHON defaults ON; the ROCm build never covered Python).
+(One local-only commit was recommitted with the `[ROCm]` prefix before the first push; nothing published or validated was rewritten.)
+
+### Upstream v0.18/v0.19 changes that matter to this port
+- **`src/cvcuda/priv/legacy/` is gone.** Its operators were rewritten as top-level files. Where each earlier HIP fix went:
+  - threshold.cu / threshold_var_shape.cu Otsu (32-wide shuffles, barrier tails) -> re-applied to `OtsuCalBody` in OpThreshold.cu. `triangle_cal` (never changed by the port, passed on both arches) left as upstream wrote it.
+  - gaussian_noise_util.cuh Box-Muller flag -> OpGaussianNoise.cu (2 sites).
+  - resize_var_shape.cu `{0}` accumulators -> OpResize.cu (6 sites, incl. 2 new ones).
+  - histogram_eq_var_shape.cu memset -> NOT NEEDED: upstream OpHistogramEq.cu now memsets its scratch on both paths (line ~1028).
+  - reduce_kernel_utils.cuh FINAL_MASK -> no users left.
+  - CvCudaLegacy.h / legacy CMakeLists OSD scope-out -> OSD/BndBox/BoxBlur are now OpOSD.cu/OpBndBox.cu/OpBoxBlur.cu + OsdRenderer.cu + textbackend/; scope-out KEPT (unchanged scope for an open PR), filters extended. Opportunity unchanged: they are plain source now.
+- cuda_tools gained `__half`/half1/half3/half4 support everywhere (TypeTraits, MathOps, MathWrappersImpl, SaturateCast, StaticCast). Consequences: HIP's `HIP_vector_type` operators are unconstrained templates that hijack mixed half/float vector arithmetic (fixed with concrete half overloads); HIP's `__half_raw` is a union led by `_Float16` (brace-init with bits is a numeric conversion); HIP's host half API under g++ is a stub (`hip_fp16_gcc.h`: no int ctor, no arithmetic, no __ushort_as_half), hence the HIP-compiled tests.
+- Many new tuned kernels use inline PTX (`mov.b64`, `cvt.rzi.sat`, `rcp.approx.ftz`), SIMD-in-word intrinsics, `__grid_constant__`, CUDA graphs in tests, and Blackwell-only (`__CUDA_ARCH__ >= 1000`) warp tricks (dead on HIP).
+- New SM-keyed paths keep running on gfx90a as sm=90 (e.g. OpConvertTo `TryConvertPlanarU8F32Bulk`, `CurrentDeviceSMOrZero() != 90`). Spoofing compute capability 11.0 via an LD_PRELOAD shim on `hipDeviceGetAttribute` (agent_space/smshim) changed none of the failures below, so the sm=90 paths are not their cause.
+
+### Build (gfx90a, MI250X x4, ROCm 7.16 SDK at $ROCM_PATH, clang 24)
+```
+source /etc/rocm_env.sh
+cmake -S projects/CV-CUDA/src -B projects/CV-CUDA/src/build-hip -G Ninja \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_HIP_COMPILER=$ROCM_PATH/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$ROCM_PATH \
+  -DBUILD_PYTHON=OFF -DBUILD_TESTS=ON -DBUILD_TESTS_CPP=ON -DBUILD_TESTS_PYTHON=OFF \
+  -DBUILD_TESTS_WHEELS=OFF -DBUILD_BENCH=OFF -DBUILD_DOCS=OFF -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ -DPUBLIC_API_COMPILERS=
+utils/timeit.sh CV-CUDA compile -- cmake --build projects/CV-CUDA/src/build-hip -j32
+```
+Clean at `8da17190` (libcvcuda.so.0.19.0, libnvcv_types.so.0.19.0, all test exes). First attempt after the merge: 96 failed objects; four fix/rebuild cycles to clean.
+Documented command verified too (gcc-14 picked by build.sh): `CVCUDA_BUILD_JOBS=32 ./build.sh release build-doc -DUSE_HIP=1 -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_PREFIX_PATH=$ROCM_PATH -DBUILD_PYTHON=0` -> rc=0, libs + test exes built.
+clang-format 14.0.6 (upstream's pre-commit pin, installed in FLEET_VENV) applied to the touched upstream sources; NOT applied to `cmake/hip/CvCudaHipCompat.h` or `MathOps.hpp` (it would reformat the port's published hunks) or `cmake/hip/cuda_fp16.h` (it mangles `__host__ __device__`).
+
+### GPU tests at `8da17190` (HIP_VISIBLE_DEVICES=3 pinned by the dispatcher, GPU idle per `amd-smi process`, `ulimit -c 0`)
+```
+projects/CV-CUDA/src/build-hip/bin/cvcuda_test_unit             # 63 passed / 1 skipped (StreamIdTest.HandleReuse) / 0 failed   (was 27/1/0: +36 new tests)
+projects/CV-CUDA/src/build-hip/bin/nvcv_test_cudatools_system   # 1182/1188; 6 failed = 5x InterpolationVarShapeWrapTest.correct_shift + TypeTraitsMakeTypeVectorTest/3 (was 1116-1117/1123: same two non-port clusters)
+projects/CV-CUDA/src/build-hip/bin/cvcuda_test_system           # 7630 passed / 18 skipped / 185 failed of 7833 (was 3829-3830 / 43-44 failed of 3886)
+```
+A first full run (before formatting, same code) gave 7632/18/183; the differences between the two runs are all in the copy-race families below.
+
+### Classification of the cvcuda_test_system failures (first run's 183, re-run in isolation)
+Method: re-run exactly the failing tests (a) as built, (b) under `AMD_SERIALIZE_COPY=3`, (c) on a `-ffp-contract=fast` build, (d) both; plus full-suite runs of `-ffp-contract=off` and `=fast` builds (separate build dirs `build-off`, `build-fast`, via `-DCMAKE_HIP_FLAGS_RELEASE="-O3 -DNDEBUG -ffp-contract=<x>"`, no source change).
+
+| run (only the 183) | failed |
+|---|---|
+| as built (`on`) | 181 |
+| `on` + AMD_SERIALIZE_COPY=3 | 167 |
+| `fast` | 106 |
+| `fast` + AMD_SERIALIZE_COPY=3 | 92 |
+| `fast` + serialize + compute capability spoofed to 11.0 | 93 |
+
+| full suite (7833) | failed | failures not present with `on` |
+|---|---|---|
+| `-ffp-contract=on` (pinned, as shipped) | 183-185 | -- |
+| `-ffp-contract=off` | 107 | 49 (Pillow u8 scalar-oracle x30, BrightnessContrast f64/s64 golds x8, TvResize/3 golds x4, WarpPerspective 0502f34e -- the same case that made `on` the pin in May --, PillowResizeBitExact planar x6) |
+| `-ffp-contract=fast` | 145 | 39 (CvtColor/WarpAffine/WarpPerspective/TvResize/Remap/ColorTwist planar parity, WarpPerspective golds) |
+
+1. **Test-fixture copy races (14 in run 1), not port defects**: `OpColorTwistPlanarVarShape/{0,1,2,3}` (already documented), `OpPadAndStack.integer_planar_interleaved_parity`, `_/OpPadAndStackF16.correct_output/*`, `_/OpPadAndStackPlanar.varshape_matches_interleaved/*`. All pass under `AMD_SERIALIZE_COPY=3`; the PadAndStack integer test fails 13-14 times per run with varying memcmp values and passes 2/2 serialized. TestOpPadAndStack.cpp `UploadImage` does `cudaMemcpy2DAsync` from `hwc` / `InterleavedToPlanar(...)` temporaries destroyed at the end of each loop iteration: the same pageable-async use-after-free as InterpolationVarShapeWrap and TestOpColorTwist.
+2. **Contraction-sensitive (about 75)**: fixed by `-ffp-contract=fast`. Two shapes. (a) gold-vs-fused: the kernel's `alpha * src + beta` runs through the cuda_tools vector operators; nvcc's --fmad fuses across the inlined operator bodies, and the upstream golds encode that (TestOpConvertTo.cpp bulk gold is literally `std::fma(alpha, value, beta)`), while clang `-ffp-contract=on` fuses only within one source expression. Seen in OpConvertToGold/Lifetime (`0x83` vs `0x84` in one float byte), OpNormalize vectorized, OpBrightnessContrast/42-43 (s64 values off by 512 = 1 ulp of the double), OpGaussianPlanar, Pillow planar/varshape bit-exact. (b) planar-vs-interleaved byte parity in interpolating operators (the documented class, now much larger because v0.18/v0.19 added parity tests for nearly every operator).
+3. **Fails under every setting, deterministic (17)**: 8x `_/OpWarpAffine.{tensor,varshape}_correct_output` (new fractional-transform LINEAR cases; measured with a temporary local diff print: max |diff| = 1 on 5-18 of 10800-32400 bytes per image), 6x `_/OpPillowResizeBitExact*.u8_matches_scalar_oracle`, `_/OpGammaContrast.varshape_correct_output`, `_/OpCvtColorPlanarTensorHalf.tensor_matches_interleaved/75e54741`, `OpHQResizeTensorBatch.nchw_inner_samples_repeated_async_matches_tensor` (cubic, planar-vs-tensor). 3/3 identical repeats. Same character as class 2: single-LSB, not a wave64 or functional signature (those show up as wholesale garbage, NaNs or zeros).
+No FindHomography failures (19/19 OK). No crash, hang, or NaN/zero-fill signature anywhere.
+
+DECISION: not flipping the contraction pin in a merge round, same as 2026-08-20: `off` and `fast` each break CPU-gold tests that `on` passes. But the evidence has changed: `-ffp-contract=on` was chosen on the belief that nvcc contracts only within an expression, and the v0.18/v0.19 golds (`std::fma` in TestOpConvertTo.cpp) show nvcc fusing across inlined operator calls. The right fix is probably per-site explicit FMA/no-FMA spelling where upstream's golds pin one, or matching nvcc's fusion rule more closely; that is a reviewer + jeff decision with gfx1100 numbers, not a merge side effect.
+
+### Not done on this host
+- **CUDA nvcc compile of this round: NOT RUN.** No nvcc here, and installing a CUDA toolkit into the job directory (micromamba download) was refused by this session's permission policy. Jeff's rule asks for a real-nvcc compile before presenting a round; needs the mi355 (or another nvcc) host. Every CUDA-side change in this round is either inside `#if HIP`/`#else` with the original line in the `#else`, a test-local rename (min/max -> minValue/maxValue), or explicit shuffle width 32 (the CUDA default), but none of it has been through nvcc.
+- linux-gfx1100 (wave32) revalidation at `8da17190`: other host.
+- Windows: waived (jeffdaily, 2026-11-18); nothing here changes that.
+
+### Jargon
+```
+python3 utils/jargon.py --port CV-CUDA                                                    # 1 hit, in published commit b623dffa (June): "fault-class" in its body
+python3 utils/jargon.py -C projects/CV-CUDA/src --commits 358edc33..moat-fix-293          # clean
+python3 utils/jargon.py -C projects/CV-CUDA/src --diff upstream/main..moat-fix-293        # clean
+```
+The `b623dffa` hit is in the PR's original commit, already in front of the maintainer; fixing it means rewriting published history, which is jeff's call (it passed the checker in June; the term was presumably added to config/jargon.toml later).
+
+## Lesson for cuda-to-rocm: HIP's host-side __half needs the HIP compiler, and HIP_vector_type operators hijack mixed half arithmetic
+(belongs in build-headers-macros.md / faults-numerics.md)
+A project whose headers and tests use `__half` on the host (integer constructors, `__ushort_as_half`, half arithmetic) cannot build those host TUs with a plain C++ compiler on ROCm: `hip/hip_fp16.h` falls back to `amd_detail/hip_fp16_gcc.h` there, whose `__half` has only float/double constructors (`__half(int)` is ambiguous), no arithmetic and no bit-cast functions. CUDA's `cuda_fp16.h` gives g++ the full host API, so this only shows up on ROCm. Compile those sources as HIP (`set_source_files_properties(... LANGUAGE HIP)`), then expect two follow-ups: file-scope names `min`/`max` collide with the global `min`/`max` HIP declares, and `__half_raw{bits}` brace-initialises HIP's `_Float16` union member numerically (use `__ushort_as_half`). Separately, `HIP_vector_type`'s `operator OP(U, const vec&)` / `(const vec&, U)` take any `U`, so `half3 - float3` with a project's own half3 struct resolves to HIP's operator and fails inside `make_vector_type`; a concrete-half-type overload is more specialized and wins. HIP_vector_type's member unary `-`/`~` also keep char/short element types where CUDA's promote to int; only non-template overloads beat the member templates. `__double2half` does not exist in HIP; `__half(static_cast<_Float16>(d))` rounds once, as CUDA does. (CV-CUDA v0.18/v0.19)
+
+## Lesson for cuda-to-rocm: nvcc fuses multiply-add across inlined helpers; -ffp-contract=on does not
+(belongs in faults-numerics.md, next to the existing contraction entries)
+The common claim that nvcc's `--fmad=true` matches clang's `-ffp-contract=on` ("contract within one expression") is wrong when the multiply and add sit in different inlined functions: `alpha * v + beta` written through a vector-type operator library becomes `operator+(operator*(alpha, v), beta)`, nvcc fuses it into one FMA after inlining, clang at `on` does not. A test gold written as `std::fma(...)` is the tell. `-ffp-contract=fast` fuses across statements and fixes those cases but changes others that `on` got right, so neither global setting is bit-exact everywhere; measure a full suite at each setting before choosing, and prefer per-site explicit `__fmaf_rn` / `__fmul_rn`+`__fadd_rn` where a test pins the rounding. (CV-CUDA v0.19: ~75 of 183 bit-exact failures flip with `fast`, 39 others appear.)
