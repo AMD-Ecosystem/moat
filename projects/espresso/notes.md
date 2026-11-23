@@ -1172,3 +1172,130 @@ Belongs in the validation or Linux host reference, beside "A GPU test that hangs
 - wave64 (gfx942) and wave32 (gfx1201) are validated at 917d6f707; windows is waived. linux-gfx950 still reads `revalidate` (extra wave64 evidence, gates nothing).
 - For jeff (unchanged): refresh the fork review page (AMD-Ecosystem/espresso#1, still at bc8d73dd9, body describes the core only) for the five-commit series before approval. No upstream PR is open.
 - For a trunk session: promote the four `## Lesson for cuda-to-rocm` sections (the three from the porter round, and the `ctest -jN` GPU sharing one above).
+
+## Ruling 2026-11-23 (jeffdaily): "I want the fix round"
+
+The port was validated at 917d6f707 and its fork review page (AMD-Ecosystem/espresso#1) was about to be approved; no upstream pull request is open (`moatlib.py pr-state espresso`: `none`). Reading the diff, jeff found two things and ruled "I want the fix round" before the pull request opens:
+
+1. **One flag, not two.** The documented AMD build needed `-D ESPRESSO_BUILD_WITH_CUDA=ON -D ESPRESSO_BUILD_WITH_HIP=ON`, and every HIP block in the top-level CMakeLists.txt tested both, so `ESPRESSO_BUILD_WITH_HIP=ON` alone silently gave a CPU-only build. `ESPRESSO_BUILD_WITH_HIP=ON` is to imply the GPU switch, in the project's CMake style (deliberate choice between a cache-forcing `set` and a normal variable), with the installation guide, option list and any message text updated; setting both must keep working and give the same build files.
+2. **The duplicated-looking test string** in `src/core/unit_tests/cuda_test.cu`: keep one copy of the string and switch only the differing word, with a short comment saying why; check whether HIP has a closer error code than `hipErrorNotSupported`.
+
+The round stays on these two points. Commits go on top of 917d6f707 (no amend, no forced push); jeff's session folds them into the existing five commits afterwards.
+
+## Porter 2026-11-23 (fix round, linux-gfx942)
+
+Host: AMD Instinct MI300X (gfx942), `HIP_VISIBLE_DEVICES=0` (pinned by the dispatcher), `ulimit -c 0`, `MAX_JOBS=37`. Pip ROCm SDK 10.1.0 (HIP 7.16, `rocm-sdk path --root`, no /opt/rocm), CUDA 12.8 (`/usr/local/cuda/bin/nvcc`, V12.8.93), system OpenMPI 4.1.6, Boost 1.83, FFTW 3.3.10, GCC 13.3.0, CMake 3.31.6. Test venv `$FLEET_VENV/py312` by `uv` (numpy 2.5.5, scipy, Cython, tqdm, matplotlib, pint, vtk; for the docs also sphinx 9.1.1, sphinx-toggleprompt 0.6.0, sphinxcontrib-bibtex, sphinx-tabs, numpydoc, pybtex, ase 3.29.0, asebytes 0.1.7, zndraw 0.6, h5py, requests -- the `requirements.txt` lines; without ase/zndraw the `sphinx` target fails with autodoc import warnings, an environment gap). Lock taken with `set-state espresso linux-gfx942 porting` (no warning).
+
+Fork `moat-port` 917d6f707 -> **bbe25fdf8**, four commits, pushed plainly:
+
+| commit | title | fold into |
+|---|---|---|
+| 3d1a31b5f | [ROCm] Let ESPRESSO_BUILD_WITH_HIP enable GPU support on its own | bc8d73dd9 (core) |
+| a62828c7d | [ROCm] Select waLBerla's HIP backend from ESPRESSO_BUILD_WITH_HIP | 3862a5040 (LB/EK GPU) |
+| ab466b714 | [ROCm] Select heFFTe's rocFFT backend from ESPRESSO_BUILD_WITH_HIP | 17094fdf3 (EK FFT) |
+| bbe25fdf8 | [ROCm] Keep one expected message in the CUDA error test | bc8d73dd9 (core) |
+
+e8fa4dfa5 (waLBerla decoupling) and 917d6f707 (Caliper) get no fixup, but see the fold conflicts below.
+
+### Point 1: the implication, and why a normal variable
+
+`CMakeLists.txt`, right after the HIP option:
+
+```
+option(ESPRESSO_BUILD_WITH_HIP
+       "Build with GPU support for AMD GPUs, compiled with HIP (ROCm)" OFF)
+if(ESPRESSO_BUILD_WITH_HIP)
+  # a HIP build is a GPU build; the cache keeps ESPRESSO_BUILD_WITH_CUDA as set
+  set(ESPRESSO_BUILD_WITH_CUDA ON)
+endif()
+```
+
+The four `if(ESPRESSO_BUILD_WITH_CUDA AND ESPRESSO_BUILD_WITH_HIP)` (top-level HIP language block, heFFTe ROCm switch, waLBerla HIP switch, `src/config` toolchain metadata) become `if(ESPRESSO_BUILD_WITH_HIP)`, which is now the same condition. The `CUDA AND NOT HIP` conditions (nvcc-only paths: OpenMP CUDA component, Kokkos CUDA, Caliper NVTX/CUPTI, `ESPRESSO_OPENMP_CUDA`) and the nested `if(CUDA) ... if(HIP)` blocks are unchanged.
+
+Project style: upstream never forces a user option and has no option that implies another. It combines options where they are used (`ESPRESSO_BUILD_WITH_KOKKOS_FFT AND ESPRESSO_BUILD_WITH_FFTW`), refuses conflicting ones (`ASAN AND MSAN` -> FATAL_ERROR), and uses normal variables for derived settings (`ESPRESSO_BUILD_WITH_WALBERLA_AVX_DEFAULT`). `FORCE` appears only for `CMAKE_BUILD_TYPE` (`espresso_option_enum`) and the detected `ESPRESSO_NUMPY_SITEARCH`; `CMakeDependentOption` is not used anywhere.
+
+Choice: a normal variable.
+- A forced cache entry (`set(... CACHE BOOL ... FORCE)`) would rewrite the user's own setting and ratchet: switching HIP off later in the same build directory (ccmake, or `-DESPRESSO_BUILD_WITH_HIP=OFF`) would leave `ESPRESSO_BUILD_WITH_CUDA=ON` cached, and the next configure would take the nvcc path (`enable_language(CUDA)`) on an AMD machine. It would also overwrite an explicit `-DESPRESSO_BUILD_WITH_CUDA=OFF` permanently.
+- The normal variable shadows the cache only for this configure: every consumer (`if()`, `$<BOOL:...>`, `#cmakedefine ESPRESSO_BUILD_WITH_CUDA` in `cmake_config.hpp`, subdirectories, FetchContent projects) sees ON, and the cache keeps exactly what the user typed. Switching HIP off returns to the user's value.
+- The cost: `ccmake`/`cmake-gui` show `ESPRESSO_BUILD_WITH_CUDA` as the user's value (OFF in a HIP-only configure) while GPU support is on. The HIP option's help text now says it builds with GPU support, and the option list in the guide says it implies the GPU option. `cmake_dependent_option(ESPRESSO_BUILD_WITH_CUDA ... "NOT ESPRESSO_BUILD_WITH_HIP" ON)` would hide the entry while HIP is on and restore it after, but it rewrites upstream's own CUDA option declaration and adds a module upstream does not use, for a display detail; not taken.
+- Feature summary: `feature_summary(WHAT ALL)` lists packages and `add_feature_info` entries only (ESPResSo adds one, for HDF5); neither GPU option appears in it, so the choice does not change it. Verified: the configure output, feature summary included, is identical between HIP-only and two-flag at the new head, and between 917d6f707 and the new head for the two-flag, CUDA-only and neither cases (build-directory paths and timings normalised).
+
+Other places with the two-flag form: the installation guide's code block (now `cmake .. -D ESPRESSO_BUILD_WITH_HIP=ON \`) and its option list (now "Build with GPU support for AMD GPUs, compiled with HIP; implies ``ESPRESSO_BUILD_WITH_CUDA``"). No CMake `message()` text names either option combination (the waLBerla FATAL_ERROR of bc8d73dd9 that named `ESPRESSO_BUILD_WITH_HIP` is removed by e8fa4dfa5). No CI config was touched by the port (`.gitlab-ci.yml`, `maintainer/CI/` are not in `git diff python..moat-port`). `cuda_to_hip.h`'s comment ("selected by the ESPRESSO_BUILD_WITH_HIP CMake option") stays true. `electrostatics.rst`, `magnetostatics.rst` and `running.rst` name only `-D ESPRESSO_BUILD_WITH_CUDA=ON` for the GPU features; that is upstream text and remains true (the HIP option now implies it), so left alone. The Test Plans of all five existing commit messages show `-DESPRESSO_BUILD_WITH_CUDA=ON -DESPRESSO_BUILD_WITH_HIP=ON` (bc8d73dd9 lines 25 and 56, e8fa4dfa5:20, 3862a5040:32, 17094fdf3:21, 917d6f707:15); the commands still work. bc8d73dd9's body also says the option is used "together with `ESPRESSO_BUILD_WITH_CUDA=ON`" (line 3) and that "`cuda_test.cu` expects the error string "operation not supported" under HIP" (line 11). jeff's fold should update those sentences.
+
+### Point 2: the test string, and the HIP error codes
+
+```
+    // HIP has no "not permitted" error: it maps to "not supported"
+#if defined(__HIP__)
+    std::string const reason = "not supported";
+#else
+    std::string const reason = "not permitted";
+#endif
+    std::string const what = "CUDA error: \"operation " + reason +
+                             "\" during memory operation in filename.cu:4";
+```
+
+The file builds strings with `std::string` and `+` elsewhere (`read_pending_cuda_errors`). clang-format passes.
+
+Closer HIP code: none. The `hipError_t` enum of HIP 7.16 (`include/hip/hip_runtime_api.h`, ROCm 10.1 pip SDK) has no "not permitted" member. The nearest-sounding are stream-capture codes whose messages say "operation not permitted when stream is capturing" (`hipErrorStreamCaptureUnsupported` = 900, the counterpart of `cudaErrorStreamCaptureUnsupported`), which are a different error. hipify-perl in the same SDK lists `cudaErrorNotPermitted` in `%hash_HipOnlyUnsupportedFunctions` (line 5925), so the ROCm tools themselves have no mapping for it. `hipErrorNotSupported` (801) stays, and the `#if` stays, reduced to the one word.
+
+### Evidence
+
+Build-file comparison (`agent_space/cmpcfg.sh <build> hip1|hip2|cuda|none`: the porter's waLBerla-ON recipe, configure only, `cuda` with `-DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc`; base and head configured from the same source path, `projects/espresso/src`, at 917d6f707 and then at the new tree; `agent_space/treecmp.py` compares every file of the two build trees except fetched sources, configure logs and object directories, with the build path normalised; 946-968 files per tree):
+
+- two flags, 917d6f707 vs head: identical except `CMakeCache.txt` (the HIP option's new help string) and CMake's compiler-ABI probe binary `CMakeFiles/3.31.6/CMakeDetermineCompilerABI_HIP.bin`. Every `build.ninja`, `CMakeFiles/*.ninja`, generated header (`cmake_config.hpp`, `myconfig` files), CTest file and script is the same.
+- CUDA only (nvcc), 917d6f707 vs head: the same plus CMake's nvcc compiler-id scratch files (`CompilerIdCUDA/tmp/*.cudafe1.cpp`, `*.module_id`: nvcc's random anonymous-namespace hash) and the ABI/OpenMP probe binaries.
+- neither, 917d6f707 vs head: identical except the help string in `CMakeCache.txt`.
+- HIP only vs two flags, both at head: identical except `CMakeCache.txt` `ESPRESSO_BUILD_WITH_CUDA:BOOL=OFF` (the user's value, by the choice above) and the HIP ABI probe binary.
+- The defect, HIP only at 917d6f707: configures without error, cache `WALBERLA_BUILD_WITH_HIP=OFF`, `Heffte_ENABLE_ROCM=OFF`, **0** HIP objects in `build.ninja` (two flags: 146), and the only hint is "Manually-specified variables were not used by the project: CMAKE_HIP_COMPILER".
+
+The probe binaries and the nvcc scratch files differ between any two configures (embedded build ids and random hashes), not because of the change.
+
+HIP build of the HIP-only configuration (`agent_space/cmp/head-hip1`, from the working tree that became bbe25fdf8; `git status --porcelain` empty after the commits, so the tree is the committed one):
+
+- `cmake --build -j 37 -- -k 0` then `python_test_data cuda_test local_samples local_benchmarks`: 0 FAILED; only warnings: 28 known `-Wunused-value` (`nodiscard hipError_t`), as at 917d6f707.
+- `check_unit_tests`: **152/152 passed**. `cuda_test --log_level=test_suite`: `gpu_interface` ran, "No errors detected".
+- `ctest -L gpu --timeout 1200 -j 8 -V`: **74/74 passed** (757 s). `agent_space/parse_gpu.py`: **243 GPU-class cases ok, 1 skipped** (`TestLBMomentumConservationRegularSinglePrecisionWalberlaGPU`, the test's own 2-rank filter), **0 FAIL/ERROR**, 214 ok in 33 LB/EK/lattice scripts, 71 unittest `OK`, 0 `FAILED`, 0 "compiled without CUDA support". Identical to the 917d6f707 record.
+- `sphinx` target (the project's target runs `sphinx -q -W`, warnings as errors), after reconfiguring the same directory so CMake finds Sphinx 9.1.1: **passes**, no warning. The rendered `installation.html` shows `cmake .. -D ESPRESSO_BUILD_WITH_HIP=ON \` and the new option-list entry.
+
+CUDA no-regression compile at the new tree (nvcc 12.8, the `cuda12-maxset` recipe of "CUDA no-regression compile 2026-11-20": maxset myconfig, `ESPRESSO_WARNINGS_ARE_ERRORS=ON`, waLBerla ON, Python OFF, Caliper OFF; `agent_space/cuda-build.sh <src> agent_space/build-cuda`, `all` plus the 154 unit-test executables, `-j 37`): **690/690 steps, 0 FAILED, 0 compiler warnings under -Werror**, 73 nvcc compile commands. Cache `ESPRESSO_BUILD_WITH_HIP=OFF`, `WALBERLA_BUILD_WITH_CUDA=on`, `WALBERLA_BUILD_WITH_HIP=OFF`, `Heffte_ENABLE_CUDA=ON`, `Heffte_ENABLE_ROCM=OFF`. `cuda_test.cu` is compiled by `/usr/local/cuda/bin/nvcc` (compile_commands.json) and `cuda_test` links; the binary contains the string "not permitted" and not "not supported", so the CUDA branch expects the same message as before.
+
+Checks: `pre-commit run` (clang-format 22.1.8, cmake-format 0.6.13) on the four changed files passes and changes nothing. `jargon.py --port espresso`: clean. `prose.py` on the four commit bodies: clean. Titles 55-66 characters. `moatlib.py classify espresso 917d6f707 bbe25fdf8`: `mixed`, not inert (CMake and a test source), so the review and every platform's validation follow.
+
+### Fold dry run (for jeff's session)
+
+Done locally in a scratch worktree (nothing pushed): from c0e34ecc0, `bc8d73dd9 + 3d1a31b5f + bbe25fdf8`, `e8fa4dfa5`, `3862a5040 + a62828c7d`, `17094fdf3 + ab466b714`, `917d6f707`, each squashed with the original message. The final tree is **identical** to bbe25fdf8. Two folds conflict, both trivially:
+
+- Folding 3d1a31b5f into bc8d73dd9: at bc8d73dd9 the HIP block still starts with the waLBerla FATAL_ERROR (`if(ESPRESSO_BUILD_WITH_WALBERLA) message(FATAL_ERROR "ESPRESSO_BUILD_WITH_HIP requires ESPRESSO_BUILD_WITH_WALBERLA=OFF, ...")`), and the guide's command has a second line `-D ESPRESSO_BUILD_WITH_WALBERLA=OFF \`. Resolution: `if(ESPRESSO_BUILD_WITH_HIP)` keeping the FATAL_ERROR block inside it; `cmake .. -D ESPRESSO_BUILD_WITH_HIP=ON \` followed by the `-D ESPRESSO_BUILD_WITH_WALBERLA=OFF \` line.
+- Replaying e8fa4dfa5 on the folded commit 1: the same two hunks. Resolution: `if(ESPRESSO_BUILD_WITH_HIP)` without the FATAL_ERROR block; `cmake .. -D ESPRESSO_BUILD_WITH_HIP=ON \` without the waLBerla line.
+- Stats after the fold: commit 1 is 17 files, +216/-45 (the review page says +209/-43); commits 2-5 keep 6 files +24/-19, 57 files +582/-444, 6 files +41/-24, 1 file +7/-2.
+
+### Draft replacement lines for the review page body (AMD-Ecosystem/espresso#1; jeff's to apply)
+
+Description, first bullet, replace "It is selected with a new CMake option `ESPRESSO_BUILD_WITH_HIP` (default OFF) on top of `ESPRESSO_BUILD_WITH_CUDA=ON`." with:
+
+```
+It is selected with a new CMake option `ESPRESSO_BUILD_WITH_HIP` (default OFF), which turns on GPU support (`ESPRESSO_BUILD_WITH_CUDA`) by itself.
+```
+
+Commit 1 heading, replace "(17 files, +209/-43)" with "(17 files, +216/-45)", and add a bullet after the `utils/device_qualifier.hpp` one:
+
+```
+- `ESPRESSO_BUILD_WITH_HIP=ON` sets `ESPRESSO_BUILD_WITH_CUDA` to ON as a normal variable, so one option selects the AMD build and setting both gives the same build files. The cache keeps the user's own value of `ESPRESSO_BUILD_WITH_CUDA`, so switching HIP off again in the same build directory does not leave an nvcc build configured.
+```
+
+"Building for AMD GPUs", replace the code block with:
+
+```bash
+cmake .. -D ESPRESSO_BUILD_WITH_HIP=ON \
+  -D CMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++ \
+  -D CMAKE_PREFIX_PATH=/opt/rocm
+```
+
+"Style", replace "The `sphinx` target was built with warnings as errors for commit 1; it was not rebuilt after commits 2 and 3 changed the wording of the new section." with:
+
+```
+The `sphinx` target, which builds with warnings as errors, passes at the last commit (Sphinx 9.1.1).
+```
+
+The Testing section's numbers do not change if this round's validation reproduces them (MI300X: 152/152, 74/74, 243 / 1 / 0, below). The MI355X and R9700 runs were at 917d6f707; the round's build files are identical for the two-flag command those runs used, but they are not re-run here. The V100 CUDA runs were at 917d6f707 too; this round's CUDA build files are identical to 917d6f707's, and the CUDA 12.8 compile line ("690 of 690 steps") was redone at the new head.
