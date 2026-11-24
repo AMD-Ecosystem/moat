@@ -14,3 +14,7 @@
 {"kind":"phase","ts":"2026-11-24T11:06:54Z","phase":"compile","seconds":21.364,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi300c-20261124-021307-re-port-physx-prompt/moat/projects/PhysX/src/physx/compiler/linux-gcc-rocm-release -j192"}
 {"kind":"phase","ts":"2026-11-24T11:07:42Z","phase":"compile","seconds":47.741,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi300c-20261124-021307-re-port-physx-prompt/moat/projects/PhysX/src/physx/compiler/linux-gcc-rocm-checked -j192"}
 {"kind":"phase","ts":"2026-11-24T11:30:37Z","phase":"test","seconds":1211.166,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300c-20261124-021307-re-port-physx-prompt/moat/agent_space/final_runs.sh"}
+{"kind":"session","ts":"2026-11-24T11:36:52Z","epoch":1795520212.501632,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-24T11:48:40Z","phase":"compile","seconds":1.953,"exit":0,"cmd":"cmake -S agent_space/wt-radixfix/physx -B agent_space/build-radixfix -G Ninja -DPHYSX_PRESET=linux-gcc -DPX_USE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_BUILD_TYPE=release -DPX_BUILDSNIPPETS=OFF"}
+{"kind":"phase","ts":"2026-11-24T11:48:55Z","phase":"compile","seconds":8.749,"exit":0,"cmd":"cmake --build agent_space/build-radixfix -j48 --target PhysXGpu"}
+{"kind":"session","ts":"2026-11-24T11:52:15Z","epoch":1795521135.576256,"event":"end","platform":"linux-gfx942"}
