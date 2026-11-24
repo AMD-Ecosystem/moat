@@ -1611,6 +1611,8 @@ Build at d7d363b9: incremental, 0 errors.
 
 Not fixed, recorded: `basic_intersector<ISOSurface>::operator()` (visionaray's template, wrapping this repo's `intersect(Ray, dco::ISOSurface)` in dco/Surface.h) has the same defect on gfx1201 in both renderers. No validated scene has an ISO surface, so it is untested; an ANARI `isosurface` geometry on HIP may hang the same way. Avoiding it in source would mean a custom intersector or an edit in visionaray, which is more than this round should carry; the compiler fix removes it. Compiler options do not help: `-mllvm -amdgpu-long-branch-factor=2` and `=10` leave s[30:31]; `=0` moves the long branches to unsaved callee-saved s[40:45] (a different clobber); -O1 and -O2 keep s[30:31] in the reproducer.
 
+ISA scan of all 8 HIP TUs at d7d363b9 for other targets (same compiler, build command lines with `--offload-arch` swapped): gfx90a fully clean; gfx1100, gfx1151 and gfx1201 clean except the ISOSurface intersector in the raycast and pathtrace TUs (one long branch through s[30:31] each). sampleLight has no such branch on any of them. So the ISOSurface risk also applies to the gfx1100 and Windows gfx1151 builds.
+
 Registered: deferral `amdgpu-long-branch-clobbers-return-address` (rocm-bug-report, component llvm-project-amdgpu) on this project.
 
 ### Standalone reproducer (for jeff; not filed)
@@ -1767,7 +1769,7 @@ Retested (at d7d363b unless stated):
 - CUDA compile check: done at 6f1e793 (nvcc 12.8, sm_52 and sm_80, CPU and CUDA libraries, no new error or warning against upstream c1aa91b). fd2375a and d7d363b change only HIP-guarded code (the HIP arm of DeviceArray.h, a `__HIP_DEVICE_COMPILE__` block in renderer/common.h); the check is owed again only if a reviewer wants it per head.
 - linux gfx1201 (Radeon AI PRO R9700, ROCm 10.1): PASSED at d7d363b. Every scene renders with both renderers (path tracing and raycast), 8 identical runs each: structured volumes (nearest and linear), NanoVDB (nearest and linear), Gaussian splats, and the lit surface scene, which with the raycast renderer is pixel-identical to the CPU device. At fd2375a the raycast lit surface case never finished a frame (fixed by d7d363b).
 - linux gfx90a (MI250X, ROCm 10.1): passed at fd2375a, the head before d7d363b (raycast lit surface pixel-identical to the CPU device; linear-filtered structured volumes fault on this GPU family, known limitation). Owed again at d7d363b, which changes device code.
-- Known, not fixed here: the same compiler defect remains in visionaray's intersector for ISO-surface geometry on gfx1201 (no tested scene uses it); fixed by the compiler fix.
+- Known, not fixed here: the same compiler defect remains in visionaray's intersector for ISO-surface geometry in the gfx1100, gfx1151 and gfx1201 builds (gfx90a is clean; no tested scene uses ISO surfaces); fixed by the compiler fix.
 - Owed before approval: linux gfx90a and Windows gfx1201 GPU runs at d7d363b.
 
 ## Upstream reply
