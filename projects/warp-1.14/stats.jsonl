@@ -525,3 +525,12 @@
 {"kind":"phase","ts":"2026-11-24T20:29:32Z","phase":"test","seconds":33.706,"exit":0,"cmd":"agent_space/v/run.sh matmul2 -s autodetect -p test_tile_matmul.py"}
 {"kind":"phase","ts":"2026-11-24T20:30:06Z","phase":"test","seconds":33.7,"exit":0,"cmd":"agent_space/v/run.sh matmul3 -s autodetect -p test_tile_matmul.py"}
 {"kind":"session","ts":"2026-11-24T20:30:48Z","epoch":1795552248.030524,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-11-24T19:55:39Z","epoch":1795550139.586198,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-24T19:58:51Z","phase":"compile","seconds":88.917,"exit":0,"cmd":"agent_space/v/build.sh /var/lib/jenkins/fleet/jobs/mi300-20261124-115238-validator6-prompt/moat/projects/warp-1.14/src 56 /var/lib/jenkins/fleet/jobs/mi300-20261124-115238-validator6-prompt/wheel"}
+{"kind":"phase","ts":"2026-11-24T20:14:41Z","phase":"test","seconds":813.641,"exit":0,"cmd":"agent_space/v/run.sh full -s autodetect"}
+{"kind":"phase","ts":"2026-11-24T20:30:12Z","phase":"test","seconds":249.631,"exit":0,"cmd":"agent_space/v/run.sh debugtile -s autodetect --warp-debug -p test_tile*.py"}
+{"kind":"phase","ts":"2026-11-24T20:30:39Z","phase":"test","seconds":21.837,"exit":0,"cmd":"agent_space/v/run.sh matmul1 -s autodetect -p test_tile_matmul.py"}
+{"kind":"phase","ts":"2026-11-24T20:31:01Z","phase":"test","seconds":21.423,"exit":0,"cmd":"agent_space/v/run.sh matmul2 -s autodetect -p test_tile_matmul.py"}
+{"kind":"phase","ts":"2026-11-24T20:31:23Z","phase":"test","seconds":21.962,"exit":0,"cmd":"agent_space/v/run.sh matmul3 -s autodetect -p test_tile_matmul.py"}
+{"kind":"phase","ts":"2026-11-24T20:33:14Z","phase":"test","seconds":82.88,"exit":0,"cmd":"agent_space/v/run.sh asyncfile_debug -s autodetect --warp-debug -p test_async.py"}
+{"kind":"session","ts":"2026-11-24T20:33:58Z","epoch":1795552438.647104,"event":"end","platform":"linux-gfx942"}

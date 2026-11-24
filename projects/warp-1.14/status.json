@@ -8,81 +8,11 @@
   "ext_type": "python-build-nvrtc",
   "stage": "review-passed",
   "adopted_at": "2026-11-18T17:38:39Z",
-  "updated_at": "2026-11-24T20:30:47Z",
+  "updated_at": "2026-11-24T20:33:58Z",
   "head_sha": "1c94e68bd54c28323ecb2a10a08ea89507cbfb6d",
   "depends_on": [],
   "waivers": {},
   "platforms": {
-    "windows-gfx1151": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "failed_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-11-18T17:54:27Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "planner"
-    },
-    "linux-gfx942": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "4e0d02ab7eeb4af2be6380ff27c54d9bc8d43ef2",
-      "failed_sha": null,
-      "started_at": null,
-      "completed_at": "2026-11-24T03:00:59Z",
-      "updated_at": "2026-11-24T03:00:59Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "state": "completed"
-    },
-    "linux-gfx950": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "1c94e68bd54c28323ecb2a10a08ea89507cbfb6d",
-      "failed_sha": null,
-      "started_at": "2026-11-18T20:28:14Z",
-      "completed_at": "2026-11-24T20:15:43Z",
-      "updated_at": "2026-11-24T20:15:43Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "reviewer",
-      "state": "completed"
-    },
     "linux-gfx90a": {
       "blocked": false,
       "blocked_reason": null,
@@ -106,6 +36,32 @@
       },
       "state": "completed",
       "last_agent": "validator"
+    },
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "1c94e68bd54c28323ecb2a10a08ea89507cbfb6d",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-11-24T20:33:58Z",
+      "updated_at": "2026-11-24T20:33:58Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "validated_prior": [
+        "4e0d02ab7eeb4af2be6380ff27c54d9bc8d43ef2"
+      ]
     },
     "linux-gfx1201": {
       "blocked": false,
@@ -132,6 +88,53 @@
       "validated_prior": [
         "4e0d02ab7eeb4af2be6380ff27c54d9bc8d43ef2"
       ]
+    },
+    "linux-gfx950": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "1c94e68bd54c28323ecb2a10a08ea89507cbfb6d",
+      "failed_sha": null,
+      "started_at": "2026-11-18T20:28:14Z",
+      "completed_at": "2026-11-24T20:15:43Z",
+      "updated_at": "2026-11-24T20:15:43Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "reviewer",
+      "state": "completed"
+    },
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-18T17:54:27Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "planner"
     },
     "linux-gfx1100": {
       "blocked": false,
