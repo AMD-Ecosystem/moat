@@ -8,8 +8,8 @@
   "ext_type": "python-build-nvrtc",
   "stage": "porting",
   "adopted_at": "2026-11-18T17:38:39Z",
-  "updated_at": "2026-11-24T03:25:30Z",
-  "head_sha": "4e0d02ab7eeb4af2be6380ff27c54d9bc8d43ef2",
+  "updated_at": "2026-11-24T19:07:44Z",
+  "head_sha": "1c94e68bd54c28323ecb2a10a08ea89507cbfb6d",
   "depends_on": [],
   "waivers": {},
   "platforms": {
