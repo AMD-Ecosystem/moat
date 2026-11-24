@@ -1874,7 +1874,7 @@ The "software fallback forced" column comes from a throwaway build in `agent_spa
 
 ## Fix review PR draft
 
-For `upstream.py --fix-review --apply --name TIGRE --title <t> --body-file <f>` (not opened; jeff opens it). The body is everything from the paragraph below through the `## Upstream reply` section. Drafted 2026-11-24 after linux-gfx90a completed at 183c2a45; it replaces the 2026-11-20 draft, which was never opened. Update the retest paragraph when more platforms validate at 183c2a45.
+For `upstream.py --fix-review --apply --name TIGRE --title <t> --body-file <f>` (not opened; jeff opens it). The body is everything from the paragraph below through the `## Upstream reply` section. Drafted 2026-11-24 after linux-gfx90a completed at 183c2a45; it replaces the 2026-11-20 draft, which was never opened. Update the retest paragraph when more platforms validate at 183c2a45. Updated 2026-11-24 after linux-gfx1201 completed at 183c2a45: the retest paragraph and the reply now also name the Radeon AI PRO R9700.
 
 Title: `[ROCm] Merge master at v3.3.1 and select HIP with TIGRE_BACKEND=hip`
 
@@ -1909,13 +1909,13 @@ What our commits do:
 
 jeff's commitments, checked in the code: TIGRE_BACKEND=hip selects HIP and nothing named BUILD_WITH_HIP is left; HIP_ARCH is read as before; master's maxsteps bound (Siddon_projection.cu:276, Siddon_projection_parallel.cu:285) and its upload on the kernels' stream (Siddon_projection_parallel.cu:761) replace the port's changes, whose diff to master in those files is now one include line; fmaxf stays in maxdistanceCuboid (unguarded shared host code, as published; same behaviour on CUDA).
 
-Retested on an AMD Instinct MI250X (gfx90a), ROCm 10.1, at 183c2a45: all 8 extensions build; master's test suite gives 274 passed and 0 failed in the default set, 13 passed in the extended set, and 88 passed in the files that need PyTorch (GPU tensors, pinned input, low memory, texture leak, TV host bounds); cone and parallel projection, FDK, OS-SART, SIRT and the solvers give the c015150 numbers apart from adjointness and two solver digits that master's backprojector changes move; the 20-fold repeat checks are bitwise stable; a fan-beam run with several launches matches single-launch chunks bitwise. Multi-GPU tests did not run (one GPU). The CUDA build was checked with nvcc 13.5 for sm_80 (8 of 8 extensions, warnings identical to master's per compile); the nvcc 12.8 check for all architectures has not run yet. Not yet run at this head: a 32-lane GPU (Linux), Windows, and the nvcc 12.8 build.
+Retested on an AMD Instinct MI250X (gfx90a), ROCm 10.1, at 183c2a45: all 8 extensions build; master's test suite gives 274 passed and 0 failed in the default set, 13 passed in the extended set, and 88 passed in the files that need PyTorch (GPU tensors, pinned input, low memory, texture leak, TV host bounds); cone and parallel projection, FDK, OS-SART, SIRT and the solvers give the c015150 numbers apart from adjointness and two solver digits that master's backprojector changes move; the 20-fold repeat checks are bitwise stable; a fan-beam run with several launches matches single-launch chunks bitwise. Multi-GPU tests did not run (one GPU). The CUDA build was checked with nvcc 13.5 for sm_80 (8 of 8 extensions, warnings identical to master's per compile); the nvcc 12.8 check for all architectures has not run yet. Also retested on an AMD Radeon AI PRO R9700 (gfx1201, 32-lane), ROCm 10.1, Linux, at 183c2a45: the same counts (274, 13 and 88 passed, 0 failed), the same projection, reconstruction and solver numbers, and bitwise stable repeats; this GPU filters textures in hardware, and its full-turn difference is unchanged by the ray-length change (2.4e-5). Here 4 voxels per thread does not spill at 8 either but is still faster than 8 (FDK 104 against 117 ms, matched 68 against 84 ms, bitwise equal results). Not yet run at this head: Windows and the nvcc 12.8 build.
 
 ## Upstream reply
 
 Thanks for tagging 3.3.1. As promised, I merged master (v3.3.1 plus the documentation commits after it) into this branch in one update. The HIP build is selected with `TIGRE_BACKEND=hip`; `BUILD_WITH_HIP` is gone and `HIP_ARCH` works as before. The Siddon loop-bound change and the upload sync are dropped, since master has both, and `fmaxf` stays in `maxdistanceCuboid`.
 
-Most of the work was carrying the HIP path onto master's new code: the backprojectors' layered textures get the same software filtering fallback as the 3D ones on GPUs without fp32 hardware filtering. Two small HIP-only changes came out of testing: the parallel-beam interpolated projector now rounds the ray length the way nvcc does, which fixes `test_forward_is_invariant_to_a_full_turn[parallel-interpolated]` on the MI250X, and the cone backprojectors use 4 voxels per thread under HIP, because 8 spilled registers on that GPU and ran about half as fast. `setup.py` also now ships `cuda_to_hip.h` in the source distribution, which it had missed. The whole test suite passes on an AMD Instinct MI250X. From my side it is ready for review and testing.
+Most of the work was carrying the HIP path onto master's new code: the backprojectors' layered textures get the same software filtering fallback as the 3D ones on GPUs without fp32 hardware filtering. Two small HIP-only changes came out of testing: the parallel-beam interpolated projector now rounds the ray length the way nvcc does, which fixes `test_forward_is_invariant_to_a_full_turn[parallel-interpolated]` on the MI250X, and the cone backprojectors use 4 voxels per thread under HIP, because 8 spilled registers on that GPU and ran about half as fast. `setup.py` also now ships `cuda_to_hip.h` in the source distribution, which it had missed. The whole test suite passes on an AMD Instinct MI250X and on an AMD Radeon AI PRO R9700 (where 4 voxels per thread is also the faster setting). From my side it is ready for review and testing.
 
 ## Notes for jeff on the 2026-11-20 round (not part of the review PR body)
 
@@ -2200,7 +2200,7 @@ Differences against c015150 are explained in "Fix round 2026-11-24" (Tests): mas
 - **Upstream build hazards, not ours:** the Linux `build_ext -j` path has the same thread-safety hazard in principle as the Windows one a7997d3d works around (upstream code, CUDA identical, never observed), and upstream's CUDA Windows build should fail under `-j` the way ours did (from the code, not run). Either could be a separate upstream issue; your call.
 - **The sdist fix (4f580a96) matters to CUDA users too:** the published branch's source distribution cannot be built with either backend because `cuda_to_hip.h` was missing from it. The reply mentions it.
 - **Process notes:** one local commit message was redone with `git reset --soft` before any push (wrong figure), and one comment rewrap was edited while the reviewer held the lock and pushed only after a changes-requested verdict and a porting transition. Nothing published was rewritten.
-- **Validated at 183c2a45: linux-gfx90a only**, so the reply names only the MI250X. If a 32-lane GPU or Windows validates before the review PR opens, add them to the retest paragraph and, if you like, the reply.
+- **Validated at 183c2a45: linux-gfx90a only**, so the reply names only the MI250X. If a 32-lane GPU or Windows validates before the review PR opens, add them to the retest paragraph and, if you like, the reply.  **Update:** linux-gfx1201 (Radeon AI PRO R9700) completed at 183c2a45 on 2026-11-24; the retest paragraph and the reply now name it too. Windows is still owed.
 - Pre-existing items carried from 11-20 (upstream multi-GPU `accuracy>1` texture-mode bug, the self-test clearing a pending error, pinning off on HIP): unchanged; details under "Review 2026-11-20".
 
 ## CUDA compile check (nvcc 12.8) at 183c2a45
@@ -2243,3 +2243,58 @@ tar xzf ../sdist/tigre-3.3.1.tar.gz -C ../sdist_unpack && cd ../sdist_unpack/tig
 The unpacked sdist builds the cuda backend: rc 0, 8/8 extensions, 22 nvcc compiles, 833 ptxas entry functions, 0 error diagnostics, and the same warnings as the head clone's build. (4f580a96's CUDA claim was inferred until now; this shows it.)
 
 The CUDA compile gate is satisfied at 183c2a45. No CUDA runtime behaviour is claimed (no NVIDIA GPU). For the fix review PR body: "nvcc 12.8: all 8 extensions build, with the same nvcc warnings per compile as master 6beb8c38; the source distribution now includes cuda_to_hip.h and builds with nvcc."
+## Validation 2026-11-24 (linux-gfx1201, validator, moat-fix-747 @ 183c2a45 -> completed)
+
+GPU: AMD Radeon AI PRO R9700 / gfx1201 (wave32), TheRock ROCm SDK 10.1 (`rocm-sdk path --root`), `HIP_VISIBLE_DEVICES=2` (dispatcher pin; the device it maps to, PCI 03:00, had no processes per `amd-smi process`), every GPU command under `ulimit -c 0`, one GPU process at a time. jeff asked for this run. Before the tests a trivial HIP kernel (`hipcc --offload-arch=gfx1201`, 64 lanes write `2*i`) ran on the pinned GPU: correct result, no hang. Fresh fork clone at `projects/TIGRE/src`, detached at 183c2a453248ce6da0a12c3ac242a90cb5489a51 (= `origin/moat-fix-747` = head_sha), `protect-fork` installed, nothing pushed to the fork. Full real-GPU run from a clean build; no carry-forward (the delta from c015150 has device-code changes). Job venv: python 3.11.17, numpy 1.26.4, scipy 1.10.1, Cython 3.3.1, pytest 7.3.2, setuptools 79.0.1 (same as the gfx90a record).
+
+### Build
+```
+export PATH=/opt/python-3.11-venv/bin:$PATH TIGRE_BACKEND=hip HIP_ARCH=gfx1201 ROCM_PATH=$(rocm-sdk path --root)
+utils/timeit.sh TIGRE compile -- bash -c "cd projects/TIGRE/src && $FLEET_VENV/bin/python setup.py build_ext --inplace -j 8"
+```
+rc 0, 0 `error:`, 8/8 `.so`, `llvm-objdump --offloading` shows gfx1201 (only) in each. Prints `building the hip backend (set by TIGRE_BACKEND)` and `compiling for the AMD GPU architectures gfx1201`; at run time `fp32 hardware linear texture filtering on AMD Radeon AI PRO R9700: supported (hardware filtering)`, so the new layered-texture probe also passes here and the backprojectors take the hardware `tex2DLayered` path.
+
+### Results (pytest commands of "Sync round 2026-11-20", Tests; the torch run adds `tests/test_tv_host_bounds.py`, as on gfx90a)
+| set | gfx1201 @ 183c2a45 | gfx90a @ 183c2a45 | gfx1201 @ c015150 (this host's baseline) |
+|---|---|---|---|
+| core (default markers) | **274 passed, 0 failed**, 24 skipped, 41 deselected (208 s) | 274 passed, 0 failed, 24 skipped, 41 deselected | 247 passed, 0 failed, 22 skipped, 16 deselected |
+| extended (`-m extended`) | **13 passed**, 37 skipped | 13 passed, 37 skipped | 12 passed, 13 skipped |
+| torch files (image's ROCm torch 2.16, read-only) | **88 passed**, 25 skipped (460 s) | 88 passed, 25 skipped | 79 passed, 9 skipped (9 files) |
+| `probe/tigre_gates.py all` | **RESULT PASS** | RESULT PASS | RESULT PASS |
+
+Against gfx90a at this head: identical counts in all three sets. Against this host's c015150: +27 core, +1 extended and +9 torch passes, more skips and deselections. Cause: upstream master's new and re-marked tests merged in 288be09a (`test_atb_int32_size.py`, `test_backprojection_empty_gpu_piece.py`, `test_thin_shapes.py`, `test_tv_host_bounds.py`, more cases in existing files, 16 -> 41 deselected as extended), and the 3- and 4-GPU cases those new files skip under the one-GPU pin; the extra torch file is `test_tv_host_bounds.py` (8 passed, 16 skipped for 3 GPUs). No test failed on either card at this head. Skips are the same as on gfx90a: 2-, 3- and 4-GPU tests, ctypes CUDA-runtime tests (NVIDIA-only), torch-only cases in the job venv (covered by the torch run), one parallel-beam backprojector case.
+
+Gates against gfx90a @ 183c2a45 and gfx1201 @ c015150:
+- Same to the printed digit as both: cone Siddon mean/max 27.46/111.2, interp vs Siddon 0.0040, FDK 0.2864, OS-SART-20 0.1929; parallel interp vs Siddon 0.0043 / 0.0041 / 0.0056; FBP 0.0833, SIRT-20 0.1952; missed rays 0.862 / 0.855; sart 0.0406, ossart 0.2972, sirt 0.4828, asd_pocs 0.0468, awasd_pocs 0.0387, os_asd_pocs 0.3090, ossart_tv 0.3184; repeats 0/20 in all 8 cases.
+- Same as gfx90a at this head, moved from this host's c015150 by master's backprojector rewrite (as on gfx90a): cgls 0.1915, fista 0.2854; cone adjointness random / phantom 1.913e-05 / 2.199e-05 (gfx90a 1.905e-05 / 2.187e-05; here at c015150 1.835e-05 / 6.601e-05).
+- Adjointness at the 1e-7 level from gfx90a: parallel Siddon 1.478e-05 / 7.566e-05 / 5.259e-05 (gfx90a 1.471e-05 / 7.580e-05 / 5.271e-05); parallel interpolated 3.337e-06 / 1.063e-07 / 1.439e-08 (gfx90a 3.675e-06 / 9.701e-08 / 1.823e-07). These residuals are rounding-order sized; this card filters in hardware, MI250X in software.
+
+### Check 1: the full turn and the 1-8 ulp angle sweep (parallel ray length now `fmaf` chain under HIP, 147a288a)
+Probe `agent_space/scripts/turn_probe.py` (host-local; recreated from the descriptions of `turn_probe.py`/`ulp_probe.py`: the test's geometries, head phantom and angles [0.3, 1.1]; ulp sweep = bases 0.3, 1.1, 0.7, 2.0, 2.9, 4.0, 1 to 8 `nextafter` steps each, 48 steps, rel diff to the base). "Software forced" is a scratch build of 183c2a45 with `bool ok = (tigre_run_hw_linear_test(), false);` in `gpuUtils.cu` (detached worktree under `agent_space`, removed afterwards, never committed).
+| measure | gfx1201 @ 183c2a45 (shipped, hardware filter) | gfx1201 @ 183c2a45, software forced | gfx1201 @ c015150 hardware / software forced | gfx90a @ 183c2a45 (software) |
+|---|---|---|---|---|
+| full turn, parallel interpolated, accuracy 0.5 / 0.25 / 0.1 | 2.3658e-05 / 1.6701e-05 / 1.2234e-05 | 1.1014e-05 / 1.1018e-05 / 1.1011e-05 | 2.37e-05 / 1.67e-05 / 1.22e-05 ; 1.10e-05 (all three) | 1.1014e-05 / 1.1018e-05 / 1.1013e-05 |
+| ulp sweep, parallel interpolated: max / median / > 1e-4 | 4.019e-05 / 2.765e-05 / 0 of 48 | 2.737e-05 / 1.023e-05 / 0 of 48 | 4.02e-05 / 2.77e-05 / 0 ; 2.74e-05 / 1.02e-05 / 0 | 2.736e-05 / 1.023e-05 / 0 of 48 |
+| ulp sweep, parallel Siddon max | 3.081e-05 | 3.081e-05 | 3.08e-05 | 3.081e-05 |
+| full turn cone Siddon / cone interp (0.5) / parallel Siddon | 9.56e-07 / 3.30e-05 / 1.31e-05 | 9.56e-07 / 1.80e-05 / 1.31e-05 | 9.6e-07 / 3.3e-05 / 1.3e-05 ; 9.6e-07 / 1.8e-05 / 1.3e-05 | 1.31e-05 (parallel Siddon) |
+| ulp sweep, cone interpolated: max / median / > 1e-4 | 1.153e-04 / 4.665e-05 / 2 of 48 | 8.507e-05 / 2.660e-05 / 0 of 48 | not measured | 8.5e-05 max (11-20, software) |
+
+Measured difference from the fma change on this card: **none.** The shipped build gives the c015150 numbers to every printed digit (full turn 2.37e-05 against the 1e-4 bound), as the porter predicted: RDNA already contracted the length as `fma(dz,dz,fma(dx,dx,dy*dy))`. With the software filter forced, gfx1201 now equals the MI250X to 4 digits (1.1014e-05 / 1.1018e-05, ulp max 2.737e-05 vs 2.736e-05, median 1.023e-05 both), so both AMD families compute the same samples; what remains between gfx1201's shipped number and the MI250X is the filter path, not the sample count. Every full-turn result is repeat-deterministic (repeat diff 0.0). One observation outside the round's change: the cone interpolated ulp sweep reaches 1.153e-04 (2 of 48 steps above 1e-4) with the hardware filter and 8.507e-05 (0 of 48) with the software path, which equals gfx90a's 11-20 software figure; the hardware trilinear weights are coarser (fixed-point fractions), which fits a larger step under a one-ulp angle change. No test compares at that granularity (the cone full turn is 3.3e-05 against 1e-4), the cone kernel is master's, and it was not chased further.
+
+### Check 2: backprojectors at 4 (committed) and 8 voxels per thread
+`agent_space/scripts/bp_time.py` (host-local; recreated from the description of the porter's `bp_time.py`: default cone geometry with a 256^3 image, 360 random projections, one warm-up, median of 5). The 8 build is the same scratch worktree with only the two `#if defined(USE_HIP)` `VOXELS_PER_THREAD = 4` lines set to 8 (`voxel_backprojection.cu`, `voxel_backprojection2.cu`), built with the same command, run, and removed; never committed. Two runs of each:
+| | VPT 4 (committed) | VPT 8 (scratch) | 4 vs 8 |
+|---|---|---|---|
+| FDK (`algs.fdk`, filtering included) | 104.8 / 103.8 ms | 118.3 / 116.6 ms | 4 is ~11% faster |
+| matched (`Atb(..., "matched")`) | 68.6 / 67.8 ms | 83.4 / 84.8 ms | 4 is ~19% faster |
+| FDK-weighted `Atb(..., "FDK")` | 63.9 / 64.3 ms | 80.8 / 77.5 ms | 4 is ~19% faster |
+| VGPR FDK / matched kernel (`hipcc --cuda-device-only -S -O3 --offload-arch=gfx1201`) | 28 / 42, 0 spill | 148 / 178, 0 spill, 0 scratch | |
+
+Outputs of the 4 and 8 builds are bitwise equal for all three calls. So 8 does not spill on RDNA4 (confirming the porter's estimate), but it is still slower here, most likely because 148-178 VGPRs per lane cut the waves a SIMD can hold (not profiled). VPT 4 is the right single HIP value for gfx1201 as well; the comment's MI250X spill reason stays accurate, and nothing needs changing.
+
+### Other gates
+- `jargon.py --port TIGRE`: clean (local `master` = 6beb8c38, the merged base; local `moat-fix-747` = origin). Upstream master has since moved to 07665862 (4 commits: website docs, a Colab tutorial, and `NikonDataLoader` reading tab-separated `.ang` files); not part of this round.
+- Docs: `docs/install/python.md` "### AMD GPUs (ROCm)" with `TIGRE_BACKEND=hip`, requirement tabs naming ROCm, the `ROCM_PATH` search order; matches the build. Its "Tested on" line still names Linux gfx90a/gfx1100 and Windows gfx1201/gfx1151 (history from earlier heads, as the 11-24 review noted); this run adds Linux gfx1201 but changes nothing in the fork.
+- Integrity: `git -C projects/TIGRE/src status --porcelain`: no tracked modifications (untracked build output only); the scratch worktree is removed (`git worktree list` shows only the clone).
+- `cuda-not-validated: no CUDA toolkit on this host (no conda, no nvcc).` The nvcc 12.8 build of 183c2a45 is still owed by the mi355 host.
+- Wave32 gate: satisfied by this record at 183c2a45. Still owed at this head: windows, and the nvcc 12.8 compile check.
