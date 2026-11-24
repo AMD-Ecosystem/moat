@@ -2159,3 +2159,73 @@ Against this host at `db84d5c5` (63/1/0; 1181/1188; 7792/18/23), test by test:
 CUDA no-regression gate: NOT RUN (no CUDA toolkit on this host); still owed at `e7a9d2c5` on the nvcc host.
 Docs: installation.rst "Building for AMD GPUs (ROCm)" present, unchanged this round. Jargon: `python3 utils/jargon.py --port CV-CUDA` reports only the known `b623dffa` hit ('fault-class', published June commit). Integrity: clean tree.
 State: linux-gfx1201 -> `completed` at `e7a9d2c5`. linux-gfx1100 still last validated at `358edc33`.
+
+## CUDA compile and SASS check 2026-11-24 (b) (nvcc 12.8, mi355 host) at `e7a9d2c5` vs upstream `3c06df7f` (v0.19.0)
+RESULT: **builds PASS; all 79 CUDA objects now have device code identical to upstream's, `OpPairwiseMatcher.cu.o` included.** The SASS reading closes most of the porter's unverified sites and **contradicts two of them** (findings for the porter, below): RandomResizedCrop's var-shape `float`/`float4` blend, and LinearBlend `uchar3` channel x. Compile and link only. No GPU of any kind was used (the host has no NVIDIA GPU, and colleagues were benchmarking on its AMD GPUs). Every build was capped at 16 jobs.
+
+### Setup (differs from the `db84d5c5` entry only where noted)
+- Trees: a fresh fork clone detached at `e7a9d2c5b0760640777c2a55e64a5152945392b8` (moat-fix-293) and a worktree at `3c06df7feb75510c3e4a80dfd6da30b8fbed0dd6`, both under the job directory (the root filesystem had room this time, so `/dev/shm` was not needed). LFS stubs materialized with `git lfs pull upstream`. googletest v1.14.0 with gmock was rebuilt into the job directory, because the earlier job's copy was gone. Neither tree has modified tracked files.
+- Build: the same configure line and the same `CCACHE_DISABLE=1 CMAKE_BUILD_PARALLEL_LEVEL=16` command as the `db84d5c5` entry, `TMPDIR` in the job directory, one tree after the other. Recorded with `utils/timeit.sh CV-CUDA cuda-compile`: port 201.7 s, upstream 202.2 s, both exit 0.
+- Disassembler: the host has no CUDA 12.8 `nvdisasm` (the toolkit ships `cuobjdump` without it, and the earlier job's copy was gone). The job was not permitted to download NVIDIA's 12.8 redistributable, so the `nvdisasm` 13.1.80 already on the host (bundled with the image's Triton) was put first on PATH. With 12.8 `cuobjdump` it prints one "Disassembling Std Elf to Old format ... switching to Old format" warning per object and disassembles every sm_80 ELF. The disassembler differs from the earlier entry's, so the comparison also checks raw bytes, which no disassembler touches: every cubin was extracted with `cuobjdump -xelf all` (12.8), and each `.text.*` section was compared byte for byte, section names normalized for the anonymous-namespace and module hashes.
+
+### 1. Build: same targets, no new diagnostics
+- Both builds exit 0. `ninja -t targets all` lists the same 1045 lines in both trees.
+- The build logs, with progress lines dropped and the tree path removed, are identical. `grep -iE 'warning|error'` matches only the `CheckError.cpp`/`TestCheckError.cpp` file names.
+- The configure logs differ only in the line numbers of the four `Compiler 'gcc-11' not found, skipping public API checks` CMake warnings (`ConfigCompiler.cmake:114` vs `:108`; the port's CMake files are longer), plus upstream's "Manually-specified variables were not used: USE_HIP", which is expected.
+
+### 2. Device code: every CUDA object identical
+- **SASS: 79 of 79 objects identical** after normalizing the `_GLOBAL__N__<hash>_` and `_cu_<hash>` name parts. That is 12,747,168 SASS instruction lines; 76 objects carry device code, and `OpBndBox`, `OpHQResize` and `OpOSD` have none. Every object embeds exactly one ELF, sm_80, and all 79 were disassembled.
+- **Bytes: 79 of 79 objects, 17,978 `.text` sections, byte-identical.**
+- `OpPairwiseMatcher.cu.o`: 33,320 SASS lines and 575 `BAR.SYNC` in both trees; at `db84d5c5` the port had 33,376 and 625. The claim that b3af16f6 removed the only CUDA difference holds.
+- Negative control, to show both methods see a one-barrier change: `db84d5c5`'s `OpPairwiseMatcher.cu` was compiled under its real path with the build's exact command (the file was restored afterwards, and `git status` was clean). It gives 625 `BAR.SYNC` and SASS that differs from upstream's, and 25 of its 26 `.text` sections differ in bytes.
+- Determinism: no object differed, so no rebuild-twice check was needed.
+
+### 3. Which product nvcc fuses at the porter's unverified sites (upstream's build)
+Method:
+- Upstream's `OpRotate.cu`, `OpResize.cu` and `OpRandomResizedCrop.cu` were recompiled with the build's command plus `-lineinfo`. The SASS matches the build's apart from the `identifier`/`ptxasOptions` header lines.
+- The output was disassembled with `nvdisasm -g -c`. A script walks each kernel's instructions in order, keeps the last definition of each register (seeing through `R2UR`/`MOV` copies) and rebuilds each FFMA's operand trees.
+- Blend heads: at an FFMA whose addend is an FMUL, count the `(1-w)` factors in the fused product and in the unfused one (looking one level into a weight that is itself a product). In every blend source here the first product has more, so "first" means `p00*q00` or `a*(1-fy)` is fused, which is what the HIP `MULADD` forms do, and "second" means `p10*q10` or `b*fy` is fused.
+- Check against the earlier entry: the script reproduces all of its counts (LinearBlend `uchar1` 31/31 second, LinearBlendPack `uchar4` 21 second/7 first, `half4`/`short4`/`ushort4` 9/3), and it also resolves the chains that entry could not classify.
+- At the var-shape and RandomResizedCrop lines, every FFMA with an FMUL addend was classified; none was left over.
+- Read by hand: the Rotate NIY 1 and NIY 8 chains, the RandomResizedCrop `float`/`float4` chains, and the LinearBlend `uchar3` channel split.
+
+**Rotate (135 kernels classified, all of them):**
+| kernel | src_x | src_y | HIP at `e7a9d2c5` | match |
+|---|---|---|---|---|
+| `RotateTensorKernel<1>` (21), `RotateVarShapeKernel<1>` (21), `RotatePlanarVarShapeKernel<1>` (7) | `fma(x, c0, -(y*c1))` | `fma(y, c4, -(x*c3))` | `__fmaf_rn(x, c0, y*(-c1))`; `src_y_col + y*c4` | src_x **confirmed** for all three (the porter verified only VarShape<1>) |
+| `RotateTensorKernel<8>` (24), `RotateVarShapeKernel<8>` (24), `RotatePlanarVarShapeKernel<8>` (8) | `fma(y, -c1, x*c0)`: the hoisted, rounded `src_x_col` is the addend | `fma(y, c4, -(x*c3))` | upstream's `src_x_col + y*(-c1)`, left to clang | nvcc side **confirmed** as the porter guessed (`y*(-c1)` fused, `x*c0` stays rounded); clang's contraction was not read here |
+| `RotatePlanarFused{Tensor,VarShape}Kernel<1,3,4>` (30; CUBIC only, so always one row) | `fma(x, c0, -(y*c1))` | `fma(y, c4, -(x*c3))` | `MULADD(x, c0, y*(-c1))`, `ADDMUL(x*(-c3), y, c4)` | **confirmed** |
+So nvcc's src_x choice depends on rows per thread: one row fuses `x*c0`, eight rows fuse `y*(-c1)`. src_y always fuses `y*c4`. The HIP side for the interleaved src_y and for NIY 8 src_x is clang's contraction of upstream's expression; the porter's parity tests cover it, but this host did not read AMDGPU ISA.
+
+**LinearBlend / LinearBlendPack (OpResize.cu; `LinearResize<false>` uses LinearBlend, `<true>` uses LinearBlendPack, confirmed by line attribution :230 vs :239):**
+| helper | type | nvcc heads | HIP at `e7a9d2c5` | match |
+|---|---|---|---|---|
+| LinearBlend | float (Pinned, Expand2x), `__half`, short, ushort, half3, half4, float3, float4, short3, short4, ushort3, ushort4 | all first | first | **confirmed** |
+| LinearBlend | uchar1 | 31/31 second | second | **confirmed** |
+| LinearBlend | uchar4 | **28/28 second** (the 16 heads unclassified before are second too) | second | **confirmed, all 28** |
+| LinearBlend | uchar3 | **14 first, 7 second: channel x fuses p10 (second) and channels y, z fuse p00 (first), the same in all 7 unrolled copies** | first | **contradicted for channel x** (7 of 21) |
+| LinearBlendPack | float, `__half`, short, ushort, half3, float3, float4, short3, ushort3, uchar1, uchar3 | all first | first | **confirmed** |
+| LinearBlendPack | half4, short4, ushort4 | 9 second, 3 first each | first | as tabulated before: 3 of 12 |
+| LinearBlendPack | uchar4 | channels x, y, z second (7 each), channel w first (7) | first | 7 of 28, per channel as stated |
+Both splits are per channel and fixed for a given type (`uchar3` LinearBlend and `uchar4` LinearBlendPack). So a per-channel HIP spelling could match them exactly: it would follow channel position, not register allocation. Whether to do that is for the porter or jeff.
+
+**LinearBlendW (ResizeTapCommon.cuh:163; `LinearResizePlanar<2,3,4>` for float, uchar1, uchar3, uchar4, 12 instantiations):** every head first-fused (`p00*q00`). The HIP `MULADD(p00, q00, p10*q10)` matches: **confirmed**. Note that under nvcc the RGBA8 interleaved LinearBlend fuses p10 while the planar LinearBlendW fuses p00, so on CUDA too planar and interleaved can differ in the last bit; the HIP side now does the same.
+
+**Var-shape bilinear blends (OpResize.cu `resize_bilinear` :2048, `resize_bilinear_expand2x` :2110-2113, `resize_bilinear_pack` :2206, `resize_bilinear_planar` :3021; 26 instantiations, all types):** every inner `a*(1-fy) + b*fy` and every outer `(1-fx)*A + fx*B` is first-fused. The HIP `MULADD((1-fx), MULADD(a, 1-fy, b*fy), fx*MULADD(...))` matches: **confirmed**.
+
+**RandomResizedCrop bilinear (OpRandomResizedCrop.cu :333, :389, :538, :614, :621; 50 instantiations):**
+- First-fused inner and outer, matching the HIP `MULADD` forms (**confirmed**): every `ResizeLinear<UniformGeometry, *>`, every `ResizeLinear<VarShapeGeometry, *>` except float and float4, every `ResizeLinearPacked`, `ResizeLinearPlanar` and `ResizeLinearPlanarStrided`.
+- **Contradicted: `ResizeLinear<VarShapeGeometry, float>` and `<VarShapeGeometry, float4>`.** In the column-`tx.s` inner blend nvcc fuses the lower-row product `bPtr[tx.s] * ty.f`: `FFMA(ty, b, FMUL(a, 1-ty))`, read by hand in both, in all four float4 channels. The column-`tx.s+1` inner blend in the same expression fuses `aPtr[tx.s+1] * (1-ty.f)`, and the outer blend fuses `(1-tx)*A`. The HIP `MULADD(aPtr[tx.s], (1.0f - ty.f), bPtr[tx.s] * ty.f)` fuses the upper-row product at both columns, so those two instantiations can differ from CUDA in the last bit. The same template with `UniformGeometry` is first-fused at both columns.
+
+**Not reached:** clang's side (AMDGPU ISA) of every site the HIP source leaves to contraction (interleaved Rotate src_y and NIY 8 src_x); scalar `uchar` LinearBlend (no such instantiation exists in `LinearResize`; scalar byte linear resize goes through Expand2x or the planar path). Outside the porter's list, for completeness: the byte path of `LinearResizeExpand2x` (OpResize.cu:511-512, `vE[cb]*(1.f-wx) + vE[cb+1]*wx`, which the port leaves as upstream wrote it) is first-fused under nvcc in all 164 heads (uchar1, uchar3, uchar4); clang's choice there was not read.
+
+### Findings for the porter (not fixed here)
+1. RandomResizedCrop `ResizeLinear` with `VarShapeGeometry` for `float`/`float4` (OpRandomResizedCrop.cu:333 at `e7a9d2c5`): nvcc fuses `bPtr[tx.s]*ty.f` in the first inner blend, and the HIP form fuses `aPtr[tx.s]*(1-ty.f)`.
+2. LinearBlend `uchar3` channel x: nvcc fuses the p10 product, and the HIP form fuses p00 (channels y and z match).
+3. Text that follows from this entry:
+   - the "For jeff" list in the fix review draft can drop "the nvcc comparison is owed again" and shrink its "Unverified against nvcc" sentence to the two contradictions above;
+   - "Retested"'s "Not yet run at this tip: gfx1100 and the CUDA build with nvcc" can drop the nvcc half;
+   - the upstream reply's "in a few 8-bit and 4-channel blend instantiations nvcc's choice differs between channels" does not cover finding 1, where nvcc's choice differs between the two columns of one float blend;
+   - lesson rule (2) can now state the per-channel splits as fixed by channel position (uchar3 LinearBlend: x second, y and z first; uchar4 LinearBlendPack: x, y, z second, w first), and the Rotate rows-per-thread effect as measured (one row fuses `x*c0`, eight rows fuse `y*(-c1)`), no longer only an upstream warning.
+
+No platform state changed; nothing pushed to the fork; no `gh` writes. Scratch scripts: `<job>/cv/scripts/{build.sh,compare.sh,textcmp.py,trace.py,rot.py,blend.py}` (job directory, not committed).
