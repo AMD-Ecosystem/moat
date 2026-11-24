@@ -663,7 +663,7 @@ The values recorded in earlier rounds (0.190458 rad, 0.842092 m, -6.74481e-08 m)
 - CPU-only preset with no ROCm or CUDA on PATH: configures and builds.
 
 ### CUDA gate
-`cuda-not-validated: no CUDA toolkit on this host` (no nvcc, no conda). The nvcc recheck of 886c3529 stays owed on the mi355 host, as listed under "Shared (non-HIP-guarded) source lines changed since 4764ca13".
+Not run here (no nvcc and no conda on this host). It is covered at this head by "CUDA compile check at 886c3529 2026-11-24" (mi355 fleet host, nvcc 12.8: no CUDA regression), which another job pushed while this validation ran.
 
 ### Content checks
 - `jargon.py -C projects/PhysX/src --diff 7d6f6ac8..moat-port` and `--commits 7d6f6ac8..moat-port`: clean. `jargon.py --port PhysX` reports 14 hits, all in `ovphysx/` files that are identical to upstream 7d6f6ac8 (checked with `git diff --quiet 7d6f6ac8 886c3529` on the files). They show only because the fork's `main` mirror is at `4f2103c3` (ovphysx 0.5.11), behind upstream; this is Question A of the first porter round, still open.
