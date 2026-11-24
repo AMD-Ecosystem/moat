@@ -8,10 +8,14 @@
   "ext_type": "torch-extension",
   "stage": "porting",
   "adopted_at": "2026-11-05T22:45:32Z",
-  "updated_at": "2026-11-24T10:05:46Z",
+  "updated_at": "2026-11-24T18:12:48Z",
   "head_sha": "8aa04e733bd2e0b70d52004bf1db63be70eaa137",
   "depends_on": [],
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx950",
+    "since": "2026-11-24T18:12:48Z",
+    "holder": "43a65a639097"
+  },
   "waivers": {},
   "platforms": {
     "windows-gfx1151": {
@@ -112,6 +116,28 @@
       "started_at": "2026-11-24T07:36:07Z",
       "completed_at": null,
       "updated_at": "2026-11-24T07:36:07Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "linux-gfx950": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": "2026-11-24T18:12:48Z",
+      "completed_at": null,
+      "updated_at": "2026-11-24T18:12:48Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
