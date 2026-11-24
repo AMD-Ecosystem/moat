@@ -21,9 +21,10 @@
       "summary": "When moat-port syncs CERN/TIGRE#809 (multi-GPU TV halo exchange overlap), the fork's cuda_to_hip.h needs four new mappings the PR's commits use in GD_TV.cu, GD_AwTV.cu and tv_proximal.cu: cudaEventCreateWithFlags, cudaEventDisableTiming, cudaStreamWaitEvent and cudaMemcpyPeerAsync (to their hip* names). Since commit f7ef26a, cudaDeviceCanAccessPeer, cudaDeviceEnablePeerAccess and cudaErrorPeerAccessAlreadyEnabled appear only in gpuUtils.cu's CUDA-only branch and need no mapping. The MI355X/gfx942 validation of #809 added the mappings only in never-pushed scratch branches, so without them the HIP build of the synced fork fails to compile. Nothing to do until #809 merges upstream and a sync round starts.",
       "refs": [
         "https://github.com/CERN/TIGRE/pull/809",
-        "plan tigre-multigpu-tv-exchange-overlap.md, finding E"
+        "plan tigre-multigpu-tv-exchange-overlap.md, finding E",
+        "projects/TIGRE/notes.md: Sync round 2026-11-20, commit 98b6b53 (mappings present at 2572129b)"
       ],
-      "status": "open",
+      "status": "done",
       "upstream_issue": null,
       "created_at": "2026-11-17T16:43:28Z",
       "decided": {
@@ -48,9 +49,10 @@
       "summary": "At the next moat-port sync with CERN/TIGRE master: Common/CUDA/tigre_release_on_error.hpp (added upstream in #854) includes <cuda_runtime_api.h> directly, which does not exist in the HIP build, so the synced fork fails to compile until that include goes through cuda_to_hip.h like the other CUDA sources. Found by the #856 prototype on master cac83e7, fixed there only in a never-pushed scratch tree.",
       "refs": [
         "https://github.com/CERN/TIGRE/issues/856",
-        "plan tigre-norm-double-partials-prototype.md, Setup"
+        "plan tigre-norm-double-partials-prototype.md, Setup",
+        "projects/TIGRE/notes.md: Sync round 2026-11-20, commit 98b6b53"
       ],
-      "status": "open",
+      "status": "done",
       "upstream_issue": null,
       "created_at": "2026-11-18T03:41:22Z",
       "decided": {
@@ -64,7 +66,7 @@
       "id": "tigre-parallel-interp-sample-count-knife-edge",
       "kind": "other",
       "component": null,
-      "summary": "Upstream fragility, not a port defect: in kernelPixelDetector_parallel_interpolated (ray_interpolated_projection_parallel.cu, same on CUDA) the parallel-beam ray length |S-P| is exactly 2*DSO/dVoxel (128 for the 64^3 test geometry), an exact multiple of accuracy 0.5, so ceilf(length/accuracy) sits on a knife edge between 256 and 257 samples and a 1-ulp change in the float32 squared norm flips it. Which side a build lands on is decided by the compiler's FMA contraction of dx*dx+dy*dy+dz*dz: CDNA (gfx90a, gfx942) pairs the squares into v_pk_mul_f32 and rounds both, giving 257 samples on 768 of 4096 rays at angle 0.3 and 256 at 0.3+2pi, so test_forward_is_invariant_to_a_full_turn[parallel-interpolated] fails (2.40e-4 vs 1e-4) on MI250X; RDNA (gfx1100, gfx1201) forms an fma chain and gets 256 everywhere. A strict-IEEE CPU emulation agrees with gfx90a/gfx942. A maintainer running the suite on MI250X sees the failure. Options for a person: report upstream with a suggested fix (e.g. a small tolerance before the ceilf, or computing the parallel ray length analytically), or leave it. Whether nvcc lands on the failing side is unverified.",
+      "summary": "Upstream fragility, handled in the port: in kernelPixelDetector_parallel_interpolated (ray_interpolated_projection_parallel.cu) the parallel-beam ray length |S-P| is exactly 2*DSO/dVoxel (128 for the 64^3 test geometry), a multiple of accuracy 0.5, so ceilf(length/accuracy) sits on a knife edge between 256 and 257 samples and a 1-ulp change in the float32 squared norm flips it. nvcc 13.5 PTX (sm_80, sm_89) contracts dx*dx+dy*dy+dz*dz as fma(dz,dz,fma(dx,dx,dy*dy)), the same order RDNA gets, which gives 256 samples everywhere, so the CUDA build passes test_forward_is_invariant_to_a_full_turn[parallel-interpolated]. CDNA (gfx90a, gfx942) put both squares in one v_pk_mul_f32 (both rounded, like a strict-IEEE CPU evaluation) and got 257 samples on 768 of 4096 rays at angle 0.3: 2.40e-4 vs 1e-4 on MI250X. Fork commit 147a288 writes that fma chain explicitly under USE_HIP; MI250X now measures 1.10e-5 at accuracy 0.5/0.25/0.1. Left for a person: whether to also suggest upstream a robust sample count (a small tolerance before the ceilf, or the length from the host-known 2*DSO), which would change CUDA numerics.",
       "refs": [
         "projects/TIGRE/notes.md, Validation 2026-11-20 (linux-gfx942)",
         "projects/TIGRE/probe/fullturn_cpu_ref.py"
@@ -72,7 +74,15 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-11-20T23:10:49Z",
-      "decided": null
+      "decided": null,
+      "summary_history": [
+        {
+          "summary": "Upstream fragility, not a port defect: in kernelPixelDetector_parallel_interpolated (ray_interpolated_projection_parallel.cu, same on CUDA) the parallel-beam ray length |S-P| is exactly 2*DSO/dVoxel (128 for the 64^3 test geometry), an exact multiple of accuracy 0.5, so ceilf(length/accuracy) sits on a knife edge between 256 and 257 samples and a 1-ulp change in the float32 squared norm flips it. Which side a build lands on is decided by the compiler's FMA contraction of dx*dx+dy*dy+dz*dz: CDNA (gfx90a, gfx942) pairs the squares into v_pk_mul_f32 and rounds both, giving 257 samples on 768 of 4096 rays at angle 0.3 and 256 at 0.3+2pi, so test_forward_is_invariant_to_a_full_turn[parallel-interpolated] fails (2.40e-4 vs 1e-4) on MI250X; RDNA (gfx1100, gfx1201) forms an fma chain and gets 256 everywhere. A strict-IEEE CPU emulation agrees with gfx90a/gfx942. A maintainer running the suite on MI250X sees the failure. Options for a person: report upstream with a suggested fix (e.g. a small tolerance before the ceilf, or computing the parallel ray length analytically), or leave it. Whether nvcc lands on the failing side is unverified.",
+          "by": "linux-gfx90a porter (fleet job, 2026-11-24)",
+          "at": "2026-11-24T19:21:28Z",
+          "reason": "nvcc's contraction is now read from PTX: it matches RDNA, not the strict-IEEE order, so CUDA passes and the port now matches it"
+        }
+      ]
     }
   ]
 }
