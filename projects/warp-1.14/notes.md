@@ -8156,3 +8156,163 @@ Bounded `srun` runs on the Slurm MI100 nodes (constraint `GFX908&ROCM10.1.0`, am
   - Tile tests release: Ran 599, OK (skipped=14), 0 lines; the same again: FAILED (errors=1), 28 error-700 lines.
 - So the fault is intermittent under both user-space versions; the 10.2-on-10.1 mismatch is not the cause. It has never appeared with `HIP_LAUNCH_BLOCKING=1`, in debug-mode kernels, or on gfx90a, gfx942, gfx950, gfx1100 or gfx1201 in any run at this head. Port defect that only gfx908 exposes, or a gfx908 runtime/driver defect: not determined. Not determined either: whether one node or several were involved (the scripts did not record the node name), and whether a non-Warp HIP program faults there.
 - For jeff: whether gfx908 stays a claimed target of the release, is listed as built-but-unvalidated with this known issue, or is investigated further first. Scripts and logs: coordinator scratch `p6ev/gfx908/run908{e,f,g}.sh`, `gfx908{e,f,g}.log`.
+
+## Evidence session (candidate G, gfx1201) (2026-11-24, linux-gfx1201 Radeon AI PRO R9700, evidence only)
+
+Requested by the coordinator for jeff (away, not ruled): does the gfx950 addendum's candidate G hold on gfx1201? Evidence only: nothing committed or pushed to the fork, no set-state, advance-head or port-lock, no test edited. **Verdict for gfx1201: G meets the bar.** Every consistency count is 0, default and `nofuse`, and with `nofuse` G's winding numbers are bitwise equal to ON's. The full default suite passes (7564 run, OK, skipped=83). The winding-number query costs the same in all three trees: G/FAST 1.002 lbvh and 1.000 sah, against a same-code floor of 1.001. On this arch there is no register cliff to remove: k_wn forward has 134 VGPRs and 0 spills in FAST, ON and G alike. So on gfx1201 G neither helps nor hurts the query. The cost it does carry is `on`'s: `example_tile_nbody` with `fast_math` +4.2%, `example_tile_mcgp` +1.4%, `example_tile_nbody` default +1.0%, `example_raycast` +0.4%, all beyond noise against FAST and all equal under ON and G.
+
+### Setup
+
+- GPU: Radeon AI PRO R9700, gfx1201, wave32. The dispatcher pinned `HIP_VISIBLE_DEVICES=3`, and `r.sh` refuses to run under any other value. `ulimit -c 0` was set for every run. `amd-smi process -g 3` showed no process before each timing round; host load average 1.1 to 10 (one exbench round at 10). No process was stopped.
+- The job venv came with TheRock 10.1.0. Into it: `python -m pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple "rocm[devel,device-gfx1201]==10.2.0" numpy==1.26.4 usd-core`, then `rocm-sdk init` (10.2.0, usd-core 26.11). No torch.
+- Trees at `4e0d02ab`:
+  - FAST and ON: copied from the earlier gfx1201 contraction job; ON has only the option-string change.
+  - G: a new worktree. The addendum's diff, extracted verbatim from notes.md, **applied cleanly** with `git apply --check` (no fuzz; `solid_angle.h` +6, `warp.cu` +3/-1).
+- All three were (re)built in this job's venv with `python build_lib.py --rocm-path "$(rocm-sdk path --root)" --hip-arch gfx1201 --no-rocm-rpath -j 8`, and each printed "Warp build succeeded". FAST and ON were rebuilt because the copied `warp.so.rocm` pointed at the other job's venv.
+- `strings warp.so` check: FAST has `-ffp-contract=fast-honor-pragmas`; ON has `-ffp-contract=on`; G has `-ffp-contract=on` and `-DWP_FUSE_FP`; each also has `-ffp-contract=off`.
+- The guard is live in G. Under default options G's k_wn differs from ON's: 222 against 219 FMA-class instructions, 113 against 116 `v_mul_f32`. Under `nofuse` the two give identical values (section 1).
+- Every run used `r.sh <tree> <tag> <script|-m ...>`: `PYTHONPATH=<tree>`, its own wiped `WARP_CACHE_PATH`, a cwd outside the trees, an assertion that `warp.__file__` is under `<tree>/warp/`, and `python -s`.
+- Scripts:
+  - From `notes-contraction-scripts.md`, unchanged: `twice.py`, `hel.py`, `user2.py`, `perf2.py`, `exbench.py`.
+  - `sn.py` from the earlier gfx1201 job.
+  - `wnval.py` is mine. The addendum's probe was not recorded, so I rewrote it from the addendum's description (below).
+
+### 1. Consistency on G (counts of differing results; every run rc=0 and 0 `expect_eq` lines)
+
+| check | G default | G `nofuse` |
+|---|---|---|
+| user2 `box_d2` / `det2` / `dot` | 0 / 0 / 0 of 4,194,304 each | 0 / 0 / 0 |
+| sn `sign_normal`, grid cube, 9 configs | 0 of 2,094,912 (0 in every config) | 0 |
+| sn `intersect_tri_tri` twice | 0 of 232,768 (55,961 hits) | 0 (55,961) |
+| hel `k_helpers`, `k_helpers2`, `k_tt`, `k_ee`, spiky and grid cube | 0 in all 8 | 0 in all 8 |
+| twice.py, all 24 rows (both meshes, 9 BVH configs, 5 ray directions; includes `sign_winding_number` and the test-shape `sign_normal`) | 0 in every row | 0 in every row |
+| wnval twice-in-one-kernel, 3 meshes x lbvh/sah/median | 0 in all 9 (232,768 each) | 0 in all 9 |
+
+FAST control on this build: user2 `dot` gives **966,853** of 4,194,304, the earlier gfx1201 count, so the probe still sees the effect.
+
+**Value probe** (`wnval.py`):
+- **Method:** `wp::mesh_query_winding_number(id, p, 2.0)` through `func_native`, evaluated once in straight-line code and once in a loop with a runtime trip count of 1, next to a `mesh_query_point_sign_winding_number` call. The straight-line values and the query's sign are saved per tree.
+- **Coverage:** spiky.usd, the 24^3 grid cube and a 204,800-triangle noisy torus (perf2's `torus(320, 320)`); lbvh, sah and median; twice.py's points, 232,768 per mesh, 2,094,912 in all.
+- Bitwise comparison across trees:
+
+| comparison | values differ | max abs diff | `|w|>0.5` decision / query sign differ |
+|---|---|---|---|
+| **G `nofuse` vs ON `nofuse`** | **0** | 0 | 0 / 0 |
+| FAST `nofuse` vs ON `nofuse` | 0 | 0 | 0 / 0 |
+| G default vs ON default | 262,215 | 2.4e-7 | 0 / 0 |
+| G default vs FAST default | 217,390 | 1.8e-6 | 0 / 0 |
+| ON default vs FAST default | 435,506 | 1.8e-6 | 0 / 0 |
+
+So with `fuse_fp=False`, G still means no fusion. Under default options, G's region changes the values only in the last bits.
+
+### 2. perf2.py: FAST, ON, G and FAST(B), 5 rounds, order rotated each round, one fresh process and cache each; ms per launch
+
+| kernel | FAST median (range) | ON | G | FAST(B) (noise) | ON/FAST | G/FAST | FAST(B)/FAST |
+|---|---|---|---|---|---|---|---|
+| lbvh sign_winding_number | 292.3 (289.9-293.1) | 292.4 (291.1-292.7) | 292.7 (291.4-293.0) | 292.6 (292.0-292.8) | 1.000 | 1.002 | 1.001 |
+| sah sign_winding_number | 106.9 (105.7-106.9) | 106.9 (106.0-107.0) | 106.9 (106.3-107.0) | 107.0 (106.9-107.1) | 1.000 | 1.000 | 1.001 |
+| lbvh sign_normal | 136.9 (135.3-137.0) | 137.1 (135.8-137.2) | 137.1 (136.3-137.4) | 136.8 | 1.001 | 1.002 | 0.999 |
+| sah sign_normal | 58.61 (58.19-58.67) | 58.78 (58.38-58.92) | 58.77 (58.48-58.86) | 58.66 | 1.003 | 1.003 | 1.001 |
+| lbvh ray | 78.05 | 78.01 | 77.98 | 78.05 | 1.000 | 0.999 | 1.000 |
+| sah ray | 51.95 | 51.92 | 51.95 | 51.97 | 0.999 | 1.000 | 1.000 |
+| intersect_tri_tri (10^6 pairs) | 0.4597 | 0.4591 | 0.4592 | 0.4597 | 0.999 | 0.999 | 1.000 |
+| elementwise | 0.01309 | 0.01311 | 0.01313 | 0.01311 | 1.001 | 1.003 | 1.001 |
+
+- Every per-round ratio is 0.99 to 1.01. The winding-number ranges of all three trees overlap, so G is no slower than the faster of FAST and ON beyond noise.
+- **Spills** (`llvm-readelf --notes`, `k_wn_d89f8591_cuda_kernel_forward`, all 20 cached code objects): FAST, ON and G each show `.vgpr_count` 134, `.vgpr_spill_count` 0, `.sgpr_count` 103, `.sgpr_spill_count` 0, `.private_segment_fixed_size` 400.
+  - The kernel has 12 `scratch_` instructions in every tree. These are the private traversal stacks, not spills.
+  - The disassembly of k_wn is identical across rounds of one tree (the `.hsaco` file hashes are not, so something non-code in the file varies).
+  - FMA-class instructions: FAST 244, ON 219, G 222.
+
+### 3. Example benchmarks (`exbench.py`, default module options), FAST vs G
+
+Run (a): 5 rounds of FAST, G and FAST(B), order rotated. us per call, median (range); ratios are of medians, with per-round values for the cases that moved:
+
+| case | FAST | G | FAST(B) | G/FAST (per round) | FAST(B)/FAST (per round) |
+|---|---|---|---|---|---|
+| floor | 330.6 | 330.6 | 330.7 | 1.000 | 1.000 |
+| sph | 17,190 | 17,160 | 17,170 | 0.999 (1.01 0.98 1.01 0.98 1.01) | 0.999 (0.95-1.01) |
+| dem | 52,420 | 52,450 | 51,830 | 1.000 | 0.989 |
+| raycast | 1475 (1468-1479) | 1480 (1479-1483) | 1473 | 1.003 | 0.998 |
+| fluid | 667.9 | 668.4 | 668.1 | 1.001 | 1.000 |
+| wave | 372.9 | 373.3 | 370.4 | 1.001 (0.99-1.03) | 0.993 |
+| marching_cubes | 460.9 | 452.8 | 448.0 | 0.982 (0.81-1.04) | 0.972 (0.80-1.02) |
+| mesh_intersect | 273.4 | 275.2 | 255.4 | 1.007 (0.93-1.02) | 0.934 (0.92-1.00) |
+| navier_stokes | 408.1 | 405.9 | 406.2 | 0.995 | 0.995 |
+| tile_nbody | 1518 | 1522 | 1505 | 1.003 | 0.991 |
+| tile_mcgp | 18,310 | 18,650 | 18,260 | 1.019 (1.02 1.01 0.98 1.01 1.04) | 0.997 (0.96-1.01) |
+| cloth (256^2, 16 substeps) | 8328 | 8331 | 8339 | 1.000 | 1.001 |
+
+Run (b), to settle the cases near the edge: `exbench.py raycast tile_mcgp tile_nbody`, 9 rounds of FAST, G and FAST(B), order rotated:
+
+| case | FAST | G | FAST(B) | G/FAST (per round) | FAST(B)/FAST (per round) |
+|---|---|---|---|---|---|
+| raycast | 1473 (1471-1479) | 1479 (1477-1481) | 1474 | **1.004** (1.00 x8, 1.01) | 1.001 (1.00 x9) |
+| tile_mcgp | 18,390 (18,040-18,760) | 18,640 (18,410-19,000) | 18,390 | **1.014** (1.01-1.02 in all 9) | 1.000 (0.99-1.01) |
+| tile_nbody | 1444 | 1458 | 1450 | **1.010** (1.00-1.01) | 1.004 (1.00-1.01) |
+
+Run (c): `nbody.py fastmath` (the earlier gfx1201 job's script: tile_nbody step, `fast_math=True`), 8 rounds of FAST, G and FAST(B):
+
+| | FAST ms | G ms | FAST(B) ms | G/FAST (per round) | FAST(B)/FAST (per round) |
+|---|---|---|---|---|---|
+| tile_nbody `fast_math` | 0.4754 (0.4683-0.4814) | 0.4952 (0.4893-0.4978) | 0.4738 | **1.042** (1.03-1.05 in all 8) | 0.997 (0.98-1.01) |
+
+Run (d), to attribute: ON vs G on raycast, tile_mcgp and tile_nbody, 6 rounds, order alternating. G/ON at the median is 1.001, 1.000 and 0.999; per round 1.00, except one 0.92 ON outlier on tile_nbody.
+
+**Slower under G beyond noise:**
+
+| case | G/FAST | evidence |
+|---|---|---|
+| `example_tile_nbody`, `fast_math` | +4.2% | every round |
+| `example_tile_mcgp` | +1.4% | every one of 9 rounds 1.01-1.02, against a floor of 0.99-1.01 |
+| `example_tile_nbody`, default | +1.0% | rounds 1.00-1.01, at the edge of the floor |
+| `example_raycast` | +0.4% | every G round slower than the FAST median; small |
+
+- All four are the cost of `on`, not of G's region. None of these examples reaches `evaluate_node_solid_angle`:
+  - tile_mcgp calls `mesh_query_point`;
+  - raycast calls `mesh_query_ray`;
+  - tile_nbody calls no mesh query;
+  - ON and G time the same on all three.
+- The tile_nbody figures match the earlier gfx1201 ON measurement (+4.0% `fast_math`, +1.0% default).
+- tile_mcgp was not in that session's set; this is its first measurement under `on` on gfx1201.
+- Everything else is within the same-code spread (marching_cubes and mesh_intersect are bimodal in every tree, FAST(B) included).
+
+### 4. Tests on G (each file `-p <file>`, fresh cache)
+
+| file | result |
+|---|---|
+| test_mesh.py | Ran 16, OK |
+| test_mesh_query_aabb.py | Ran 15, OK |
+| test_mesh_query_point.py | Ran 9, OK, 0 `expect_eq` lines |
+| test_mesh_query_ray.py | Ran 9, OK |
+| test_bvh.py | Ran 13, OK |
+| test_intersect.py | Ran 2, OK |
+| test_closest_point_edge_edge.py | Ran 28, OK |
+
+**Full default suite on G** (`python -m warp.tests -s autodetect`, fresh cache; GPU idle at start):
+- **Ran 7564 tests in 697.7 s, OK (skipped=83).**
+- 0 `Warp CUDA error` lines, 0 `expect_eq` lines, no FAIL or ERROR.
+- No test_async failure, so nothing needed a rerun alone.
+- The count and skips are the earlier gfx1201 ON-tree run's (7564, skipped=83; no torch in this venv).
+
+### For jeff
+
+- On gfx1201, G is safe:
+  - consistent everywhere measured, with `fuse_fp=False` intact;
+  - suite green;
+  - winding number unchanged.
+- It is also inert here: there is no register cliff on this arch under FAST or ON.
+- What G costs gfx1201 is exactly what `on` costs: tile_nbody (+4% `fast_math`, +1% default), tile_mcgp +1.4%, raycast +0.4%.
+
+### Scripts (job `ev/s/`, scratch)
+
+- `r.sh`: as described in Setup.
+- `cons.sh`: section 1 batch.
+- `perfrounds.sh`: section 2, with rotations `fast on g fastB`, `g fastB fast on`, `on g fastB fast`, `fastB fast on g`.
+- `exrounds.sh` and `exrounds2.sh`: section 3 runs (a) and (b).
+- `sumn.py`: tables.
+- `spill.sh`: the scripts file's readelf command.
+- `wnval.py`, `wncmp.py`: value probe and cross-tree comparison.
+- `nbody.py`, `sn.py`: from the earlier gfx1201 job.
+- `f/`: the unchanged scripts-file copies.
+- Logs are in `ev/logs/`, JSON and npz in `ev/res/`. Trees `ev/fast`, `ev/on`, `ev/g` (scratch, never pushed).
