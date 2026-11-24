@@ -8942,3 +8942,94 @@ In "Release notes draft (1.14.0+rocm10.2.0), updated" (the live copy), the bulle
 Coordinator acceptance (2026-11-24): the one suite error is a load-induced timeout (example_diffray passes alone at `4e0d02ab` speed, and the second full run at `1c94e68b` is clean); stage moved to `ported` at `1c94e68b` by this job, lock released.
 
 Scripts: `agent_space/g/` (scratch): `r.sh`, `t.sh`, `ra.py`, `sn.py`, `wnprobe.py` (all in the candidate G section), `kcmp.py` (per-kernel code-object comparison; `llvm-objdump -d --no-show-raw-insn --no-leading-addr --mcpu=gfx90a`, split at `<symbol>:` lines, `s_nop` dropped and the literal of `s_add_u32`/`s_addc_u32` masked, then per-kernel equality and float/half opcode counts), `fma1.py` (the two-kernel wording check above), `cmp/` (fatbin split and unbundle, as described).
+
+## Evidence session (ROCm report reproducers, gfx1201) (2026-11-24, linux-gfx1201 Radeon AI PRO R9700, evidence only)
+
+Requested by the coordinator for jeff, who approved filing two ROCm reports and wants their reproducers verified first. Evidence only: no fork commit, no state change. Both reproducers were run **unchanged** (byte-for-byte from the request; md5 `stale_error_sort.hip` 73da7bedaee557d4d3e30755d7e816f6, `gl_mapped_array.py` 0d9a443152db6262efb28df60379d598). Both reproduce their finding identically in 3 of 3 runs. `ulimit -c 0`; dispatcher pin `HIP_VISIBLE_DEVICES=3` (GPU 0 of the host, which is hung, was not used).
+
+### Setup
+
+- GPU: HIP device 0 under the pin is `0000:06:00.0` (renderD131), AMD Radeon AI PRO R9700, gfx1201 (`hipDeviceGetPCIBusId`).
+- ROCm: the job venv (`$FLEET_VENV`, created for this job; it started with 10.1 wheels) upgraded with `pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple "rocm[devel]==10.2.0" numpy pyglet`, then `"rocm[devel,libraries,device-gfx1201]==10.2.0"` so the libraries and gfx1201 device package are 10.2 as well (the shared base env's 10.1 packages stay visible only through a lower-precedence `.pth` and are shadowed). The fleet guard refuses `pip install` into any other new venv, which is why the job venv was used rather than a second one. `rocm-sdk init`; `rocm-sdk version` 10.2.0; `R=$(rocm-sdk path --root)` = `<venv>/lib/python3.11/site-packages/_rocm_sdk_devel`; libamdhip64 is `$R/lib/libamdhip64.so.7` (-> `.so.7.17.26434-0000000`).
+- `hipconfig --version`: `7.17.26434-0000000`; `hipRuntimeGetVersion`: 71726434. numpy 1.26.4, pyglet 2.1.19.
+- Mesa 25.2.8 (`libgl1-mesa-dri` / `mesa-libgallium` 25.2.8-0ubuntu0.24.04.4), kernel 6.11.0-26-generic, Ubuntu 24.04.5 LTS. GL renderer under Xwayland: `AMD Radeon Graphics (radeonsi, gfx1201, LLVM 20.1.2, DRM 3.64, 6.11.0-26-generic)`, GL 4.6, pyglet `XlibWindow`.
+
+### 1. `stale_error_sort.hip`
+
+Build, the request's command unchanged (`$R/lib` is where libamdhip64 lives in the wheel layout, so no path adjustment was needed):
+
+```
+$R/lib/llvm/bin/clang++ -x hip --rocm-path=$R --offload-arch=gfx1201 -O2 stale_error_sort.hip -o t -L$R/lib -lamdhip64 -Wl,-rpath,$R/lib
+```
+
+17 warnings, all `ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute` on the unchecked HIP calls; no error. `ldd t`: libamdhip64.so.7 from `$R/lib`. Three runs (`./t`), output verbatim:
+
+```
+=== run 1
+clean sort:
+  SortPairs returned 0 (hipSuccess); 0 of 4194303 adjacent pairs out of order
+hipIpcGetEventHandle returned 9 (hipErrorInvalidConfiguration); the caller handles it and continues
+sort after the failed call:
+  SortPairs returned 9 (hipErrorInvalidConfiguration); 0 of 4194303 adjacent pairs out of order
+sort again:
+  SortPairs returned 0 (hipSuccess); 0 of 4194303 adjacent pairs out of order
+rc=0
+=== run 2
+clean sort:
+  SortPairs returned 0 (hipSuccess); 0 of 4194303 adjacent pairs out of order
+hipIpcGetEventHandle returned 9 (hipErrorInvalidConfiguration); the caller handles it and continues
+sort after the failed call:
+  SortPairs returned 9 (hipErrorInvalidConfiguration); 0 of 4194303 adjacent pairs out of order
+sort again:
+  SortPairs returned 0 (hipSuccess); 0 of 4194303 adjacent pairs out of order
+rc=0
+=== run 3
+clean sort:
+  SortPairs returned 0 (hipSuccess); 0 of 4194303 adjacent pairs out of order
+hipIpcGetEventHandle returned 9 (hipErrorInvalidConfiguration); the caller handles it and continues
+sort after the failed call:
+  SortPairs returned 9 (hipErrorInvalidConfiguration); 0 of 4194303 adjacent pairs out of order
+sort again:
+  SortPairs returned 0 (hipSuccess); 0 of 4194303 adjacent pairs out of order
+rc=0
+```
+
+So: the sort after the unrelated failed `hipIpcGetEventHandle` returns that call's stale error (9, `hipErrorInvalidConfiguration`) although its result is correct (0 pairs out of order), and the next sort returns `hipSuccess`. Deterministic in all 3 runs. (Observation only, not part of the report as drafted: `hipIpcGetEventHandle` on a non-IPC event returns `hipErrorInvalidConfiguration` here.)
+
+### 2. `gl_mapped_array.py`
+
+Display: the GL evidence sessions' recipe ("Evidence session 2 (2026-11-23, linux-gfx1201)"): the unpacked Weston 13.0.0 / Xwayland 23.2.6 root copied from that job into this one, `start_weston.sh` unchanged except the job path and socket `wl-gl3`. Weston log: `Using rendering device: /dev/dri/renderD131` (which is this job's HIP device), `GL renderer: AMD Radeon Graphics (radeonsi, gfx1201, ...)`, `xserver listening on display :0`. Run (script unchanged):
+
+```
+DISPLAY=:0 DRI_PRIME=pci-0000_06_00_0 LD_LIBRARY_PATH=$R/lib python gl_mapped_array.py
+```
+
+No change to the file was needed. The one environment requirement: the script loads HIP by soname (`ctypes.CDLL("libamdhip64.so.7")`), and the wheel's lib directory is not on the loader path after `rocm-sdk init`, so without `LD_LIBRARY_PATH=$R/lib` it stops at `OSError: libamdhip64.so.7: cannot open shared object file: No such file or directory`. The report should say so (or show the variable in its run line). Three runs, output verbatim:
+
+```
+=== run 1
+hipGraphicsGLRegisterImage hipSuccess
+hipGraphicsMapResources hipSuccess
+hipGraphicsSubResourceGetMappedArray hipSuccess
+GL-mapped 64x32 RGBA8 array: Depth 1, hipMemcpy2DFromArray hipErrorInvalidValue, hipMemcpy2DToArray hipErrorInvalidValue
+hipArray3DCreate 64x32 RGBA8 array: Depth 0, hipMemcpy2DFromArray hipSuccess, hipMemcpy2DToArray hipSuccess
+rc=0
+=== run 2
+hipGraphicsGLRegisterImage hipSuccess
+hipGraphicsMapResources hipSuccess
+hipGraphicsSubResourceGetMappedArray hipSuccess
+GL-mapped 64x32 RGBA8 array: Depth 1, hipMemcpy2DFromArray hipErrorInvalidValue, hipMemcpy2DToArray hipErrorInvalidValue
+hipArray3DCreate 64x32 RGBA8 array: Depth 0, hipMemcpy2DFromArray hipSuccess, hipMemcpy2DToArray hipSuccess
+rc=0
+=== run 3
+hipGraphicsGLRegisterImage hipSuccess
+hipGraphicsMapResources hipSuccess
+hipGraphicsSubResourceGetMappedArray hipSuccess
+GL-mapped 64x32 RGBA8 array: Depth 1, hipMemcpy2DFromArray hipErrorInvalidValue, hipMemcpy2DToArray hipErrorInvalidValue
+hipArray3DCreate 64x32 RGBA8 array: Depth 0, hipMemcpy2DFromArray hipSuccess, hipMemcpy2DToArray hipSuccess
+rc=0
+```
+
+Both findings as drafted reproduce on 10.2 / HIP 7.17: the array mapped from a GL 2D texture reports `Depth 1` (a `hipArray3DCreate` 2D array reports 0), and both 2D copies reject it with `hipErrorInvalidValue` while the same copies on the `hipArray3DCreate` array succeed.
+
+Processes: Weston 3497288 and its children weston-keyboard 3497307, weston-desktop-shell 3497308, Xwayland 3498117, all mine, stopped by those PIDs. Files: `<job>/ev/repro/` (sources, `t`, `run_sort.log`, `run_gl.log`), `<job>/gl/` (Weston root, `start_weston.sh`, `weston.ini`, `weston.log`); scratch.
