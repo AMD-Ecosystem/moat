@@ -8316,3 +8316,168 @@ Run (d), to attribute: ON vs G on raycast, tile_mcgp and tile_nbody, 6 rounds, o
 - `nbody.py`, `sn.py`: from the earlier gfx1201 job.
 - `f/`: the unchanged scripts-file copies.
 - Logs are in `ev/logs/`, JSON and npz in `ev/res/`. Trees `ev/fast`, `ev/on`, `ev/g` (scratch, never pushed).
+
+## Evidence session (candidate G, gfx942) (2026-11-24, linux-gfx942 MI300X, evidence only)
+
+Requested by the coordinator for jeff (away, not ruled): does the gfx950 addendum's candidate G hold on gfx942? Evidence only: nothing committed or pushed to the fork, no set-state, advance-head or port-lock, no test edited. **Verdict for gfx942: G meets the bar.**
+- **Consistency:** every count is 0 on G, default and `nofuse`. With `nofuse`, G's winding numbers are bitwise equal to ON's (and FAST's), so `fuse_fp=False` still means no fusion.
+- **Suite:** the full default suite on G passes: Ran 7562, OK (skipped=86).
+- **Winding-number query:** G takes it off the register cliff here as on gfx950. G/FAST is **0.815 (lbvh) and 0.772 (sah)**, against ON/FAST 2.47 and 2.65 and a same-code floor of 0.997 and 1.005. k_wn forward spills 92 VGPRs under G, against 113 for FAST and 412 for ON.
+- **What G costs, all of it from `on` (G's other kernels are instruction-identical to ON's):**
+  - `example_tile_nbody`: +3.1% with default options and +7.4% with `fast_math`, in every round. The packed FMAs are lost, as on gfx950.
+  - `sign_normal`: +1.4 to 1.7%.
+  - The ray query: +0.5 to 0.7%, beyond the spread. ON and G run identical ray instructions, but ON's ray was only +0.1 to 0.2% over FAST; the cause is not determined.
+  - `example_dem` (both modes) and `example_raycast` (default) are 1.0 to 1.3% faster under G.
+
+### Setup
+
+- GPU: MI300X, `gfx942:sramecc+:xnack-`, wave64. The dispatcher pinned `HIP_VISIBLE_DEVICES=7`, and `r.sh` refuses to run with no pin. `ulimit -c 0` was set for every run. `amd-smi process -g 7` showed no process before each timing run; host load average 1.7 to 7.0. No process was stopped.
+- The job venv came with TheRock 10.1.0. Into it: `python -m pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple "rocm[devel,device-gfx942]==10.2.0" numpy==1.26.4 build usd-core`, then `rocm-sdk init` (10.2.0, usd-core 26.11). No torch.
+- Trees at `4e0d02ab`:
+  - FAST and ON were copied, with their built libraries, from the earlier gfx942 contraction job (`ev/fast`, `ev/on`; same ROCm 10.2.0 wheels). ON has only the option-string change.
+  - G is a local clone of FAST detached at `4e0d02ab`. The addendum's diff, extracted verbatim from notes.md, **applied cleanly** (`git apply --check -v`: `solid_angle.h` +6, `warp.cu` +3/-1). It was built with `python build_lib.py --rocm-path "$(python -m rocm_sdk path --root)" --hip-arch gfx942 -j 56 --no-rocm-rpath` ("Warp build succeeded").
+- Option check:
+  - `strings warp.so`: FAST has `-ffp-contract=fast-honor-pragmas`, ON has `-ffp-contract=on`, G has `-ffp-contract=on` and `-DWP_FUSE_FP`; each also has `-ffp-contract=off`.
+  - `WARP_DEBUG=1` on a kernel compile prints the same options per tree.
+  - The banner reads `Warp 1.14.0+rocm10.2.0`, ROCm 10.2, HIP runtime 7.17, `"cuda:0" : "AMD Instinct MI300X HF" (192 GiB, gfx942:sramecc+:xnack-, mempool enabled)`.
+- Every run used `r.sh <fast|on|G> <tag> <script|-m ...>`: `PYTHONPATH=<tree>`, its own wiped `WARP_CACHE_PATH`, a cwd outside the trees, an assertion that `warp.__file__` is under `<tree>/warp/`, and `python -s`.
+- Scripts:
+  - `twice.py`, `hel.py`, `user2.py` and `perf2.py` are from `notes-contraction-scripts.md`, unchanged.
+  - `sn.py` and `exbench.py` are from the earlier gfx942 job. `exbench.py` gained one line, an `example_tile_nbody` step (`Example(headless=True)`, N=20), because that job's set had no tile_nbody and gfx950 found it slower under `on`.
+  - `wnval.py` is mine; the addendum's probe was not recorded. It calls `wp::mesh_query_winding_number` through `func_native` (accuracy 2.0) twice in one kernel: straight-line, then inside a runtime trip-count loop beside a `mesh_query_point_sign_winding_number` query. It compares the two bitwise and saves the straight-line values for cross-tree comparison. Meshes: spiky.usd, the 24^3 grid cube and a 204,800-triangle noisy torus (`perf2.py`'s `torus(320, 320)`), each with lbvh, sah and median, on twice.py's 232,768 points.
+
+### 1. Consistency on G (counts of differing results; every run rc=0, 0 `expect_eq` lines)
+
+| check | G default | G `nofuse` | FAST default (control) |
+|---|---|---|---|
+| user2 `box_d2` / `det2` / `dot` (of 4,194,304 each) | 0 / 0 / 0 | 0 / 0 / 0 | 0 / 0 / **1,399,489** |
+| sn `sign_normal`, grid cube, 9 configs | 0 of 2,094,912 (0 in each config) | 0 | (earlier job: 0) |
+| sn `intersect_tri_tri` twice | 0 of 232,768 (55,961 hits) | 0 (55,961) | (earlier job: 0) |
+| hel spiky `k_helpers` / `k_helpers2` / `k_tt` / `k_ee` | 0 / 0 / 0 / 0 | 0 / 0 / 0 / 0 | **1 / 1 / 1 / 17,631** (point 93107 for the first three) |
+| hel grid cube, same four kernels | 0 / 0 / 0 / 0 | 0 / 0 / 0 / 0 | 0 / 0 / 0 / **17,733** |
+| twice.py, all 24 rows (both meshes, 9 BVH configs, 5 ray directions; includes `sign_winding_number` and the test-shape `sign_normal`) | 0 in every row | 0 in every row | spiky helpers **1** of 232,768, every other row 0 |
+| wnval twice in one kernel, 3 meshes x lbvh/sah/median | 0 in all 9 (232,768 each) | 0 in all 9 | 0 in all 9 |
+
+- The FAST control comes from the scripts-file `hel.py` and `twice.py`, which the earlier gfx942 job did not have. It shows that on gfx942 `closest_point_edge_edge` (`k_ee`) is also self-inconsistent under `fast-honor-pragmas`, as on gfx950: 17,631 spiky and 17,733 grid cube, the same spiky count as gfx950. `hel.py` and `twice.py` on ON default: 0 everywhere.
+- **Winding-number value probe across trees** (bitwise over the 2,094,912 saved values; inside/outside at 0.5):
+
+| comparison | values differ | max abs difference | inside/outside differs |
+|---|---|---|---|
+| **G `nofuse` vs ON `nofuse`** | **0** | 0 | 0 |
+| G `nofuse` vs FAST `nofuse` | 0 | 0 | 0 |
+| G default vs ON default | 317,406 | 2.4e-7 | 0 |
+| G default vs FAST default | 865,068 | 3.2e-6 | 0 |
+| ON default vs FAST default | 933,495 | 3.2e-6 | 0 |
+| G default vs G `nofuse` | 1,301,867 | 4.1e-6 | 0 |
+
+The G-vs-ON and G-vs-FAST counts (317,406 and 865,068) are exactly gfx950's. The last row shows the `WP_FUSE_FP` guard is live: G with default options does contract.
+
+### 2. perf2.py: FAST, ON, G, FAST(B), 5 interleaved rounds
+
+The order rotated each round (FAST,ON,G,FAST(B) / ON,G,FAST(B),FAST / ...), one process per tree with a fresh cache. Values are ms per launch: median over rounds (min-max). FAST(B) is the same code as FAST and serves as the noise floor.
+
+| kernel | FAST | ON | G | FAST(B) | ON/FAST | **G/FAST** | G/ON | FAST(B)/FAST |
+|---|---|---|---|---|---|---|---|---|
+| lbvh sign_winding_number | 178.3 (176.8-178.6) | 439.5 (436.9-440.1) | **145.3 (145.0-145.7)** | 177.8 (176.5-177.9) | 2.465 | **0.815** | 0.331 | 0.997 |
+| sah sign_winding_number | 70.75 (70.54-71.08) | 187.7 (187.2-188.4) | **54.66 (53.86-54.77)** | 71.10 (70.23-72.16) | 2.654 | **0.772** | 0.291 | 1.005 |
+| lbvh sign_normal | 68.74 (68.55-69.61) | 70.25 (69.48-70.37) | 69.93 (69.82-70.09) | 68.62 (68.49-69.42) | 1.022 | 1.017 | 0.995 | 0.998 |
+| sah sign_normal | 28.07 (27.74-28.15) | 28.49 (28.37-28.84) | 28.46 (28.31-28.78) | 28.17 (27.87-28.36) | 1.015 | 1.014 | 0.999 | 1.003 |
+| lbvh ray | 28.23 (28.19-28.31) | 28.28 (28.28-28.29) | 28.41 (28.39-28.52) | 28.25 (28.23-28.27) | 1.002 | 1.007 | 1.005 | 1.001 |
+| sah ray | 18.19 (18.17-18.22) | 18.21 (18.15-18.23) | 18.29 (18.27-18.32) | 18.20 (18.18-18.24) | 1.001 | 1.006 | 1.004 | 1.001 |
+| intersect_tri_tri (10^6 pairs) | 0.1079 (0.1077-0.1090) | 0.1079 (0.1078-0.1082) | 0.1079 (0.1078-0.1081) | 0.1082 (0.1076-0.1093) | 1.000 | 1.000 | 1.000 | 1.003 |
+| elementwise | 0.01043 (0.01022-0.01988) | 0.01060 (0.01021-0.01133) | 0.01064 (0.01038-0.01084) | 0.01079 (0.01038-0.01090) | 1.016 | 1.020 | 1.004 | 1.034 |
+
+- **The winding number is beyond noise in every round.** G per round: lbvh 145.0 to 145.7, sah 53.9 to 54.8. FAST and FAST(B) per round: lbvh 176.5 to 178.6, sah 70.2 to 72.2. The faster of FAST and ON is FAST, so G is 18% (lbvh) and 23% (sah) faster than the better existing mode. gfx950 measured 0.85x.
+- **ray:** ON and G run the same ray instructions (normalized disassembly below), yet G is 0.5 to 0.7% slower than FAST in every round (G min 28.39 against FAST max 28.31; sah 18.27 against 18.22), while ON is within 0.2%. Kernel placement in the code object changes from compile to compile within each tree, so placement does not explain a difference that holds in all 5 rounds. Cause not determined; it is small next to the winding-number gain.
+- `sign_normal` +1.4 to 1.7% under both ON and G (identical code), as the earlier gfx942 job found for ON. Elementwise is noise: its floor ratio is 1.034, from one 0.0199 FAST round.
+
+**Spills** (`llvm-readelf --notes` on each tree's cached `wp___main___8237205.gfx942_sramecc+_xnack-.hsaco`; forward kernels):
+
+| kernel | FAST `.vgpr_count` / `.vgpr_spill_count` / `.sgpr_spill_count` / `.private_segment_fixed_size` | ON | G |
+|---|---|---|---|
+| `k_wn_d89f8591` | 128 / **113** / 68 / 688 | 128 / **412** / 72 / 880 | 128 / **92** / 69 / 608 |
+| `k_normal_97c84369` | 123 / 0 / 1 / 0 | 125 / 0 / 1 / 0 | 125 / 0 / 1 / 0 |
+| `k_ray_2169c862` | 120 / 0 / 0 / 576 | 120 / 0 / 0 / 576 | 120 / 0 / 0 / 576 |
+| `k_tritri_72ea06fa` | 70 / 0 / 0 / 52 | 69 / 0 / 0 / 52 | 69 / 0 / 0 / 52 |
+
+G's figures are the same as gfx950's G (92 / 608). Normalized disassembly (`kdis.sh`: `llvm-objdump -d --mcpu=gfx942` of one kernel, with addresses and branch targets stripped; rounds 1 and 2 of each tree hashed):
+- `k_ray`, `k_normal` and `k_tritri` are identical between ON and G, and differ from FAST.
+- `k_wn` differs among all three trees.
+- Each tree's two rounds are identical.
+
+So outside the winding-number kernel G compiles exactly to ON.
+
+### 3. Example benchmarks (`exbench.py`): FAST(A), G, FAST(B), 6 interleaved rounds
+
+The order rotated each round (FAST,G,FAST(B) / G,FAST(B),FAST / FAST(B),FAST,G), default options and then `fast_math=True`, one process with a fresh cache each. Values are us per call: median over rounds of the per-process minimum (range). The per-round ratios are against FAST(A) of the same round.
+
+Default options:
+
+| benchmark | FAST(A) | G | FAST(B) | G/FAST | per-round G/FAST | per-round FAST(B)/FAST |
+|---|---|---|---|---|---|---|
+| sph_step | 13070 (13060-13070) | 13080 (13060-13090) | 13070 (13030-13080) | 1.001 | | |
+| dem_step | 67200 (67170-67220) | 66530 (66500-66580) | 67220 (67180-67250) | **0.990** | 0.99 x6 | 1.00 x6 |
+| cloth256 16 substeps | 1778 (1773-1789) | 1778 (1777-1780) | 1781 (1776-1783) | 1.000 | | |
+| raycast_render | 717.4 (716.0-718.7) | 710.2 (709.5-713.4) | 718.6 (716.9-720.0) | **0.990** | 0.988 to 0.995 | 0.998 to 1.005 |
+| wave_step | 539.3 (526.1-550.7) | 542.0 (539.2-1033) | 537.7 (522.7-543.3) | 1.005 | 0.979 to 1.032, one 1.92 | 0.974 to 1.009 |
+| fluid_step | 444.4 (444.0-446.5) | 445.0 (443.5-446.8) | 444.8 (443.6-448.1) | 1.001 | | |
+| mesh_step | 409.1 (408.4-416.2) | 407.9 (406.9-416.3) | 409.3 (406.8-417.1) | 0.997 | | |
+| **tile_nbody_step** | 2008 (2006-2009) | **2070 (2068-2072)** | 2008 (2006-2009) | **1.031** | **1.030 to 1.032** | 1.000 x6 |
+| tile_matmul_exp_sqrt_div | 542.4 (541.6-542.6) | 542.7 (541.8-542.9) | 542.3 (542.1-542.8) | 1.001 | | |
+| noise_floor | 16.77 (16.63-16.96) | 16.81 (16.59-17.01) | 16.85 (16.57-16.97) | 1.003 | 0.991 to 1.023 | 0.994 to 1.010 |
+
+`fast_math=True`:
+
+| benchmark | FAST(A) | G | FAST(B) | G/FAST | per-round G/FAST | per-round FAST(B)/FAST |
+|---|---|---|---|---|---|---|
+| sph_step | 12300 (12270-12320) | 12250 (12220-12280) | 12310 (12290-12430) | 0.995 | | |
+| dem_step | 61410 (61350-61440) | 60630 (60600-60690) | 61380 (61290-61410) | **0.987** | 0.987 to 0.989 | 0.999 to 1.000 |
+| cloth256 16 substeps | 1779 (1775-1787) | 1781 (1777-1788) | 1781 (1772-1785) | 1.001 | | |
+| raycast_render | 698.7 (698.1-699.3) | 699.2 (698.2-700.2) | 698.5 (698.2-700.1) | 1.001 | 0.999 to 1.002 | 0.998 to 1.003 |
+| wave_step | 542.9 (527.2-568.8) | 548.5 (540.1-566.7) | 543.1 (531.9-561.2) | 1.010 | 0.958 to 1.059 | 0.952 to 1.032 |
+| fluid_step | 446.1 (443.9-448.4) | 445.8 (444.0-447.9) | 444.0 (443.3-447.4) | 0.999 | | |
+| mesh_step | 384.1 (380.9-396.6) | 382.2 (377.5-383.7) | 387.3 (382.3-390.1) | 0.995 | | |
+| **tile_nbody_step** | 855.7 (855.3-856.6) | **919.1 (918.4-920.0)** | 855.9 (855.6-857.0) | **1.074** | **1.072 to 1.075** | 0.999 to 1.001 |
+| tile_matmul_exp_sqrt_div | 588.8 (588.4-589.2) | 588.9 (588.2-589.5) | 588.9 (588.4-589.2) | 1.000 | | |
+| noise_floor | 16.82 (16.65-16.89) | 16.96 (16.68-17.03) | 16.78 (16.64-17.03) | 1.008 | 0.991 to 1.023 | 0.989 to 1.020 |
+
+- **Slower under G beyond noise: `example_tile_nbody` only.** It is +3.1% with default options and +7.4% with `fast_math`, in every round, against a floor of 1.000 +/- 0.001; G's range does not overlap FAST's in either mode.
+- This is `on`'s cost, not the solid-angle region's. The forward kernel `integrate_bodies_tiled` (38/39 VGPRs, no spills in any tree) has:
+
+| mode | FAST | G |
+|---|---|---|
+| default options | 3 `v_pk_fma_f32`, 21 `v_fma`/`v_fmac_f32`, 14 `v_mul_f32` | 0 `v_pk_fma_f32`, 20 fma, 19 `v_mul_f32` |
+| `fast_math` | 5 / 11 / 12 | 0 / 10 / 21 |
+
+  gfx950 found the same mechanism and magnitude (+3.2%, +7.2%).
+- wave varies a lot within each tree (one 1033 us G process, 1.92x; FAST(B) spans 0.95 to 1.03), so it shows no difference.
+- Faster under G in every round: dem (both modes, 0.99) and raycast (default, 0.99), as the earlier gfx942 job found for ON.
+
+### 4. Tests on G (fresh cache per run, `python -m warp.tests -s autodetect -p <file>`)
+
+| file | result | `expect_eq` lines |
+|---|---|---|
+| `test_mesh*.py` | Ran 49, OK (50.4 s) | 0 |
+| `test_bvh.py` | Ran 13, OK | 0 |
+| `test_intersect.py` | Ran 2, OK | 0 |
+| `test_closest_point_edge_edge.py` | Ran 28, OK | 0 |
+
+**Full default suite on G** (`r.sh G suite -m warp.tests -s autodetect`, fresh cache; load 1.9 at the start, 6.0 at the end): **Ran 7562 tests in 740.8 s, OK (skipped=86)**, with 0 `Warp CUDA error` lines and 0 `expect_eq` lines. That is the same count and skips as the earlier gfx942 job's ON run. The `test_async` pool-off copy failure (rocm-systems#16355) did not occur, so nothing needed a rerun.
+
+### For jeff and the coordinator
+
+- On gfx942, G clears all three parts of the bar:
+  - every consistency count is 0, with `nofuse` bitwise equal to ON's;
+  - the suite passes;
+  - the winding-number query is 18 to 23% faster than FAST, the faster existing mode here.
+- What remains is `on`'s own cost, unchanged by G: tile_nbody +3 to 7%, sign_normal +1.5%, and an unexplained +0.6% on the ray query.
+- The earlier "Evidence session (contraction, gfx942)" section in notes.md now ends after its Setup subsection. Its sections 1 to 4 (consistency, perf, examples, suite) are intact in commit `342df10e` (`git show 342df10e:projects/warp-1.14/notes.md`, lines 7468 to 7566) and were lost in a later merge on this branch. I did not restore them, because this request limits my writes to this section.
+
+### Scripts (job `g/s/`, scratch)
+
+- `r.sh`: the runner.
+- `step1.sh`: consistency and the value probe. `ctrl.sh`: the FAST and ON controls. `cmpwn.py`: the cross-tree value comparison.
+- `perfrounds.sh`, `exrounds.sh` and `sum.py`: the timing rounds and tables. `kdis.sh`: normalized per-kernel disassembly.
+- `step4.sh`: the tests.
+- `wnval.py`, plus the scripts listed in Setup.
+- Logs and JSON are in `g/logs/`. Trees `g/fast`, `g/on`, `g/G` (scratch, never pushed); `g/G.patch` is the extracted diff.
