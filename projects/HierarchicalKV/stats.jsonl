@@ -32,3 +32,5 @@
 {"kind":"phase","ts":"2026-11-24T07:52:26Z","phase":"test","seconds":3602.574,"exit":0,"cmd":"agent_space/val/run_one.sh projects/HierarchicalKV/src/build-hip/find_or_insert_ptr_test 3600 agent_space/val/B3r-find_or_insert_ptr_test.log"}
 {"kind":"phase","ts":"2026-11-24T08:21:59Z","phase":"test","seconds":1706.132,"exit":0,"cmd":"agent_space/val/diag.sh projects/HierarchicalKV/src/build-hip/find_or_insert_ptr_test head592 4"}
 {"kind":"session","ts":"2026-11-24T08:59:01Z","epoch":1795510741.93101,"event":"end","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-24T09:09:46Z","phase":"compile","seconds":266.343,"exit":0,"cmd":"bash agent_space/build_cuda.sh /var/lib/jenkins/fleet/jobs/mi355-20261124-010126-nvcc2-hierarchicalkv-prompt/hkv/port"}
+{"kind":"phase","ts":"2026-11-24T09:09:54Z","phase":"compile","seconds":274.648,"exit":0,"cmd":"bash agent_space/build_cuda.sh /var/lib/jenkins/fleet/jobs/mi355-20261124-010126-nvcc2-hierarchicalkv-prompt/hkv/base"}

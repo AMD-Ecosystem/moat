@@ -500,3 +500,52 @@ Logs (container-local, not committed): `agent_space/val/` (`A-*.log`, `B2-*.log`
 - Integrity: `git -C projects/HierarchicalKV/src status --porcelain` shows no modified tracked files. `python3 utils/jargon.py --port HierarchicalKV`: clean. The README documents the HIP CMake and Bazel builds.
 - **CUDA compile gate: not run here. This host has no nvcc (and no conda CUDA env); the CUDA compile check runs elsewhere.** It should cover `update.cuh`, `update_score.cuh`, `update_values.cuh` and `tests/repeated_key_test.cc.cu` at 592f800.
 - Records: the review's N2 (`plan.md:51` said HIP Debug flags `-O0 -g`) is corrected in place.
+
+## CUDA compile check 2026-11-24 (mi355 fleet host, real nvcc, no GPU used)
+
+Requested by Jeff Daily (fleet job): CUDA no-regression compile of fork commit `592f800` against the upstream base `451f240` (merge-base of `592f800` and the fork's `master`), before he sees the port. No GPU was used or visible to the job. Nothing changed in the fork, nothing was pushed, and the stage and work lock (linux-gfx942) were not touched. **Verdict: no CUDA regression.** Every target builds at both commits. There are no new errors or warnings, and the sm_80 device code of every common binary is byte-identical, including encodings.
+
+Toolchain: NVIDIA CUDA 12.8 (`nvcc` V12.8.93, cuobjdump 12.8) at `/usr/local/cuda-12.8`, host gcc 13.3.0, CMake 3.31.6, Ninja 1.13.0. The toolkit has no `nvdisasm`, so `cuobjdump -sass` used `NVDISASM_PATH=<venv>/site-packages/triton/backends/nvidia/bin` (nvdisasm 13.1.80). On 12.8 cubins it prints "switching to Old format", which only selects the listing layout. Clones (with `--recurse-submodules`, googletest `0e0d9fe`) and all scratch live under the job directory.
+
+### CMake (upstream's documented configure, plus the research benchmarks)
+
+Configured the same way at both commits. The only differences from the README's `cmake -DCMAKE_BUILD_TYPE=Release -Dsm=80 .. && make -j` are Ninja, used so that warnings are not interleaved, and `-DHKV_BUILD_REPRO_BENCHMARKS=ON`, used so that every test and benchmark target is built:
+```
+cmake -S . -B build-cuda -G Ninja -DCMAKE_BUILD_TYPE=Release -Dsm=80 -DHKV_BUILD_REPRO_BENCHMARKS=ON -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.8/bin/nvcc
+cmake --build build-cuda -j 32 -- -k 0
+```
+- Base `451f240`: 94/94 steps, rc 0, 275 s. Port `592f800`: 96/96 steps, rc 0, 266 s.
+- Targets (`ninja -t targets`): base has 43 executables (19 `*_test` gtest binaries and 24 benchmarks: the 3 default ones plus 21 research ones). Port has the same 43 plus `repeated_key_test`. Nothing was lost or renamed. (Earlier sections count "20 tests"; this CMakeLists has 19 test `add_executable`s at the base.)
+- Errors: none at either commit.
+- Default-flag warnings: 34 lines at each commit. They are the same multiset once line numbers are dropped, and each one points at the same source statement:
+  - five `#69-D integer conversion resulted in truncation`, at `S min_score = MAX_SCORE` and similar lines in `find_or_insert.cuh` and `upsert_and_evict.cuh`. Their line numbers moved because the port added lines above them, for example `find_or_insert.cuh` 914 -> 933 and `upsert_and_evict.cuh` 156 -> 161;
+  - three `#177-D` unused variables, in `dual_bucket_test`, `e8_hkv_baseline` and `e9_eviction_comparison`;
+  - one gcc `-Wstringop-overflow` in `hkv_hash_sensitivity_benchmark`.
+  None is in `update.cuh`, `update_score.cuh`, `update_values.cuh`, `kernel_utils.cuh`, `hip_compat.cuh` or `repeated_key_test.cc.cu`.
+- Stricter warnings: every test TU was recompiled at both commits with its exact ninja command plus `-Xcompiler=-Wall,-Wextra` (39 compiles, all rc 0).
+  - The 19 common TUs give identical per-TU warning multisets: 1074 lines at each commit, from upstream code such as `-Wsign-compare` in `core_kernels.cuh` and `test_util.cuh`, unused `file`/`line` in `utils.cuh`, and `-Wswitch` in `allocator.cuh`.
+  - `repeated_key_test.cc.cu` adds 11 lines. All of them are those same pre-existing upstream header warnings, instantiated once more. None is in the test file or in any `update*.cuh`.
+
+### Device code (cuobjdump SASS, sm_80)
+
+- Full `cuobjdump -sass` text, including the instruction encodings and control words, for all 43 common executables, base against port. Only path-derived symbol hashes were normalized (`_INTERNAL_<hash>`, `__N__<hash>`, the anonymous-namespace `_cc_cu_<hash>_<n>`, which follow the worktree path). Result: **43/43 identical**, 58.1M SASS lines in total, 0 kernels added or removed.
+- These binaries contain the kernels the port changed, so they were compared. In `merlin_hashtable_test`, for example, there are 60 `pipeline_update_kernel_with_io`, 12 `pipeline_update_score_kernel` and 40 `pipeline_update_values_kernel_with_io` instantiations. The same binary also has the TLPv1 `upsert`/`find_or_insert`/`upsert_and_evict` kernels (60 each), 144 `update_kernel_with_io`, 288 `find_or_insert_kernel`, and the `accum_or_assign`, `upsert_kernel_with_io_core`, `find_ptr_or_insert` and `prepare_cpu_update_kernel` kernels.
+- There is therefore no difference to explain. On CUDA, `kRetryLockedAtCaller` is `constexpr false`, and nvcc folds away every added branch: the `pending_pos` path, the `warp_any` ternaries, the `if (acquired == 0)` after a loop that exits only on `acquired != 0`, and the grid-stride `t -= stride; continue;` retries. The TLPv1 `publish` lambda inlines to the original instruction sequence. The swapped commutative `and.pred` operands that the 2026-11-23 porter saw in PTX at 815cfdc do not reach SASS. `warp_ballot`/`warp_sync` are the original intrinsics with the 32-bit full mask.
+- `repeated_key_test` has no base counterpart. Each of its 334 kernels was matched against every base binary: **334/334 equal, instruction for instruction, to an instantiation that a base binary already contains.** These include the 5 `pipeline_update_kernel_with_io`, the `pipeline_update_score_kernel` and the 5 `pipeline_update_values_kernel_with_io` instantiations for `<uint64_t, float, uint64_t>`. Some kernels exist in two variants across base binaries, because per-TU context changes codegen. Four of those (`accum_or_assign_kernel*<...,4,4|32>` and `rehash_kernel_for_fast_mode<...,4>`) differ from the `merlin_hashtable_test` copy but equal the `accum_or_assign_test`/`assign_*_test` copy.
+
+### Bazel CUDA build (closes porter question 2 of 2026-11-23)
+
+It could be set up inside the job directory. bazelisk 1.25.0 (GitHub release binary) fetched Bazel 5.0.0 per `.bazeliskrc` (`BAZELISK_HOME` and `--output_user_root` under the job directory). The CUPTI headers and cuDNN that `cuda_configure` requires came from pip wheels installed with `pip install --no-deps --target <job>/bzdeps "nvidia-cuda-cupti-cu12==12.8.*" "nvidia-cudnn-cu12==9.*"` (12.8.90 and 9.28.1.4). Trees were checked out without googletest, as the README requires for Bazel. Command:
+```
+bazel --output_user_root=<job>/bazel/root build --config=cuda \
+  --action_env CUDA_PATHS=/usr/local/cuda-12.8,<bzdeps>/nvidia/cuda_cupti,<bzdeps>/nvidia/cudnn \
+  --action_env CUDA_TOOLKIT_PATH=/usr/local/cuda-12.8 --action_env CUDA_VERSION=12 --action_env CUDNN_VERSION=9 \
+  --action_env CUDNN_INSTALL_PATH=<bzdeps>/nvidia/cudnn --action_env CUDA_COMPUTE_CAPABILITIES=8.0 --jobs=32 //...
+```
+- Base `451f240`: `cuda_configure` succeeds, then the build fails: `include/merlin_hashtable.cuh:38:10: fatal error: merlin/multi_vector.hpp: No such file or directory` while compiling `benchmark/merlin_hashtable_benchmark.cc.cu`. This is the upstream BUILD bug that fork commit `ffdd97b` fixes, now confirmed under CUDA.
+- Port `592f800`: 7 targets, "Build completed successfully, 1822 total actions", rc 0, no compiler warnings. The `NEED_ROCM` early return in `cuda_configure` leaves the CUDA path working.
+- To compare like with like, the base was rebuilt in a scratch worktree with only `ffdd97b` applied (uncommitted, local): rc 0. The SASS of `//benchmark:benchmark_util` and `libbenchmark_lib.so` is identical to the port's, 379/379 kernels each.
+
+### Nothing to fix
+
+No CUDA break, so there is no fix to propose. The CUDA path of `592f800` is upstream's device code, with the shared Bazel fix on top.
