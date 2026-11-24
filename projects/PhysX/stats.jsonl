@@ -28,3 +28,4 @@
 {"kind":"phase","ts":"2026-11-24T12:37:38Z","phase":"compile","seconds":47.539,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi300c-20261124-035623-fix-physx-prompt/moat/projects/PhysX/src/physx/compiler/linux-gcc-rocm-checked -j64"}
 {"kind":"session","ts":"2026-11-24T12:47:24Z","epoch":1795524444.241629,"event":"start","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-11-24T12:54:16Z","epoch":1795524856.066077,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-24T13:03:27Z","epoch":1795525407.01703,"event":"start","platform":"linux-gfx942"}
