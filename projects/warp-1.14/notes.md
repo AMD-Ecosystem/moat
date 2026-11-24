@@ -6771,3 +6771,576 @@ for leaf, con in itertools.product([1, 2, 4], ["sah", "median", "lbvh"]):
 WARP_CACHE_PATH=<fresh> python -s mqp_diag4.py           # 60 "expect_eq() failed" lines
 WARP_CACHE_PATH=<fresh> python -s mqp_diag4.py nofuse    # 0
 ```
+
+## Porting session 33 (2026-11-24, linux-gfx90a MI250X, porter): `test_mesh_query_point` and cross-statement contraction -- stopped before committing, question for jeff
+
+Requested by jeff (he is away tonight and has not ruled on this). Entered with `set-state warp-1.14 linux-gfx90a porting` from `validation-failed` (lock re-stamped to this job, `99639ea3`); no `port-lock --take`. Fork `release/1.14.0.amd0` at `4e0d02ab`, **unchanged: nothing committed or pushed to the fork, no `advance-head`**. Fresh clone in `projects/warp-1.14/src` (LFS `pre-push` moved aside, `protect-fork` installed); `git status --porcelain` empty at the end. `HIP_VISIBLE_DEVICES=0` (dispatcher pin, one MI250X GCD, `gfx90a:sramecc+:xnack-`), `ulimit -c 0` for every GPU run, GPU idle (amd-smi) before each timing run, no process stopped. Job venv: `rocm[devel,device-gfx90a]==10.2.0`, `usd-core`, numpy 1.26.4, `rocm-sdk init`. Library: `python build_lib.py --rocm-path "$(rocm-sdk path --root)" --hip-arch gfx90a -j 64 --no-rocm-rpath` ("Warp build succeeded"); every run below imports warp from the tree (`PYTHONPATH`, asserted by `warp.__file__`) with a fresh kernel cache. hipRTC reads `warp/native/*.h` at JIT time, so header-only experiments need no rebuild; a "before" copy of the package (`agent_space/before/warp`, same warp.so, pristine headers) gave interleaved before/after runs from one build.
+
+**Outcome: candidate A (the pragma region) was built and measured and makes every checked builtin self-consistent, but it costs 14% on an `intersect_tri_tri` kernel, so per jeff's instructions it is not committed.** The smaller variant (mesh.h only) costs nothing measurable and fixes the failing test, but leaves `intersect_tri_tri` self-inconsistent. Stage left at `porting` (lock held by this job, platform still `validation-failed` at `4e0d02ab`) until jeff picks an option below. Two further findings for jeff: hipRTC `-ffp-contract=on` removes every inconsistency measured here, and on gfx90a the current `fast-honor-pragmas` makes `mesh_query_point_sign_winding_number` 4.7x slower than `on` (register spills).
+
+### 1. Reproduction and the deciding function
+
+- `python -m warp.tests -s autodetect -p test_mesh_query_point.py`, fresh cache: **Ran 9, FAILED (failures=1), 120 `expect_eq() failed` lines**, as the validator found.
+- Single-kernel reproducer (the validator's `mqp_diag4.py`, here `mqp.py`: the test module's `sample_mesh_query_sign_normal` over spiky.usd, the test's 32^3 grid, leaf 1/2/4 x sah/median/lbvh): 60 lines with the default options, 0 with `fuse_fp=False`.
+- Bisection with HIP-device-only pragmas inserted into the JIT headers (fresh cache each, `mqp.py`; 60 = still failing):
+
+| contraction off (HIP device only) for | `expect_eq` lines |
+|---|---|
+| nothing (4e0d02ab) | 60 |
+| all of vec.h | 0 |
+| all of mesh.h | 0 |
+| all of intersect.h | 60 |
+| all of bvh.h | 60 |
+| body of `closest_point_to_triangle` (intersect.h) | 60 |
+| body of `mesh_query_point_sign_normal` (mesh.h) | 60 |
+| **body of `distance_to_aabb_sq` (mesh.h:104) only** | **0** |
+
+- **The deciding function is `distance_to_aabb_sq` (`warp/native/mesh.h:104`)**, `dx*dx + dy*dy + dz*dz` of the point-to-box offsets. It orders the traversal (`left_dist_sq < right_dist_sq` picks the child pushed last, so visited first) and culls nodes. Among faces at equal distance the first one visited wins (`dist < min_dist` is strict, and `sign_normal`'s epsilon band "treat as equal" keeps the first face), so when the two inlined copies of the query compute a box distance with different fusion, they visit children in a different order and report different faces/barycentrics for the same point. Distances agree, faces differ, exactly as the validator recorded. Fusing all of vec.h or mesh.h off also fixes it because both contain this computation's inputs or the function itself; the query body alone does not, because the products and sums live in `distance_to_aabb_sq`.
+- Code-object context (`llvm-objdump -d --mcpu=gfx90a` of the test kernel `sample_mesh_query_sign_normal`): 36 `v_pk_fma_f32` (gfx90a packed fp32 FMA) with the default options, 42 with candidate A, 0 with `fuse_fp=False`; the kernel spills 274 VGPRs with the default options and 272 with hipRTC `on`. I did not trace which instructions belong to which copy.
+
+### 2. How wide the hazard is (gfx90a)
+
+`twice.py` (below): every geometry query builtin called twice in one kernel (out-parameter form against struct form where both exist, otherwise the same call twice with a store in between), on two meshes (spiky.usd, the test's; and a regular 24x24x24 grid cube surface, 6,912 triangles, many exact ties), points = the test's 32^3 grid + 200,000 uniform random points in the inflated bounding box (232,768), nine BVH configurations (leaf 1/2/4 x sah/median/lbvh), five ray directions, BVH over the triangle bounds for the bvh queries. A count is query points x configurations (x directions) whose two results differ in any field, bitwise.
+
+| builtin (two calls in one kernel) | 4e0d02ab | `fuse_fp=False` | candidate A | A, mesh.h only | hipRTC `on` |
+|---|---|---|---|---|---|
+| `mesh_query_point_sign_normal`, spiky | **30** / 2,094,912 | 0 | 0 | 0 | 0 |
+| same, test's kernel shape (eval + store between) | **30** | 0 | 0 | 0 | 0 |
+| `mesh_query_point_sign_normal`, grid cube | **134** / 2,094,912 | 0 | 0 | 0 | 0 |
+| same, test's kernel shape | **134** | 0 | 0 | 0 | 0 |
+| `intersect_tri_tri` (float), random triangle pairs from the points | **1** / 232,768 (spiky points) | 0 | 0 | **1** | 0 |
+| `closest_point_edge_edge` | 0 / 465,536 | 0 | 0 | 0 | 0 |
+| `mesh_query_point`, `_no_sign`, `_sign_parity`, `_sign_winding_number`, `mesh_query_furthest_point_no_sign` | 0 (each 4,189,824 over both meshes) | 0 | 0 | n/m | 0 |
+| `mesh_query_ray` (5 directions) | 0 / 20,949,120 | 0 | 0 | n/m | 0 |
+| `mesh_query_ray_anyhit`, `mesh_query_ray_count_intersections` | 0 / 20,949,120 | 0 | 0 | n/m | 0 |
+| `mesh_query_aabb` (count and order hash) | 0 / 4,189,824 | 0 | 0 | n/m | 0 |
+| `bvh_query_ray` (unbounded and `max_dist` 0.5), `bvh_query_aabb` (count and order hash) | 0 / 12,569,472 | 0 | 0 | n/m | 0 |
+
+(n/m: not measured for that variant; the mesh.h-only column was measured with `hel.py` for `intersect_tri_tri` and with `mqp.py`/the test for `sign_normal`.) The `intersect_tri_tri` case: `hel.py` splits the helper kernel and finds it is `intersect_tri_tri`, point index 93107, in three kernel shapes; `closest_point_edge_edge` alone gives 0.
+
+So in Warp's own builtins two decisions are exposed on gfx90a: the BVH child order in the point queries (`distance_to_aabb_sq`, and by the same construction `furthest_distance_to_aabb_sq` for the furthest query, which showed 0 here) and the orientation tests in `intersect_tri_tri` (`intersect_tri.h`). But the hazard is not specific to builtins: see section 5, where `wp.dot` written twice in a user kernel differs in a third of the inputs. A pragma region can make chosen builtins consistent; it cannot cover user code, or builtins whose arithmetic comes from vec.h (`length_sq`, `dot`, `cross`, used by every query's per-face distance), without turning contraction off for nearly everything. These sweeps sample two kernel shapes on one arch; zero is not proof that the other queries are immune.
+
+### 3. Candidate A, measured
+
+The patch (HIP device compiles only; CUDA and CPU preprocess to the same text: `unifdef -U__HIP_DEVICE_COMPILE__ <file> | diff -B <(git show HEAD:<file>) -` is empty for both files; clang-format 22.1.2, the pre-commit version, leaves both unchanged). Files: `warp/native/mesh.h`, `warp/native/intersect_tri.h`. Kept in the job's `agent_space/candidateA.patch` (scratch) and here:
+
+```diff
+--- a/warp/native/intersect_tri.h
++++ b/warp/native/intersect_tri.h
+@@ -135,6 +135,11 @@ CUDA_CALLABLE inline double abs_t(double x) { return fabs(x); }
+ 
+ template <typename T> CUDA_CALLABLE inline T abs_t(T x) { return x < T(0) ? -x : x; }
+ 
++#if defined(__HIP_DEVICE_COMPILE__)
++// Keep the orientation tests unfused, so that every inlined copy of the test gives the same answer.
++#pragma STDC FP_CONTRACT OFF
++#endif
++
+ template <typename T>
+ CUDA_CALLABLE inline int coplanar_tri_tri(T N[3], T V0[3], T V1[3], T V2[3], T U0[3], T U1[3], T U2[3])
+ {
+@@ -328,3 +333,7 @@ template <typename T> CUDA_CALLABLE inline int NoDivTriTriIsect(T V0[3], T V1[3]
+         return 0;
+     return 1;
+ }
++
++#if defined(__HIP_DEVICE_COMPILE__)
++#pragma STDC FP_CONTRACT DEFAULT
++#endif
+--- a/warp/native/mesh.h
++++ b/warp/native/mesh.h
+@@ -101,6 +101,12 @@ CUDA_CALLABLE inline Mesh& operator+=(Mesh& a, const Mesh& b)
+     return a;
+ }
+ 
++#if defined(__HIP_DEVICE_COMPILE__)
++// These distances order the BVH traversal, which decides between equidistant faces. Keep them unfused so that
++// every inlined copy of a query computes the same values and returns the same face.
++#pragma STDC FP_CONTRACT OFF
++#endif
++
+ CUDA_CALLABLE inline float distance_to_aabb_sq(const vec3& p, const vec3& lower, const vec3& upper)
+ {
+     const float dx = min(upper[0], max(lower[0], p[0])) - p[0];
+@@ -130,6 +136,10 @@ CUDA_CALLABLE inline float furthest_distance_to_aabb_sq(const vec3& p, const vec
+     return corner_diff_x * corner_diff_x + corner_diff_y * corner_diff_y + corner_diff_z * corner_diff_z;
+ }
+ 
++#if defined(__HIP_DEVICE_COMPILE__)
++#pragma STDC FP_CONTRACT DEFAULT
++#endif
++
+ CUDA_CALLABLE inline int
+ mesh_query_ray_count_intersections(uint64_t id, const vec3& start, const vec3& dir, int root = -1);
+ CUDA_CALLABLE inline float mesh_query_inside_ray_tracing(uint64_t id, const vec3& p);
+```
+
+"A, mesh.h only" is the mesh.h hunk alone.
+
+Tests (`-p <file>`, one file per run because `-p` keeps only its last pattern; fresh cache; before = 4e0d02ab headers, after = A):
+
+| file | before | after (A) |
+|---|---|---|
+| test_mesh_query_point.py | 9 run, **FAILED (failures=1)**, 120 `expect_eq` lines | **9 OK**, 0 |
+| test_mesh.py | 16 OK | 16 OK |
+| test_mesh_query_aabb.py | 15 OK | 15 OK |
+| test_mesh_query_ray.py | 9 OK | 9 OK |
+| test_bvh.py | 13 OK | 13 OK |
+| test_grouped_bvh.py | 11 OK | 11 OK |
+| test_intersect.py | 2 OK | 2 OK |
+| test_closest_point_edge_edge.py | 28 OK | 28 OK |
+
+hipRTC `on` (scratch worktree, `warp.cu` option string changed, library rebuilt): test_mesh_query_point **9 OK**.
+
+Cost (`perf.py`/`perf2.py`, below: noisy closed torus, 2,000,000 triangles, `support_winding_number=True`, default leaf size, lbvh and sah; 10^6 query points uniform in the inflated bounding box; each kernel 2 warm-up launches then 5 samples of N back-to-back launches + sync, median per launch; one process per tree per round, trees interleaved, fresh kernel cache each process; controls: `mesh_query_ray`, whose code A does not touch, and an elementwise kernel). Kernel code is identical across rounds of one tree (disassembly hash), so round-to-round differences are runtime noise.
+
+Round 1 (`perf.py`, 5 rounds, before/A), ms per launch, median over rounds, with the spread (max/min over rounds) of each side:
+
+| kernel | before | A | A/before | spread before | spread A |
+|---|---|---|---|---|---|
+| lbvh mesh_query_point | 360.1 | 361.2 | 1.003 | 1.002 | 1.005 |
+| lbvh no_sign | 270.8 | 269.8 | 0.996 | 1.007 | 1.006 |
+| lbvh sign_normal | 275.6 | 277.2 | 1.006 | 1.007 | 1.011 |
+| lbvh sign_winding_number | 3030 | 3306 | (1.091) | 1.014 | 1.087 |
+| lbvh furthest_no_sign | 826.9 | 828.9 | 1.002 | 1.028 | 1.015 |
+| lbvh ray (control) | 110.5 | 110.6 | 1.001 | 1.001 | 1.004 |
+| sah mesh_query_point | 144.5 | 143.7 | 0.995 | 1.008 | 1.013 |
+| sah no_sign | 80.72 | 79.29 | 0.982 | 1.024 | 1.026 |
+| sah sign_normal | 93.98 | 93.26 | 0.992 | 1.017 | 1.018 |
+| sah sign_winding_number | 1294 | 1408 | (1.088) | 1.003 | 1.096 |
+| sah furthest_no_sign | 214.5 | 213.7 | 0.996 | 1.010 | 1.015 |
+| sah ray (control) | 73.69 | 73.70 | 1.000 | 1.002 | 1.002 |
+| intersect_tri_tri, 10^6 pairs | 0.8016 | 0.8800 | **1.098** | 1.125 | 1.084 |
+| elementwise (control) | 0.02233 | 0.02227 | 0.997 | 1.009 | 1.012 |
+
+Round 2 (`perf2.py`, 6 rounds, before / A / A-mesh.h-only), to resolve the two outliers:
+- `sign_winding_number` is bimodal in every tree: lbvh before `[3313, 3030, 3029, 3325, 3030, 3030]`, A `[3324, 3031, 3321, 3321, 3272, 3324]`, mesh.h-only `[3323, 3026, 3320, 3026, 3270, 3318]`; sah likewise (about 1293 or 1417). The fast mode is the same in all three (3030/3031/3026 ms; 1292/1292/1291 ms), so A has no attributable cost there; the modes are a per-process effect on identical code (a third run, below, had before in the slow mode in all 4 rounds).
+- **`intersect_tri_tri`: A is 14% slower, beyond noise**: before `[0.802, 0.740, 0.739, 0.801, 0.739, 0.801]` ms, A `[0.880, 0.874, 0.869, 0.952, 0.878, 0.879]` (A's fastest round is slower than before's slowest), mesh.h only `[0.833, 0.739, 0.739, 0.739, 0.833, 0.741]` (= before).
+- sign_normal lbvh 276.5 / 276.1 / 277.0, sah 93.82 / 93.33 / 93.37; ray and elementwise equal to 0.1%.
+
+So: **A (both hunks)**: every checked builtin consistent, test passes, `intersect_tri_tri` +14%; **A mesh.h only**: test passes, no measurable cost, `intersect_tri_tri` still inconsistent (1 in 232,768 pairs). Neither meets both of jeff's conditions, so nothing was committed.
+
+hipRTC `on` against 4e0d02ab (`perf2.py`, 4 interleaved rounds; per-launch ms):
+
+| kernel | 4e0d02ab (`fast-honor-pragmas`) | hipRTC `on` |
+|---|---|---|
+| lbvh sign_winding_number | 3326, 3326, 3323, 3328 | **712, 712, 713, 711** (0.21x) |
+| sah sign_winding_number | 1418, 1419, 1420, 1420 | **283, 283, 283, 281** (0.20x) |
+| lbvh sign_normal | 276.2-278.8 | 273.7-274.8 (0.99x) |
+| sah sign_normal | 93.1-97.3 | 92.7-93.9 |
+| lbvh / sah ray | 110.5 / 73.7 | 110.3 / 73.6 |
+| intersect_tri_tri | 0.733-0.911 | 0.744-0.803 |
+| elementwise | 0.0224 | 0.0224 |
+
+The winding-number difference is register pressure, not different work: `k_wn` forward with `fast-honor-pragmas` spills **383 VGPRs** (864 bytes scratch per thread, `.vgpr_count` 128), with `on` 72 (560 bytes); A does not change it (383). The answers are the same kind under both modes: against each other, the winding-number, sign_normal and plain point queries differ in 7,955 / 6,061 / 7,955 of 10^6 points (a different equidistant face; the plain point query, whose speed is the same under both modes, differs at the same rate). **e92f2611 therefore costs gfx90a a 4.7x slowdown in `mesh_query_point_sign_winding_number`** on this mesh; I have not checked gfx942/gfx950/RDNA (the gfx950 porter or a validator should run `perf2.py` with and without the `on` option string there).
+
+### 4. Question for jeff (not ruled; nothing committed)
+
+The failing test is real: one query called twice in one kernel must give one answer. Options, with what was measured on gfx90a:
+
+1. **A, both hunks** (`mesh.h` box distances + `intersect_tri.h`, HIP device only): every builtin checked is self-consistent, test passes; `intersect_tri_tri` kernel +14%; other kernels within noise. User code (section 5) stays exposed.
+2. **A, mesh.h hunk only**: test passes, no measurable cost; `intersect_tri_tri` called twice can still disagree (1 in 232,768 random pairs); user code stays exposed.
+3. **hipRTC `-ffp-contract=on`** (revert the option half of e92f2611; the fp16 `FP_CONTRACT OFF` region in builtin.h becomes unnecessary but harmless): every case in this session consistent (including the user `wp.dot` case), test passes, winding-number query 4.7x faster on gfx90a, no measured kernel slower. Cost: generated kernels again get no cross-statement fusion, so HIP results differ from CUDA's in the last bits where NVRTC fuses across statements, which is what jeff's 2026-11-20 ruling chose to match (the fp16 test that motivated the region is passed with fusion off too: before e92f2611 it failed only because of the half fma, see session 22).
+4. **hipRTC `-ffp-contract=off`**: also consistent; also drops in-expression fusion (`a*b + c` in one expression), slower than `on` where that matters; not measured beyond the `fuse_fp=False` runs above.
+5. Keep `fast-honor-pragmas` and change nothing: the test stays failing on gfx90a (passes on gfx950, gfx1100, gfx1201 at this head), so the platform would need `set-blocked` with this reason.
+
+My recommendation, for jeff to accept or reject: option 3, because it is the only one that also removes the user-visible inconsistency and it measured faster, not slower; second choice option 2. Either way the 4.7x winding-number result should be checked on the other arches first.
+
+### 5. What a user would see
+
+- **Yes, a user's own kernel can get two different answers for the same expression on HIP with default options.** `user2.py` (below), 2^22 random inputs, one kernel each, the expression evaluated once in straight-line code and once inside a runtime-trip-count loop next to other uses:
+
+| expression (user code) | default (`fast-honor-pragmas`) | `fuse_fp=False` | hipRTC `on` |
+|---|---|---|---|
+| `wp.dot(x, y)` (vec3), loop copy next to `x[0]*y[0]` | **1,399,489** of 4,194,304 differ | 0 | 0 |
+| user `@wp.func` box distance (`dx*dx+dy*dy+dz*dz`) | 0 | 0 | 0 |
+| user `@wp.func` 2x2 determinant `a*d - b*c` | 0 | 0 | 0 |
+
+  The `wp.dot` case: CSE shares the product `x[0]*y[0]` between the dot and the user's own term, so in the loop copy that product has two uses and is not fused, while the straight-line copy fuses it; the two `dot` results round differently. The mechanism is general (which multiply gets fused depends on its other uses), so any kernel that evaluates the same floating-point expression in two places and compares, or branches on, the results can see this on HIP.
+- **CUDA: not established on hardware.** NVRTC with its default `--fmad=true` also contracts across statements (the coordinator's 2026-11-20 V100 check: one `fma.rn.f32` in all three kernel shapes), so the same class of effect is possible in principle. Whether it happens in these cases depends on NVVM's own fusion heuristic, which this host cannot run (no nvcc). From the open-source LLVM NVPTX backend (not NVVM itself, and recalled from its source, not checked on this host): it fuses an `fadd` with an `fmul` that has several uses as long as every use is an add (up to four uses), which would fuse both uses in the `wp.dot` case and make CUDA consistent there; AMDGPU uses LLVM's generic combine, which fuses only a single-use multiply. That would make the `wp.dot` case HIP-specific, but it is a hypothesis until measured. The upstream test passing in NVIDIA's CI (and with the upstream `warp-lang==1.14.0` CUDA wheel) shows only that its kernel happens to be consistent there.
+- For the coordinator on an NVIDIA GPU, with upstream `warp-lang==1.14.0` (CUDA wheel) and usd-core: run `twice.py`, `hel.py` and `user2.py` (below; they only need `warp`, `numpy`, `pxr`, and `warp.tests` for the mesh asset) with default options and with `nofuse`, and `python -m warp.tests -s autodetect -p test_mesh_query_point.py`; report the counts. A nonzero `user2.py` count on CUDA would make this a property shared with CUDA (and an upstream issue for the Warp maintainers, for jeff to decide on); zero would make it HIP-specific and favour option 3.
+
+### For the gfx950 porter and the coordinator
+
+- No fork file changed; the CUDA text is untouched. If jeff picks option 1 or 2, the patch above is the commit (both files preprocess to the parent's text without `__HIP_DEVICE_COMPILE__`); if option 3, the change is the one option string in `warp/native/warp.cu` (`cuda_compile_program`'s `stored_options`), plus a decision on whether to keep the builtin.h fp16 region.
+- Check before any option lands: `perf2.py` `sign_winding_number` with `fast-honor-pragmas` vs `on` on gfx942/gfx950/gfx1100 (spill counts from `llvm-readelf --notes` on the cached `.hsaco`, `.vgpr_spill_count` of `k_wn_*_cuda_kernel_forward`).
+- The gfx1250 evidence session's "wrong `mesh_query_point` results" may be this; not established.
+
+### Scripts (job `agent_space/s/`, scratch)
+
+`r.sh <tag> <script> [args]`: `ulimit -c 0; HIP_VISIBLE_DEVICES=0; PYTHONPATH=${TREE:-<clone>}`, wipes `agent_space/cache-<tag>`, runs `python -s <script>` from `agent_space/run` with `WARP_CACHE_PATH` set, prints the `expect_eq() failed` count. `t.sh <tag> <warp.tests args>`: the same around `python -m warp.tests -s autodetect`. Bisection: `patch.py <header> <signature substring>` inserts `#pragma clang fp contract(off)` (inside `#if defined(__HIP_DEVICE_COMPILE__)`) at the top of the named function's body; `wrapfile.py <header>` wraps a whole header in `STDC FP_CONTRACT OFF`/`DEFAULT`. `mqp.py` is the validator's `mqp_diag4.py` (session "Validation 2026-11-24 (linux-gfx90a ...)") unchanged. `hel.py`: `twice.py`'s helper kernel split into `intersect_tri_tri` alone and `closest_point_edge_edge` alone. `perf2.py` = `perf.py` with only `sign_winding_number` (N=1), `sign_normal` (3), `ray` (5), `tri_tri` (N=200) and elementwise. `wnres.py`: saves `perf.py`'s winding-number, sign_normal and point results (lbvh) for a tree, to compare trees.
+
+`twice.py`:
+```python
+# usage: twice.py <out.json> [nofuse]
+# Calls each Warp geometry query builtin twice in one kernel (out-parameter form against struct form where both exist,
+# otherwise the same call twice with a store in between) and counts query points whose two results differ in any field.
+import itertools, json, os, sys
+import numpy as np
+import warp as wp
+from warp.tests.geometry import test_mesh_query_point as T
+from pxr import Usd, UsdGeom
+
+wp.init()
+dev = wp.get_device("cuda:0")
+NOFUSE = "nofuse" in sys.argv
+if NOFUSE:
+    wp.set_module_options({"fuse_fp": False})
+MAXD = 10012.0
+DIRS = [wp.vec3(1.0, 0.0, 0.0), wp.vec3(0.0, -1.0, 0.0), wp.vec3(0.0, 0.0, 1.0), wp.vec3(0.57735, 0.57735, 0.57735),
+        wp.vec3(0.3, -0.8, 0.52)]
+
+@wp.func
+def fneq(a: float, b: float) -> int:
+    if a == b:
+        return 0
+    return 1
+
+@wp.func
+def vneq(a: wp.vec3, b: wp.vec3) -> int:
+    return fneq(a[0], b[0]) + fneq(a[1], b[1]) + fneq(a[2], b[2])
+
+@wp.kernel
+def k_point(m: wp.uint64, pts: wp.array[wp.vec3], bad: wp.array[int]):
+    i = wp.tid(); p = pts[i]
+    s = float(0.0); f = int(0); u = float(0.0); v = float(0.0)
+    ok = wp.mesh_query_point(m, p, MAXD, s, f, u, v)
+    q = wp.mesh_query_point(m, p, MAXD)
+    bad[i] = wp.where(ok == q.result, 0, 1) + fneq(s, q.sign) + wp.where(f == q.face, 0, 1) + fneq(u, q.u) + fneq(v, q.v)
+
+# k_parity, k_normal, k_wn: k_point with mesh_query_point_sign_parity / _sign_normal / _sign_winding_number;
+# k_nosign, k_furthest: the same without sign, with mesh_query_point_no_sign / mesh_query_furthest_point_no_sign(m, p, 0.0, ...)
+
+@wp.kernel
+def k_normal_ctx(m: wp.uint64, pts: wp.array[wp.vec3], dist: wp.array[float], bad: wp.array[int]):
+    # the test kernel's shape: an eval and a store between the two calls
+    i = wp.tid(); p = pts[i]
+    s = float(0.0); f = int(0); u = float(0.0); v = float(0.0)
+    wp.mesh_query_point_sign_normal(m, p, MAXD, s, f, u, v)
+    cp = wp.mesh_eval_position(m, f, u, v)
+    dist[i] = wp.length(cp - p)
+    q = wp.mesh_query_point_sign_normal(m, p, MAXD)
+    bad[i] = fneq(s, q.sign) + wp.where(f == q.face, 0, 1) + fneq(u, q.u) + fneq(v, q.v)
+
+@wp.kernel
+def k_ray(m: wp.uint64, pts: wp.array[wp.vec3], d: wp.vec3, bad: wp.array[int]):
+    i = wp.tid(); p = pts[i]
+    t = float(0.0); u = float(0.0); v = float(0.0); s = float(0.0); n = wp.vec3(); f = int(0)
+    ok = wp.mesh_query_ray(m, p, d, MAXD, t, u, v, s, n, f)
+    q = wp.mesh_query_ray(m, p, d, MAXD)
+    bad[i] = (wp.where(ok == q.result, 0, 1) + fneq(t, q.t) + fneq(u, q.u) + fneq(v, q.v) + fneq(s, q.sign)
+              + vneq(n, q.normal) + wp.where(f == q.face, 0, 1))
+
+@wp.kernel
+def k_ray_misc(m: wp.uint64, pts: wp.array[wp.vec3], d: wp.vec3, tmp: wp.array[int], bad: wp.array[int]):
+    i = wp.tid(); p = pts[i]
+    a = wp.mesh_query_ray_anyhit(m, p, d, MAXD)
+    c = wp.mesh_query_ray_count_intersections(m, p, d)
+    tmp[i] = c
+    a2 = wp.mesh_query_ray_anyhit(m, p, d, MAXD)
+    c2 = wp.mesh_query_ray_count_intersections(m, p, d)
+    bad[i] = wp.where(a == a2, 0, 1) + wp.where(c == c2, 0, 1)
+
+@wp.func
+def maabb_hash(m: wp.uint64, lo: wp.vec3, hi: wp.vec3) -> wp.vec2i:
+    q = wp.mesh_query_aabb(m, lo, hi)
+    idx = int(0); k = int(0); h = int(0)
+    while wp.mesh_query_aabb_next(q, idx):
+        k += 1
+        h = h * 31 + idx
+    return wp.vec2i(k, h)
+
+@wp.kernel
+def k_maabb(m: wp.uint64, pts: wp.array[wp.vec3], r: float, tmp: wp.array[int], bad: wp.array[int]):
+    i = wp.tid(); p = pts[i]
+    e = wp.vec3(r, r, r)
+    a = maabb_hash(m, p - e, p + e)
+    tmp[i] = a[0]
+    b = maabb_hash(m, p - e, p + e)
+    bad[i] = wp.where(a[0] == b[0], 0, 1) + wp.where(a[1] == b[1], 0, 1)
+
+# bray_hash(b, p, d, max_dist) / baabb_hash(b, lo, hi): maabb_hash over wp.bvh_query_ray / wp.bvh_query_aabb with
+# wp.bvh_query_next(q, idx, max_dist) / wp.bvh_query_next(q, idx)
+
+@wp.kernel
+def k_bvh(b: wp.uint64, pts: wp.array[wp.vec3], d: wp.vec3, r: float, tmp: wp.array[int], bad: wp.array[int]):
+    i = wp.tid(); p = pts[i]
+    e = wp.vec3(r, r, r)
+    a = bray_hash(b, p, d, 1.0e6)
+    a2 = bray_hash(b, p, d, 0.5)
+    c = baabb_hash(b, p - e, p + e)
+    tmp[i] = a[0] + a2[0] + c[0]
+    x = bray_hash(b, p, d, 1.0e6)
+    x2 = bray_hash(b, p, d, 0.5)
+    y = baabb_hash(b, p - e, p + e)
+    bad[i] = (wp.where(a[0] == x[0], 0, 1) + wp.where(a[1] == x[1], 0, 1) + wp.where(a2[0] == x2[0], 0, 1)
+              + wp.where(a2[1] == x2[1], 0, 1) + wp.where(c[0] == y[0], 0, 1) + wp.where(c[1] == y[1], 0, 1))
+
+@wp.kernel
+def k_helpers(pts: wp.array[wp.vec3], tmp: wp.array[wp.vec3], bad: wp.array[int]):
+    i = wp.tid(); n = pts.shape[0]
+    p1 = pts[i]; q1 = pts[(i * 7 + 1) % n]; p2 = pts[(i * 13 + 5) % n]; q2 = pts[(i * 29 + 11) % n]
+    a = wp.closest_point_edge_edge(p1, q1, p2, q2, 1.0e-6)
+    t = wp.intersect_tri_tri(p1, q1, p2, q2, pts[(i * 3 + 2) % n], pts[(i * 17 + 3) % n])
+    tmp[i] = a
+    b = wp.closest_point_edge_edge(p1, q1, p2, q2, 1.0e-6)
+    t2 = wp.intersect_tri_tri(p1, q1, p2, q2, pts[(i * 3 + 2) % n], pts[(i * 17 + 3) % n])
+    bad[i] = vneq(a, b) + wp.where(t == t2, 0, 1)
+
+@wp.kernel
+def tri_bounds(P: wp.array[wp.vec3], I: wp.array[int], lo: wp.array[wp.vec3], hi: wp.array[wp.vec3]):
+    t = wp.tid()
+    a = P[I[3 * t]]; b = P[I[3 * t + 1]]; c = P[I[3 * t + 2]]
+    lo[t] = wp.min(wp.min(a, b), c)
+    hi[t] = wp.max(wp.max(a, b), c)
+
+def spiky():
+    st = Usd.Stage.Open(os.path.join(os.path.dirname(T.__file__), "..", "assets", "spiky.usd"))
+    g = UsdGeom.Mesh(st.GetPrimAtPath("/Cube/Cube"))
+    tri = T.triangulate(g.GetFaceVertexCountsAttr().Get(), g.GetFaceVertexIndicesAttr().Get())
+    return np.array(g.GetPointsAttr().Get(), dtype=np.float32), np.array(tri, dtype=np.int32)
+
+def gridcube(n=24):
+    # surface of [-1,1]^3 as a regular grid, two triangles per cell, outward winding
+    pts, idx, ix = [], [], {}
+    def vid(x):
+        k = tuple(np.round(x, 6))
+        if k not in ix:
+            ix[k] = len(pts); pts.append(x)
+        return ix[k]
+    s = np.linspace(-1.0, 1.0, n + 1)
+    for ax in range(3):
+        for sg in (-1.0, 1.0):
+            for a in range(n):
+                for b in range(n):
+                    def P(i, j):
+                        x = np.zeros(3); x[ax] = sg; x[(ax + 1) % 3] = s[i]; x[(ax + 2) % 3] = s[j]; return vid(x)
+                    v00, v10, v11, v01 = P(a, b), P(a + 1, b), P(a + 1, b + 1), P(a, b + 1)
+                    idx += [v00, v10, v11, v00, v11, v01] if sg > 0 else [v00, v11, v10, v00, v01, v11]
+    return np.array(pts, dtype=np.float32), np.array(idx, dtype=np.int32)
+
+def points(P, rng):
+    g = T.particle_grid(32, 32, 32, np.array([-1.1, -1.1, -1.1]), 0.05, 0.0).astype(np.float32)
+    lo, hi = P.min(0), P.max(0); c = (lo + hi) / 2; h = (hi - lo) / 2 * 1.2
+    r = (c + (rng.random((200000, 3)) * 2 - 1) * h).astype(np.float32)
+    return np.concatenate([g, r])
+
+def main():
+    out = {"nofuse": NOFUSE, "results": {}}
+    rng = np.random.default_rng(1)
+    R = out["results"]
+    for mname, (Pn, In) in [("spiky", spiky()), ("gridcube", gridcube())]:
+        pn = points(Pn, rng); n = len(pn)
+        P = wp.array(Pn, dtype=wp.vec3, device=dev); I = wp.array(In.flatten(), dtype=int, device=dev)
+        Q = wp.array(pn, dtype=wp.vec3, device=dev)
+        bad = wp.zeros(n, dtype=int, device=dev); tmp = wp.zeros(n, dtype=int, device=dev)
+        dist = wp.zeros(n, dtype=float, device=dev); tmpv = wp.zeros(n, dtype=wp.vec3, device=dev)
+        ntri = len(In) // 3
+        lo = wp.zeros(ntri, dtype=wp.vec3, device=dev); hi = wp.zeros(ntri, dtype=wp.vec3, device=dev)
+        wp.launch(tri_bounds, ntri, inputs=[P, I, lo, hi], device=dev)
+        edge = float(np.linalg.norm(Pn[In[1::3]] - Pn[In[0::3]], axis=1).mean())
+        def run(key, k, inputs):
+            bad.zero_()
+            wp.launch(k, n, inputs=inputs + [bad], device=dev)
+            R.setdefault(f"{mname}/{key}", [0, 0])
+            R[f"{mname}/{key}"][0] += int(np.count_nonzero(bad.numpy())); R[f"{mname}/{key}"][1] += n
+        run("helpers(closest_point_edge_edge,intersect_tri_tri)", k_helpers, [Q, tmpv])
+        for leaf, con in itertools.product([1, 2, 4], ["sah", "median", "lbvh"]):
+            m = wp.Mesh(points=P, indices=I, support_winding_number=True, bvh_constructor=con, bvh_leaf_size=leaf)
+            for key, k in [("mesh_query_point", k_point), ("mesh_query_point_no_sign", k_nosign),
+                           ("mesh_query_furthest_point_no_sign", k_furthest), ("mesh_query_point_sign_parity", k_parity),
+                           ("mesh_query_point_sign_normal", k_normal), ("mesh_query_point_sign_winding_number", k_wn)]:
+                run(key, k, [m.id, Q])
+            run("mesh_query_point_sign_normal(test shape)", k_normal_ctx, [m.id, Q, dist])
+            for d in DIRS:
+                run("mesh_query_ray", k_ray, [m.id, Q, d])
+                run("mesh_query_ray_anyhit/count_intersections", k_ray_misc, [m.id, Q, d, tmp])
+            run("mesh_query_aabb", k_maabb, [m.id, Q, edge, tmp])
+            b = wp.Bvh(lo, hi, constructor=con, leaf_size=leaf)
+            for d in DIRS[:3]:
+                run("bvh_query_ray/aabb", k_bvh, [b.id, Q, d, edge, tmp])
+    json.dump(out, open(sys.argv[1], "w"), indent=1)
+    for k, (c, t) in R.items():
+        print(f"{c:8d} / {t:9d}  {k}")
+
+if __name__ == "__main__":
+    main()
+```
+
+`user2.py`:
+```python
+# usage: user2.py [nofuse]; can user code that evaluates one expression twice in a kernel get two answers?
+import sys
+import numpy as np
+import warp as wp
+
+wp.init()
+dev = wp.get_device("cuda:0")
+if "nofuse" in sys.argv:
+    wp.set_module_options({"fuse_fp": False})
+
+@wp.func
+def box_d2(p: wp.vec3, lo: wp.vec3, hi: wp.vec3) -> float:
+    dx = wp.min(hi[0], wp.max(lo[0], p[0])) - p[0]
+    dy = wp.min(hi[1], wp.max(lo[1], p[1])) - p[1]
+    dz = wp.min(hi[2], wp.max(lo[2], p[2])) - p[2]
+    return dx * dx + dy * dy + dz * dz
+
+@wp.func
+def det2(a: float, b: float, c: float, d: float) -> float:
+    return a * d - b * c
+
+@wp.kernel
+def k_box(p: wp.array[wp.vec3], lo: wp.array[wp.vec3], hi: wp.array[wp.vec3], trip: int,
+          o1: wp.array[float], o2: wp.array[float], o3: wp.array[float]):
+    i = wp.tid()
+    n = p.shape[0]
+    j = (i + 1) % n
+    a = box_d2(p[i], lo[i], hi[i])
+    b = box_d2(p[i], lo[j], hi[j])
+    o1[i] = a
+    acc = wp.where(a < b, a, b)
+    for _k in range(trip):
+        c = box_d2(p[i], lo[i], hi[i])
+        e = box_d2(p[j], lo[i], hi[i])
+        acc += c * 0.5 + e
+        o2[i] = c
+    o3[i] = acc
+
+@wp.kernel
+def k_det(x: wp.array[wp.vec4], trip: int, o1: wp.array[float], o2: wp.array[float], o3: wp.array[float]):
+    i = wp.tid()
+    v = x[i]
+    a = det2(v[0], v[1], v[2], v[3])
+    o1[i] = a
+    acc = float(0.0)
+    for _k in range(trip):
+        u = x[(i + 1) % x.shape[0]]
+        c = det2(v[0], v[1], v[2], v[3])
+        acc += c * u[0] + v[1] * v[2]
+        o2[i] = c
+    o3[i] = acc
+
+@wp.kernel
+def k_dot(x: wp.array[wp.vec3], y: wp.array[wp.vec3], trip: int, o1: wp.array[float], o2: wp.array[float],
+          o3: wp.array[float]):
+    i = wp.tid()
+    a = wp.dot(x[i], y[i])
+    o1[i] = a
+    acc = float(0.0)
+    for _k in range(trip):
+        c = wp.dot(x[i], y[i])
+        acc += c + x[i][0] * y[i][0]
+        o2[i] = c
+    o3[i] = acc
+
+n = 1 << 22
+rng = np.random.default_rng(3)
+f = lambda *s: rng.standard_normal(s).astype(np.float32)
+o1, o2, o3 = (wp.zeros(n, dtype=float, device=dev) for _ in range(3))
+P = wp.array(f(n, 3), dtype=wp.vec3, device=dev)
+c = f(n, 3); h = np.abs(f(n, 3))
+LO = wp.array(c - h, dtype=wp.vec3, device=dev); HI = wp.array(c + h, dtype=wp.vec3, device=dev)
+wp.launch(k_box, n, inputs=[P, LO, HI, 1, o1, o2, o3], device=dev)
+print("box_d2: straight-line vs loop copy differ:", int(np.count_nonzero(o1.numpy() != o2.numpy())), "of", n)
+X = wp.array(f(n, 4), dtype=wp.vec4, device=dev)
+wp.launch(k_det, n, inputs=[X, 1, o1, o2, o3], device=dev)
+print("det2  : straight-line vs loop copy differ:", int(np.count_nonzero(o1.numpy() != o2.numpy())), "of", n)
+Y = wp.array(f(n, 3), dtype=wp.vec3, device=dev)
+wp.launch(k_dot, n, inputs=[P, Y, 1, o1, o2, o3], device=dev)
+print("dot   : straight-line vs loop copy differ:", int(np.count_nonzero(o1.numpy() != o2.numpy())), "of", n)
+```
+
+`perf.py` (the timing harness; `perf2.py` keeps only the kernels named above):
+```python
+# usage: perf.py <out.json>; time per launch of mesh query kernels on a large noisy closed torus mesh
+import json, sys, time
+import numpy as np
+import warp as wp
+
+wp.init()
+dev = wp.get_device("cuda:0")
+
+@wp.kernel
+def k_wn(m: wp.uint64, pts: wp.array[wp.vec3], o: wp.array[float]):
+    i = wp.tid()
+    q = wp.mesh_query_point_sign_winding_number(m, pts[i], 1.0e6)
+    o[i] = q.sign + q.u + float(q.face)
+# k_point, k_nosign, k_normal, k_furthest(min_dist 0.0): the same shape with the other point queries (o = [sign +] u + face)
+
+@wp.kernel
+def k_ray(m: wp.uint64, pts: wp.array[wp.vec3], o: wp.array[float]):
+    i = wp.tid()
+    p = pts[i]
+    q = wp.mesh_query_ray(m, p, wp.normalize(-p + wp.vec3(0.01, 0.02, 0.03)), 1.0e6)
+    o[i] = q.t + float(q.face)
+
+@wp.kernel
+def k_tritri(P: wp.array[wp.vec3], I: wp.array[int], o: wp.array[float]):
+    i = wp.tid()
+    n = I.shape[0] // 3
+    j = (i * 7919) % n
+    k = (j + 1) % n
+    o[i] = float(wp.intersect_tri_tri(P[I[3 * j]], P[I[3 * j + 1]], P[I[3 * j + 2]], P[I[3 * k]], P[I[3 * k + 1]] + wp.vec3(0.0, 0.001, 0.0), P[I[3 * k + 2]]))
+
+@wp.kernel
+def k_axpy(a: wp.array[wp.vec3], o: wp.array[float]):
+    i = wp.tid()
+    o[i] = o[i] * 0.5 + wp.length(a[i])
+
+def torus(nu, nv, R=1.0, r=0.35, noise=0.01, seed=0):
+    rng = np.random.default_rng(seed)
+    u = np.linspace(0, 2 * np.pi, nu, endpoint=False)
+    v = np.linspace(0, 2 * np.pi, nv, endpoint=False)
+    U, V = np.meshgrid(u, v, indexing="ij")
+    rr = r * (1 + noise * rng.standard_normal(U.shape))
+    P = np.stack([(R + rr * np.cos(V)) * np.cos(U), (R + rr * np.cos(V)) * np.sin(U), rr * np.sin(V)], -1).reshape(-1, 3)
+    a = np.arange(nu)[:, None] * nv
+    b = np.arange(nv)[None, :]
+    a1 = ((np.arange(nu)[:, None] + 1) % nu) * nv
+    b1 = (b + 1) % nv
+    v00, v10, v11, v01 = a + b, a1 + b, a1 + b1, a + b1
+    I = np.stack([v00, v10, v11, v00, v11, v01], -1).reshape(-1)
+    return P.astype(np.float32), I.astype(np.int32)
+
+def bench(fn, n):
+    for _ in range(2):
+        fn()
+    wp.synchronize_device(dev)
+    s = []
+    for _ in range(5):
+        t = time.perf_counter()
+        for _ in range(n):
+            fn()
+        wp.synchronize_device(dev)
+        s.append((time.perf_counter() - t) / n)
+    return float(np.median(s)) * 1e3
+
+def main():
+    Pn, In = torus(1000, 1000)
+    P = wp.array(Pn, dtype=wp.vec3, device=dev)
+    I = wp.array(In, dtype=int, device=dev)
+    rng = np.random.default_rng(1)
+    nq = 1000000
+    q = (rng.random((nq, 3)) * 2 - 1) * np.array([1.5, 1.5, 0.5])
+    Q = wp.array(q.astype(np.float32), dtype=wp.vec3, device=dev)
+    o = wp.zeros(nq, dtype=float, device=dev)
+    res = {}
+    for con in ["lbvh", "sah"]:
+        m = wp.Mesh(points=P, indices=I, support_winding_number=True, bvh_constructor=con)
+        for name, k, N in [("point", k_point, 3), ("no_sign", k_nosign, 3), ("sign_normal", k_normal, 3),
+                           ("sign_winding_number", k_wn, 1), ("furthest_no_sign", k_furthest, 1), ("ray", k_ray, 5)]:
+            res[f"{con}/{name}"] = bench(lambda: wp.launch(k, nq, inputs=[m.id, Q, o], device=dev), N)
+    res["tri_tri"] = bench(lambda: wp.launch(k_tritri, nq, inputs=[P, I, o], device=dev), 50)
+    res["elementwise"] = bench(lambda: wp.launch(k_axpy, nq, inputs=[Q, o], device=dev), 200)
+    json.dump(res, open(sys.argv[1], "w"), indent=1)
+
+if __name__ == "__main__":
+    main()
+```
+
+Runs: `TREE=<tree> r.sh <tag> twice.py <out.json> [nofuse]`, `r.sh <tag> user2.py [nofuse]`, and for timing, interleaved `for r in 1..N; for tree in before after [abox]: TREE=<tree> utils/timeit.sh warp-1.14 test -- r.sh p-<tree>-<r> perf.py p-<tree>-<r>.json`. The hipRTC `on` tree was a scratch worktree of the fork at `4e0d02ab` with only `"-ffp-contract=fast-honor-pragmas"` replaced by `"-ffp-contract=on"` in `warp/native/warp.cu`, rebuilt with the same `build_lib.py` command, then removed.
+
+### Next step
+
+jeff rules among section 4's options (and, before that, the coordinator's NVIDIA run of `twice.py`/`hel.py`/`user2.py` and a winding-number timing on another arch would inform it). Then a porter applies the ruled change (the patch above, or the option string), runs this session's test table and the full suite on gfx90a, commits with the usual rules, and `advance-head`s; gfx90a revalidates. The work lock is held by this job (stage `porting`) and is released by that round's `ported` transition; the next porter resumes it per the rule for a stopped holder.
