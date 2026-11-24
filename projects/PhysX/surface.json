@@ -1021,288 +1021,618 @@
       "planner_note": "GPU snippet; must run on the GPU (kernel dispatches counted), not the silent CPU fallback"
     }
   ],
-  "covered": [],
-  "scoped_out": [],
-  "owed": [
+  "covered": [
+    {
+      "id": "example:hello-physx-cmake",
+      "note": "hello-physx-cmake built with FetchContent against the fork and PX_USE_HIP=ON; runs and reports GPU acceleration available"
+    },
+    {
+      "id": "executable:Snippet${SNIPPET_NAME}",
+      "note": "built and run (snippets: release and checked; ovd tools: pvddom workflow and unit CTest)"
+    },
+    {
+      "id": "executable:ovd_inspect",
+      "note": "built and run (snippets: release and checked; ovd tools: pvddom workflow and unit CTest)"
+    },
+    {
+      "id": "executable:ovd_record",
+      "note": "built and run (snippets: release and checked; ovd tools: pvddom workflow and unit CTest)"
+    },
+    {
+      "id": "executable:ovd_record_errors",
+      "note": "built and run (snippets: release and checked; ovd tools: pvddom workflow and unit CTest)"
+    },
+    {
+      "id": "library:LowLevel",
+      "note": "built in the linux-gcc-rocm release and checked builds at the round head (gfx942)"
+    },
+    {
+      "id": "library:LowLevelAABB",
+      "note": "built in the linux-gcc-rocm release and checked builds at the round head (gfx942)"
+    },
+    {
+      "id": "library:LowLevelDynamics",
+      "note": "built in the linux-gcc-rocm release and checked builds at the round head (gfx942)"
+    },
+    {
+      "id": "library:PVDRuntime",
+      "note": "built in the linux-gcc-rocm release and checked builds at the round head (gfx942)"
+    },
+    {
+      "id": "library:PhysX",
+      "note": "built in the linux-gcc-rocm release and checked builds at the round head (gfx942)"
+    },
+    {
+      "id": "library:PhysXArticulationGpu",
+      "note": "built in the linux-gcc-rocm release and checked builds at the round head (gfx942)"
+    },
+    {
+      "id": "library:PhysXBroadphaseGpu",
+      "note": "built in the linux-gcc-rocm release and checked builds at the round head (gfx942)"
+    },
+    {
+      "id": "library:PhysXCharacterKinematic",
+      "note": "built in the linux-gcc-rocm release and checked builds at the round head (gfx942)"
+    },
+    {
+      "id": "library:PhysXCommon",
+      "note": "built in the linux-gcc-rocm release and checked builds at the round head (gfx942)"
+    },
+    {
+      "id": "library:PhysXCommonGpu",
+      "note": "built in the linux-gcc-rocm release and checked builds at the round head (gfx942)"
+    },
+    {
+      "id": "library:PhysXCudaContextManager",
+      "note": "built in the linux-gcc-rocm release and checked builds at the round head (gfx942)"
+    },
+    {
+      "id": "library:PhysXExtensions",
+      "note": "built in the linux-gcc-rocm release and checked builds at the round head (gfx942)"
+    },
+    {
+      "id": "library:PhysXFoundation",
+      "note": "built in the linux-gcc-rocm release and checked builds at the round head (gfx942)"
+    },
+    {
+      "id": "library:PhysXGpu",
+      "note": "built in the linux-gcc-rocm release and checked builds at the round head (gfx942)"
+    },
+    {
+      "id": "library:PhysXGpuDependencies",
+      "note": "built in the linux-gcc-rocm release and checked builds at the round head (gfx942)"
+    },
+    {
+      "id": "library:PhysXNarrowphaseGpu",
+      "note": "built in the linux-gcc-rocm release and checked builds at the round head (gfx942)"
+    },
+    {
+      "id": "library:PhysXPvdSDK",
+      "note": "built in the linux-gcc-rocm release and checked builds at the round head (gfx942)"
+    },
+    {
+      "id": "library:PhysXSimulationControllerGpu",
+      "note": "built in the linux-gcc-rocm release and checked builds at the round head (gfx942)"
+    },
+    {
+      "id": "library:PhysXSolverGpu",
+      "note": "built in the linux-gcc-rocm release and checked builds at the round head (gfx942)"
+    },
+    {
+      "id": "library:PhysXTask",
+      "note": "built in the linux-gcc-rocm release and checked builds at the round head (gfx942)"
+    },
+    {
+      "id": "library:PhysXVehicle",
+      "note": "built in the linux-gcc-rocm release and checked builds at the round head (gfx942)"
+    },
+    {
+      "id": "library:PvdDom",
+      "note": "built in the linux-gcc-rocm release and checked builds at the round head (gfx942)"
+    },
+    {
+      "id": "library:SceneQuery",
+      "note": "built in the linux-gcc-rocm release and checked builds at the round head (gfx942)"
+    },
+    {
+      "id": "library:SimulationController",
+      "note": "built in the linux-gcc-rocm release and checked builds at the round head (gfx942)"
+    },
+    {
+      "id": "library:SnippetRender",
+      "note": "built in the linux-gcc-rocm release and checked builds at the round head (gfx942)"
+    },
+    {
+      "id": "library:SnippetUtils",
+      "note": "built in the linux-gcc-rocm release and checked builds at the round head (gfx942)"
+    },
+    {
+      "id": "option:PVDDOM_BUILD_INSPECTION",
+      "note": "exercised by the preset build, the pvddom workflow, or a dedicated configure (notes.md porter round 2026-11-24)"
+    },
+    {
+      "id": "option:PVDDOM_BUILD_TESTS",
+      "note": "exercised by the preset build, the pvddom workflow, or a dedicated configure (notes.md porter round 2026-11-24)"
+    },
+    {
+      "id": "option:PVDDOM_BUILD_TOOLS",
+      "note": "exercised by the preset build, the pvddom workflow, or a dedicated configure (notes.md porter round 2026-11-24)"
+    },
+    {
+      "id": "option:PX_BUILDPVDRUNTIME",
+      "note": "exercised by the preset build, the pvddom workflow, or a dedicated configure (notes.md porter round 2026-11-24)"
+    },
+    {
+      "id": "option:PX_BUILDSNIPPETS",
+      "note": "exercised by the preset build, the pvddom workflow, or a dedicated configure (notes.md porter round 2026-11-24)"
+    },
+    {
+      "id": "option:PX_CMAKE_SUPPRESS_REGENERATION",
+      "note": "generator-only option (zero_check projects), untouched by the port; default OFF in every build of this round"
+    },
+    {
+      "id": "option:PX_GENERATE_GPU_PROJECTS",
+      "note": "exercised by the preset build, the pvddom workflow, or a dedicated configure (notes.md porter round 2026-11-24)"
+    },
+    {
+      "id": "option:PX_GENERATE_GPU_PROJECTS_ONLY",
+      "note": "exercised by the preset build, the pvddom workflow, or a dedicated configure (notes.md porter round 2026-11-24)"
+    },
+    {
+      "id": "option:PX_GENERATE_GPU_STATIC_LIBRARIES",
+      "note": "builds libPhysXGpu_static_64.a with PX_GENERATE_STATIC_LIBRARIES=OFF (the static/static pair is refused by upstream); no in-tree consumer runs it"
+    },
+    {
+      "id": "option:PX_GENERATE_STATIC_LIBRARIES",
+      "note": "exercised by the preset build, the pvddom workflow, or a dedicated configure (notes.md porter round 2026-11-24)"
+    },
+    {
+      "id": "test:consumer",
+      "note": "passed: pvddom workflow CTest 5/5 (ovd_sdk_gpu_capture PASS with GPU=ON) and pvddom unit CTest 372/372"
+    },
+    {
+      "id": "test:dump_ovd",
+      "note": "passed: pvddom workflow CTest 5/5 (ovd_sdk_gpu_capture PASS with GPU=ON) and pvddom unit CTest 372/372"
+    },
+    {
+      "id": "test:generate_test_ovd",
+      "note": "passed: pvddom workflow CTest 5/5 (ovd_sdk_gpu_capture PASS with GPU=ON) and pvddom unit CTest 372/372"
+    },
+    {
+      "id": "test:installed_consumer",
+      "note": "passed: pvddom workflow CTest 5/5 (ovd_sdk_gpu_capture PASS with GPU=ON) and pvddom unit CTest 372/372"
+    },
+    {
+      "id": "test:ovd_annotation_file_failures",
+      "note": "passed: pvddom workflow CTest 5/5 (ovd_sdk_gpu_capture PASS with GPU=ON) and pvddom unit CTest 372/372"
+    },
+    {
+      "id": "test:ovd_annotation_file_tests",
+      "note": "passed: pvddom workflow CTest 5/5 (ovd_sdk_gpu_capture PASS with GPU=ON) and pvddom unit CTest 372/372"
+    },
+    {
+      "id": "test:ovd_cli_installed",
+      "note": "passed: pvddom workflow CTest 5/5 (ovd_sdk_gpu_capture PASS with GPU=ON) and pvddom unit CTest 372/372"
+    },
+    {
+      "id": "test:ovd_new_file_permissions",
+      "note": "passed: pvddom workflow CTest 5/5 (ovd_sdk_gpu_capture PASS with GPU=ON) and pvddom unit CTest 372/372"
+    },
+    {
+      "id": "test:ovd_new_file_tests",
+      "note": "passed: pvddom workflow CTest 5/5 (ovd_sdk_gpu_capture PASS with GPU=ON) and pvddom unit CTest 372/372"
+    },
+    {
+      "id": "test:ovd_record_error_diagnostic",
+      "note": "passed: pvddom workflow CTest 5/5 (ovd_sdk_gpu_capture PASS with GPU=ON) and pvddom unit CTest 372/372"
+    },
+    {
+      "id": "test:ovd_record_options",
+      "note": "passed: pvddom workflow CTest 5/5 (ovd_sdk_gpu_capture PASS with GPU=ON) and pvddom unit CTest 372/372"
+    },
+    {
+      "id": "test:ovd_sdk_capture_inspect_compare",
+      "note": "passed: pvddom workflow CTest 5/5 (ovd_sdk_gpu_capture PASS with GPU=ON) and pvddom unit CTest 372/372"
+    },
+    {
+      "id": "test:ovd_sdk_gpu_capture",
+      "note": "passed: pvddom workflow CTest 5/5 (ovd_sdk_gpu_capture PASS with GPU=ON) and pvddom unit CTest 372/372"
+    },
+    {
+      "id": "test:ovd_sdk_package_coexistence",
+      "note": "passed: pvddom workflow CTest 5/5 (ovd_sdk_gpu_capture PASS with GPU=ON) and pvddom unit CTest 372/372"
+    },
+    {
+      "id": "test:pvddom_allocation_failures",
+      "note": "passed: pvddom workflow CTest 5/5 (ovd_sdk_gpu_capture PASS with GPU=ON) and pvddom unit CTest 372/372"
+    },
+    {
+      "id": "test:pvddom_reader_allocation_failures",
+      "note": "passed: pvddom workflow CTest 5/5 (ovd_sdk_gpu_capture PASS with GPU=ON) and pvddom unit CTest 372/372"
+    },
+    {
+      "id": "test:pvddom_tests",
+      "note": "passed: pvddom workflow CTest 5/5 (ovd_sdk_gpu_capture PASS with GPU=ON) and pvddom unit CTest 372/372"
+    },
+    {
+      "id": "seam:driver-api-cuda_to_hip",
+      "note": "ported and runtime-tested on MI300X, with a teeth test (notes.md)"
+    },
+    {
+      "id": "seam:kernel-module-registration",
+      "note": "ported and runtime-tested on MI300X, with a teeth test (notes.md)"
+    },
+    {
+      "id": "seam:sdk-gpu-module-loader",
+      "note": "ported and runtime-tested on MI300X, with a teeth test (notes.md)"
+    },
+    {
+      "id": "feature:sdf-software-trilinear-sampler",
+      "note": "software SDF sampler; SnippetGpuParity SDF checks pass, 10 fail with the sampler zeroed"
+    },
+    {
+      "id": "build:top-level-PX_USE_HIP",
+      "note": "top-level PX_USE_HIP through the linux-gcc-rocm preset, direct configure and FetchContent consumer"
+    },
+    {
+      "id": "test:gpu-cpu-parity-harness",
+      "note": "SnippetGpuParity: 29 checks pass on MI300X release and checked; teeth tests in notes.md"
+    },
+    {
+      "id": "gpu-snippet:SnippetHelloGRB",
+      "note": "built and run (snippets: release and checked; ovd tools: pvddom workflow and unit CTest)"
+    },
+    {
+      "id": "gpu-snippet:SnippetDeformableSurface",
+      "note": "built and run (snippets: release and checked; ovd tools: pvddom workflow and unit CTest)"
+    },
+    {
+      "id": "gpu-snippet:SnippetDeformableVolume",
+      "note": "built and run (snippets: release and checked; ovd tools: pvddom workflow and unit CTest)"
+    },
+    {
+      "id": "gpu-snippet:SnippetDeformableVolumeAttachment",
+      "note": "built and run (snippets: release and checked; ovd tools: pvddom workflow and unit CTest)"
+    },
+    {
+      "id": "gpu-snippet:SnippetDeformableVolumeKinematic",
+      "note": "built and run (snippets: release and checked; ovd tools: pvddom workflow and unit CTest)"
+    },
+    {
+      "id": "gpu-snippet:SnippetDeformableSurfaceSkinning",
+      "note": "built and run (snippets: release and checked; ovd tools: pvddom workflow and unit CTest)"
+    },
+    {
+      "id": "gpu-snippet:SnippetDeformableVolumeSkinning",
+      "note": "built and run (snippets: release and checked; ovd tools: pvddom workflow and unit CTest)"
+    },
+    {
+      "id": "gpu-snippet:SnippetSDF",
+      "note": "upstream defaults gUseGPU=false (CPU); run as shipped (exit 0) and as a local gUseGPU=true variant (53939 dispatches, SDF path in convexMeshMidphase.cu)"
+    },
+    {
+      "id": "gpu-snippet:SnippetPBF",
+      "note": "built and run (snippets: release and checked; ovd tools: pvddom workflow and unit CTest)"
+    },
+    {
+      "id": "gpu-snippet:SnippetPBFMultiMat",
+      "note": "built and run (snippets: release and checked; ovd tools: pvddom workflow and unit CTest)"
+    },
+    {
+      "id": "gpu-snippet:SnippetIsosurface",
+      "note": "built and run (snippets: release and checked; ovd tools: pvddom workflow and unit CTest)"
+    },
+    {
+      "id": "gpu-snippet:SnippetOmniPvdMultiGeom",
+      "note": "checked only (upstream drops it from release); needs --omnipvdfile; exit 0 with dispatches, 120 frames written"
+    },
+    {
+      "id": "gpu-snippet:SnippetRBDirectGPUAPI",
+      "note": "built and run (snippets: release and checked; ovd tools: pvddom workflow and unit CTest)"
+    },
+    {
+      "id": "gpu-snippet:SnippetDirectGPUAPIArticulation",
+      "note": "built and run (snippets: release and checked; ovd tools: pvddom workflow and unit CTest)"
+    }
+  ],
+  "scoped_out": [
     {
       "id": "benchmark:benchmark_contact_affinity_tests",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "benchmark:benchmark_failure_tests",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "benchmark:benchmark_filter_tests",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "benchmark:benchmark_timing_diagnostics_tests",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "benchmark:ovphysx_benchmarks",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "example:companion_direct_contract",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "library:OvruntimeCommon",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "library:OvruntimeCompiledCache",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "library:OvruntimeConvexDecomposition",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "library:OvruntimePhysX",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "library:OvruntimePhysXCooking",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "library:OvruntimePhysXCudaShim",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "library:OvruntimePhysXFoundation",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "library:OvruntimePhysXGpu",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "library:OvruntimePhysicsOvstage",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "library:OvruntimePhysicsParse",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "library:OvruntimePhysicsUsd",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "library:installed_public_headers",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "library:ovphysx",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "library:ovphysx_internal",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "library:public_header_c_no_deprecated_test",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "library:public_header_no_deprecated_test",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "option:COMPANION_BUILD_NEGATIVE_FIXTURES",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "option:NV_APPEND_CONFIG_NAME",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "option:NV_FORCE_32BIT_SUFFIX",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "option:NV_FORCE_64BIT_SUFFIX",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "option:NV_USE_DEBUG_WINCRT",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "option:NV_USE_STATIC_WINCRT",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "option:OVPHYSX_BUILD_BENCHMARKS",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "option:OVPHYSX_DEV_PHYSX",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "option:OVPHYSX_ENABLE_GPU_TESTS",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "option:OVPHYSX_FETCH_DEPS",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "option:OVPHYSX_REQUIRE_BENCHMARK_CUDA",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "option:OVPHYSX_TEST_UNQUALIFIED_COMPANION",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "option:OVPHYSX_USE_RELEASE_RUNTIME_DEPS",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "option:OVPHYSX_WARNINGS_AS_ERRORS",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "option:OVRUNTIME_DEV_PHYSX",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "option:OVRUNTIME_DEV_SCHEMA",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "option:OVRUNTIME_ENABLE_BENCHMARK_CTEST",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "option:OVRUNTIME_ENABLE_COVERAGE",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "option:OVRUNTIME_ENABLE_TESTS",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "test:basic_workflow_c",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "test:benchmark-contact-affinity-unit",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "test:benchmark-contract",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "test:benchmark-failure-unit",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "test:benchmark-filter-unit",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "test:benchmark-timing-diagnostics-unit",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "test:benchmarks-cpp",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "test:benchmarks-python",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "test:c_api_compatibility_test",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "test:c_unittests",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "test:clone_c",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "test:contact_binding_c",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "test:cpp-samples",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "test:cpp-unit",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "test:hello_world_c",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "test:hello_world_source_link",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "test:instance_executor_unittests",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "test:kinematic_support_c",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "test:omnipvd_recording_cpp",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "test:ovstage_output_cpp",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "test:physx_interop_cpp",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "test:python-runtime",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "test:python-samples",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "test:python-wheel",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "test:sidecar_token_scope_unittests",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "test:source-link",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "test:tensor_bindings_c",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "test:tensor_bindings_gpu_c",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
     },
     {
       "id": "test:vehicle_read_write_cpp",
-      "reason": "Awaiting Jeff's scope ruling (PhysX notes, Planning 2026-11-20, Question 1): ovphysx is a separate USD/Python product with its own CUDA (4 .cu, ~30 CUDA-runtime host files), NVIDIA Carbonite/ovstage packman binaries, Warp output arrays, and two NVIDIA-proprietary licence files. Not cut by the planner; pr_ready stays refused until ruled."
+      "reason": "Ruled out of this round by Jeff Daily, 2026-11-23 (notes.md, 'Rulings on the planner's questions', Question 1 = A): port the physx/ SDK only; ovphysx is deferred for a later round. Deferral registered as deferred id physx-ovphysx-port (projects/PhysX/deferred.json)."
+    },
+    {
+      "id": "option:PX_BUILDUNITTESTS",
+      "reason": "The public SDK unit tests (physx/test/public) are not in the open-source tree; physx/CMakeLists.txt stops with 'This source distribution does not include the public unit tests' when the option is on. SnippetGpuParity is the GPU correctness evidence instead (plan.md Test plan)."
+    }
+  ],
+  "owed": [
+    {
+      "id": "build:cmakegpu-windows-hip",
+      "reason": "Windows round, owed: the Windows GPU build (cmakegpu/windows, PhysXGpu_64.dll through clang/TheRock, no nvcuda.dll delay-load, registration forwarding via GetProcAddress) is not written or validated in the 2026-11-24 linux-gfx942 round; Windows laptop runs go last by Jeff's standing ruling. See notes.md porter round 2026-11-24."
+    },
+    {
+      "id": "test:ovd_new_file_windows",
+      "reason": "Windows round, owed: the Windows GPU build (cmakegpu/windows, PhysXGpu_64.dll through clang/TheRock, no nvcuda.dll delay-load, registration forwarding via GetProcAddress) is not written or validated in the 2026-11-24 linux-gfx942 round; Windows laptop runs go last by Jeff's standing ruling. See notes.md porter round 2026-11-24."
+    },
+    {
+      "id": "test:ovd_new_file_windows_tests",
+      "reason": "Windows round, owed: the Windows GPU build (cmakegpu/windows, PhysXGpu_64.dll through clang/TheRock, no nvcuda.dll delay-load, registration forwarding via GetProcAddress) is not written or validated in the 2026-11-24 linux-gfx942 round; Windows laptop runs go last by Jeff's standing ruling. See notes.md porter round 2026-11-24."
     }
   ],
   "removed_from_floor": [

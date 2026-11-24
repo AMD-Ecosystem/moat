@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "physx-ovphysx-port",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "ovphysx (NVIDIA's USD/Python product in the PhysX repository: 4 .cu files, about 30 CUDA-runtime host files, Warp output arrays, NVIDIA Carbonite/ovstage packman binaries, two NVIDIA-proprietary licence texts) is not ported in this round. Jeff Daily ruled on 2026-11-23 (Question 1 = A) to port the physx/ SDK only and defer ovphysx to a later round once the SDK port is validated; its 70 surface components are scoped_out citing that ruling. A later round needs depends_on warp, a check that the Carbonite/ovstage binaries can be used in a ROCm build, and its C/Python test suites.",
+      "refs": [
+        "projects/PhysX/notes.md#rulings-on-the-planners-questions-jeff-daily-2026-11-23"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-24T11:13:56Z",
+      "decided": null
+    }
+  ]
+}
