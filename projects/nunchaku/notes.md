@@ -291,6 +291,43 @@ if __name__ == "__main__":
         sys.exit(1 if compare(sys.argv[2], sys.argv[3]) else 0)
 ```
 
+## CUDA compile check 2026-11-24 (mi355 fleet job, nvcc, no GPU used, for jeff)
+
+Result: **PASS, no CUDA regression at fork `5c32be5` against upstream base `302e0e97`.** Same 36 objects, 0 errors in both, the identical warning set, a byte-identical `build.ninja`, and identical SASS for every device object except one `__assertfail` line-number literal. Nothing in the fork was changed or pushed; stage and lock untouched.
+
+### Environment
+
+- nvcc `/usr/local/cuda-12.8/bin/nvcc`: Cuda compilation tools, release 12.8, V12.8.93. Host compiler `c++` = g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0. No NVIDIA GPU on the host (`torch.cuda.device_count()` 0); `CUDA_VISIBLE_DEVICES=` set anyway; no AMD GPU touched.
+- Job venv (Python 3.11.17): `torch==2.11.0+cu128`, `torchvision==0.26.0+cu128` (`--index-url https://download.pytorch.org/whl/cu128`; pin both: an unpinned `torchvision` pulled torch 2.15.0+cu132 from PyPI), `diffusers==0.36.0`, `transformers==4.55.2`, `accelerate==1.9`, `peft==0.17`, `huggingface-hub==0.34`, einops, protobuf, sentencepiece.
+- Trees: `git clone https://github.com/AMD-Ecosystem/nunchaku`, `git checkout 5c32be5`, `git worktree add ../base 302e0e97`, `git submodule update --init --recursive` in each. Submodule pointers are the same at both commits (cutlass v3.3.0 a75b4ac4, Block-Sparse-Attention 99511c34, json 63258397, mio 8b6b7d87, spdlog 27cb4c76).
+
+### Build (identical for both trees, run in parallel)
+
+```
+export PATH=$FLEET_VENV/bin:/usr/local/cuda-12.8/bin:$PATH CUDA_HOME=/usr/local/cuda-12.8 CUDA_VISIBLE_DEVICES= NUNCHAKU_INSTALL_MODE=ALL MAX_JOBS=16
+python setup.py build_ext --inplace -v
+```
+
+`NUNCHAKU_INSTALL_MODE=ALL` because the default FAST mode reads the visible GPUs and there are none; ALL is the wheel target set: `Detected SM targets: ['75', '80', '86', '89', '120a']` (sm_120a since nvcc >= 12.8), so the sm_75-only and the FP4 (sm_120a) kernel bodies were compiled too. Base: exit 0 in 285 s; 5c32be5: exit 0 in 288 s. `setup.py --version` gives `1.3.0.dev20261124+cu12.8torch2.11` in both.
+
+### Comparison
+
+- **setup.py takes the CUDA branch unchanged on a CUDA torch**: the generated `build/temp*/build.ninja` is byte-identical between the trees once the tree path is substituted: same 36 sources (Block-Sparse-Attention's 10 and `gemm_w8a8.cu` included, `flash_api_rocm.cpp` absent), same `cflags`/`post_cflags` (g++ `-std=c++20 -Og ...`) and `cuda_post_cflags` (nvcc `-g -std=c++20 -UNDEBUG -Xcudafe --diag_suppress=20208 -U__CUDA_NO_*` x8 `--threads=5 --expt-relaxed-constexpr --expt-extended-lambda --ptxas-options=--allow-expensive-optimizations=true --generate-line-info` plus `-gencode arch=compute_X,code=sm_X` for 75/80/86/89/120a). No HIP flag, no `PYTORCH_ROCM_ARCH`, no `-DUSE_ROCM` reaches the CUDA build. Linked `NEEDED` libraries of `_C*.so` identical (libc10, libc10_cuda, libcudart.so.12, libtorch, libtorch_cpu, libtorch_python, libstdc++, ...).
+- **Objects**: the same 36 `.o` in both trees; per-file compile result PASS for every one in both: `nunchaku/csrc/pybind`, `src/{FluxModel,Linear,Module,SanaModel,Serialization,activation,layernorm,interop/torch}`, `src/kernels/{activation_kernels,dwconv,gemm_batched,gemm_f16,layernorm_kernels,misc_kernels}`, `src/kernels/awq/{gemm_awq,gemv_awq}`, `src/kernels/zgemm/{attention,gemm_w4a4,gemm_w4a4_launch_{bf16_fp4,bf16_int4,fp16_fp4,fp16_int4,fp16_int4_fasteri2f},gemm_w4a4_test,gemm_w8a8}`, the 2 Block-Sparse-Attention `.cpp` and its 8 `flash_fwd*_sm80.cu`.
+- **Errors**: 0 in both logs.
+- **Warnings**: identical multiset (paths and line numbers normalized): `gemm_awq.cu` #177-D unused `blockIdx_x`/`blockIdx_z`/`kSmemCol`/`kSmemSizeZeros`/`total_global_iters` (40 instances, same counts in both; `gemm_awq.cu` is a changed file and gains none), `FluxModel.cpp` unused `device` (pre-existing), Block-Sparse-Attention `flash_api.cpp` unused `counter_offset`/`device_guard`. No new warning in any changed file.
+- **SASS** (`cuobjdump -sass` per object, all five cubins, `nvdisasm` 12.8 from the triton wheel since the host toolkit lacks it; source-path identifier line dropped): identical function lists everywhere, and identical instructions and encodings for all 26 device-code objects except `layernorm_kernels.o`, which differs in 4 instructions (8 diff lines): `IMAD.MOV.U32 R8, RZ, RZ, 0x1da` -> `0x24f` and `0x1cc` -> `0x241` before the `__assertfail` call in `vllm::generalLayerNorm_fuse_sum`. Those are the `__LINE__` arguments of the two `assert(false)` in `src/kernels/utils.cuh`, which moved from lines 474/460 to 591/577 because the port added lines above them. So the CUDA machine code is unchanged.
+- **Shared C++ fixes** `a4abb15` (the `template` disambiguator in `attention.cu`, `epilogues.cuh`, `gemm_base.cuh`, `gemm_w4a4.cuh`, `gemm_w4a4_launch_impl.cuh`, `gemm_w4a4_test.cu`) and `6e23cc9` (`std::array<half2_t, 2>{...}` in `gemm_base.cuh`): compile cleanly under nvcc 12.8 and its g++ 13.3 host pass (these headers are reached only from `.cu` files), with no new warning, and the objects that include them (`attention.o`, the five `gemm_w4a4_launch_*.o`, `gemm_w4a4_test.o`, `gemm_w8a8.o`) have identical SASS to the base, confirming "generated code is unchanged". Both commit bodies say "the nvcc build was not run here"; that sentence is now out of date and the porter may want to replace it with the nvcc result when those commits are next touched (no change made here).
+
+### Python (what a CUDA install takes)
+
+- `import nunchaku` (full package, with the fork's CUDA-built `_C`), `nunchaku._C`, `nunchaku.ops.gemm`, `nunchaku.ops.quantize`, `nunchaku.models`, `nunchaku.lora.flux.packer`: import OK on torch 2.11.0+cu128 in both trees. The pybind surface (`dir()` of `_C.ops`, `_C.utils`, `_C.QuantizedFluxModel`) is identical. `get_rocm_arch()` returns None on CUDA. `py_compile` of `tests/ops/*.py`: OK.
+- Behaviour, `nunchaku/utils.py` loaded from each tree with `torch.cuda.get_device_capability` faked to sm 7.5, 8.0, 8.6, 8.9, 9.0, 10.0, 12.0, 12.1 and `torch.cuda.get_device_properties` replaced by a function that raises (so the ROCm arm cannot be entered silently): `get_precision("auto")` for devices `cuda`, `cuda:1`, `torch.device("cuda", 0)` and with int4/fp4 model names (incl. the warnings), `get_precision("int4"|"fp4")`, `is_turing()` on two devices, `check_hardware_compatibility` for int4 and `fp4_e2m1_all` configs: JSON output of base and 5c32be5 is identical (e.g. sm75 int4 + is_turing True; sm80/86/89 int4, fp4 config rejected; sm120/121 fp4, int4 config rejected; sm90/sm100 "Unsupported GPU architecture").
+
+### CUDA fixes proposed
+
+None needed.
+
 ## Lesson for cuda-to-rocm: hipify turns `std::max`/`std::min` into HIP's non-constexpr device functions
 
 (For `strategy-b-torch.md`, hipify section.) torch's build-time hipify rewrites `std::max(` and `std::min(` to `::max(` and `::min(`, HIP's `__device__` overloads. Runtime uses still compile, but a compile-time use breaks with "constexpr variable must be initialized by a constant expression" or "reference to __device__ function 'min' in global initializer" (nunchaku: `static constexpr int X = std::min(WARP_SIZE, WARP_N / PACK)` in a class template, and `constexpr int unroll = 16 / std::max(sizeof(a), sizeof(b))`). Fix without touching behaviour: give the template argument explicitly, `std::min<int>(...)`, which hipify's pattern does not match. Seen with ROCm 10.2 / torch 2.14 (nunchaku).
