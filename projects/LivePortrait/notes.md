@@ -373,3 +373,75 @@ Synthetic reproducer (the draft issue's code, at MIOpen defaults on gfx942): mag
 
 - `moatlib.py classify LivePortrait 00f208c 874215c`: `mixed`, not inert, so linux-gfx950 now reads `revalidate` and needs a real run (a host-side Python behaviour change; a binary-equivalence carry-forward would not see it). The wave32 gate needs a gfx1100 (or other RDNA) run at `874215c`; that run is also the second platform where the fix is visible. Windows stays last per the standing ruling.
 - Unchanged: `benchmark:speed` owed in surface.json, and the draft MIOpen issue (now with gfx950 forced-solver rows and the gfx942 default-choice evidence above) awaiting Jeff's approval to post.
+
+## Validation 2026-11-24 (linux-gfx1100, validator role, fleet job): head 874215c, wave32 gate
+
+AMD Radeon Pro W7800 48GB (gfx1100, wave32), job GPU pin `HIP_VISIBLE_DEVICES=0`; every GPU run under `ulimit -c 0` and `timeout`. Fork `moat-port` at `874215c` (= `head_sha` = `reviewed_sha`), built in `projects/LivePortrait/src`. Verdict: **pass**. **The fix is visible on this card:** the previous default Animals FP16 command overflows here (black boxes); at the head the documented command, with no MIOpen variable set by the user, gives no non-finite value and no dark block, and MIOpen chooses no Winograd solver in that process.
+
+### Environment (job-local; nothing in the image's shared paths)
+
+- `$FLEET_VENV` (Python 3.11.17), `$FLEET_VENV/bin` first on PATH: `torch[device-gfx1100]==2.16.0a0+rocm10.2.0a20261022`, `torchvision==0.30.0a0+rocm10.2.0a20261022`, `rocm[libraries,devel,device-gfx1100]==10.2.0a20261022` from `https://nightly.repo.amd.com/rocm/whl-next/` (HIP 7.17.26422); then `requirements_rocm.txt` (onnxruntime-migraphx 1.27.1, onnx 1.16.1, numpy 1.26.4) and the gradio pins (`huggingface_hub<1`, `fastapi==0.115.2`, `pydantic==2.10.6`). pip warns about the image's 10.1 device wheels reached through the base-links `.pth`; harmless.
+- MIGraphX `f0239c9` built per the recipe above with `-DGPU_TARGETS=gfx1100` (nlohmann/json v3.8.0, msgpack-c cpp-3.3.0, rocm-cmake 6a7c5b73 into a job prefix; system protobuf 3.21 and sqlite3 used), MAX_JOBS=16. Run time `LD_LIBRARY_PATH=<migraphx-install>/lib:<venv>/_rocm_sdk_core/lib:<venv>/_rocm_sdk_libraries/lib`, `ORT_MIGRAPHX_MODEL_CACHE_PATH=<job dir>`. System `ffmpeg`/`ffprobe` present on this host.
+- Weights: `snapshot_download('KwaiVGI/LivePortrait', ignore_patterns=['*.git*','README.md','docs/*'])` into the job dir (48 s), symlinked into `pretrained_weights/` for the runs and removed afterwards.
+- Instrumentation (container-local, not committed): the same kind of `runpy` wrapper as the gfx942 run (forward hooks on every network `load_model` builds, reporting the first module whose inputs are finite and output is not; counts generator calls with non-finite output; saves the first N `SPADEDecoder` outputs; logs ORT providers; prints `MIOPEN_DEBUG_CONV_WINOGRAD` as seen in the process after the entry point's imports ran; sets no MIOpen variable). A parser maps each MIOpen `Find Ended: <problem>` line to the following "FW Chosen Algorithm" line, so the solver for the overflowing layer's exact problem key is named, not inferred from counts. Comparer: x255 generator tensors and decoded video; "dark block" = 16x16 block mean < 8 in the candidate and > 40 in the reference.
+
+### X-Pose op
+
+`ROCM_HOME=$(rocm-sdk path --root) PATH=$ROCM_HOME/bin:$PATH PYTORCH_ROCM_ARCH=gfx1100 python setup.py build install` in `ops/`: rc 0, 162 warnings, all deprecations (`Tensor.data<T>()`, `type()`, `atomicAddNoRet`) plus 8 strict-aliasing and 2 unused-variable; venv `hipcc`, `--offload-arch=gfx1100`. `python test.py` (unmodified): forward double True (max abs 8.67e-19, rel 2.35e-16), float True (4.66e-10, 1.13e-07), `check_gradient_numerical` True for D = 30, 32, 64, 71, 1025; D = 2048 runs out of memory in slow-mode dense double Jacobians (tried 7.50 GiB with 37.5 GiB allocated of 45 GiB), as on the porter's gfx1100 run and the gfx942 partition. `gradcheck(fast_mode=True)`: D = 30 and 2048 True; D = 1025 and 3096 fail only "Backward is not reentrant" and are True with `nondet_tol=1e-12` (atomicAdd ordering), the same pattern as before.
+
+### Humans mode (MIGraphX EP active; 0 "Failed to load library" messages)
+
+| run | rc | wall |
+|---|---|---|
+| `python inference.py` (s0/d0, fp16), MIGraphX compile cold | 0 | 592 s |
+| same, warm ORT cache, cold MIOpen db (instrumented: 3 ORT sessions on `MIGraphXExecutionProvider`, 78 of 78 generator outputs finite) | 0 | 110 s |
+| `-s s9.jpg -d d0.mp4` | 0 | 21.1 s |
+| `-s s13.mp4 -d d0.mp4` | 0 | 31.4 s |
+| `-s s9.jpg -d d12.jpg` | 0 | 15.7 s |
+| `-s s9.jpg -d d0.pkl` | 0 | 19.5 s |
+| `-s s9.jpg -d talking.pkl` | 1 | `KeyError: 'c_d_eyes_lst'`, upstream data (every platform) |
+| `--no_flag_use_half_precision` | 0 | 34.7 s |
+| `--flag_do_torch_compile` | 0 | 550 s; one inductor autotune candidate ignored, as on the other platforms |
+
+Humans mode is unchanged by the delta: the variable is unset in that process and MIOpen still chooses `ConvWinoFuryRxS<2-3>` (17) and `ConvBinWinogradRxSf2x3g1` (1) there, with no non-finite output.
+
+FP16 vs FP32 vs CPU (ONNX forced to the CPU EP in all three so the crops are identical; 4 sources x `d0.mp4`; generator: first 8 frames, 3x512x512, x255; video 78 frames):
+
+| source | GPU FP32 vs CPU FP32, generator max / mean | GPU FP16 vs CPU FP32, generator max / mean / p99.9 | video GPU FP32 vs CPU mean / max | video GPU FP16 vs CPU mean / max |
+|---|---|---|---|---|
+| s0 | <0.005 / <0.0005 | 1.80 / 0.058 / 0.73 | 0.062 / 22 | 0.577 / 31 |
+| s5 | <0.005 / <0.0005 | 3.07 / 0.072 / 0.94 | 0.428 / 19 | 0.527 / 22 |
+| s7 | 0.02 / <0.0005 | 18.33 / 0.094 / 3.34 | 0.803 / 34 | 0.927 / 39 |
+| s9 | 0.03 / <0.0005 | 20.87 / 0.130 / 2.52 | 0.573 / 27 | 0.685 / 25 |
+
+No NaN/Inf (78 of 78 generator calls finite in all 12 runs), 0 dark blocks anywhere. Wall per video: GPU FP16 27-31 s, GPU FP32 42-43 s, CPU FP32 523-542 s.
+
+### Animals mode: the change
+
+`python inference_animals.py -s assets/examples/source/s39.jpg -d assets/examples/driving/wink.pkl --driving_multiplier 1.75 --no_flag_stitching` (57 frames). A runs: job-local `MIOPEN_USER_DB_PATH`, `MIOPEN_LOG_LEVEL=5`, the instrumentation wrapper, `MIOPEN_DEBUG_CONV_WINOGRAD` removed from the environment (`env -u`) unless stated. "Previous code" is `git show 00f208c:inference_animals.py` as an untracked copy in the checkout, removed afterwards. Reference A2 is head FP32. Overflowing layer's problem key: `512-64-64-3x3-512-64-64-1-1x1-1x1-1x1-0-NCHW-FP16-F`.
+
+| run | in-process value | solver chosen for that key | problems with a Winograd solver chosen (of 55) | non-finite generator outputs | first non-finite module | vs FP32: generator max / mean (16 frames) | vs FP32: video mean / max / dark blocks |
+|---|---|---|---|---|---|---|---|
+| A0 previous code, FP16 default, empty db | unset | `ConvWinoFuryRxS<2-3>` | 18 | 40 of 57 (31457280 values); 1 "invalid value encountered in cast" | `spade_generator.G_middle_5.conv_1` (Conv2d, input absmax 38272, 2048 non-finite outputs) | 11.06 / 0.33 (finite part; 1572864 non-finite values) | **96.05 / 251 / 36315** (black boxes) |
+| A1 head, FP16 default, db holding A0's Winograd records | `'0'` | `ConvHipImplicitGemmGroupFwdXdlops` | 0 | 0 of 57 | none | 11.84 / 0.33 | 1.35 / 27 / 0 |
+| A2 head, `--no_flag_use_half_precision` (reference) | `'0'` | -- | 0 | 0 | none | -- | -- |
+| A3 head, FP16, user sets `MIOPEN_DEBUG_CONV_WINOGRAD=1` | `'1'` | `ConvWinoFuryRxS<2-3>` | 18 | 40 of 57 (31457280 values); 1 cast warning | `G_middle_5.conv_1` (input absmax 38272, 2048 non-finite) | 11.06 / 0.33 (finite part) | 96.05 / 251 / 36315 |
+| A4 head, FP16 default, empty db | `'0'` | `ConvHipImplicitGemmGroupFwdXdlops` | 0 | 0 of 57 | none | 11.84 / 0.33 | 1.35 / 30 / 0 |
+| P0, P1 head, plain documented command: no wrapper, no MIOpen variable in the environment at all (checked), default user db | (not printed) | -- | -- | -- | -- | -- | 1.35 / 29 and 1.35 / 26 / **0** each; no cast warning |
+
+So, on wave32: the default really is in effect in the Animals process (in-process value `'0'`, no Winograd solver chosen for any of the 55 problems); a value the user sets wins (A3 reproduces A0 bit for bit in every number above); a find-db that already holds Winograd records for these shapes does not defeat it (A1); and the plain documented command with nothing set gives clean output (P0/P1). With Winograd allowed, MIOpen on this card picks **`ConvWinoFuryRxS<2-3>`** for the overflowing layer (its find-db record ranks Fury 0.247 ms, `ConvBinWinogradRxSf2x3g1` 0.300, `ConvHipImplicitGemmGroupFwdXdlops` 0.351, `GemmFwdRest` 0.391, `ConvBinWinogradRxSf3x2` 0.486), the same solver the porter saw. The first bad layer, its input magnitude and the dark-block count match the porter's gfx1100 report (36307) and the gfx942 run (36301). Video metric noise floor: two head FP16 runs whose generator outputs agree to mean 0.010 / max 0.37 differ by mean 1.27 / max 29 after mp4 encoding, so the ~1.35/255 video difference vs FP32 is mostly encoder noise; the generator numbers are the precision measure.
+
+Timing, warm, plain command, alternating: default 20.3 / 20.0 / 19.9 s; with the user setting `MIOPEN_DEBUG_CONV_WINOGRAD=1` (broken output) 19.6 / 19.7 / 19.2 s. The default costs about 0.5 s (2-3%) end to end on this card.
+
+Synthetic reproducer (the issue's code at magnitudes 16000 / 30000 / 40000, empty job db): MIOpen default chose `ConvBinWinogradRxSf3x2` for the synthetic problem here (different from the real layer, whose input is not the synthetic one but has the same shape: the find ranking depends on timing); 16000 and 30000 finite (err 0.76 / 1.42), 40000 gives 273861 inf + 1758267 NaN. With `MIOPEN_DEBUG_CONV_WINOGRAD=0` (`GemmFwdRest`): all finite, err 0.48 / 0.97 / 0.99. Issue already filed (ROCm/rocm-libraries#16595).
+
+### Gradio
+
+`app.py` HTTP 200 after 12 s. `app_animals.py` HTTP 200 after 28 s, in-process value `'0'`. One Animals request through `gradio_client` (`/gpu_wrapped_execute_video`, s39.jpg + wink.pkl, Pickle tab, multiplier 1.75, crop on, stitching off): 3 ORT sessions on MIGraphX, no Winograd solver chosen (0 of 55 problems), no cast warning, no non-finite module reported by the hooks; video vs the CLI FP32 run mean 1.35/255, max 30, 0 dark blocks.
+
+### Gates
+
+- CUDA no-regression compile: not re-run (no nvcc on this host). The delta `00f208c..874215c` changes no compiled file; the nvcc 12.8 build at `00f208c` (gfx950 review) still covers every compiled source.
+- `python3 utils/jargon.py --port LivePortrait`: clean. Docs: both READMEs describe the default (readme.md line 142).
+- Integrity: `git status --porcelain --untracked-files=no` empty at `874215c`; untracked files are hipify build output only (weight symlinks removed).
+- `benchmark:speed` stays `owed` in surface.json (not re-run here; the validator does not rule it).
