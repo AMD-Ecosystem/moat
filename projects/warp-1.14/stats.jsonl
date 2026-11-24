@@ -567,3 +567,11 @@
 {"kind":"phase","ts":"2026-11-24T22:40:40Z","phase":"test","seconds":19.142,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/gfx1201-20261124-141427-validator7-prompt/val/runsuite.sh matmul2 /var/lib/jenkins/fleet/jobs/gfx1201-20261124-141427-validator7-prompt/val/cache_mm2 -s autodetect -p test_tile_matmul.py"}
 {"kind":"phase","ts":"2026-11-24T22:41:00Z","phase":"test","seconds":19.639,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/gfx1201-20261124-141427-validator7-prompt/val/runsuite.sh matmul3 /var/lib/jenkins/fleet/jobs/gfx1201-20261124-141427-validator7-prompt/val/cache_mm3 -s autodetect -p test_tile_matmul.py"}
 {"kind":"session","ts":"2026-11-24T22:41:42Z","epoch":1795560102.834095,"event":"end","platform":"linux-gfx1201"}
+{"kind":"session","ts":"2026-11-24T22:17:28Z","epoch":1795558648.345467,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-24T22:20:29Z","phase":"compile","seconds":66.994,"exit":0,"cmd":"agent_space/v/build.sh /var/lib/jenkins/fleet/jobs/mi200-20261124-141441-validator7-prompt/moat/projects/warp-1.14/src 42 /var/lib/jenkins/fleet/jobs/mi200-20261124-141441-validator7-prompt/wheel"}
+{"kind":"phase","ts":"2026-11-24T22:43:35Z","phase":"test","seconds":1371.878,"exit":0,"cmd":"agent_space/v/run.sh full -s autodetect"}
+{"kind":"phase","ts":"2026-11-24T22:50:54Z","phase":"test","seconds":422.971,"exit":0,"cmd":"agent_space/v/run.sh debugtile -s autodetect --warp-debug -p test_tile*.py"}
+{"kind":"phase","ts":"2026-11-24T22:51:28Z","phase":"test","seconds":33.542,"exit":0,"cmd":"agent_space/v/run.sh matmul1 -s autodetect -p test_tile_matmul.py"}
+{"kind":"phase","ts":"2026-11-24T22:52:02Z","phase":"test","seconds":33.483,"exit":0,"cmd":"agent_space/v/run.sh matmul2 -s autodetect -p test_tile_matmul.py"}
+{"kind":"phase","ts":"2026-11-24T22:52:35Z","phase":"test","seconds":33.697,"exit":0,"cmd":"agent_space/v/run.sh matmul3 -s autodetect -p test_tile_matmul.py"}
+{"kind":"session","ts":"2026-11-24T22:53:26Z","epoch":1795560806.118256,"event":"end","platform":"linux-gfx90a"}

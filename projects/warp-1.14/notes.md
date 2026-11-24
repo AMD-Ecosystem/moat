@@ -8433,3 +8433,70 @@ Requested by jeff (revalidation after porting session 35; the delta `1c94e68b..6
 ### Scripts (`<job>/val/`, scratch)
 
 `runsuite.sh <label> <cache> <args...>`: `ulimit -c 0`, wipes and recreates `<cache>`, `cd <job>/val/run`, `HIP_VISIBLE_DEVICES=3`, asserts `warp.__file__` is in site-packages, then `WARP_CACHE_PATH=<cache> $FLEET_VENV/bin/python -m warp.tests <args>` into `logs/<label>.log`. Each run wrapped as `utils/timeit.sh warp-1.14 test -- <job>/val/runsuite.sh ...`. Note for the next validator: `utils/timeit.sh` runs its command from the MOAT checkout, so wrap a build as `timeit.sh ... -- bash -c "cd <clone> && python build_lib.py ..."`.
+## Validation 2026-11-24 (linux-gfx90a, MI250X, validator): release wheel at `66ba4ffb`
+
+Requested by jeff. Release line, fork branch `release/1.14.0.amd0` at `head_sha` `66ba4ffb31bce1bd822943cfc764c34eb21a8eef` (stage `review-passed`). The delta since this platform's validation at `1c94e68b` is porting session 35's `warp/tests/test_diagnostics.py` (+2/-2). `classify` calls it `mixed` ("literal token differs"), so this was a full run, not a carry-forward. **Verdict: pass (`completed`).** Every requested run was OK. No test failed, no log has a `Warp CUDA error` line, and there was no error 700, so nothing needed a rerun alone. **`test_mesh_query_point.py`: 9 of 9 ok. `test_diagnostics.py`: 14 of 14 ok, including `test_print_diagnostics_cuda_device_structure`** (the device reports `gfx90a:sramecc+:xnack-`, which the new regex accepts). No lock was taken. I kept the dispatcher pin `HIP_VISIBLE_DEVICES=2` (one MI250X GCD, 63 GiB, 64 KiB shared memory per block) and used `ulimit -c 0` for every GPU run. No process was stopped. `amd-smi process` showed nothing on GPU 2 before the runs (another user's process was on GPU 0), and the host load average stayed between 3 and 11.
+
+### Setup and build
+- Job venv (Python 3.11) came with TheRock 10.1.0 wheels. Installed `"$FLEET_VENV/bin/python" -m pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple "rocm[devel,device-gfx90a]==10.2.0" "torch[device-gfx90a]==2.15.0+rocm10.2.0" numpy==1.26.4 usd-core build`, then `rocm-sdk init`. It installed cleanly: rocm 10.2.0, torch 2.15.0+rocm10.2.0 with `amd-torch-device-gfx90a`, and usd-core 26.11. pip warned only about the stale `rocm-sdk-device-*==10.1.0` packages. A torch 256x256 matmul on the pinned GCD works.
+- Fresh clone: `git clone --branch release/1.14.0.amd0 https://github.com/AMD-Ecosystem/warp projects/warp-1.14/src`, checked out at `66ba4ffb`, with 67 LFS files and a local `release-1.14` branch for jargon.py. `git status --porcelain` was empty at the end (build logs excluded through `.git/info/exclude`).
+- Build plus wheel (`agent_space/v/build.sh <clone> 42 <job>/wheel`, under `utils/timeit.sh warp-1.14 compile`):
+  ```bash
+  python build_lib.py --rocm-path "$(python -m rocm_sdk path --root)" --hip-arch gfx90a -j 42 --no-rocm-rpath   # "Warp build succeeded"
+  python -m build --wheel -C--build-option=-Plinux-x86_64 -o <job>/wheel
+  ```
+  Every HIP compile has `--offload-arch=gfx90a` only. `warp.so` RUNPATH is `$ORIGIN`, and `strings` shows `-ffp-contract=on`, `-ffp-contract=off` and `-DWP_FUSE_FP`. Wheel `warp_lang-1.14.0+rocm10.2.0-py3-none-manylinux_2_28_x86_64.whl`: 32,788,609 bytes, sha256 `ef3e124dc3b93faf801d1a75a05e8080b167f9fa80ef46945cb4a11d842a7d96`. It is gfx90a only, so it is not the release artifact. The only wheel-log warning is setuptools' `project.license` TOML-table deprecation.
+- Installed with `pip install --force-reinstall --no-deps <wheel>`. The installed `warp.so` sha256 (`c43b0cca...3640`) equals the build's, `warp.so.rocm` reads `10.2.0`, and the installed size is 101,969,988 bytes. Banner: "Warp 1.14.0+rocm10.2.0 ... ROCm 10.2, HIP runtime 7.17".
+
+### Runs (installed wheel; `agent_space/v/run.sh <label> <args>` under `utils/timeit.sh warp-1.14 test`)
+`run.sh`: `ulimit -c 0; HIP_VISIBLE_DEVICES=2`, cwd `<job>/run` (outside the tree), `rm -rf` and then a fresh `WARP_CACHE_PATH=<job>/run/cache_<label>`, an assertion that `warp.__file__` is in site-packages, then `$FLEET_VENV/bin/python -m warp.tests <args>`.
+
+| run | command | result |
+|---|---|---|
+| full default suite | `-s autodetect` | **Ran 7610 tests in 1360.4 s, OK (skipped=82)** |
+| tile tests, debug | `-s autodetect --warp-debug -p "test_tile*.py"` | **Ran 602 tests in 417.1 s, OK (skipped=15)** |
+| tile_matmul, cold 1 | `-s autodetect -p test_tile_matmul.py` | **Ran 26 tests in 32.4 s, OK** |
+| tile_matmul, cold 2 | same | **Ran 26 tests in 32.4 s, OK** |
+| tile_matmul, cold 3 | same | **Ran 26 tests in 32.6 s, OK** |
+
+- **`Warp CUDA error` lines: 0** in all five logs. There was no error 700 in any run, including the three cold-cache matmul runs, each of which compiled 146 modules from an empty cache.
+- **`test_async`**: all 2373 tests passed in the full suite. No pool-off copy failure occurred, so none needed a rerun alone.
+- **`test_mesh_query_point.py`**: `test_mesh_query_point_cpu`/`_cuda_0`, `test_adj_mesh_query_point_cpu`/`_cuda_0`, `test_mesh_query_furthest_point_cpu`/`_cuda_0`, `test_mesh_query_point_codegen_adjoints_with_select`, `test_set_mesh_points_cpu`/`_cuda_0`: all ok. `test_mesh.py`'s `test_mesh_query_point_cpu`/`_cuda_0` are ok too. The suite has no `Requires usd-core` skip.
+- **`test_diagnostics.py`**: 14 ok (`test_print_diagnostics_cuda_device_structure`, `_optional_frameworks`, `_devices`, `_build_flags`, `_cubql_enabled`, `_has_required_keys`, `_returns_dict`, `_suppresses_init_banner_with_deprecated_verbose`, `_version_strings`, and the five `test_*_version` tests).
+- **torch**: installed, so the interop tests ran: 34 `warp.tests.interop.test_torch` tests ok, with no torch-related skip, failure or error.
+- Full-suite skips (82), the same set as at `1c94e68b` on this arch, all for device, build or host reasons:
+  - No suitable devices to run the test: 21.
+  - Conditional graph nodes not supported: 16.
+  - Warp was not built with MathDx support: 8.
+  - Requires at least two CUDA devices: 7.
+  - Requires devices with mempool access support: 5.
+  - The five 64 KiB shared-memory skips: 67,584 x2, 66,688 x2, 66,816 x1.
+  - Requires devices with peer access support: 3.
+  - cuda:0 cannot access CPU memory: 2.
+  - NVRTC must support at least two architectures: 2.
+  - Multi-GPU not available: 2.
+  - One each:
+    - rmm not installed.
+    - no MathDx (tolerance).
+    - memory-usage flakiness (upstream's skip).
+    - devices without peer access.
+    - devices without mempool access.
+    - peer access + graph module load.
+    - mempool access + graph module load.
+    - Requires CUDA.
+    - NVRTC not available.
+    - MathDx is not enabled.
+    - HIP stream priority.
+- Debug tile skips (15): the 8 MathDx-support skips, `MathDx is not enabled` (1), the MathDx tolerance gate (1), and the same five shared-memory skips.
+- Other output, none of it errors:
+  - The known `test_tile_load_scoped` "Failed to configure kernel dynamic shared memory ... 65536 bytes, but maximum available is 65536" UserWarning, once in the full suite and once in debug. The test passes, and that backward kernel is never launched.
+  - 3 "Compilation with PCH failed, retrying without precompiled headers" lines in the full suite. These are CPU kernels; one comes from `test_cpu_precompiled_headers.test_fallback`, which corrupts the PCH on purpose.
+  - `(error)` module loads (190 in the full suite, 26 in debug tiles) come from kernels the tests expect to be rejected (`test_codegen`, `test_atomic_add_unsupported_dtypes`, `test_tile_matmul_bf16_*_rejected`, and similar). Those tests pass.
+
+### Content gates and CUDA
+- `python3 utils/jargon.py --port warp-1.14`: clean.
+- Docs: the ROCm build and the wheel install are in `docs/user_guide/installation.rst` and the README. This delta touched no documentation.
+- CUDA gate: not repeated. The delta changes only a HIP-branch test regex, delta review 7 recorded that no nvcc build is owed, and the nvcc 12.8 build is recorded at `1c94e68b`.
+
+### Scripts (`agent_space/v/`, scratch)
+`build.sh <tree> <jobs> <wheel dir>` runs the two build commands above, logging to `<tree>/build_gfx90a.log` and `<tree>/wheel.log`. `run.sh` is described above; its logs are `<job>/run/<label>.log`, with the load average at the start and the end.
