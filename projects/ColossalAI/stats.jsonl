@@ -52,3 +52,4 @@
 {"kind":"session","ts":"2026-11-24T05:39:50Z","epoch":1795498790.999581,"event":"end","platform":"linux-gfx1100"}
 {"kind":"phase","ts":"2026-11-24T10:18:58Z","phase":"compile","seconds":0.332,"exit":1,"cmd":"env BUILD_EXT=1 PYTORCH_ROCM_ARCH=gfx1100 MAX_JOBS=32 /var/lib/jenkins/fleet/jobs/rx7900-20261124-021324-fix-colossalai-fa2-prompt/venv/bin/python -m pip install --no-build-isolation --no-deps -v -e ."}
 {"kind":"phase","ts":"2026-11-24T10:22:35Z","phase":"compile","seconds":199.972,"exit":0,"cmd":"env BUILD_EXT=1 PYTORCH_ROCM_ARCH=gfx1100 MAX_JOBS=32 /var/lib/jenkins/fleet/jobs/rx7900-20261124-021324-fix-colossalai-fa2-prompt/venv/bin/python -m pip install --no-build-isolation --no-deps -v -e /var/lib/jenkins/fleet/jobs/rx7900-20261124-021324-fix-colossalai-fa2-prompt/moat/projects/ColossalAI/src"}
+{"kind":"session","ts":"2026-11-24T10:38:13Z","epoch":1795516693.252881,"event":"start","platform":"linux-gfx1100"}
