@@ -7,7 +7,7 @@
   "priority": 3.866,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:50Z",
-  "updated_at": "2026-11-24T05:33:33Z",
+  "updated_at": "2026-11-24T06:20:13Z",
   "head_sha": "517c6a746eebc5e0b5a6cc23416e1be089d95885",
   "depends_on": [],
   "waivers": {},
@@ -47,11 +47,11 @@
     "linux-gfx1201": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "9cb8bee0b33326a6d5f177d4a2e466bcc7f0e963",
+      "validated_sha": "517c6a746eebc5e0b5a6cc23416e1be089d95885",
       "failed_sha": null,
       "started_at": null,
-      "completed_at": "2026-11-23T17:37:05Z",
-      "updated_at": "2026-11-23T17:37:05Z",
+      "completed_at": "2026-11-24T06:20:13Z",
+      "updated_at": "2026-11-24T06:20:13Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -68,7 +68,8 @@
       "state": "completed",
       "validated_prior": [
         "6e7d8db768950aab224fece523f1f640d2f5b6c9",
-        "2b938d8ab5eea6b19d522a53681a68819bf04dca"
+        "2b938d8ab5eea6b19d522a53681a68819bf04dca",
+        "9cb8bee0b33326a6d5f177d4a2e466bcc7f0e963"
       ]
     },
     "linux-gfx90a": {
