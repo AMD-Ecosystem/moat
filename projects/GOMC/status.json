@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:24:38Z",
-  "updated_at": "2026-11-24T20:53:45Z",
+  "updated_at": "2026-11-24T21:23:03Z",
   "head_sha": "25ba089d60a73f52b4f0c4623a41c68b97314062",
   "depends_on": [],
   "waivers": {},
@@ -201,7 +201,7 @@
   "fix": {
     "branch": "moat-fix-562",
     "base_sha": "b8d1aa911eefe23946cdd1c06160172541028864",
-    "review_pr": null,
+    "review_pr": "https://github.com/AMD-Ecosystem/GOMC/pull/2",
     "opened_at": "2026-11-23T20:27:49Z"
   },
   "porting": null,
