@@ -575,3 +575,14 @@
 {"kind":"phase","ts":"2026-11-24T22:52:02Z","phase":"test","seconds":33.483,"exit":0,"cmd":"agent_space/v/run.sh matmul2 -s autodetect -p test_tile_matmul.py"}
 {"kind":"phase","ts":"2026-11-24T22:52:35Z","phase":"test","seconds":33.697,"exit":0,"cmd":"agent_space/v/run.sh matmul3 -s autodetect -p test_tile_matmul.py"}
 {"kind":"session","ts":"2026-11-24T22:53:26Z","epoch":1795560806.118256,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-11-24T22:17:43Z","epoch":1795558663.480216,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-24T22:23:28Z","phase":"compile","seconds":116.432,"exit":0,"cmd":"bash agent_space/v/build.sh /var/lib/jenkins/fleet/jobs/mi300-20261124-141329-validator7-prompt/moat/projects/warp-1.14/src 37 /var/lib/jenkins/fleet/jobs/mi300-20261124-141329-validator7-prompt/wheel"}
+{"kind":"phase","ts":"2026-11-24T22:40:39Z","phase":"test","seconds":999.857,"exit":0,"cmd":"bash agent_space/v/run.sh full -s autodetect"}
+{"kind":"phase","ts":"2026-11-24T22:41:06Z","phase":"test","seconds":2.493,"exit":0,"cmd":"bash agent_space/v/run.sh alone_s2c -s autodetect -p test_async.py -k test_copy_s2c_d2d_SrcPoolOn_DstPoolOff_NoStream_NoGrad_Graph_AccessNone"}
+{"kind":"phase","ts":"2026-11-24T22:41:08Z","phase":"test","seconds":2.281,"exit":0,"cmd":"bash agent_space/v/run.sh alone_s2f -s autodetect -p test_async.py -k test_copy_s2f_d2d_SrcPoolOn_DstPoolOff_NoStream_NoGrad_NoGraph_AccessDstSrc"}
+{"kind":"phase","ts":"2026-11-24T22:43:06Z","phase":"test","seconds":113.228,"exit":0,"cmd":"bash agent_space/v/run.sh async_file -s autodetect -p test_async.py"}
+{"kind":"phase","ts":"2026-11-24T22:53:38Z","phase":"test","seconds":632.088,"exit":0,"cmd":"bash agent_space/v/run.sh debugtile -s autodetect --warp-debug -p test_tile*.py"}
+{"kind":"phase","ts":"2026-11-24T22:54:13Z","phase":"test","seconds":25.086,"exit":0,"cmd":"bash agent_space/v/run.sh matmul1 -s autodetect -p test_tile_matmul.py"}
+{"kind":"phase","ts":"2026-11-24T22:54:35Z","phase":"test","seconds":22.51,"exit":0,"cmd":"bash agent_space/v/run.sh matmul2 -s autodetect -p test_tile_matmul.py"}
+{"kind":"phase","ts":"2026-11-24T22:55:01Z","phase":"test","seconds":25.424,"exit":0,"cmd":"bash agent_space/v/run.sh matmul3 -s autodetect -p test_tile_matmul.py"}
+{"kind":"session","ts":"2026-11-24T22:55:51Z","epoch":1795560951.148668,"event":"end","platform":"linux-gfx942"}

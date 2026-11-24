@@ -8302,6 +8302,26 @@ Request from jeff: validate `release/1.14.0.amd0` at `66ba4ffb` (porting session
   ```
   `warp_lang-1.14.0+rocm10.2.0-py3-none-manylinux_2_28_x86_64.whl`, 32,790,537 bytes (gfx950 only), sha256 `45bb4af49143aef115e3579dfb5f7746db483580140ce51bb472610a04ec1733`. `strings warp.so`: `-ffp-contract=on`, `-ffp-contract=off`, `-DWP_FUSE_FP`.
 - Install: `pip install --force-reinstall --no-deps <wheel>` into `$FLEET_VENV`; installed `warp.so` sha256 `ce9ec917...e784a` equals the build's; `warp.so.rocm` reads `10.2.0`. Every run started outside the tree (cwd `<job>/run`) with `warp.__file__` asserted in site-packages. Banner: "Warp 1.14.0+rocm10.2.0 initialized".
+## Validation 2026-11-24 (linux-gfx942 MI300X, validator): release wheel at `66ba4ffb`
+
+Request from jeff: validate `release/1.14.0.amd0` at `66ba4ffb` (porting session 35, the `test_diagnostics.py` regex fix) on gfx942 from the release wheel. No lock taken. `HIP_VISIBLE_DEVICES=7` (dispatcher pin, kept; "AMD Instinct MI300X HF", gfx942). `ulimit -c 0` for every GPU run. Every run used a fresh `WARP_CACHE_PATH`, deleted just before. `amd-smi process -g 7` showed nothing on GPU 7 before the full suite and before the reruns. Host load average was 174 at the start of the full suite and 113 at its end, 99 for the reruns, and 96 to 251 during the debug-tile run (other jobs on the host's other GPUs). No process was stopped.
+
+The delta `1c94e68b..66ba4ffb` is only `warp/tests/test_diagnostics.py` (+2/-2). `classify` calls it `mixed` ("literal token differs"), and session 35's `source-class` carry-forward was refused, so this was a full run as jeff asked.
+
+**Verdict: pass (`completed`).** The debug tiles and all three cold-cache matmul runs are OK. **`test_mesh_query_point.py`: 9 of 9 OK** and **`test_diagnostics.py`: 14 of 14 OK**, `test_print_diagnostics_cuda_device_structure` included. The full suite had 2 failures, both `test_async` pool-off copy tests (destination pool off). Each **passes alone**, and the whole `test_async.py` file passes when run alone, so under jeff's rule for rocm-systems#16355 they do not fail the validation. No `Warp CUDA error` line and no error 700 appeared in any run.
+
+### Environment, build and wheel
+
+- ROCm and test deps in `$FLEET_VENV` (it had ROCm 10.1.0): `"$FLEET_VENV/bin/python" -m pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple "rocm[devel,device-gfx942]==10.2.0" "torch[device-gfx942]==2.15.0+rocm10.2.0" usd-core numpy==1.26.4 build`, then `rocm-sdk init` (`rocm-sdk version` 10.2.0). That gave torch 2.15.0+rocm10.2.0 plus `amd-torch-device-gfx942`, and usd-core 26.11. torch installed cleanly: a 256x256 matmul on GPU 7 works. pip reported the leftover 10.1.0 `rocm-sdk-device-*` packages as inconsistent, as the `1c94e68b` run saw; the build uses only gfx942.
+- Clone: `git clone --branch release/1.14.0.amd0 https://github.com/AMD-Ecosystem/warp projects/warp-1.14/src` at `66ba4ffb` (67 LFS files), plus a local `release-1.14` branch for jargon.py.
+- Build plus wheel (`agent_space/v/build.sh <clone> 37 <job>/wheel`, under `utils/timeit.sh warp-1.14 compile`; `MAX_JOBS`=37):
+  ```bash
+  python build_lib.py --rocm-path "$(python -m rocm_sdk path --root)" --hip-arch gfx942 -j 37 --no-rocm-rpath   # "Warp build succeeded"
+  python -m build --wheel -C--build-option=-Plinux-x86_64 -o <job>/wheel
+  ```
+  Output: `warp_lang-1.14.0+rocm10.2.0-py3-none-manylinux_2_28_x86_64.whl`, 32,785,823 bytes (gfx942 only), sha256 `d4aa75f8ef0e77b40bf70d11b277e7f8aa896eb2c221d1830a67de0f22671258`.
+- Install: `"$FLEET_VENV/bin/pip" install --force-reinstall --no-deps <wheel>`. The installed `warp.so` sha256 (`7dd3c782...b027`) equals the build's, and `warp.so.rocm` reads `10.2.0`. Every run started in `<job>/run`, outside the tree, with `warp.__file__` asserted to be in site-packages.
+- The tracked tree was clean afterwards (`git status --porcelain` empty; the build logs are excluded through `.git/info/exclude`).
 
 ### Runs (`agent_space/v/run.sh <label> <args>`, under `utils/timeit.sh warp-1.14 test`)
 
@@ -8500,3 +8520,51 @@ Requested by jeff. Release line, fork branch `release/1.14.0.amd0` at `head_sha`
 
 ### Scripts (`agent_space/v/`, scratch)
 `build.sh <tree> <jobs> <wheel dir>` runs the two build commands above, logging to `<tree>/build_gfx90a.log` and `<tree>/wheel.log`. `run.sh` is described above; its logs are `<job>/run/<label>.log`, with the load average at the start and the end.
+| `python -m warp.tests -s autodetect` (full default suite) | Ran 7608 tests in 960.1 s, **FAILED (failures=2, skipped=85)**; both failures are `test_async`, see below |
+| `-s autodetect -p test_async.py -k <test>`, each failed test alone | Ran 1, **OK** (both) |
+| `-s autodetect -p test_async.py` (whole file alone) | Ran 2373 tests in 112.0 s, **OK** |
+| `-s autodetect --warp-debug -p "test_tile*.py"` | **Ran 602 tests in 626.6 s, OK (skipped=15)** |
+| `-s autodetect -p test_tile_matmul.py`, cold cache, run 1 / 2 / 3 | Ran 26, **OK** each time (23.9 / 21.5 / 24.5 s); no Warp error or warning line |
+
+The counts match the `1c94e68b` gfx942 run (7608 / 85 skipped; 602 / 15 skipped).
+
+#### The two `test_async` failures (full suite)
+
+- `test_copy_s2c_d2d_SrcPoolOn_DstPoolOff_NoStream_NoGrad_Graph_AccessNone`: `assert_np_equal(dst.numpy(), src.numpy())` (`test_async.py:434`), "Mismatched elements: 124928 / 1000000 (12.5%)".
+- `test_copy_s2f_d2d_SrcPoolOn_DstPoolOff_NoStream_NoGrad_NoGraph_AccessDstSrc`: same assertion, "Mismatched elements: 249856 / 1000000 (25%)".
+
+No Warp or HIP error line came before either. The destination pool is off in both, so the destination is a fresh `hipMalloc`: the rocm-systems#16355 trigger. The GPU load came from the suite's own worker processes; nothing else was on GPU 7. Alone, each passes (`alone_s2c.log`, `alone_s2f.log`), and so does the whole file. **They pass alone, so they do not fail the validation** (jeff's ruling: no workaround, no skip).
+
+#### Tests named in the request
+
+- `test_mesh_query_point.py` (full suite): `test_adj_mesh_query_point_{cpu,cuda_0}`, `test_mesh_query_furthest_point_{cpu,cuda_0}`, `test_mesh_query_point_codegen_adjoints_with_select`, `test_mesh_query_point_{cpu,cuda_0}`, `test_set_mesh_points_{cpu,cuda_0}`: **9 OK**. `test_mesh.py`'s `test_mesh_query_point_{cpu,cuda_0}`: OK too.
+- `test_diagnostics.py` (full suite): `test_host_compiler_version`, `test_libmathdx_version`, `test_llvm_version`, `test_nanovdb_version`, `test_nvrtc_version`, `test_print_diagnostics_{build_flags,cubql_enabled,cuda_device_structure,devices,has_required_keys,returns_dict,suppresses_init_banner_with_deprecated_verbose,version_strings}`: **14 OK**.
+- `test_torch.py`: 34 OK, none skipped or failed (torch installed). No `Requires usd-core` or `No module named 'torch'` skip appeared.
+
+#### Warp error lines
+
+- No `Warp CUDA error` line in any log (full, both alone runs, async_file, debugtile, matmul1-3), and no error 700.
+- One `Warp UserWarning` in the full suite and in debug tiles: `Failed to configure kernel dynamic shared memory ... test_tile_load_scoped_kernel_cf796b16_cuda_kernel_backward kernel for 65536 bytes, but maximum available is 65536`. This is the known harmless one, as at `1c94e68b`: the backward kernel is never launched, and the test passes.
+
+#### Skips
+
+Full suite, 85, the same set as at `1c94e68b`:
+- MathDx: `Warp was not built with MathDx support` (8), `MathDx is not enabled` (1), `Skipping test on CUDA device without MathDx (tolerance)` (1).
+- NVRTC: `NVRTC must support at least two architectures to run this test` (2), `NVRTC not available` (1).
+- `rmm not installed` (1).
+- Not supported by the device or by HIP: `No suitable devices to run the test.` (24); `Conditional graph nodes not supported` (16); mempool access: 5 with, 1 without, 1 "with mempool access and CUDA graph module-load support"; peer access: 3 with, 1 without, 1 "with peer access and CUDA graph module-load support"; `cuda:0 cannot access CPU memory` (2); `Requires CUDA` (1); `HIP maps stream priorities to normal priority, so priority has no scheduling effect.` (1).
+- Only one GPU pinned: `Requires at least two CUDA devices` (7), `Multi-GPU not available` (2).
+- `Skipped due to flakiness in memory usage measurement` (1, upstream's).
+- The port's 64 KiB shared-memory skips (5): 67,584 bytes (2), 66,688 (2), 66,816 (1).
+
+Debug tiles, 15: MathDx support (8), `MathDx is not enabled` (1), the MathDx tolerance gate (1), the shared-memory skips (5).
+
+### Content gates and CUDA
+
+- `python3 utils/jargon.py --port warp-1.14`: clean.
+- Docs: the ROCm build and the release wheel install are in `docs/user_guide/installation.rst` (unchanged by this delta).
+- CUDA gate: not owed. The delta is one Python test file, with no native, build or CUDA text (delta review 7), and nvcc 12.8 was recorded at `1c94e68b` (sixth review).
+
+### Scripts (`agent_space/v/`, scratch)
+
+`build.sh <tree> <jobs> <wheel dir>` runs the two build commands above (logs `build_gfx942.log` and `wheel.log` in the tree). `run.sh <label> <warp.tests args>` sets `ulimit -c 0`, uses cwd `<job>/run`, does `rm -rf` and then sets `WARP_CACHE_PATH=<job>/run/cache_<label>`, asserts site-packages, and logs to `<job>/run/<label>.log` with the load average at start and end.
