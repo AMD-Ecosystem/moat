@@ -3265,14 +3265,15 @@ arrayfire/arrayfire#3741 (base `experimental/hip` 950dcdd02, head `AMD-Ecosystem
 Title: `[ROCm] Merge upstream master (b11d700) into the HIP backend branch` (66 chars). Branch `moat-sync-b11d700` -> `moat-port`. No `## Upstream reply` section (no maintainer is waiting on anything in this round). `prose.py` clean, `jargon.py -` clean, ASCII. If this body is reused for an `experimental/hip` pull request, drop the compare links and the Delivery paragraph.
 
 ~~~markdown
-Merge upstream `master` at b11d70079 (6 commits past 64c88d932, the last upstream commit merged into this branch) into the HIP port branch, plus one comment-only cleanup. Merge, not rebase, so the published commits stay as they are.
+Merge upstream `master` at b11d70079 (6 commits past 64c88d932, the last upstream commit merged into this branch) into the HIP port branch, plus a comment-only cleanup and a fix for a crash in sparse plus sparse arithmetic on GPUs with a small BAR. Merge, not rebase, so the published commits stay as they are.
 
 ## What to look at
 
 - Upstream's own commits in this round (all by syurkevi, none touch `src/backend/cuda` or `src/backend/hip`): https://github.com/arrayfire/arrayfire/compare/64c88d932273fc812ba4123961360ff95375b719...b11d7007980bee208f8e1c89dfbd9131790110f8
 - The merge commit 78ed7b348 (no conflicts, no edits beyond git's automatic merge): https://github.com/AMD-Ecosystem/arrayfire/commit/78ed7b3483e4236270f39a21cff0e61850ebc6c5
-- Our commits after the merge (one commit, comments only): https://github.com/AMD-Ecosystem/arrayfire/compare/78ed7b3483e4236270f39a21cff0e61850ebc6c5...539d4be1021cbb78dcd2c19b951aabefa940844d
-- The whole round against the current branch: https://github.com/AMD-Ecosystem/arrayfire/compare/83be197816b2ce57303c29dda35b7c56d8d9209b...539d4be1021cbb78dcd2c19b951aabefa940844d
+- Our commits after the merge (two commits): https://github.com/AMD-Ecosystem/arrayfire/compare/78ed7b3483e4236270f39a21cff0e61850ebc6c5...2f25788dce71ec94799164d08ce90d5d48bdb5b3
+- The sparse fix alone: https://github.com/AMD-Ecosystem/arrayfire/compare/539d4be1021cbb78dcd2c19b951aabefa940844d...2f25788dce71ec94799164d08ce90d5d48bdb5b3
+- The whole round against the current branch: https://github.com/AMD-Ecosystem/arrayfire/compare/83be197816b2ce57303c29dda35b7c56d8d9209b...2f25788dce71ec94799164d08ce90d5d48bdb5b3
 
 `git diff 83be19781 78ed7b348` is exactly upstream's `git diff 64c88d932 b11d70079`, line for line, so the merge dropped or added nothing of its own.
 
@@ -3291,9 +3292,10 @@ Only `CMakeLists.txt` changed on both sides, and git merged it without a conflic
 
 Two upstream changes reach code the HIP build compiles: `af_get_device` now calls `init()` first, which the HIP backend provides with the same semantics as CUDA (it applies `AF_CUDA_DEFAULT_DEVICE`), and the CPU backend trims NULs and trailing spaces from the CPU name. Neither needs a HIP counterpart. Upstream added no CUDA code in this range, so no port change was needed.
 
-## Our commit
+## Our commits
 
 - 539d4be10 `[ROCm] Drop stale status and scratch paths from HIP comments`: removes a status paragraph in `src/backend/hip/CMakeLists.txt` written while the backend was incomplete, and a reference to a scratch directory in `src/backend/hip/compile_module.cpp`. Comments only. Built at both 78ed7b348 and 539d4be10: `libafcuda.so` has identical device code and the same 21632 exported symbols; the files differ only in the embedded build commit string and the layout that follows from it.
+- 2f25788dc `[ROCm] Return the csrgeam2 nnz count in a host int`: `src/backend/hip/sparse_arith.cu` passed a device allocation as the `nnzTotalDevHostPtr` output of `hipsparseXcsrgeam2Nnz` while the handle is in host pointer mode, so rocSPARSE wrote the count from the CPU. That works only where device memory is CPU-mapped (a large BAR); on a GPU with a 256 MiB BAR it segfaults, and `test_sparse_arith` crashed on the first sparse plus sparse case. The count now goes to a host `int`, and the device allocation and copy are gone. The earlier `sparse_arith` crashes on Windows machines, which were put down to a Windows rocSPARSE bug, had this cause. The other hipSPARSE, hipBLAS and hipSOLVER calls in the HIP backend were checked and already pass host scalars and outputs where host pointer mode needs them. The CUDA backend is unchanged.
 
 ## Test plan
 
@@ -3437,3 +3439,33 @@ CUDA no-regression compile: already recorded at this head (nvcc 12.8 entry above
 
 ## Lesson for cuda-to-rocm: a device pointer under host pointer mode crashes only on small-BAR hosts
 A library output argument that CUDA code passes as device memory while the handle is in host pointer mode (for example hipSPARSE `csrgeam2Nnz`'s `nnzTotalDevHostPtr`; cuSPARSE tolerates it) is dereferenced on the CPU by rocSPARSE. It works on hosts whose GPUs have a large (resizable) BAR, because the runtime CPU-maps `hipMalloc` memory there, and segfaults in host code inside the library on hosts with a 256 MiB BAR (common on workstation cards and Windows machines). The symptom looks like an OS- or arch-specific library bug. To tell the two apart, check the GPU's BAR0 size (`/sys/bus/pci/devices/<bdf>/resource`) and repeat the call with a host pointer, or with `hipsparseSetPointerMode(DEVICE)`. The fix is a host variable, or device pointer mode with device scalars.
+
+## Port fix 2026-11-24 (porter, linux-gfx1201) -- csrgeam2Nnz host count, head 2f25788dc on moat-sync-b11d700
+
+Asked for by jeff (fleet job on the gfx1201 host), answering the linux-gfx1201 validation failure of 2026-11-24 at 539d4be10. Lock taken with `set-state arrayfire linux-gfx1201 porting --agent porter`, no contention (the gfx942 round had released it). Fresh clone of the fork's `moat-sync-b11d700` into `projects/arrayfire/src`, `protect-fork` installed, local `master` and `moat-port` fetched for the jargon scan. `moat-port` on the fork is still 83be19781 (not pushed).
+
+### Commit 2f25788dce71ec94799164d08ce90d5d48bdb5b3 `[ROCm] Return the csrgeam2 nnz count in a host int` (parent 539d4be10)
+`src/backend/hip/sparse_arith.cu` only (+3/-16): `hipsparseXcsrgeam2Nnz` gets `&nnzC` (host `int`) instead of `memAlloc<int>(1)`; removed the device allocation, the `if (NULL != nnzDevHostPtr)` device-to-host copy and its never-taken `else` branch (which read the count from the row offsets), and the `baseC` local that only that branch used. rocSPARSE documents `rocsparse_csrgeam_nnz` as blocking with respect to the host, so `nnzC` is valid on return. `src/backend/cuda/` untouched (`git diff upstream/master 2f25788dc -- src/backend/cuda` empty). Title 50 chars, AI-assistance line, Test Plan, no Co-Authored-By.
+
+### Audit: every hipSPARSE / hipBLAS / hipSOLVER pointer-mode-sensitive argument in src/backend/hip
+No `hipsparseSetPointerMode` / `hipblasSetPointerMode` call anywhere in the HIP backend (only the unused `cusparseSetPointerMode` module member in cusparseModule.{hpp,cpp}), so every handle is in the default HOST pointer mode. Checked:
+- hipSPARSE: `hipsparseXcsrgeam2Nnz` nnzTotalDevHostPtr -- **the one real instance, fixed above**. `csrgeam2_bufferSizeExt` / `csrgeam2` (S/D/C/Z, sparse_arith.cu): `&alpha`, `&beta` host locals. `hipsparseSpMV(_bufferSize)` / `hipsparseSpMM(_bufferSize)` (sparse_blas.cu): `&alpha`, `&beta` host locals in `matmul`. `hipsparseSpMatGetSize` (sparse.cu:110): host `int64_t` outputs, which the API always takes as host. `DenseToSparse_*`, `SparseToDense*`, `Xcsr2coo`, `Xcoo2csr`, `Xcsrsort*`, `Xcoosort*`, `CreateIdentityPermutation`, `Csr/CscSetPointers`, `Create*`: no scalar or count arguments; buffer sizes are host `size_t`.
+- hipBLAS: `gemm` / `gemmBatched` / `GemmEx` / `GemmBatchedEx` (blas.cu): alpha/beta are host pointers from every caller (af_gemm's public contract, matmul's locals in src/api/c/blas.cpp, pinverse.cpp, convolveNN.cpp:212/272/402, and the int8 path's `alphaI`/`betaI` locals). `trsm`: `&alpha` host local. `dot_func` (hipblas*dot) is defined but never called; `dot` is computed with arithOp + reduce. `getrfBatched` (solve.cu:308): `info` is a device array (createEmptyArray), which hipBLAS requires. `getrsBatched` (solve.cu:319): `info` is pinned host memory, which hipBLAS documents as "pointer to a int on the host". Both match upstream's CUDA code.
+- hipSOLVER: `potrf`, `getrf`, `geqrf`, `ormqr`/`unmqr`, `getrs`, `gesvd` (cholesky.cpp, lu.cpp, qr.cpp, solve.cu, svd.cpp): `devInfo` is `memAlloc<int>(1)` device memory, as hipSOLVER requires; `lwork` from the `*_bufferSize` calls is a host `int`. hipSOLVER has no pointer mode.
+- Not pointer-mode related, noted only: solve.cu's batched path keeps the pointer arrays in pinned host memory (`pinnedAlloc`) as upstream's CUDA code does; that is device-accessible on any BAR size.
+So one commit, one library.
+
+### Build and test (Radeon AI PRO R9700 gfx1201, 256 MiB BAR, `HIP_VISIBLE_DEVICES=2` as pinned, `ulimit -c 0`)
+Toolchain as the 2026-11-24 validation entry (ROCm SDK wheels in /opt/python-3.11-venv, hipconfig 7.16.26385, no /opt/rocm). Trivial HIP kernel on the pinned card first: `devices=1 name=AMD Radeon AI PRO R9700 arch=gfx1201 warp=32`, `kernel OK`. Another container's process held ~290 MB on the same card (amd-smi index 2) during the run; no effect seen. Build with the same configure as that entry (`agent_space/af-build.sh`), fresh dir `build-hip-gfx1201`, `cmake --build -j 8`: 1655/1655, exit 0 (the first attempt was killed at 1230/1655 by the harness's 10-minute background limit, not a build error; resumed with `setsid nohup`). The configure reached the network this time (no af_forge trap). Tested with the fix in the tree, before the commit (same content as 2f25788dc; the library's embedded build string still read 539d4be10):
+```
+export ROCM_PATH=$R HIP_VISIBLE_DEVICES=2; rm -rf ~/.arrayfire
+$B/test/sparse_arith_cuda
+utils/timeit.sh arrayfire test -- ctest --test-dir $PWD/$B -R '_cuda$' -j1 --output-on-failure
+$B/test/reduce_cuda
+```
+- `sparse_arith_cuda`: **123/123 PASS** (was SIGSEGV at `SparseSparseArith.float_Addition_10_10`).
+- ctest `_cuda$`: **131/132 PASS** (411 s). Only failure `test_confidence_connected_cuda` (3 pass, 12 skip, 21 fail: Image IO not configured). sparse 6.8 s, sparse_arith 6.5 s, sparse_convert, threading 10.2 s, jit, blas passed.
+- `reduce_cuda`: 1062/1062.
+
+### Push / record
+`jargon.py --port arrayfire`: only the standing published `6800d5586` 'MOAT' commit-message hit (frozen). Plain `git push origin moat-sync-b11d700` (539d4be10..2f25788dc); `moat-port` still 83be19781. `advance-head arrayfire 2f25788dc...`. The earlier Windows "rocsparse csrgeam2 SEGFAULT" records (windows-gfx1201, windows-gfx1101, windows-gfx1151) had this cause; the Windows platforms owe a rerun at this head, where `sparse_arith` is expected to pass.

@@ -7,8 +7,8 @@
   "priority": 6.146,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T00:04:57Z",
-  "updated_at": "2026-11-24T01:19:58Z",
-  "head_sha": "539d4be1021cbb78dcd2c19b951aabefa940844d",
+  "updated_at": "2026-11-24T01:46:57Z",
+  "head_sha": "2f25788dce71ec94799164d08ce90d5d48bdb5b3",
   "pr_url": "https://github.com/arrayfire/arrayfire/pull/3708",
   "pr_number": 3708,
   "pr_opened_at": "2026-06-08T21:24:15Z",
@@ -16,7 +16,7 @@
   "pr_state": "closed",
   "license_spdx": "BSD-3-Clause",
   "upstream_repo_id": 25889802,
-  "stage": "porting",
+  "stage": "delta-ported",
   "platforms": {
     "linux-gfx942": {
       "blocked": false,
@@ -185,7 +185,7 @@
       "failed_sha": "539d4be1021cbb78dcd2c19b951aabefa940844d",
       "started_at": "2026-11-24T01:19:58Z",
       "completed_at": null,
-      "updated_at": "2026-11-24T01:19:58Z",
+      "updated_at": "2026-11-24T01:46:57Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -221,9 +221,9 @@
     "upstream_sha": "b11d7007980bee208f8e1c89dfbd9131790110f8"
   },
   "porting_released": {
-    "arch": "linux-gfx942",
-    "since": "2026-11-23T22:18:40Z",
-    "at": "2026-11-23T22:19:51Z"
+    "arch": "linux-gfx1201",
+    "since": "2026-11-24T01:19:58Z",
+    "at": "2026-11-24T01:46:57Z"
   },
   "pr_approval": {
     "approved_by": "jeffdaily",
@@ -233,10 +233,6 @@
     "review_pr": "https://github.com/AMD-Ecosystem/arrayfire/pull/1"
   },
   "fix_merged_at": "2026-11-05T07:12:24Z",
-  "porting": {
-    "arch": "linux-gfx1201",
-    "since": "2026-11-24T01:19:58Z",
-    "holder": "18ddfe89c715"
-  },
+  "porting": null,
   "reviewed_sha": "539d4be1021cbb78dcd2c19b951aabefa940844d"
 }
