@@ -1372,3 +1372,155 @@ No tolerance was changed, and no test missed.
 - **wave32 (linux-gfx1201)**: the gate is unsatisfied at bbe25fdf8 (validated 917d6f707). The delta is CMake (no compiled-output change for the two-flag command; the build files are identical) plus `cuda_test.cu`, a test-only source. A carry-forward needs `binary-equiv --host-checked` from builds of both shas on that host, or a full run. Use the single-option configure in a new build directory.
 - linux-gfx950 reads `revalidate` (extra wave64 evidence, gates nothing). Windows is waived.
 - For jeff: fold the four commits into the five (table, conflict resolutions and new stats in "Porter 2026-11-23"). Update bc8d73dd9's body sentences (option "together with `ESPRESSO_BUILD_WITH_CUDA=ON`"; the `cuda_test.cu` bullet) and the reviewer's wording point. Apply the drafted review-page lines. The review page (AMD-Ecosystem/espresso#1) now shows bbe25fdf8 as its head. No upstream PR is open.
+
+## Validation 2026-11-24 (linux-gfx1201, RDNA4 wave32, fix round head bbe25fdf8)
+
+Validator on a Radeon gfx1201 host (`rocminfo`: Wavefront Size 32), `HIP_VISIBLE_DEVICES=1` (pinned by the dispatcher), `ulimit -c 0`, `MAX_JOBS=8`. Pip ROCm SDK 10.1.0 (`rocm-sdk path --root`, no /opt/rocm), GCC 13.3.0, CMake 3.31.6. A full run, not a carry-forward, reproducing "Validation 2026-11-20 (linux-gfx1201 ...)" with the one change this head asks for: the configure is the newly documented **single-option** command (`-DESPRESSO_BUILD_WITH_HIP=ON`, no `-DESPRESSO_BUILD_WITH_CUDA`). Source: `projects/espresso/src`, a fresh `-b moat-port` clone checked out at bbe25fdf81b58c9605f7cfc93030fdc56e104b99 (fork `python` branch fetched for `jargon.py`); `git status --porcelain` stayed empty.
+
+Host setup differs from the 2026-11-20 run: the host image now has system OpenMPI 4.1.6, Boost 1.83 (mpi, serialization, unit_test_framework, filesystem) and FFTW 3.3.10 (double+float), so no job-local dependency prefix and no MPI pins were needed (`MPIEXEC_EXECUTABLE=/usr/bin/mpiexec`; `mpiexec -n 2 hostname` works). Test venv `$FLEET_VENV/py312` by `uv` (Python 3.12.3, numpy 2.5.5, scipy 1.18.1, Cython 3.3.1, vtk 9.7.2, tqdm, matplotlib, pint), first on `PATH`; `MOAT_PYTHON` set for `utils/timeit.sh`. Each build in a **new** directory:
+
+```
+cmake -S <src> -B <build> -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_COMPILER=/usr/bin/gcc -DCMAKE_CXX_COMPILER=/usr/bin/g++ \
+  -DESPRESSO_BUILD_WITH_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1201 \
+  -DCMAKE_HIP_COMPILER=$ROCM_SDK/llvm/bin/clang++ -DCMAKE_PREFIX_PATH="$ROCM_SDK" \
+  -DPython_EXECUTABLE=$FLEET_VENV/py312/bin/python \
+  -DESPRESSO_BUILD_WITH_WALBERLA=ON -DESPRESSO_BUILD_WITH_HDF5=OFF \
+  -DESPRESSO_BUILD_WITH_SCAFACOS=OFF -DESPRESSO_BUILD_WITH_STOKESIAN_DYNAMICS=OFF \
+  -DESPRESSO_BUILD_WITH_GSL=OFF -DESPRESSO_BUILD_WITH_NLOPT=OFF \
+  -DESPRESSO_BUILD_WITH_CALIPER=OFF -DESPRESSO_BUILD_WITH_FFTW=ON \
+  -DESPRESSO_BUILD_WITH_PYTHON=ON -DESPRESSO_BUILD_TESTS=ON \
+  [-DESPRESSO_MYCONFIG_FILE=<src>/maintainer/configs/maxset.hpp]
+cmake --build <build> -j 8 -- -k 0
+cmake --build <build> -j 8 --target python_test_data cuda_test local_samples local_benchmarks
+cmake --build <build> -j 8 --target check_unit_tests
+cmake --build <build> -j 8 --target local_samples local_benchmarks   # before every ctest run
+ctest --test-dir <build> -L gpu --timeout 1200 -V                   # serial, see 2026-11-20 finding
+ctest --test-dir build-hip -LE gpu --timeout 1200 -j 8              # default build only
+```
+
+Cache of both builds (single option): `ESPRESSO_BUILD_WITH_HIP=ON`, `ESPRESSO_BUILD_WITH_CUDA=OFF` (the user's value; GPU support comes from the implication), `WALBERLA_BUILD_WITH_HIP=on`, `WALBERLA_BUILD_WITH_CUDA=OFF`, `Heffte_ENABLE_ROCM=ON`, `Heffte_ENABLE_CUDA=OFF`. GPU-class counts by the 2026-11-20 gfx1201 parser (unittest cases whose class name names GPU or CUDA, statuses followed onto later lines; 907 cases resolved per suite, 0 unresolved).
+
+### Default myconfig (`build-hip`)
+
+- Build: 507/507, **0 FAILED**; only warnings 20 known `nodiscard hipError_t` `-Wunused-value` (as at 917d6f707). `llvm-objdump --offloading build-hip/src/walberla_bridge/espresso_walberla.so`: **58 code objects, all `hip-amdgcn-amd-amdhsa--gfx1201`** (as at 917d6f707).
+- `check_unit_tests`: **152/152 passed**. Run directly with `--log_level=test_suite`: `PoissonSolver_test_cuda` `ek_poisson_solver_fft_cuda<float>` 1.04 s, `<double>` 0.90 s, `ek_poisson_solver_none_cuda` 0.24 s; `LBWalberlaImpl_field_accessors_tests_cuda` `macroscopic_accessors<float>` 0.79 s, `<double>` 0.72 s; `cuda_test` (the source this round changed) `gpu_interface` 0.10 s; "No errors detected" in all three. `strings cuda_test`: "not supported" present, "not permitted" absent, so the HIP branch of the new single expected string is the one compiled.
+- `ctest -L gpu --timeout 1200 -V` (serial): **74/74 passed** (1682 s; the usual 3 ctest Skipped `sample_p3m_with_gpu`, `benchmark_lb_with_gpu`, `benchmark_p3m_with_gpu`, no test methods). 74 `Ran` lines totalling 917 cases, 71 `OK`, 0 `FAILED`. Parsed 847 ok / 60 skipped / 0 FAIL/ERROR; **GPU-class 243 ok, 1 skipped, 0 FAIL/ERROR; 236 ok in 37 LB/EK/lattice scripts** (ek_interface 38, lb 56, lattice_vtk 17, lb_pressure_tensor 2, ek_eof 2, ek_potential_periodic 2, ...). The four `save_/test_checkpoint__*lb_walberla_gpu*` tests pass. The one GPU-class skip is the test's own filter (`TestLBMomentumConservationRegularSinglePrecisionWalberlaGPU`, "LB with regular decomposition already tested with 2 MPI ranks"). **0 "compiled without CUDA support".** Identical to the 917d6f707 record (243 / 1 / 0, 236).
+- Non-GPU suite `ctest -LE gpu -j 8` (419 tests, 546 s): **391 passed (362 Passed + 29 exit-5 Skipped), 28 failed**: 26 `tutorial_*` Not Run, `test_convert` (`No module named 'nbformat'`), `test_install` (`diff: /usr/local/lib/python3.12/site-packages/espressomd/...`, never installed). Same count and set as every earlier run. No regression.
+
+### Maxset myconfig (`build-max`)
+
+- Build: 507/507, **0 FAILED**; 22 known `nodiscard hipError_t` warnings. `myconfig-final.hpp` carries `LB_ELECTROHYDRODYNAMICS` (absent from the default build's), so maxset was in effect.
+- `check_unit_tests`: **152/152 passed**.
+- `ctest -L gpu --timeout 1200 -V` (serial): **74/74 passed** (1639 s; same 3 ctest Skipped). 917 cases, 71 `OK`, 0 `FAILED`. Parsed 851 ok / 56 skipped; **GPU-class 243 ok, 1 skipped (the same filter), 0 FAIL/ERROR; 236 ok in the 37 LB/EK/lattice scripts; 0 "compiled without CUDA support".** `lb_electrohydrodynamics` and `dipole_field_tracking` ran and passed.
+
+No tolerance was changed, and no test missed.
+
+### Gates
+
+- CUDA no-regression compile: not rerun (no CUDA toolkit on this host; it is PASS at this head, "Porter 2026-11-23": nvcc 12.8, 690/690, 0 warnings under -Werror).
+- `python3 utils/jargon.py --port espresso`: clean.
+- Docs: `doc/sphinx/installation.rst` "AMD GPU acceleration" (:300) shows `cmake .. -D ESPRESSO_BUILD_WITH_HIP=ON \` (:311); the options list (:917) says the HIP option implies `ESPRESSO_BUILD_WITH_CUDA`. This run used exactly that single option.
+- Integrity: `git -C projects/espresso/src status --porcelain` empty at bbe25fdf8. Nothing edited in or pushed to the fork.
+- Coverage: wave64 (gfx942) and wave32 (this run) are validated at bbe25fdf8; windows is waived.
+
+## Owed next (2026-11-24, after gfx1201 validation at bbe25fdf8)
+
+- Both required Linux gates are met at bbe25fdf8; windows is waived. linux-gfx950 reads `revalidate` (extra wave64 evidence, gates nothing).
+- For jeff (unchanged from the previous section): the fold of the four fix-round commits into the five, bc8d73dd9's body sentences, the reviewer's wording point, and the drafted review-page lines (AMD-Ecosystem/espresso#1). No upstream PR is open.
+
+## Check of the folded five-commit history 2026-11-24 (linux-gfx942, MI300X wave64)
+
+Requested by jeff: check each commit of the folded staging branch `moat-port-fold-bbe25fdf8` of AMD-Ecosystem/espresso alone, because the pull request description says the first commit is self-contained and can be taken alone. Not a pipeline round: no stage, lock or platform record was changed, nothing was pushed to the fork, nothing was written on GitHub.
+
+Host: AMD Instinct MI300X (gfx942), `HIP_VISIBLE_DEVICES=0` (pinned by the dispatcher), `ulimit -c 0`, `MAX_JOBS=48`. Pip ROCm SDK (HIP 7.16, AMD clang 24.0.0), GCC 13.3.0, CMake 3.31.6, system OpenMPI 4.1.6, Boost 1.83 and FFTW 3.3.10 (apt, this run), test venv `$FLEET_VENV/py312` (Python 3.12.3, NumPy 2.5.5, Cython 3.3.1, scipy, vtk, pint, matplotlib; Sphinx 9.1.1 plus the docs requirements; clang-format 22.1.8, cmakelang 0.6.13, pre-commit). The image has no `/usr/local/cuda`, so nvcc came from NVIDIA's CUDA 12.8.1 redistributable archives unpacked under the job directory (`cuda_nvcc` 12.8.93, `cuda_cudart`, `cuda_cccl`, `libcufft` 11.3.3.83, `libcurand`, `cuda_nvtx`, `cuda_profiler_api`, `cuda_cupti`; `nvcc --version`: V12.8.93), passed as `CUDACXX`, `CUDAToolkit_ROOT` and `Kokkos_CUDA_DIR`.
+
+### History
+
+- `git log --oneline c0e34ecc0..origin/moat-port-fold-bbe25fdf8`: 487e1d502, 62d67ac17, f1ca2762e, c43a32b95, c46499fe7, on upstream c0e34ecc0 (ancestor checked).
+- `git rev-parse c46499fe7^{tree} bbe25fdf8^{tree}`: both **e58a9752270db7cc9d764bb8acc87f07f6565f6a**. The final tree is identical to `moat-port`.
+- `git show --stat`: 17 files +216/-45, 6 files +24/-19, 57 files +582/-444, 6 files +41/-24, 1 file +7/-2, as in the fold map of "Porter 2026-11-23".
+
+### Method
+
+One detached worktree per commit, each build in a new directory. HIP configure, the single flag only (`agent_space/cfg-hip.sh <src> <build> <WALBERLA>`):
+
+```
+cmake -S <src> -B <build> -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_COMPILER=/usr/bin/gcc -DCMAKE_CXX_COMPILER=/usr/bin/g++ \
+  -DESPRESSO_BUILD_WITH_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 \
+  -DCMAKE_HIP_COMPILER=$ROCM_SDK/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$ROCM_SDK \
+  -DPython_EXECUTABLE=$FLEET_VENV/py312/bin/python \
+  -DESPRESSO_BUILD_WITH_WALBERLA=<OFF for commit 1, ON for 2-4> -DESPRESSO_BUILD_WITH_HDF5=OFF \
+  -DESPRESSO_BUILD_WITH_SCAFACOS=OFF -DESPRESSO_BUILD_WITH_STOKESIAN_DYNAMICS=OFF \
+  -DESPRESSO_BUILD_WITH_GSL=OFF -DESPRESSO_BUILD_WITH_NLOPT=OFF \
+  -DESPRESSO_BUILD_WITH_CALIPER=OFF -DESPRESSO_BUILD_WITH_FFTW=ON \
+  -DESPRESSO_BUILD_WITH_PYTHON=ON -DESPRESSO_BUILD_TESTS=ON
+cmake --build <build> -j 48 -- -k 0
+cmake --build <build> -j 48 --target python_test_data cuda_test local_samples local_benchmarks
+cmake --build <build> -j 48 --target check_unit_tests
+cmake --build <build> --target local_samples local_benchmarks   # before every ctest run
+ctest --test-dir <build> -L gpu --timeout 1200 -j 8 -V
+```
+
+GPU ctest runs never overlapped. CUDA: the `cuda12-maxset` recipe of "CUDA no-regression compile 2026-11-20" (maxset myconfig, `ESPRESSO_WARNINGS_ARE_ERRORS=ON`, waLBerla ON, Python OFF, Caliper OFF; `agent_space/cuda-build.sh <src> <build>`), building `all` plus every unit-test target (`ninja -t targets all`, `src/**/tests|unit_tests`, minus `*/test`: 154 targets in both trees), on the base commit and on commit 1. Failure classification: `agent_space/pertest.py` over the verbose ctest log (per test: whether its output contains "waLBerla was compiled without CUDA support").
+
+### Results
+
+| commit | configuration | result | statement |
+|---|---|---|---|
+| 487e1d502 (1) | HIP, single flag, waLBerla OFF, default myconfig | build 236/236 steps, 0 FAILED (28 known `nodiscard hipError_t` warnings); 8 HIP objects; `check_unit_tests` **136/136**; `ctest -L gpu` **74 tests: 71 passed, 3 skipped, 0 failed** (skipped: `sample_p3m_with_gpu`, `benchmark_p3m_with_gpu`, `benchmark_lb_with_gpu`; 71 unittest `OK`, 0 `FAILED`) | message's 236 of 236, 136 passed, 71/3/0: **confirmed** |
+| 487e1d502 (1) | same, maxset myconfig | build 0 FAILED; `check_unit_tests` **136/136**; `ctest -L gpu` **71 passed, 3 skipped (same 3), 0 failed**; `myconfig-final.hpp` has `LB_ELECTROHYDRODYNAMICS` | **confirmed** |
+| 487e1d502 (1) | same, default, `ctest -LE gpu -j 16` | **403 tests: 346 passed, 29 skipped, 28 failed** (26 `tutorial_*` Not Run, `test_convert`, `test_install`) | message's 403 / 346 / 29 / 28: **confirmed** |
+| 487e1d502 (1) | HIP alone, waLBerla left ON (the message's `cmake -G Ninja -S . -B build-err -DESPRESSO_BUILD_WITH_HIP=ON`, and the full configure line with waLBerla ON) | configure exits 1: `CMake Error at CMakeLists.txt:284`: "ESPRESSO_BUILD_WITH_HIP requires ESPRESSO_BUILD_WITH_WALBERLA=OFF, because the waLBerla GPU kernels cannot be compiled with HIP", after the C/C++ compiler checks and before `enable_language(HIP)`/`find_package(hipfft)`; cache keeps `ESPRESSO_BUILD_WITH_WALBERLA:BOOL=ON` | **confirmed** |
+| 487e1d502 (1) | single flag vs `-DESPRESSO_BUILD_WITH_CUDA=ON -DESPRESSO_BUILD_WITH_HIP=ON`, waLBerla OFF, configure only, same source tree (`agent_space/treecmp.py`, build path normalised, fetched sources excluded) | 766 files each; differ only `CMakeCache.txt` (one line: `ESPRESSO_BUILD_WITH_CUDA:BOOL=OFF` vs `ON`), CMake's probe binary `CMakeFiles/3.31.6/CMakeDetermineCompilerABI_HIP.bin` and `CMakeFiles/CMakeConfigureLog.yaml`; every `build.ninja`, generated header and CTest file identical; configure output identical | "the same build files are generated": **confirmed** |
+| 487e1d502 (1) | `sphinx` target (`sphinx -q -W`), Sphinx 9.1.1 | passes; rendered "AMD GPU acceleration" shows `cmake .. -D ESPRESSO_BUILD_WITH_HIP=ON \` then `-D ESPRESSO_BUILD_WITH_WALBERLA=OFF \`; option list: "implies ``ESPRESSO_BUILD_WITH_CUDA``" | **confirmed** |
+| c0e34ecc0 (base) | CUDA 12.8 nvcc, `cuda12-maxset` | **690/690 steps**, 0 FAILED, 0 warnings under -Werror, 73 nvcc compile commands | reference |
+| 487e1d502 (1) | CUDA 12.8 nvcc, `cuda12-maxset` | **690/690 steps**, 0 FAILED, 0 warnings under -Werror, 73 nvcc compile commands; `build.ninja` identical to the base's apart from the runpath `:` padding of one link line (build-path length); `cuda_test` holds "operation not permitted" and not "not supported" | compiles, same step count as base: **confirmed**; the number is **690, not 542** (see corrections) |
+| 62d67ac17 (2) | HIP, single flag, waLBerla ON | cache `ESPRESSO_BUILD_WITH_CUDA=OFF` (user value), `WALBERLA_BUILD_WITH_CUDA=OFF`, `WALBERLA_BUILD_WITH_HIP=OFF`; build 449/449, 0 FAILED (28 `nodiscard` + 1 unused macro `HAS_HEFFTE`); the four `*_init.cu` use `CXX_COMPILER__espresso_walberla`; `check_unit_tests` **150/150**; `ctest -L gpu` **74 tests: 30 passed, 2 skipped, 42 failed** | message's cache, C++ init files, 150 of 150: **confirmed**. The message states no GPU-test count; the 42 failures are listed below |
+| f1ca2762e (3) | HIP, single flag, waLBerla ON | cache `WALBERLA_BUILD_WITH_HIP:BOOL=on`, `WALBERLA_BUILD_WITH_CUDA=OFF`, `Heffte_ENABLE_ROCM=OFF`; build 505/505, 0 FAILED (36 `nodiscard` + 1 unused macro); `espresso_walberla.so` **56** gfx942 code objects; `check_unit_tests` **152/152**; `ctest -L gpu` **74 tests: 64 passed, 3 skipped, 7 failed** | "7 of the 74 GPU tests fail because the FFT Poisson solver comes with commit 4": **confirmed** (same 7 names); "67 of 74 pass" counts the 3 skipped as passes (corrected below) |
+| c43a32b95 (4) | HIP, single flag, waLBerla ON | cache `Heffte_ENABLE_ROCM=ON`, `Heffte_ENABLE_CUDA=OFF`; build 0 FAILED (36 `nodiscard` only); `check_unit_tests` **152/152**; `PoissonSolver_test_cuda --log_level=test_suite` runs `ek_poisson_solver_fft_cuda<float>` (1.04 s) and `<double>` (1.00 s), "No errors detected"; `ctest -L gpu` **74 tests: 71 passed, 3 skipped, 0 failed** | 152 of 152, the 7 now pass: **confirmed**; "74 of 74 pass" is 71 passed + 3 skipped (corrected below) |
+| c46499fe7 (5) | HIP, single flag, waLBerla OFF, Caliper ON, configure only, on this host without a system CUDA | configure passes; Caliper summary "Nvtx support: No", "CUpti support: No"; cache `CALIPER_WITH_NVTX=OFF`, `CALIPER_WITH_CUPTI=OFF` | **confirmed** (configure only; tree = bbe25fdf8, validated) |
+| all five | `pre-commit run --files $(git diff --name-only HEAD~1)` (clang-format 22.1.8, cmake-format 0.6.13) | pass on 17, 6, 57, 6, 1 files, working tree unchanged | **confirmed** |
+
+Commit 2 alone, the 42 GPU failures: 40 print `RuntimeError: waLBerla was compiled without CUDA support` (118 occurrences); the other 2 (`test_checkpoint__therm_lb__elc_gpu__lj__lb_walberla_gpu_ascii`, `test_checkpoint__therm_lb__p3m_gpu__lj__lb_walberla_gpu_binary`) stop at `FileNotFoundError` for the `0.checkpoint` their failed `save_checkpoint__...` fixtures should have written. They are every LB/EK GPU test (both checkpoint pairs, `lb*`, `ek_*`, `lattice_vtk`, `observable_*LB`, `virtual_sites_tracers_gpu`, `propagation_lb`, `sample_lbf_with_gpu`) plus `benchmark_lb_with_gpu`, which fails here instead of being skipped. This is the fallback the message describes ("each GPU factory ... throws"): core GPU is available, so `skipIfMissingGPU` runs the classes, and waLBerla has no GPU backend until commit 3. A build of commit 2 alone is correct for the CPU solvers and the core GPU code but not a green GPU suite.
+
+Commit 3 alone, the 7: `ek_eof`, `ek_interface`, `ek_potential`, `ek_potential_periodic`, `lattice_vtk`, `save_checkpoint__therm_lb__p3m_gpu__lj__lb_walberla_gpu_binary`, `test_checkpoint__therm_lb__p3m_gpu__lj__lb_walberla_gpu_binary`. Six print the "compiled without CUDA support" error; `test_checkpoint__...` fails on the missing checkpoint of its failed `save_checkpoint__...` fixture. The `elc_gpu ... ascii` checkpoint pair passes at commit 3.
+
+### Commit-message statements no longer true after the fold (for jeff; line numbers are of `git log -1 --format=%B <sha>`)
+
+487e1d502:
+
+- Line 13 (Build system): "With `ESPRESSO_BUILD_WITH_HIP=OFF` every changed CMake condition evaluates as before, and the CUDA configuration builds in the same 542 steps as the base commit." Corrected: "With `ESPRESSO_BUILD_WITH_HIP=OFF` every changed CMake condition evaluates as before, and the CUDA configuration builds in the same 690 steps as the base commit."
+- Line 59: "..., the default targets plus the 53 unit test executables: 542 of 542 steps and no warning, the same 542 steps as the base commit." Corrected: "..., the default targets plus every unit test target: 690 of 690 steps and no warning, the same 690 steps as the base commit." The 542/53 figures come from the 2026-11-19 mi355 run's narrower target list, which is not recorded; the base commit gives 690 with the list recorded in "CUDA no-regression compile 2026-11-20", the same list the later head runs used.
+- Line 59, last sentence, **marked (NVIDIA run claim; not rewritten here)**: "Compiled and linked only; no Nvidia GPU was available, so nothing was run."
+- Line 73: "ninja -C build-cuda -k 0 all <the 53 unit test executables>". Corrected: "ninja -C build-cuda -k 0 all <every unit test target>".
+- Line 21 (not untrue, provenance): the MI355X and R9700 runs were made on pre-fold bc8d73dd9 with the two-flag command, whose build files equal the single-flag ones (table above); only the MI300X runs were repeated at 487e1d502, with identical counts.
+- Still true, checked: the waLBerla-OFF requirement and its configure error (line 3), the build-file identity of the two commands (line 13), the `cuda_test.cu` bullet (line 11), 236 of 236, 71/3/0 in both configurations, 136 passed, the `-LE gpu` 403/346/29/28 line, the 17-file pre-commit and the `sphinx` line. Its Test Plan already uses the single flag.
+
+62d67ac17:
+
+- Line 20, two-flag Test Plan: "  -DESPRESSO_BUILD_WITH_CUDA=ON -DESPRESSO_BUILD_WITH_HIP=ON \" Corrected: "  -DESPRESSO_BUILD_WITH_HIP=ON \". The rest of line 32 holds with the single flag.
+- Optional addition for bisecting (not an untrue statement): "At this commit the GPU lattice-Boltzmann and electrokinetics tests stop at that error (`ctest -L gpu`: 30 passed, 2 skipped, 42 failed); the next commit ports them."
+
+f1ca2762e:
+
+- Line 32, two-flag Test Plan, same replacement: "  -DESPRESSO_BUILD_WITH_HIP=ON \".
+- Line 47: "`ctest -L gpu`: 67 of 74 pass. The 7 failures (`ek_eof`, `ek_interface`, `ek_potential`, `ek_potential_periodic`, `lattice_vtk` and the two `lb_walberla_gpu` checkpoint tests) all stop at "waLBerla was compiled without CUDA support" from the GPU FFT Poisson solver, which this change does not port." Corrected: "`ctest -L gpu`: of 74 tests, 64 pass, 3 are skipped as in the first commit and 7 fail. The failures (`ek_eof`, `ek_interface`, `ek_potential`, `ek_potential_periodic`, `lattice_vtk` and the `save_checkpoint` and `test_checkpoint` tests of `therm_lb__p3m_gpu__lj__lb_walberla_gpu_binary`) stop at "waLBerla was compiled without CUDA support" from the GPU FFT Poisson solver, which this change does not port, or, for `test_checkpoint`, at the checkpoint its failed `save_checkpoint` fixture did not write." Also on line 47 the cache prints `WALBERLA_BUILD_WITH_HIP:BOOL=on` (lower case; cosmetic).
+- Still true: 56 gfx942 code objects, 152 of 152, the warning description.
+
+c43a32b95:
+
+- Line 21, two-flag Test Plan, same replacement: "  -DESPRESSO_BUILD_WITH_HIP=ON \".
+- Line 36: "`ctest -L gpu`: 74 of 74 pass, including ..." Corrected: "`ctest -L gpu`: of 74 tests, 71 pass and 3 are skipped, 0 fail, including ...". The sentence that follows already names the 3 skipped; keep it.
+- Not re-checked (history of the development, not of the commit): "(before the runtime path change, 149 of them failed to load `librocfft.so.0`)".
+
+c46499fe7:
+
+- Line 15, two-flag Test Plan, same replacement: "  -DESPRESSO_BUILD_WITH_HIP=ON \". The rest holds: with the single flag `ESPRESSO_BUILD_WITH_CUDA` is ON as a normal variable, so "which is also ON in a HIP build" stays true.
+
+The two-flag commands still work and give the same build files (commit 1 comparison above, and "Porter 2026-11-23" at the head), so these Test Plan lines are wording, not broken commands.
+
+### Scratch (container-local)
+
+Builds `agent_space/b/{c1-hip1,c1-max,c2-hip1,c3-hip1,c4-hip1,cuda-base,cuda-c1,cmpA-hip1,cmpB-hip2,c5-cal}`, logs `agent_space/log/`, scripts `agent_space/{cfg-hip,run-hip,build-only,test-only,pipe234,cuda-build}.sh`, `treecmp.py`, `pertest.py`. Integrity: the fork clone and all worktrees are clean (`git status --porcelain` empty); nothing was edited in the fork.
