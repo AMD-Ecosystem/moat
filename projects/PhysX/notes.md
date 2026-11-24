@@ -946,3 +946,35 @@ Re-read at the pin (`hip_context.cpp:325-328`): `HIP_RETURN(hipErrorNotSupported
 - Titles 49/65/72 characters, `[ROCm]` correct on all three (HIP-only changes), AI disclosure present, Test Plans fenced, no trailer; `jargon.py --diff` and `--commits 886c3529..42d4c033` clean.
 - `8f87766f` says "HIP does not [guarantee this], for copies of 16 KiB or less"; the gfx942 result shows that holds on gfx1201, not on every AMD GPU. Not worth a history rewrite. If the round is squashed for the upstream PR, scope the sentence to "on some GPUs (seen on gfx1201)" and spell "signaling" (American) in the title and the code comment.
 - **Lesson "a GPU-written host flag can arrive before an earlier small device-to-host copy":** accurate as qualified ("seen on ROCm 10.2, gfx1201"). When it is promoted, add: not reproduced on gfx942 (MI300X), and on gfx10/11 `__threadfence_system()` writes nothing back from L2 (so the advice is for gfx12; there a release-only system-scope store is enough).
+
+## CUDA harness build for an NVIDIA run 2026-11-24 (mi355 fleet host, nvcc 12.8, no GPU used)
+
+Requested by Jeff: build the CUDA path of fork `42d4c033` (the head) with the parity harness, packaged to run `SnippetGpuParity` on an NVIDIA Tesla V100 (sm_70, driver 575.57, Ubuntu 24.04, glibc 2.39) elsewhere, to see whether CUDA shows the same run-to-run variation in the three deformable checks (lever bend, load height, lowest deformable vertex) that gfx942 and gfx1201 show. Nothing ran on a GPU (none used on this host), nothing in the fork changed, nothing was pushed to it, and the project's stage and lock were not touched. Built in a fresh clone in the job directory (`<job>/cuda/src`, `GIT_LFS_SKIP_SMUDGE=1`, detached at `42d4c033`; afterwards `git status --porcelain` shows only untracked `physx/bin/`).
+
+### Toolchain
+- nvcc `/usr/local/cuda-12.8/bin/nvcc` "Cuda compilation tools, release 12.8, V12.8.93"; host gcc "Ubuntu 13.3.0-6ubuntu2~24.04.1" 13.3.0; CMake 3.31.6 from the job venv (`$FLEET_VENV/bin` first on PATH). Packman fetched upstream's public packages into `<job>/cuda/packman-repo`.
+- Snippet dependency: freeglut v3.6.0 built from source into `<job>/cuda/deps/prefix` (`cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DFREEGLUT_BUILD_DEMOS=OFF -DFREEGLUT_BUILD_STATIC_LIBS=OFF`), only so that the `linux-gcc` preset's snippet configure finds GLUT. No relink was needed: the harness never renders, and Ubuntu's linker default `--as-needed` drops SnippetRender's GL/GLU/GLUT/X11, so the built `SnippetGpuParity_64` is packaged as built. Its `NEEDED` is libstdc++/libm/libc (checked adds ld-linux); PhysX is linked statically; it `dlopen`s `libPhysXGpu_64.so` and `libcuda.so.1` at run time. Its RUNPATH is `$ORIGIN` plus the job's freeglut path, which is harmless (missing on the target, never needed).
+
+### Builds (both exit 0)
+```
+cd physx
+export PM_PACKAGES_ROOT=<job>/cuda/packman-repo PM_CUDA_PATH=/usr/local/cuda-12.8 CUDACXX=/usr/local/cuda-12.8/bin/nvcc
+export PATH=$FLEET_VENV/bin:/usr/local/cuda-12.8/bin:$PATH CMAKE_PREFIX_PATH=<job>/cuda/deps/prefix
+./generate_projects.sh linux-gcc
+make -C compiler/linux-gcc-release -j21
+make -C compiler/linux-gcc-checked -j21
+```
+61 `.cu.o` per config, 0 errors, no warnings other than nvcc's deprecated-target note for sm_52/sm_70 (61 per build). `PX_GENERATE_GPU_PROJECTS=TRUE`, `PX_GENERATE_GPU_REDUCED_ARCHITECTURES=FALSE`: every `.cu` compile carries `arch=compute_N,code=[compute_N,sm_N]` for N = 52, 70, 80, 86, 89, 90, 100, 120 plus `compute_120` PTX. `cuobjdump --list-elf libPhysXGpu_64.so`: 61 cubins for each of the 8 targets, sm_70 included, in both configs (`--list-ptx` shows PTX for every target too, since the gencode list embeds `compute_N` beside each `sm_N`). `libPhysXGpu_64.so` `NEEDED` libstdc++/libm/libc only; `ldd -r` leaves exactly 51 undefined `cu*` symbols, which the loader's `dlopen("libcuda.so.1", RTLD_GLOBAL)` supplies. Highest symbol versions required: GLIBC_2.38, GLIBCXX_3.4.29 (checked harness), CXXABI_1.3.9, all within Ubuntu 24.04.
+
+### Tarballs (`<job>/out/`)
+Each holds one directory `physx-cuda-harness-<config>/` with `SnippetGpuParity_64`, `libPhysXGpu_64.so`, `run.sh` (sets `LD_LIBRARY_PATH` to its own directory and runs the harness with no arguments, as the AMD validations did; the harness ignores arguments), `README.txt` and `SHA256SUMS`. `libcuda.so.1` is not packaged; it comes from the target's driver.
+
+| Tarball | Size | sha256 | Harness | libPhysXGpu_64.so |
+|---|---|---|---|---|
+| `physx-cuda-harness-release.tar.gz` | 111,388,826 B | `5c3e4cbaef6dfec95602c8c06ac5d34bd855ebf7d83e841df7bbab1411b1958e` | 8,335,032 B | 348,434,864 B |
+| `physx-cuda-harness-checked.tar.gz` | 175,164,029 B | `28113e5ddb2926637c5828b5e6e0f0b6c6dd82212ad87ef99136343b07e313f3` | 190,921,416 B | 372,973,864 B |
+
+Checked after unpacking, from `/tmp`, with `LD_LIBRARY_PATH=<unpacked dir>`: `ldd SnippetGpuParity_64` and `ldd -r libPhysXGpu_64.so` resolve only linux-vdso, libstdc++.so.6, libm.so.6, libc.so.6, libgcc_s.so.1 and ld-linux-x86-64.so.2 from the system, plus the 51 `cu*` symbols of `libcuda.so.1`; `sha256sum -c SHA256SUMS` OK. The harness was not run here (no NVIDIA GPU or driver, and GPUs were not to be used).
+
+### For the NVIDIA run
+`./run.sh` five times per config (release about 10 s per run on AMD, checked several minutes), pin with `CUDA_VISIBLE_DEVICES` on a multi-GPU node, and compare the three deformable checks across runs with the gfx942 and gfx1201 ranges recorded in the two "Validation 2026-11-24" sections; the other 45 checks are expected to be identical from run to run. Packaging script: `<job>/cuda/scripts/package.sh <config>` (job-local; the description above is enough to redo it).
