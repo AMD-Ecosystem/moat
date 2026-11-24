@@ -8142,3 +8142,17 @@ The loop is short and arithmetic-bound, so losing those fusions shows up directl
   - `test_mesh*.py`.
 - **What I don't know.** On gfx90a, plain `on` already spills only 72. Whether the contracted region keeps that or pushes it back toward the cliff is untested. If it does, the region is arch-dependent and the bar is not met there.
 - **Scripts** (scratch, `agent_space/s/`): `mkcand.sh` (candidate trees), `wnk.py` + `attr.py` (spill attribution), `mix.py` (instruction mix), `wnval.py` (value probe), `off/perf.py` (from the scripts file). Patches are in `agent_space/patches/`.
+
+## Coordinator note (2026-11-24): gfx908 (MI100) at 4e0d02ab, intermittent error 700 persists; not the ROCm 10.2-on-10.1-driver mismatch
+
+Bounded `srun` runs on the Slurm MI100 nodes (constraint `GFX908&ROCM10.1.0`, amdgpu driver module 7.1.9.31600000), fork at `4e0d02ab`, `build_lib.py --hip-arch gfx908`. Not a fleet platform and not a validation; no state recorded.
+
+- ROCm 10.2 wheels (`rocm[devel]==10.2.0`):
+  - `test_tile_matmul` alone, cold cache, 4 runs: OK, FAILED (errors=4; 91 `Warp CUDA error 700` lines, first in `wp_memcpy_d2h`), OK, OK.
+  - Tile tests release: Ran 599, FAILED (errors=7, skipped=14), 151 error-700 lines. Tile tests debug: Ran 599, OK (skipped=14), 0 lines.
+  - Full default suite: did not finish (`timeout 9600`, rc=124). First fault: `Warp CUDA error 700 ... wp_memcpy_d2h` with `Queue error - HSA_STATUS_ERROR_MEMORY_FAULT` while `test_arithmetic`, `test_constant_precision` and `test_compile_consts` tests were in flight (not a tile test); after it every driver call returned 700 (6,466 lines), i.e. the context was lost for the rest of the process.
+- ROCm 10.1 wheels (`rocm[devel]==10.1.0`, HIP 7.16.26385, matching the node's driver generation); the port builds against 10.1 with the same command:
+  - `test_tile_matmul` 4 runs: OK, OK, FAILED (failures=1, no 700 line), OK (only the first run compiled; the later three reused the cache).
+  - Tile tests release: Ran 599, OK (skipped=14), 0 lines; the same again: FAILED (errors=1), 28 error-700 lines.
+- So the fault is intermittent under both user-space versions; the 10.2-on-10.1 mismatch is not the cause. It has never appeared with `HIP_LAUNCH_BLOCKING=1`, in debug-mode kernels, or on gfx90a, gfx942, gfx950, gfx1100 or gfx1201 in any run at this head. Port defect that only gfx908 exposes, or a gfx908 runtime/driver defect: not determined. Not determined either: whether one node or several were involved (the scripts did not record the node name), and whether a non-Warp HIP program faults there.
+- For jeff: whether gfx908 stays a claimed target of the release, is listed as built-but-unvalidated with this known issue, or is investigated further first. Scripts and logs: coordinator scratch `p6ev/gfx908/run908{e,f,g}.sh`, `gfx908{e,f,g}.log`.
