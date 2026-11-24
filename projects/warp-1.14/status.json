@@ -6,12 +6,16 @@
   "fork_default_branch": "release-1.14",
   "priority": 0.0,
   "ext_type": "python-build-nvrtc",
-  "stage": "changes-requested",
+  "stage": "porting",
   "adopted_at": "2026-11-18T17:38:39Z",
-  "updated_at": "2026-11-24T01:22:11Z",
+  "updated_at": "2026-11-24T01:25:28Z",
   "head_sha": "4ae8babd6982cf9aa30e5e8ff0a6592b8f781b73",
   "depends_on": [],
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx950",
+    "since": "2026-11-24T01:25:28Z",
+    "holder": "8567d7b2722f"
+  },
   "waivers": {},
   "platforms": {
     "windows-gfx1151": {
@@ -44,7 +48,7 @@
       "failed_sha": null,
       "started_at": "2026-11-18T20:28:14Z",
       "completed_at": null,
-      "updated_at": "2026-11-24T01:22:11Z",
+      "updated_at": "2026-11-24T01:25:28Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
