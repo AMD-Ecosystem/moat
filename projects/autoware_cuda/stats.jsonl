@@ -38,3 +38,4 @@
 {"kind":"session","ts":"2026-11-23T21:05:15Z","epoch":1795467915.359977,"event":"end","platform":"linux-gfx1100"}
 {"kind":"phase","ts":"2026-11-24T00:06:35Z","phase":"compile","seconds":25.133,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300c-20261123-144914-port2c-autoware-cuda-prompt/scripts/build_ws.sh"}
 {"kind":"phase","ts":"2026-11-24T00:10:20Z","phase":"test","seconds":219.396,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300c-20261123-144914-port2c-autoware-cuda-prompt/scripts/test_ws.sh"}
+{"kind":"session","ts":"2026-11-24T00:14:23Z","epoch":1795479263.671105,"event":"start","platform":"linux-gfx942"}
