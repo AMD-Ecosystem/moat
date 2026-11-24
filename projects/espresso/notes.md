@@ -1165,6 +1165,8 @@ Class: environment (a host or driver property of sharing one GPU between process
 
 ## Lesson for cuda-to-rocm: a sync-bound GPU test that passes alone can time out under `ctest -jN` because the GPU is shared between processes
 
+Promoted to cuda-to-rocm/references/diagnosis.md, cuda-to-rocm/references/linux-host-setup.md in 926f6138.
+
 Belongs in the validation or Linux host reference, beside "A GPU test that hangs only under `ctest -jN`". On a Radeon gfx1201 host (ROCm 10.1 SDK), a loop of small kernels plus a synchronous small device-to-host copy took 30 us per iteration in one process and 135-139 us per iteration in each of two or four concurrent processes on the same GPU. An idle second context cost nothing; only concurrent submission did. A test that synchronizes every step (ESPResSo's `lb_pressure_tensor`, 10000 sample steps) passed in 77-147 s alone and timed out at 1200 s under `ctest -L gpu -j 8`. Before treating such a timeout as a hang or a port fault, rerun the test alone and then two copies at once: a pass alone plus a superlinear slowdown with two copies points to GPU sharing, and the fix is a serial GPU ctest run (or a `RESOURCE_LOCK`), not a longer timeout or a code change.
 
 ## Owed next (2026-11-20, after gfx1201 validation at 917d6f707)
