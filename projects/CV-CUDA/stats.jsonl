@@ -144,3 +144,6 @@
 {"kind":"phase","ts":"2026-11-24T03:31:25Z","phase":"test","seconds":2.073,"exit":1,"cmd":"projects/CV-CUDA/src/build-hip/bin/nvcv_test_cudatools_system"}
 {"kind":"phase","ts":"2026-11-24T03:41:52Z","phase":"test","seconds":621.139,"exit":1,"cmd":"projects/CV-CUDA/src/build-hip/bin/cvcuda_test_system"}
 {"kind":"phase","ts":"2026-11-24T03:50:05Z","phase":"compile","seconds":44.2,"exit":0,"cmd":"cmake --build projects/CV-CUDA/src/build-hip -j64"}
+{"kind":"phase","ts":"2026-11-24T04:09:43Z","phase":"test","seconds":1.171,"exit":0,"cmd":"projects/CV-CUDA/src/build-hip/bin/cvcuda_test_unit"}
+{"kind":"phase","ts":"2026-11-24T04:09:46Z","phase":"test","seconds":1.968,"exit":1,"cmd":"projects/CV-CUDA/src/build-hip/bin/nvcv_test_cudatools_system"}
+{"kind":"phase","ts":"2026-11-24T04:20:06Z","phase":"test","seconds":620.016,"exit":1,"cmd":"projects/CV-CUDA/src/build-hip/bin/cvcuda_test_system"}
