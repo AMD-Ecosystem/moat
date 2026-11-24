@@ -444,3 +444,59 @@ Delta `815cfdc..592f800` (5 commits) reviewed in the context of the full port (`
 ### Decisions for a person
 
 - The round-1 history decision (squash 8f10a46 into 815cfdc and fix the `8740206` body, or fix the wording only in the upstream PR body) is still open. N3 adds the `37516a1`/`02ff9c1` Test Plan wording to the same question. Reviewer suggestion unchanged: (a), unless upstream merges with merge commits.
+
+## Validation 2026-11-24 (linux-gfx942 MI300X, validator role, fork head 592f800): FAILED, intermittent hang
+
+Requested by Jeff Daily (same fleet job, after the round-2 review passed). TheRock ROCm 10.2.0 wheels in the job venv (HIP 7.17.26434, AMD clang 24.0.0git), no system ROCm, one pinned GPU, `ulimit -c 0`, a timeout around every GPU run. Builds at 592f800 are the porter-round builds recorded above (default 54/54, research benchmarks 96/96, both under `timeit.sh compile`).
+
+**Verdict: validation-failed.** `find_or_insert_ptr_test` (`FindOrInsertPtrTest.test_find_or_insert_multi_threads`) hangs intermittently at 592f800; the job's instructions count any hang as a failure. Everything else passed.
+
+### Full suite (run 1), per binary under a 3600 s timeout
+
+All 21 binaries pass (241 gtest cases in 20 binaries; the earlier 232 plus the 9 new repeated-key cases), with `export_batch_if_test` as written (plain `main`, rc 0, prints `done`, 116 s). Cases and seconds: repeated_key 9 (1), correctness_stress 62 (10), dynamic_max_capacity 1 (3), lock_unlock 1 (1), reserved_keys 1 (0), merlin_memory_pool 6 (1), save_and_load 5 (22), group_lock 4 (21), find_with_missed_keys 7 (46), uint32_score 4 (46), assign_values 3 (76), dual_bucket 33 (165), find_or_insert_ptr_lock 13 (314), accum_or_assign 14 (533), assign_score 8 (314), insert_and_evict 9 (549), merlin_hashtable 24 (898), find_or_insert 19 (1145), find_or_insert_ptr 18 (1293). Nothing filtered or resized; `IS_BLOSSOM_CI` unset. Two other lanes shared the GPU.
+
+### Insert/update binaries, runs 2 and 3 (repeated_key, correctness_stress, find_or_insert_ptr_lock, group_lock, lock_unlock, dual_bucket, assign_values, uint32_score, accum_or_assign, assign_score, insert_and_evict, merlin_hashtable, find_or_insert, find_or_insert_ptr)
+
+- Run 2: 14/14 pass.
+- Run 3: 13/13 pass up to `find_or_insert_ptr_test`. That lane was stopped by the session's 2-hour background limit while `test_find_or_insert_multi_threads` was running (not a test timeout), so that attempt has no verdict. The binary was rerun alone under `timeout 3600`: **rc 124, stuck in `test_find_or_insert_multi_threads`** (normally 250-330 s).
+
+### The hang (`FindOrInsertPtrTest.test_find_or_insert_multi_threads`)
+
+The case runs 64 host threads on one table (kLru, 32M -> 128M capacity, max_load_factor 0.5, dim 16), each with its own stream: `assign` of 1M random keys (dim 16 = 64-byte values selects `pipeline_update_kernel_with_io`, which this round changed), pointer `find`, pointer `find_or_insert` + `read_or_write_ptr`, then `cudaStreamDestroy`.
+
+Repetition of the case alone (`--gtest_filter`, stall threshold 900 s):
+
+| Head | Runs | Hangs |
+|---|---|---|
+| 592f800 (this round) | 11 with a verdict (full-binary runs 1 and 2, the rerun, 4 plain runs, 5 under rocgdb) | 3 (the rerun; plain run 2; rocgdb run 1) |
+| 815cfdc (previous head; same toolchain, built from a clean clone into `agent_space/hkv815/build`) | 10 | 0 |
+
+3/11 against 0/10 is suggestive but not conclusive (Fisher exact p about 0.1).
+
+State at a hang (rocgdb run 1, the test launched under the SDK's `rocgdb`, SIGINT after 900 s):
+- `info dispatches`: **"No dispatches are currently active."** No kernel is spinning; the GPU work is finished.
+- Host: only one worker thread is left. It is blocked in `pthread_mutex_lock` inside `libamdhip64.so.7`, called from `hipEventQuery`, called from `nv::merlin::MemoryPool<DeviceAllocator<char>>::collect_pending_unsafe` (`include/merlin/memory_pool.cuh:451-453`). The main thread waits to join it; the other two threads are the ROCr async-event threads in `hsaKmtWaitOnMultipleEvents`. `/proc/<pid>/task/*/wchan`: 2 x `futex_wait_queue`, 2 x `kfd_wait_on_events`.
+- The memory pool records its ready events on the caller's stream (`memory_pool.cuh:569`) and queries them later from any thread; every worker destroys its stream at the end. Querying an event whose recording stream was destroyed is legal on CUDA.
+
+A minimal HIP program with exactly that pattern (64 threads, 16 pooled events recorded on per-iteration streams that are destroyed right away, queried under one mutex from other threads; `agent_space/evq/evq.hip`, not committed) completed 4 of 4 runs (12,800 iterations each), so the pattern alone did not reproduce it.
+
+What is known and what is not:
+- The hang is host-side, inside the HIP runtime's `hipEventQuery`, with no GPU work outstanding. The update kernels do not touch the memory pool, and no kernel is running at the hang, so a direct kernel deadlock from this round's change is ruled out.
+- It was seen only at 592f800, 3 times in 11 runs, and never in 10 runs at 815cfdc. The only compiled difference between the two heads in this test is the three pipeline update headers, so the round's timing change remains a suspect until a larger baseline says otherwise.
+
+Next steps for the porter (not done here):
+1. Run 815cfdc's `find_or_insert_ptr_test --gtest_filter=*multi_threads` 20 or more times to see whether it ever hangs (pre-existing runtime race versus regression).
+2. At a hang, find the owner of the HIP mutex: `AMD_LOG_LEVEL=4` or a debug-symbol `libamdhip64` and `rocgdb` `info threads` plus `print` of the mutex owner field (the futex word in the capture was owned by a thread id that had already exited, `expected=332869` in the join wait is the worker itself).
+3. If it reproduces at 815cfdc or in a smaller program, file it against the HIP runtime (CLR) with this stack and register a `rocm-bug-report` deferral; a workaround in the port would be to synchronize before `cudaStreamDestroy` in the pool's users or to record pool events only on streams that outlive the query, which is a behaviour change to discuss first.
+
+Logs (container-local, not committed): `agent_space/val/` (`A-*.log`, `B2-*.log`, `B3-*.log`, `B3r-find_or_insert_ptr_test.log`, `diag-*.log`, `diag2-rg592-1.{log,smi,wchan}`).
+
+### Other validator items (all pass)
+
+- Repeated-key tests: 9/9 in each of runs 1-3 (1-4 s).
+- Default benchmarks (10-minute cap each): `dual_bucket_benchmark` rc 0 in 2 s; `merlin_hashtable_benchmark` and `find_with_missed_keys_benchmark` were still producing measurements at the cap (rc 124 from `timeout`; result tables printed, no error, fault or abort line), as in the previous round.
+- Research benchmarks: build only, as requested: `build-hip-repro` 96/96, rc 0.
+- `bazel build --config=rocm //...` in a clean clone at 592f800 with a fresh output root: "Build completed successfully, 13 total actions", rc 0. The Bazel `//benchmark:benchmark_util` ran on the GPU for 300 s, printing its HBM tables (insert_or_assign 0.556 B-KV/s at LF 0.5, dim 8), no error lines, stopped at the cap.
+- Integrity: `git -C projects/HierarchicalKV/src status --porcelain` shows no modified tracked files. `python3 utils/jargon.py --port HierarchicalKV`: clean. The README documents the HIP CMake and Bazel builds.
+- **CUDA compile gate: not run here. This host has no nvcc (and no conda CUDA env); the CUDA compile check runs elsewhere.** It should cover `update.cuh`, `update_score.cuh`, `update_values.cuh` and `tests/repeated_key_test.cc.cu` at 592f800.
+- Records: the review's N2 (`plan.md:51` said HIP Debug flags `-O0 -g`) is corrected in place.

@@ -23,3 +23,12 @@
 {"kind":"phase","ts":"2026-11-24T04:26:43Z","phase":"compile","seconds":577.601,"exit":0,"cmd":"bash -c cd projects/HierarchicalKV/src && cmake -S . -B build-hip-repro -G Ninja -DHKV_USE_HIP=ON -DHKV_BUILD_REPRO_BENCHMARKS=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_PREFIX_PATH=/var/lib/jenkins/fleet/jobs/mi300b-20261123-193556-fix-hierarchicalkv-prompt/venv/lib/python3.11/site-packages/_rocm_sdk_devel && cmake --build build-hip-repro -j 48"}
 {"kind":"session","ts":"2026-11-24T04:32:20Z","epoch":1795494740.960063,"event":"start","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-11-24T04:50:25Z","epoch":1795495825.843565,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-24T04:51:27Z","epoch":1795495887.803954,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-24T04:52:26Z","phase":"compile","seconds":0.771,"exit":2,"cmd":"/var/lib/jenkins/fleet/jobs/mi300b-20261123-193556-fix-hierarchicalkv-prompt/bazel/bin/bazel --output_user_root=/var/lib/jenkins/fleet/jobs/mi300b-20261123-193556-fix-hierarchicalkv-prompt/bazel/root-val build --config=rocm --jobs=48 //..."}
+{"kind":"phase","ts":"2026-11-24T04:52:48Z","phase":"compile","seconds":3.197,"exit":1,"cmd":"agent_space/val/bazel_build.sh"}
+{"kind":"phase","ts":"2026-11-24T04:54:11Z","phase":"compile","seconds":75.01,"exit":0,"cmd":"agent_space/val/bazel_build.sh"}
+{"kind":"phase","ts":"2026-11-24T06:24:17Z","phase":"test","seconds":5554.31,"exit":0,"cmd":"bash agent_space/val/laneA.sh"}
+{"kind":"phase","ts":"2026-11-24T06:47:11Z","phase":"test","seconds":6899.964,"exit":0,"cmd":"bash agent_space/val/laneB.sh"}
+{"kind":"phase","ts":"2026-11-24T07:52:26Z","phase":"test","seconds":3602.574,"exit":0,"cmd":"agent_space/val/run_one.sh projects/HierarchicalKV/src/build-hip/find_or_insert_ptr_test 3600 agent_space/val/B3r-find_or_insert_ptr_test.log"}
+{"kind":"phase","ts":"2026-11-24T08:21:59Z","phase":"test","seconds":1706.132,"exit":0,"cmd":"agent_space/val/diag.sh projects/HierarchicalKV/src/build-hip/find_or_insert_ptr_test head592 4"}
+{"kind":"session","ts":"2026-11-24T08:59:01Z","epoch":1795510741.93101,"event":"end","platform":"linux-gfx942"}
