@@ -200,6 +200,12 @@ Windows runners do), and neither is a port defect:
   suites that precede it with `--gtest_filter` to find the one that leaves the state
   behind, and check that the port does not touch either file before you record it.
 
+### A sync-bound GPU test that passes alone can time out under `ctest -jN`
+
+Processes that submit to one GPU at the same time slow each other down more than linearly, so a test that synchronizes every step can pass alone and hit its timeout in a parallel run with no hang and no port fault. On a Radeon gfx1201 (ROCm 10.1), a loop of small kernels plus a small synchronous device-to-host copy took 30 us per iteration in one process and 135-139 us per iteration in each of two or four concurrent processes; an idle second context cost nothing, only concurrent submission did. ESPResSo's `lb_pressure_tensor` (10000 sample steps, each synchronized) passed in 77-147 s alone and timed out at 1200 s under `ctest -L gpu -j 8`.
+
+Before treating such a timeout as a hang, rerun the test alone, then run two copies at once. A pass alone plus a superlinear slowdown with two copies is GPU sharing. The fix is to run the GPU tests serially (`ctest -j1` for the GPU label, or a `RESOURCE_LOCK` test property shared by the GPU tests), not a longer timeout or a code change. A test that is stuck rather than slow under `ctest -jN` is a different case (linux-host-setup.md, "A GPU test that hangs only under `ctest -jN` is usually the software GL stack"), and so is one that is too slow even alone (platform-limits.md, "A low-CU integrated GPU can outrun a fixed upstream test timeout without any fault"). (ESPResSo)
+
 ## Memory measurements
 
 ### A free-memory leak check measures the whole GPU, not your process
