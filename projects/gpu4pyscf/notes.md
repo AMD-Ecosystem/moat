@@ -5977,3 +5977,95 @@ The known issue is now documented in the README in #<NEW_PR>, which links back h
 1. Open the pull request from `pr-1054-readme-rocm-10-1` with the title and body above.
 2. Post the #1055 reply with the new number and close #1055 (not merged).
 3. The 1054 tracking issue's checklist line for #1055 may want a note that it became the README known issue; not drafted.
+## Pull request preparation (h), refresh 2026-11-24 (fleet job, linux-gfx1201 R9700, upstream master c9eea22a) -- branch `pr-1054-gfx12-complex-gemm-2`
+
+### Ruling 2026-11-24 (jeffdaily): send (h) as a code change, wider scope kept
+jeffdaily, 2026-11-24: send this as a code change ("A"), with the wider scope kept (all four affected products, the two in `aft_jk.py` included). Context he weighed: on https://github.com/pyscf/gpu4pyscf/pull/1055 the maintainer sunqm wrote that handling compiler bugs by changing code is not the right solution; this change differs because the results are silently wrong and no released ROCm has the rocBLAS fix, and the description must say plainly how to remove the workaround once rocBLAS is fixed.
+
+Not a pipeline round: no stage, platform record or lock was changed; the fork's `moat-port` and every other `pr-1054-*` branch were not touched (`pr-1054-gfx12-complex-gemm` still at cb7cd14e). Nothing was posted on GitHub; the only writes are the new fork branch and this record.
+
+### The branch
+- `pr-1054-gfx12-complex-gemm-2` on AMD-Ecosystem/gpu4pyscf, tip **a94d9e0f69ccd65ea8090250b8f39e24896bc88a**, one commit on upstream master **c9eea22a** (#1060), upstream's tip at the push and still its tip afterwards (`git ls-remote`). New branch, plain push.
+- **Upstream's six commits since 871a54a7:** 1d216e2c (#1068, CONTRIBUTING.md and `agent-recipes/`), f5034237 (#1071, SYCL CI and rawkernel prelude), ce364268 (#1058, HIP shm_size reserve), 9381d76a (#1056, ft_aopair Gv tile 32), 2fb89cf0 (#1057), c9eea22a (#1060). Of the four files this change touches only `pbc/df/ft_ao.py` changed: #1056 removed `libpbc.PBC_warp_size` / `WARP_SIZE` (five lines just above the block this change adds) and made `ft_ao_scheme`'s `nGv_per_block` default 32; neither is near an edited line. **What had to change because of them: nothing.** `git cherry-pick cb7cd14e` onto c9eea22a merged automatically; the only effect is a -5 line offset of the two ft_ao.py hunks. The +/- lines of the new commit are identical to cb7cd14e's (diff of the two patches' +/- lines empty). aft_jk.py, grad/krhf.py and grad/kuhf.py are unchanged upstream since 871a54a7.
+- **Commit message** changed from cb7cd14e: the Change paragraph names `gpu4pyscf.BACKEND` and the SYCL backend; the Cause paragraph adds "no ROCm release has the fix yet"; the removal instruction is its own paragraph ("Removing it: once a ROCm release ships a rocBLAS that writes all columns on gfx12, delete COMPLEX_GEMM_MAX_N, complex_gemm_blocks and every `if COMPLEX_GEMM_MAX_N is not None ...` branch, keeping the line in each `else:`. Nothing else depends on them."); the Test Plan shows the full build line with `CMAKE_CONFIGURE_ARGS` and the per-file loop, and carries the new counts; the cost line carries the re-measured numbers. Title unchanged (57 characters), "Authored with Claude.", no Co-Authored-By, ASCII.
+
+### Upstream's CONTRIBUTING.md and coding-style recipe, point by point
+CONTRIBUTING.md points GPU-kernel, backend-dispatch and build changes at `agent-recipes/skills/gpu4pyscf-coding-style.template.md`; its other points (PySCF parity, CuPy/NumPy mixing, `to_cpu`, sm_70) do not bear on this change.
+- **"Use only `gpu4pyscf.BACKEND` ... to select backend-specific Python code. Test supported backends explicitly."** Met. The gate is `if BACKEND == 'hip' and gpu_specs.get('gcnArchName', b'').startswith(b'gfx12'):` in ft_ao.py with `from gpu4pyscf import BACKEND` (the import `__config__.py` uses since #1058). The backend is tested first with an explicit `== 'hip'`, as in `__config__.py` and multigrid_v3.py; `and` short-circuits, so the device's architecture name is read only on a HIP build, never on CUDA or SYCL. `gpu_specs` is `__config__.props`, already imported by ft_ao.py, so nothing new runs at import. No `cupy.cuda.runtime.is_hip` anywhere. The architecture check is a property of the device, which `BACKEND` cannot express; it refines a branch already selected by `BACKEND`, so it does not compete with it.
+- **Compact code, follow nearby code, smallest complete change, no refactor of existing helpers.** Met: each site keeps its original line verbatim in an `else:`; one module constant and one small generator are added; no existing helper (`contract` included) is changed; no renaming or reformatting.
+- **"Ask when an unresolved scientific convention ... materially affects the result."** Not applicable: the split is exact re-blocking of the same product (agreement to 1e-15 or better where both paths are correct).
+- **`threadIdx_x` macros, warp width, lane masks, CMake.** Not applicable: no kernel, CMake or compiled source changes.
+- **Nothing else in the recipe asks for a change.**
+
+### Build and tests on this GPU (Radeon AI PRO R9700, gfx1201, `HIP_VISIBLE_DEVICES=1`, `ulimit -c 0`)
+Environment: TheRock ROCm SDK 10.1.0 pip (rocBLAS 5.7), `LD_LIBRARY_PATH=$(rocm-sdk path --root)/lib`; job venv numpy 2.2.6, scipy 1.17.1, cupy-rocm-7-0 14.2.0, pyscf 2.14.0, pyscf-dispersion 1.7.0, geometric 1.1.1, basis-set-exchange 0.12, MCFun 0.2.6, h5py 3.16.0, pytest 9.2.0, pytest-timeout 2.4.0, cmake 3.31.6, ruff 0.15.0, flake8 7.5.0. Scratch scripts are copies of the 2026-11-23 job's (`runfile.sh`, `sixlog.sh`, `scanrb.py`, `count.py`, `ekcheck2.py`, `ekbig.py`, `bench.py`), not durable.
+- **Build, both trees** (master worktree at c9eea22a and the branch), each `GPU4PYSCF_BACKEND=hip HIP_ARCHITECTURES=gfx1201 CMAKE_CONFIGURE_ARGS='-DCMAKE_HIP_FLAGS=-mllvm=-disable-machine-licm -DCMAKE_SHARED_LINKER_FLAGS=-mllvm=-disable-machine-licm' CMAKE_BUILD_ARGS='--parallel 12 --verbose' python setup.py build_py` in `utils/timeit.sh gpu4pyscf compile`: exit 0 in 77 s each, 11 libraries, `--offload-arch=gfx1201` only, the flag on 96/96 HIP compile and 11/11 `--hip-link` lines. (This time the branch was built rather than given master's libraries; the compiled sources are identical, the .so files differ only by build path.)
+- **Tests:** all 62 pbc test files (same list as (h)), one pytest process per file, `-p no:xdist -m 'not slow and not benchmark and not special' -k 'not _high_cost'`, `OMP_NUM_THREADS=2`, `timeout -k 30 1800` per file, two files at a time per tree, both trees at once (`utils/timeit.sh gpu4pyscf test`, wall 2217 s). Counts from junit (passed/failed/skipped/errors):
+
+| directory | master c9eea22a | branch a94d9e0f |
+|---|---|---|
+| pbc/df (7 files) | 137/5/6/0 | 141/1/6/0 |
+| pbc/grad (18 files) | 185/8/3/0 | 186/7/3/0 |
+| pbc/scf (11 files) | 154/16/2/0 | 155/15/2/0 |
+| the other 26 pbc files (dft, gto, gw, hessian, lib, properties, tools, x2c) | 243/7/48/0 | 243/7/48/0 |
+| **total (814 tests)** | **719/36/59/0** | **725/30/59/0** |
+
+  Per test, the six targets (test_ej_ip1_kpts, test_vk_kpts_vs_fft, test_ejk_derivatives_kpts_with_long_range, test_uhf_ejk_derivatives_kpts_with_long_range, test_vk_hermi1_kpts_vs_aft, test_krhf_grad_with_pseudo) go failed -> passed and nothing else changes. One correction is folded into the branch column: in the joint run, test_pbc_numint.py test_eval_ao_kpt and test_eval_ao_kpts failed on the branch with `hipErrorOutOfMemory` in numint's own `contract('Lks,cLig->kcigs', ...)` (unchanged code; numint imports only `libpbc` and `PBCIntEnvVars` from ft_ao) while four test processes shared the 32 GB card; rerun alone on each tree, the file passes **32/32 on master and on the branch**. Raw branch column before the rerun: 723/32/59/0. test_multigrid_v2.py exits 5 on both (its test is skipped; multigrid-v2 is off by default). No liveness failure, no hang.
+- **Against (h) at 871a54a7:** the 13 pbc/scf setup errors are gone on both trees (master now 0 errors), and master has 45 fewer failures (81 -> 36), from upstream's commits since 871a54a7 (not attributed per test); the change's effect is the same six tests.
+- **rocBLAS (`ROCBLAS_LAYER=2`, the six tests, `sixlog.sh` + `scanrb.py`):** complex GEMM calls with n > 2^21: **master 79** (test_pbc_aft 4 x (6, 3515625, 6) + 1 x (6, 5334336, 6); test_pbc_df_derivatives 16 x (6, 3272481, 6); test_pbc_grad_krhf 52 x (2, 6892100, 2); test_pbc_scf_jk 6 x (3, 4194304, 3)), the same 79 as at 871a54a7 and 0647712; **branch 0**. Six tests on master: 6 failed; on the branch: 6 passed (8 with the two `_long_range` siblings).
+- **Split checks re-run on the branch:** `ekcheck2.py` (get_ek_derivatives, threshold forced to 4096 vs default vs none): k-point nao 8 and Gamma nao 8 agree to 1.3e-15 and 8.3e-16; k-point nao 16 with 15625 G (n = 4.0M) unsplit off by 3.26, default split 8.9e-15. `ekbig.py` (Gamma, 117 AOs, 17576 G): unsplit off by 13.0, default split 8.5e-14 vs a 2^18 split; 11.3 s unsplit, 10.4 s split. `bench.py` (`'Lk,pLqG->kpqG'`, median of 10): n = 3.5M 15.19 -> 15.52 ms, 5.3M 25.18 -> 23.36 ms, 4.2M 17.29 -> 10.74 ms, 6.9M 11.07 -> 9.91 ms, 26M 1006.1 -> 240.4 ms; split errors 9e-16 to 5.3e-15, unsplit 2.8 to 9.7.
+- **Lint:** `ruff check --config .ruff.toml --unsafe-fixes gpu4pyscf` and `ruff check --select NPY --ignore NPY002 gpu4pyscf` (ruff 0.15.0, upstream's lint workflow): all checks passed; flake8 on the four files: clean. `jargon.py -C <clone> --commits upstream/master..HEAD` and `--diff`: clean. `prose.py` on the commit message and on the draft body below: clean; ASCII.
+- **CUDA and SYCL:** `BACKEND != 'hip'` leaves COMPLEX_GEMM_MAX_N None and every site runs its original line in its `else:`; no compiled source changes. Not run on an NVIDIA GPU or a SYCL device.
+
+### Draft title and body for `pr-1054-gfx12-complex-gemm-2` (supersedes the (h) draft above; nothing posted)
+Changes from the (h) draft: the numbers (table, rocBLAS count unchanged at 79, cost line re-measured); "no released ROCm has the fix" added to the cause; the gate described through `gpu4pyscf.BACKEND`; the removal paragraph made explicit; "the other master failures are the separate issues listed in #1054" rewritten (master's remaining 36 pbc failures were not re-matched against #1054's list); the MI300X paragraph, whose claim that the tests stop at the `ft_ao_scheme` assert is no longer true now that #1056 has merged, replaced by a marked placeholder. **V100:** the recorded (h) draft has no V100 paragraph (searched the whole notes.md: the only V100 text is in draft (i), the J-engine lane mask). If jeff's copy of the draft carries one, it goes where the second placeholder is, marked as measured at 871a54a7.
+
+````markdown
+Title: Split wide complex k-point products on gfx12 GPUs
+
+On gfx12 GPUs (Radeon RX 9000 series, Radeon AI PRO R9700), several k-point AFT and GDF results are silently wrong. On an R9700, test_ej_ip1_kpts in test_pbc_aft.py misses by 11.0 and test_vk_kpts_vs_fft by 1.4, test_ejk_derivatives_kpts_with_long_range in test_pbc_df_derivatives.py and its UHF version by 7.0e-5 and 4.8e-4, test_vk_hermi1_kpts_vs_aft in test_pbc_scf_jk.py by 0.046, and test_krhf_grad_with_pseudo in test_pbc_grad_krhf.py by about 0.005. The AFT exchange gradients and stress (aft_jk.get_ek_derivatives) are wrong the same way at sizes the tests do not reach. No error is raised.
+
+This works around a rocBLAS defect, not a problem in gpu4pyscf. On these GPUs, rocBLAS complex GEMM (zgemm and cgemm, also through gemm_ex) with n > 2**21 leaves every column from 2**21 on unwritten and returns success; real-valued GEMMs are not affected. Its complex GEMM kernel places the n tiles of 32 columns in grid y, and gfx12 passes the work-group IDs y and z to the kernel as 16-bit values, so the tiles past 65536 * 32 = 2**21 never run. It is reported as ROCm/rocm-libraries#14983, and no ROCm release has the fix yet. Because the wrong results come with no error, I think a contained workaround is worth carrying until then. These `contract` calls reach rocBLAS with n above 2**21:
+
+- `'Lk,pLqG->kpqG'` in FTOpt (pbc/df/ft_ao.py) and `'Lk,kpqG->LqpG'` / `'Lk,kpqG->LpqG'` in the k-point GDF ejk derivatives (pbc/df/grad/krhf.py, kuhf.py): n = nao*nao*nGv, 3.3 to 6.9 million in the tests above.
+- `'Lk,kjig->Ljig'` / `'Lk,kjig->Lijg'` in aft_jk.get_ek_derivatives: n = nao*nao*nGv with up to 16384 G vectors per block, so from nao = 12 on (off by 3.3 with nao = 16 and 15625 G vectors).
+- `'snjk,nlkg->snjlg'` and, at the Gamma point, `'sjk,lkg->sjlg'` in the same function: n = nao*nGv, from nao = 129 on when memory allows the full G block (off by 13.0 at the Gamma point with 130 AOs and 16384 G vectors).
+
+Change: when `gpu4pyscf.BACKEND` is `'hip'` and the device's gcnArchName starts with gfx12 (from the device properties `__config__` already reads), these products are split so that no call exceeds 2**21: along the first AO axis, and also along G when a single AO row is wider than 2**21, or along G alone for the last two. Each piece is the same `contract` call on slices of the operands and the output; where a second product accumulates into the first, the first runs to completion before the second starts. Other GPUs and the CUDA and SYCL backends run the existing lines unchanged, because COMPLEX_GEMM_MAX_N stays None there. The other complex products in the AFT exchange code put the large dimension on rocBLAS m or k, which the defect does not affect. The split costs nothing measurable on the R9700 (`'Lk,pLqG->kpqG'` alone, median of 10: n = 3.5 million 15.2 -> 15.5 ms, 5.3 million 25.2 -> 23.4 ms, 6.9 million 11.1 -> 9.9 ms, and 1006 -> 240 ms at 26 million; get_ek_derivatives at the Gamma point with 117 AOs 11.3 -> 10.4 s).
+
+How to remove it: once a ROCm release ships a rocBLAS that writes all columns on gfx12, delete COMPLEX_GEMM_MAX_N and complex_gemm_blocks from pbc/df/ft_ao.py and every `if COMPLEX_GEMM_MAX_N is not None ...` branch in ft_ao.py, aft_jk.py, grad/krhf.py and grad/kuhf.py, keeping the line in each `else:`. Nothing else depends on them.
+
+Test plan, Radeon AI PRO R9700 (gfx1201), ROCm 10.1.0, CuPy 14.2.0, PySCF 2.14.0, built with `-mllvm -disable-machine-licm` passed through `CMAKE_CONFIGURE_ARGS` (see #1055), CI marker selection, one pytest process per test file:
+
+```
+GPU4PYSCF_BACKEND=hip HIP_ARCHITECTURES=gfx1201 CMAKE_CONFIGURE_ARGS="-DCMAKE_HIP_FLAGS=-mllvm=-disable-machine-licm -DCMAKE_SHARED_LINKER_FLAGS=-mllvm=-disable-machine-licm" python setup.py build_py
+for f in $(find gpu4pyscf/pbc -name 'test_*.py'); do
+  pytest $f -p no:xdist -m 'not slow and not benchmark and not special' -k 'not _high_cost'
+done
+```
+
+| pbc tests (passed/failed/skipped/errors) | master | this branch |
+|---|---|---|
+| pbc/df | 137/5/6/0 | 141/1/6/0 |
+| pbc/grad | 185/8/3/0 | 186/7/3/0 |
+| pbc/scf | 154/16/2/0 | 155/15/2/0 |
+| the other 26 pbc test files | 243/7/48/0 | 243/7/48/0 |
+
+The six tests named above are the only tests whose result changes; the other failures occur on master too and do not involve the changed code. With `ROCBLAS_LAYER=2`, rocBLAS logs 79 complex GEMM calls with n > 2**21 from these six tests on master and none on this branch. get_ek_derivatives with the split threshold forced down to 4096 matches the unsplit path to 1e-15 at sizes below the limit (k-point and Gamma); past the limit the split matches a finer split to 1e-13 where the unsplit path is off by 3.3 and 13.0. Code outside pbc does not import the changed modules.
+
+[PLACEHOLDER, MI300X, to be filled from jeff's session on the gfx942 host before opening: the result of the same build (`HIP_ARCHITECTURES=gfx942`) and selection on master c9eea22a and this branch, and whether COMPLEX_GEMM_MAX_N is None there. With #1056 merged, the six tests now reach the changed products on that GPU, so the paragraph can say whether they pass on both trees.]
+
+[PLACEHOLDER, V100: no V100 paragraph is recorded for this pull request. If one is added, it was measured at the old base 871a54a7 and must say so.]
+
+Part of #1054.
+
+This pull request was prepared with Claude Code (Anthropic), which wrote the change and ran the tests on our hardware; I read and approved it before opening.
+````
+
+Checklist line for the issue's Tracking section, unchanged from (h) (draft; nothing posted):
+
+```
+- [ ] rocBLAS complex GEMM leaves columns past 2**21 unwritten on gfx12 (ROCm/rocm-libraries#14983): split the wide k-point products in pbc/df until it is fixed
+```
+
+**Open for jeff:** (1) the sentence "Because the wrong results come with no error, I think a contained workaround is worth carrying until then." is new, written in his voice as the answer to sunqm's #1055 point; drop it if he prefers the body without it. (2) The "130 AOs" in the third bullet is the (h) measurement at 0647712/871a54a7 (code path unchanged since); this job's Gamma check used 117 AOs (off by 13.0 through the nao*nao product). (3) The MI300X placeholder.
