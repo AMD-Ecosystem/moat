@@ -6,12 +6,53 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "unclaimed",
+  "stage": "awaiting-fork",
   "adopted_at": "2026-11-24T18:04:16Z",
-  "updated_at": "2026-11-24T18:04:16Z",
+  "updated_at": "2026-11-24T18:08:24Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-24T18:08:24Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    }
+  },
+  "license_spdx": "MPL-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "MPL-2.0",
+      "evidence": "https://github.com/KemengHuang/Stiff-GIPC/blob/bb2849a7b292099581907937860d96ecfdf42588/LICENSE",
+      "at": "2026-11-24T18:07:24Z"
+    }
+  ],
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "none (only our own GPU_IPC, merged upstream, and the parallel libuipc screen)",
+    "viable": true,
+    "summary": "Kemeng Huang's StiffGIPC simulator (MPL-2.0, ~46k lines CUDA/C++, FP64); 42% shared with our merged GPU_IPC port, only 5% with libuipc, so it is a separate port the GPU_IPC fixes largely carry into; author invited AMD work on GPU_IPC PR #4",
+    "at": "2026-11-24T18:08:24Z"
+  }
 }
