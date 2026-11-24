@@ -668,3 +668,278 @@ For `diagnosis.md` (or wherever run-to-run reproducibility checks are covered).
 - How to find it: register forward hooks on every leaf module, run the same input twice in one process, and report the first module whose output differs. That names the layer in one run. Then repeat that layer alone at the observed shape. `MIOPEN_ENABLE_LOGGING=1 MIOPEN_LOG_LEVEL=6` prints the chosen solver.
 - Fix for comparisons: `torch.backends.cudnn.deterministic = True` makes MIOpen choose a deterministic solver (`GemmFwdRest` here), with no measurable cost in this model.
 - Set it for A/B validation, and establish the noise floor (run the reference twice) before reading any difference between two code paths as real.
+
+## Verification of the PR #67 comment claims (linux-gfx942, 2026-11-24)
+
+Request from Jeff Daily: measure every claim in his draft comment on SkyworkAI/Matrix-Game#67 before he posts it. This is not a pipeline role. No project state was changed, nothing was pushed to a fork, and nothing was posted. Job `mi300c-20261124-021312-re-verify-pr67-prompt`. It re-ran the killed job `mi300c-20261123-155958-verify-pr67-prompt` from scratch: weights re-downloaded, venvs rebuilt, AITER and flash-attention rebuilt. Only the two source clones were copied from it and checked (`git describe`: AITER `v0.1.30` = `77ba72b7`, flash-attention `v2.8.3.post2` = `49774b31`, both `git clean -xffd` including submodules before building).
+
+- PR state at check time: OPEN, head `9ad32b1d90ef35c6780e2023aabc115e2f33496e`, `mergeable` MERGEABLE, `mergeStateStatus` CLEAN. Upstream main `51913b2bfa78a6d54de912b8348b1d318f4d36e2`.
+
+### Environment, and how it differs from the PR's claim
+
+- **The PR claims** "MI300X, gfx942, ROCm 7.2", run in `rocm/pytorch:rocm7.2.1_ubuntu22.04_py3.10_pytorch_release_2.9.1` with `amd-aiter 0.1.13`. Its README installs torch from `https://download.pytorch.org/whl/rocm7.2`.
+  - PyPI has no `amd-aiter` 0.1.13 (the only release is 0.1.7.post2.dev18), so 0.1.13 must have come from a source build or an internal index.
+- **This environment:**
+  - GPU: an AMD Instinct MI300X (gfx942, `gfx942:sramecc+:xnack-`) on a host in **CPX partition mode**. The dispatcher's pin `HIP_VISIBLE_DEVICES=4` is one partition: 38 CUs (`torch.cuda.get_device_properties(0).multi_processor_count`) and 24.0 GiB, against 304 CUs and 192 GB for a whole MI300X. MIOpen names it `gfx942_38`.
+  - Software, all job-local:
+    - Python 3.11.17.
+    - TheRock wheels from `https://repo.amd.com/rocm/whl/gfx94X-dcgpu/`: `torch 2.10.0+rocm7.13.0` (MG-3's own `requirements.txt` pins `torch==2.10.0`), `torchvision 0.25.0+rocm7.13.0`, `triton 3.6.0+rocm7.13.0`, `rocm[libraries,devel]==7.13.0`. HIP 7.13.99004.
+    - Ubuntu 24.04 host userspace, amdgpu 6.16.13.
+- So the GPU is the same model in a 1/8 partition, the ROCm is 7.13 not 7.2, and torch is 2.10 not 2.9.1. Every result below is on this partition with ROCm 7.13 and torch 2.10.
+- **Toolchain check (the addendum's).** `rocm-sdk path --root` = `$FLEET_VENV/lib/python3.11/site-packages/_rocm_sdk_devel`. The host has no `/opt/rocm`; the image's base links (ROCm 10.1, triton 3.9) were disabled in the job venv (`zz-base-links.pth` renamed).
+  - Builds ran with `ROCM_HOME=ROCM_PATH=HIP_PATH=<that root>`; `hipcc --version` printed `HIP version: 7.13.99004-3309c6114a`, AMD clang 23.0.0git; `torch.utils.cpp_extension.ROCM_HOME` = the same root.
+  - flash-attention CK build log: all 705 compiler invocations are `<root>/bin/hipcc`, 704 objects with `--offload-arch=gfx942`.
+  - AITER's runtime JIT (`aiter/jit/build/*/build.ninja`) also uses `<root>/bin/hipcc`.
+- **Builds.**
+  - flash-attention CK: `BUILD_TARGET=rocm GPU_ARCHS=gfx942 OPT_DIM=128 MAX_JOBS=96 pip wheel --no-build-isolation --no-deps .`, about 13 min.
+    - Installed with `pip install --target fa-site` and put on `PYTHONPATH` only for runs that should see it, so AITER-only runs could not import it.
+  - flash-attention Triton backend: `FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE pip wheel ...` (pure Python), installed into its own `fa-tri-site`.
+  - AITER: `GPU_ARCHS=gfx942 PREBUILD_KERNELS=0 MAX_JOBS=16 pip wheel --no-build-isolation --no-deps .`, wheel `amd_aiter-0.0.0-cp311`.
+    - Its `setup.py` again uninstalled the venv's `triton 3.6.0+rocm7.13.0` and installed `triton 3.8.0+amd.rocm7.2.0` from pypi.amd.com (the gfx950 lesson above). That was reverted with `pip install --no-deps triton==3.6.0+rocm7.13.0` before any GPU run.
+    - Its dependency `flydsl==0.5.1` was then installed with a constraints file pinning torch, triton and torchvision.
+- **Venvs.**
+  - Main: `$FLEET_VENV` holds AITER v0.1.30 from source.
+  - `extra/plain`: torch and MG-3's requirements only, with no flash-attn and no AITER.
+  - `extra/pypi-aiter` and `extra/amd-aiter`: the fresh venvs for claims 4 and 5.
+  - All pip commands ran with `PYTHONPATH` unset. The fleet's `pylib` on `PYTHONPATH` otherwise makes pip skip `typing_extensions` in a fresh venv, which then cannot import torch; the first claim-5 attempt hit exactly that and was redone.
+  - `pandas` in the main venv was raised from the image's 2.0.3 to 2.2.3 (2.0.3 fails to import against numpy 2.2.6, which made `import aiter` fail).
+- `ulimit -c 0` and `timeout` on every GPU run; only GPU 4.
+
+### What had to change to run MG-3 at all on a 24 GiB partition (harness side; generate.py and the repo unchanged)
+
+Runs go through `scripts/run_mg3.py`, which calls `generate.py` with `runpy` after some instrumentation and patches:
+- **Instrumentation.** It counts calls to `aiter.ops.mha.flash_attn_varlen_func`, `flash_attn.flash_attn_varlen_func`, `flash_attn.flash_attn_func` and `F.scaled_dot_product_attention`, and saves the uint8 frames handed to `process_video` (`raw.npy`, used for the metrics).
+- **Patches, each forced by the partition:**
+  1. **T5 on CPU.** The README command OOMs during the Wan VAE encode with the 11 GB T5 on the GPU: `torch.OutOfMemoryError ... Of the allocated memory 22.56 GiB is allocated by PyTorch`, rc 1, 60 s. `--t5_cpu` does not help on one GPU. T5 is kept on the CPU and only its output moves to the GPU.
+  2. **DiT parked on CPU during VAE decode.** Even then the first VAE `stream_decode` OOMs: `Tried to allocate 3.44 GiB ... 18.52 GiB is allocated`, and with `PYTORCH_ALLOC_CONF=expandable_segments:True` `Tried to allocate 1.95 GiB ... 21.93 GiB`. The pipeline then crashes with `AttributeError: 'NoneType' object has no attribute 'cpu'` at `pipeline/inference_pipeline.py:652`. The DiT's weights are moved to the CPU for each `stream_decode` call and back afterwards (values unchanged; `expandable_segments` kept on).
+  3. **`--compile_vae` only: VAE feature cache moved off the GPU between decodes.** After the first compiled decode, 3.4 GiB more stays allocated (7.67 against 4.03 GiB). The DiT then OOMs in the next iteration (`Tried to allocate 482.00 MiB ... 21.90 GiB allocated`; rc 1 in 3 of 3 attempts, AITER and FA2 alike). With the `feat_cache` tensors moved to the CPU after each decode and back before the next, it completes.
+  4. **MIOpen's naive conv solver disabled for the first run.** `MIOPEN_DEBUG_CONV_DIRECT_NAIVE_CONV_FWD=0`. On the first, cold run, MIOpen's Find (`DYNAMIC_HYBRID`) benchmarked `ConvDirectNaiveConvFwd` for each Wan-VAE conv3d shape. It spent more than 5 minutes on one shape (`320-3-178-322-3x3x3-320-...-NDHWC-BF16`) on 38 CUs, and the previous job's run was killed while still stuck there.
+- **None of these patches changes the numerics:**
+  - The patch-2 run with the cache offload but without `--compile_vae` is bit-identical to the run without the offload (177/177 frames).
+  - With the naive solver re-enabled (`=1`, a warm find-db), the AITER run is bit-identical to the one with it disabled (rc 0, 144 s).
+- The T5-on-CPU embedding cannot be compared to a GPU one here (that run OOMs), so every MG-3 number below is "T5 on CPU", identically for all backends.
+- Two-backend PSNR from the full-GPU hosts (gfx942 26.7 dB, gfx950 24.8 dB) is not directly comparable to these numbers.
+
+Common command (each run adds what its row says):
+
+```
+python generate.py --size 704*1280 --use_int8 --num_iterations 4 --num_inference_steps 3 \
+  --vae_type mg_lightvae --lightvae_pruning_rate 0.5 --image demo_images/001/image.png --seed 42 \
+  --ckpt_dir <job>/weights/Matrix-Game-3.0 \
+  --prompt "A colorful, animated cityscape with a gas station and various buildings." \
+  --output_dir <out> --save_name video
+```
+
+Weights: `Skywork/Matrix-Game-3.0` at `d4c84ef2b8e9028a00a5d58b6be2df04f1cb6042`, downloaded fresh by `hf download` (53 GB, exit 0). Wall times are the wrapper's whole-process wall, model load included.
+
+### Claim 1: the command completes with and without `--compile_vae` and writes 177 frames
+
+- **The command exactly as written in the comment fails at argument validation** (PR head, AITER venv), whatever the GPU:
+  - As written: `AssertionError: Please specify the checkpoint directory.` (`generate.py:23`), rc 1, 8 s.
+  - With `--ckpt_dir` added: `AssertionError: please specify the prompt.` (`generate.py:24`), rc 1, 7 s.
+  - `generate.py` has no default for either, so the comment needs `--ckpt_dir Matrix-Game-3.0 --prompt "..."` (as in the README) or must say the command is abbreviated.
+- With those two added, AITER v0.1.30 only (no flash-attn importable), PR head:
+
+| run | rc | wall | frames in `video.mp4` (decoded / container) | notes |
+|---|---|---|---|---|
+| no harness patches | 1 | 60 s | none written | OOM in VAE encode (22.56 GiB) |
+| T5 on CPU | 1 | 88 s | none written | OOM in VAE `stream_decode` (18.52 GiB), then `AttributeError` |
+| T5 on CPU + DiT offload during decode | **0** | 156 s | 177 / 177, 1280x704, 17 fps | `pr-aiter-1` |
+| same, repeat | 0 | 146 s | 177 / 177 | `pr-aiter-2`, bit-identical to `pr-aiter-1` |
+| `--compile_vae`, T5 on CPU + DiT offload | 1 | 185 s, 109 s, 110 s | none written | 3 attempts; OOM in the DiT after the compiled decode |
+| `--compile_vae`, + VAE cache offload | **0** | 155 s | 177 / 177 | `pr-aiter-cvo-1` |
+| `--compile_vae`, + VAE cache offload, repeat | 0 | 156 s | 177 / 177 | `pr-aiter-cvo-2`, bit-identical to `-cvo-1` |
+
+- Frame counts were read by decoding every frame of `video.mp4` with OpenCV (`scripts/frames.py`), and match the `(177, 704, 1280, 3)` array handed to the writer.
+- `--compile_vae` against no compile, AITER: frames 0 to 56 identical. From frame 57 on, mean PSNR 54.7 dB (min 53.0) and max abs diff 18 levels. FA2 shows the same 54.7 dB.
+
+Verdict: **confirmed with qualifications.**
+- Confirmed: with `--ckpt_dir` and `--prompt` added, the PR head with source-built AITER v0.1.30 completes with and without `--compile_vae` on an MI300X-class GPU and writes 177 frames.
+- Not confirmed as literally written: the command as quoted fails argument validation.
+- Not confirmed on this hardware as shipped: on a 24 GiB CPX partition it completes only with the harness memory patches above. A whole MI300X (192 GB) was not available to this job, so completion without patches was not observed here; the earlier gfx950 job saw it complete on a whole MI355X.
+
+### Claim 2: AITER output agrees with FA2 CK "to the run-to-run level between any two attention backends"
+
+Metrics are per frame over the 177 uint8 frames (`scripts/compare.py`): mean and max abs difference in 0..255 levels, and PSNR. The mean PSNR is over frames 1..176, because frame 0 (the input image) is identical in every pair.
+
+| pair (same seed, same command) | bit-identical | mean abs diff, mean over frames (first10 / last10) | max abs diff, max over frames | PSNR mean / min dB | PSNR last10 dB |
+|---|---|---|---|---|---|
+| AITER run 1 vs AITER run 2 | **yes**, 177/177 | 0 | 0 | inf | inf |
+| FA2 CK run 1 vs run 2 | **yes** | 0 | 0 | inf | inf |
+| masked SDPA run 1 vs run 2 | **yes** | 0 | 0 | inf | inf |
+| repo SDPA fallback run 1 vs run 2 | **yes** | 0 | 0 | inf | inf |
+| AITER vs FA2 CK | no | 8.83 (0.74 / 24.04) | 255 | 25.51 / 14.70 | 14.83 |
+| AITER vs FA2 CK, both `--compile_vae` | no | 8.83 (0.74 / 24.02) | 255 | 25.51 / 14.71 | 14.84 |
+| FA2 Triton vs FA2 CK | no | 10.71 (0.71 / 27.61) | 255 | 24.76 / 13.71 | 13.84 |
+| AITER vs FA2 Triton | no | 12.78 (0.59 / 32.78) | 255 | 24.99 / 12.91 | 13.06 |
+| masked SDPA vs FA2 CK | no | 7.76 (0.74 / 23.22) | 255 | 25.20 / 14.21 | 14.41 |
+| masked SDPA vs FA2 Triton | no | 8.72 (0.70 / 20.18) | 255 | 25.85 / 15.96 | 16.39 |
+| masked SDPA vs AITER | no | 10.81 (0.72 / 28.64) | 255 | 24.41 / 13.57 | 13.66 |
+| AITER (+FA2 action module) vs AITER only | no | 9.07 | 255 | 26.03 / 14.21 | 14.31 |
+| repo SDPA fallback vs FA2 CK | no | 34.70 (18.25 / 47.79) | 255 | 13.07 / 11.46 | 11.58 |
+| repo SDPA fallback vs AITER | no | 35.92 | 255 | 12.88 / 11.00 | 11.10 |
+
+How the SDPA runs were made:
+- **Repo SDPA fallback.** SDPA cannot run through the CLI (claim 7). This run is the repo's own `attention(version='0')` path, reached by routing the DiT's direct `flash_attention()` calls to it in the harness: 1094 SDPA calls, no flash calls.
+  - That path drops the key-padding mask (it warns "Padding mask is disabled when using scaled_dot_product_attention"). Cross-attention therefore attends to the zero-padded text positions up to 512, which is a different function, not a numerical variant. That explains its 13 dB.
+- **Masked SDPA.** The fair SDPA baseline: the same routing, but with per-sample slices to `q_lens`/`k_lens`, as the varlen kernels do.
+
+Which kernels each run used (call counts over the whole run):
+- AITER-only runs: 720 `aiter...flash_attn_varlen_func`, 374 SDPA. The action module uses SDPA when flash-attn is absent.
+- FA2 runs: 720 `flash_attn_varlen_func`, 360 `flash_attn_func` (action module), 14 SDPA.
+
+Reading:
+- **Run to run, every backend is bit-exact on this host.** The "run-to-run level" is therefore zero difference.
+- AITER against FA2 CK is not zero: it diverges from frame 1 (mean abs 0.74 levels over the first 10 frames) and grows over the 4 autoregressive iterations to 14.8 dB over the last 10 frames.
+- That difference sits inside the band between any two correct backends here: 24.4 to 26.0 dB mean and 12.9 to 16.4 dB over the last 10 frames, across FA2 CK, FA2 Triton, masked SDPA and AITER. AITER-vs-FA2-CK (25.5 / 14.8) is in the middle of it.
+
+Verdict: **not confirmed as worded.** "To the run-to-run level" is false: run-to-run is exactly zero and AITER-vs-FA2 is 25.5 dB. "To the level between any two attention backends" is confirmed.
+
+Wording these numbers support (proposed):
+
+> With the same seed, the AITER output differs from the flash-attention 2.8.3 CK build on the same GPU about as much as any two correct attention backends differ from each other (FA2 CK, FA2 Triton, and SDPA with the padding mask): 25.5 dB mean PSNR against 24.4 to 26.0 dB for the other pairs. Each backend is bit-identical run to run, so this is the usual autoregressive divergence between kernels, not noise.
+
+A side note from the PR body itself: "Output: identical 1.8MB MP4 video across all backends" does not hold here; no two backends gave identical output.
+
+### Claim 3: AITER's varlen call "matches SDPA exactly" on a standalone check
+
+`scripts/varlen_vs_sdpa.py <backend>` runs on GPU 4 against per-sequence `F.scaled_dot_product_attention` (same dtype) and against FP32 SDPA. `rel` is max abs error / max |FP32 reference|. AITER v0.1.30 from source; the call used `module_fmha_v3_varlen_fwd` (asm v3) and the CK `mha_varlen_fwd_*` modules.
+
+| dtype | causal | H | D | q / k lens | AITER vs SDPA max abs | rel | frac of elements != | AITER vs FP32 max abs | SDPA vs FP32 max abs |
+|---|---|---|---|---|---|---|---|---|---|
+| bf16 | no | 24 | 128 | 1000+777 | 9.766e-04 | 1.68e-03 | 0.0017 | 1.366e-03 | 1.366e-03 |
+| bf16 | no | 40 | 128 | 3520 | 4.883e-04 | 2.20e-03 | 0.0041 | 5.695e-04 | 5.695e-04 |
+| bf16 | no | 40 | 128 | 14080 | 4.883e-04 | 4.59e-03 | 0.1247 | 2.879e-04 | 3.166e-04 |
+| bf16 | no | 40 | 128 | 3520 / 512 | 1.953e-03 | 2.31e-03 | 0.0012 | 2.127e-03 | 2.127e-03 |
+| bf16 | no | 40 | 128 | 2048+1024 | 9.766e-04 | 2.17e-03 | 0.0025 | 1.128e-03 | 1.128e-03 |
+| bf16 | yes | 24 | 128 | 1000+777 | 7.812e-03 | 1.92e-03 | 0.2896 | 9.202e-03 | 9.202e-03 |
+| bf16 | no | 16 | 64 | 1024 | 1.953e-03 | 3.86e-03 | 0.4492 | 1.634e-03 | 1.285e-03 |
+| fp16 | no | 24 | 128 | 1000+777 | 4.883e-04 | 7.35e-04 | 0.6391 | 4.377e-04 | 1.473e-04 |
+| fp16 | no | 40 | 128 | 3520 | 2.441e-04 | 9.65e-04 | 0.6413 | 1.589e-04 | 1.103e-04 |
+| fp16 | no | 40 | 128 | 14080 | 6.104e-05 | 4.41e-04 | 0.6411 | 8.925e-05 | 4.947e-05 |
+| fp16 | no | 40 | 128 | 3520 / 512 | 4.883e-04 | 5.09e-04 | 0.6380 | 5.404e-04 | 2.437e-04 |
+| fp16 | no | 40 | 128 | 2048+1024 | 4.883e-04 | 8.31e-04 | 0.6404 | 3.452e-04 | 2.313e-04 |
+| fp16 | yes | 24 | 128 | 1000+777 | 1.953e-03 | 4.78e-04 | 0.6294 | 1.953e-03 | 1.226e-03 |
+| fp16 | no | 16 | 64 | 1024 | 2.441e-04 | 3.79e-04 | 0.6385 | 3.270e-04 | 2.056e-04 |
+
+The same check for the flash-attention builds:
+- FA2 CK against SDPA, bf16: max abs 4.9e-4 to 1.56e-2, rel 1.9e-3 to 4.6e-3, with 1.7 to 25 % of elements differing.
+- FA2 Triton: bf16 4.9e-4 to 3.9e-3; fp16 6.1e-5 to 9.8e-4.
+
+Verdict: **not confirmed.** The difference is not zero for any of the 14 cases. bf16 differs from SDPA in 0.1 % to 45 % of elements, up to 7.8e-3 abs (rel 1e-3 to 5e-3); fp16 in about 64 %.
+- AITER's error against an FP32 reference is the same size as SDPA's own (e.g. bf16 1000+777: 1.366e-3 for both), and no larger than FA2 CK's.
+- The right word is "agrees with SDPA to within bf16/fp16 rounding" (max relative error about 5e-3 bf16, 1e-3 fp16), not "exactly".
+- The gfx950 job's single case (bf16 1000+777, H 24, D 128) gave max abs 0 on MI355X. That case gives 9.8e-4 here on gfx942, so "exactly" was an arch-specific observation from one shape.
+
+### Claim 4: `pip install aiter`
+
+Fresh venv `extra/pypi-aiter` (`/opt/python-3.11-venv/bin/python -m venv --clear`, `PYTHONPATH` unset), `python -m pip install aiter`:
+- pip output: `Downloading aiter-0.13.20191203.tar.gz (9.3 kB)` ... `Successfully installed aiter-0.13.20191203`.
+- `pip show aiter`: Summary "Useful patterns building upon asynchronous iterators.", Home-page `https://github.com/richardkiss/aiter`, Author Richard Kiss, no dependencies.
+- The package contains `active_aiter.py`, `azip.py`, `map_aiter.py` and similar files, and no `ops/`.
+- `python -c "import aiter.ops.mha"`: `ModuleNotFoundError: No module named 'aiter.ops'`, rc 1.
+- `pip index versions aiter`: 0.13.20191203, 0.1.2, 0.1.
+
+Effect at the PR head: `attention.py` catches every exception on that import, so AITER is silently unavailable. Without flash-attn the run then ends in the PR's own `RuntimeError` telling the user to `pip install aiter` again.
+
+Verdict: **confirmed** (the comment's point holds). `pip install aiter` installs Richard Kiss's async-iterator helper 0.13.20191203, and `import aiter.ops.mha` fails afterwards.
+
+### Claim 5: "The AMD package is `amd-aiter`"
+
+Fresh venv `extra/amd-aiter` with the same TheRock torch 2.10.0+rocm7.13.0 stack, `python -m pip install -c constraints.txt amd-aiter`:
+- pip output: `Downloading amd_aiter-0.1.7.post2.dev18-py3-none-any.whl (40.2 MB)`; installed with einops, pandas 3.1.1, psutil, pybind11, python-dateutil and tzdata. `pip check`: no broken requirements.
+- `import aiter.ops.mha` right after install: `ModuleNotFoundError: No module named 'packaging'` (`aiter/jit/core.py:19`). The wheel's metadata does not declare `packaging`, while the source build's does.
+- After a manual `pip install packaging`, the import works: `aiter/ops/mha.py`, `flash_attn_varlen_func` present. It JIT-builds `module_aiter_enum` with the warning `clang (LLVM option parsing): Unknown command line argument '-amdgpu-coerce-illegal-types=1'`.
+- **Running it on this GPU fails.** `varlen_vs_sdpa.py aiter` in that venv JIT-builds `module_fmha_v3_varlen_fwd` (41 s) and then prints, at the first bf16 call:
+  `[AITER] .../aiter/jit/build/module_fmha_v3_varlen_fwd/blob/asm_fmha_fwd_v3_gfx942.cpp:170 fail to call hipModuleLaunchKernel(kernel_func, ...) ---> [HIP error](invalid resource handle)`
+  - The process then **exits with status 0** and no further output: its `HIP_CALL` macro calls `exit(0)`.
+  - Cause, from the generated source: the kernel's constructor loads its code object only when `get_num_cu_func()` is 304 (`MI300/`) or 80/64 (`MI308/`), and otherwise returns without loading. On a 38-CU CPX partition the launch therefore uses a null function. The source-built v0.1.30 has no such restriction and runs on the same partition (claim 3).
+- **generate.py with it** (PR head, `extra/amd-aiter` plus MG-3's requirements, same harness): it loads the models, prints the banner, and at the first DiT attention call prints the same `invalid resource handle` line. The process then ends with **rc 0 after 60 s, and no video is written**. A user would see a "successful" exit with no output.
+- Not tested: a whole MI300X (304 CUs, SPX mode), where that wheel would load its `MI300/` kernels. Whether it works there is unknown from this job.
+
+Verdict: **not confirmed as something to recommend.**
+- PyPI `amd-aiter` is indeed AMD's package name (its wheel ships `aiter/ops/mha.py`, and ROCm/aiter's `setup.py` has `PACKAGE_NAME = "amd-aiter"`).
+- But its only release, 0.1.7.post2.dev18, does not import without a manual `pip install packaging`.
+- On this MI300X partition its varlen attention fails, and generate.py exits 0 with no output.
+- The comment should not tell users to `pip install amd-aiter`. Say instead that `pip install aiter` is the wrong package and point to the source build from ROCm/aiter, which the README already lists and which is what was tested (v0.1.30).
+
+### Claim 6: what the "Flash Attention Configuration" banner prints with AITER
+
+Both pipelines run the same `_log_flash_attention_config`, which imports only `FLASH_ATTN_2_AVAILABLE` and `FLASH_ATTN_3_AVAILABLE`; there is no AITER branch. The banner is quoted from the logs. The interactive runs used `--interactive` with stdin `u`/`w` for every prompt, completed with rc 0, and wrote 177 frames.
+
+| pipeline | environment | flag | printed | backend actually called (call counts) |
+|---|---|---|---|---|
+| `pipeline/inference_pipeline.py` | AITER only | default | `Requested: Default (3)` / `Actual:    None (SDPA)` | AITER 720, SDPA 374 (action module) |
+| `pipeline/inference_interactive_pipeline.py` | AITER only | default | `Requested: Default (3)` / `Actual:    None (SDPA)` | AITER 720, SDPA 374 |
+| `inference_pipeline.py` | AITER + FA2 CK | default | `Requested: Default (3)` / `Actual:    Flash Attention 2` | AITER 720, `flash_attn_func` 360, SDPA 14 |
+| `inference_interactive_pipeline.py` | AITER + FA2 CK | default | `Requested: Default (3)` / `Actual:    Flash Attention 2` | AITER 720, `flash_attn_func` 360, SDPA 14 |
+| `inference_pipeline.py` | AITER only | `--fa_version 0` | `Requested: 0` / `Actual:    Disabled (SDPA)` | AITER 720, SDPA 374; output bit-identical to the default AITER run |
+| `inference_interactive_pipeline.py` | AITER only | `--fa_version 0` | `Requested: 0` / `Actual:    Disabled (SDPA)` | AITER 720, SDPA 374 |
+
+Each banner is preceded by the line `🚀 Flash Attention Configuration:`.
+
+Verdict: **confirmed.**
+- With AITER alone the banner says `None (SDPA)`. With flash-attn also installed it says `Flash Attention 2`. Under `--fa_version 0` it says `Disabled (SDPA)`.
+- In every case AITER does the DiT self- and cross-attention.
+- With flash-attn present, flash-attn's `flash_attn_func` also does the action-module attention, which is why AITER+FA2 output differs from AITER-only (26.0 dB).
+
+### Claim 7: `--fa_version 0`
+
+Without flash-attn and without AITER (`extra/plain` venv, `pip list` shows neither), same command plus `--fa_version 0`:
+- **Upstream main `51913b2`:** rc 1 after 66 s. Banner `Requested: 0` / `Actual:    Disabled (SDPA)`. Traceback ends:
+  ```
+    File ".../wan/modules/model.py", line 475, in forward
+      x = flash_attention(
+    File ".../wan/modules/attention.py", line 114, in flash_attention
+      assert FLASH_ATTN_2_AVAILABLE or FLASH_ATTN_3_AVAILABLE
+  AssertionError
+  ```
+- **PR head `9ad32b1d`:** rc 1 after 58 s, same banner. Traceback ends:
+  ```
+    File ".../wan/modules/model.py", line 475, in forward
+      x = flash_attention(
+    File ".../wan/modules/attention.py", line 150, in flash_attention
+      raise RuntimeError(
+  RuntimeError: No flash attention backend available. Install one of: flash-attn (NVIDIA), or aiter (AMD ROCm 7.x: pip install aiter)
+  ```
+- In both, the only SDPA call before the failure is one in the VAE encoder; the DiT never reaches SDPA.
+
+With flash-attn installed (FA2 CK on `PYTHONPATH`), upstream main, `--fa_version 0`:
+- rc 0, 144 s, 177 frames. Banner `Actual:    Disabled (SDPA)`.
+- Call counts: `flash_attn_varlen_func` 720, `flash_attn_func` 360, SDPA 14, exactly the counts of the default FA2 run without the flag.
+- The output is bit-identical to that run (177/177 frames).
+- Cause: `wan/modules/model.py` lines 475 and 503 call `flash_attention()` directly, which ignores `version='0'`. Only `attention()` honours it, and the DiT does not use `attention()`.
+- `wan/modules/action_module.py` picks `flash_attn_func` whenever flash-attn imports, regardless of the flag.
+- At the PR head with AITER, `--fa_version 0` likewise still runs AITER (bit-identical to the default AITER run).
+
+Verdict: **confirmed.**
+- `--fa_version 0` does not give an SDPA run.
+- Without a backend it fails at main (bare `AssertionError`) and at the PR head (the new `RuntimeError`).
+- With flash-attn or AITER present it silently uses them while the banner says `Disabled (SDPA)`. Determined by call counting and by bit-identical output.
+
+### Summary for the comment
+
+| claim | verdict |
+|---|---|
+| 1 completes, 177 frames, with/without `--compile_vae` | confirmed once `--ckpt_dir` and `--prompt` are added (the quoted command fails validation); on this 24 GiB CPX partition only with harness memory patches |
+| 2 agreement with FA2 CK | "run-to-run level" not confirmed (run-to-run is bit-exact); "level between any two backends" confirmed (25.5 dB inside 24.4 to 26.0 dB) |
+| 3 "matches SDPA exactly" | not confirmed; agrees to bf16/fp16 rounding (max rel ~5e-3 bf16) |
+| 4 `pip install aiter` is the wrong package | confirmed |
+| 5 "the AMD package is `amd-aiter`" | name correct, recommendation not confirmed: needs `packaging`, fails on this partition, and generate.py exits 0 with no video |
+| 6 banner ignores AITER | confirmed (quotes above) |
+| 7 `--fa_version 0` is not SDPA | confirmed |
+
+### Not done, and why
+
+- A whole MI300X (SPX, 192 GB, 304 CUs) was not available. The pin was one CPX partition. So no unpatched end-to-end run, and no `amd-aiter` run where its MI300 kernels would load.
+- The PR's exact environment (ROCm 7.2.1 container, torch 2.9.1, Python 3.10, `amd-aiter 0.1.13`) was not reproduced; 0.1.13 is not on PyPI.
+
+### Question for Jeff (nothing posted)
+
+The comment needs these corrections before posting:
+- the command needs `--ckpt_dir`/`--prompt`;
+- "run-to-run level" should become the wording proposed under claim 2;
+- "exactly" should become "to within bf16 rounding";
+- point 1 should drop the `amd-aiter` recommendation in favour of the source build.
+
+Whether to also mention the `amd-aiter` silent exit-0 failure to AITER (a separate ROCm/aiter issue, not this PR) is your call; nothing was filed.
