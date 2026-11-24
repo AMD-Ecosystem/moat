@@ -7,7 +7,7 @@
   "priority": 6.146,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T00:04:57Z",
-  "updated_at": "2026-11-24T00:56:41Z",
+  "updated_at": "2026-11-24T01:19:58Z",
   "head_sha": "539d4be1021cbb78dcd2c19b951aabefa940844d",
   "pr_url": "https://github.com/arrayfire/arrayfire/pull/3708",
   "pr_number": 3708,
@@ -16,7 +16,7 @@
   "pr_state": "closed",
   "license_spdx": "BSD-3-Clause",
   "upstream_repo_id": 25889802,
-  "stage": "review-passed",
+  "stage": "porting",
   "platforms": {
     "linux-gfx942": {
       "blocked": false,
@@ -183,9 +183,9 @@
       "blocked_reason": null,
       "validated_sha": null,
       "failed_sha": "539d4be1021cbb78dcd2c19b951aabefa940844d",
-      "started_at": null,
+      "started_at": "2026-11-24T01:19:58Z",
       "completed_at": null,
-      "updated_at": "2026-11-24T00:56:41Z",
+      "updated_at": "2026-11-24T01:19:58Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -200,7 +200,7 @@
         "last_session_at": null
       },
       "state": "validation-failed",
-      "last_agent": "validator"
+      "last_agent": "porter"
     }
   },
   "published_sha": "83be197816b2ce57303c29dda35b7c56d8d9209b",
@@ -233,6 +233,10 @@
     "review_pr": "https://github.com/AMD-Ecosystem/arrayfire/pull/1"
   },
   "fix_merged_at": "2026-11-05T07:12:24Z",
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx1201",
+    "since": "2026-11-24T01:19:58Z",
+    "holder": "18ddfe89c715"
+  },
   "reviewed_sha": "539d4be1021cbb78dcd2c19b951aabefa940844d"
 }
