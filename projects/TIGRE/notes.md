@@ -1874,30 +1874,48 @@ The "software fallback forced" column comes from a throwaway build in `agent_spa
 
 ## Fix review PR draft
 
-For `upstream.py --fix-review --apply --name TIGRE --title <t> --body-file <f>` (not opened; jeff opens it). The body is everything from the paragraph below through the `## Upstream reply` section; drafted 2026-11-20 after linux-gfx90a completed at c015150. Update the retest paragraph if more platforms validate at c015150 before it opens.
+For `upstream.py --fix-review --apply --name TIGRE --title <t> --body-file <f>` (not opened; jeff opens it). The body is everything from the paragraph below through the `## Upstream reply` section. Drafted 2026-11-24 after linux-gfx90a completed at 183c2a45; it replaces the 2026-11-20 draft, which was never opened. Update the retest paragraph when more platforms validate at 183c2a45.
 
-Title: `[ROCm] Merge upstream master and select HIP with TIGRE_BACKEND=hip`
+Title: `[ROCm] Merge master at v3.3.1 and select HIP with TIGRE_BACKEND=hip`
 
-Upstream PR CERN/TIGRE#747 no longer merges into master (175 commits since the last merge, 69bdd9f). No code change was requested; the maintainer asked (2026-11-19) that the HIP build use the new single switch TIGRE_BACKEND, with TIGRE_BACKEND=hip replacing BUILD_WITH_HIP and HIP_ARCH staying. That switch is already on master, so this round adopts it. This round merges master at d21492f into the port and adapts the port to it.
+The maintainer asked us to wait for TIGRE 3.3.1 and then update CERN/TIGRE#747 once, using TIGRE_BACKEND=hip in place of BUILD_WITH_HIP (HIP_ARCH unchanged). jeff committed to that on 2026-11-23, and also to dropping the Siddon loop-bound change and the upload sync (master covers both) and keeping fmaxf. The maintainer said much of 3.3.0 to 3.3.1 is CUDA speed and multi-GPU tuning that the HIP port need not reproduce. This review covers everything staged since the published tip f779703: an unpublished 2026-11-20 round that merged master at d21492f, and this round, which merges master at 6beb8c38 (v3.3.1 plus documentation commits and one Python fix after it).
 
-Commits (on top of the published tip f779703; nothing rebased):
-- 2cb42aa merges master. Nine files conflicted; each keeps master's code and re-applies the HIP pattern. setup.py: HIP is chosen through master's select_backend (BUILD_WITH_HIP = BACKEND == "hip"), hip leaves the pending list, and the CUDA branch keeps master's TIGRE_CUDA_ARCH and TIGRE_NO_PINNED_MEMORY. Siddon cone and parallel: master's bounded loop and its stream sync after the parallel texture upload replace the port's own cap and sync. Parallel interpolated projector: master's multi-GPU texture creation with the run-time filter mode and per-device flag sync. GD_TV/GD_AwTV: master's double reduceSum launch. PICCS: master's rewrite plus the compatibility header. The Frontispiece install page becomes master's pointer to the new docs site. The merge commit's message has no runnable test plan; the retest is below.
-- 98b6b53: master's new tigre_release_on_error.hpp and tv_gradient_descent.hpp include cuda_to_hip.h instead of cuda_runtime_api.h, and the header maps eight more runtime names (cudaMemcpyKind, cudaChannelFormatKindFloat, cudaErrorHostMemoryAlreadyRegistered, cudaMemcpyPeerAsync, cudaArrayGetInfo, cudaStreamWaitEvent, cudaEventCreateWithFlags, cudaEventDisableTiming).
-- 74cd65b: the AMD install section moves to docs/install/python.md, next to "Choosing the GPU backend" (its message says "under"; it is a sibling heading so it keeps an anchor), using TIGRE_BACKEND=hip. Its test plan runs setup.py build_ext rather than the section's pip command; c015150 checks the pip form.
-- d9a9027: locate_rocm falls back to the prefix of the hipcc on the PATH (master's detection can pick hip from it) and checks for the HIP headers.
-- 4d0ded2: drops a stray carriage return the port had left at the end of voxel_backprojection_parallel.cu.
-- 880d691: the HIP build prints the target architectures and says when HIP_ARCH is the default (gfx90a).
-- c015150: changelog entry for TIGRE_BACKEND=hip, the install pages mention AMD GPUs for Python, and the AMD section uses plain pip install . (an isolated build works).
+Upstream's own commits brought in by the two merges (read for review only where the port touches them):
+- All of them, since the published tip's base: https://github.com/CERN/TIGRE/compare/69bdd9f728e02095f38d27a9746a88eb79fc5e09...6beb8c38029d2fd87f27a13ec98157c6e04121d7 (167 non-merge commits)
+- This round only: https://github.com/CERN/TIGRE/compare/d21492fe4c5b59e4675fbf9f1c7f1be4877ce328...6beb8c38029d2fd87f27a13ec98157c6e04121d7
 
-Also checked: master fixed the TV reductions' guard to CUDART_VERSION, which makes the 32-wide shuffle path live on CUDA; CUDART_VERSION is undefined under hipcc, so the HIP build keeps the warpReduce path that is correct on wave64 and wave32.
+Our own commits (no upstream commits in these ranges):
+- 2026-11-20 round, after its merge: https://github.com/AMD-Ecosystem/TIGRE/compare/2cb42aa4650b3516e1ec46c11fd81e0d1e75401e...c0151501c2a97922e9afea20007f3d049d0a815a
+- This round, after its merge: https://github.com/AMD-Ecosystem/TIGRE/compare/288be09ab9b20c915f0537bc1f4afa888ac0ccbd...183c2a453248ce6da0a12c3ac242a90cb5489a51
+- The two merge commits, where conflicts were resolved: https://github.com/AMD-Ecosystem/TIGRE/commit/2cb42aa4650b3516e1ec46c11fd81e0d1e75401e and https://github.com/AMD-Ecosystem/TIGRE/commit/288be09ab9b20c915f0537bc1f4afa888ac0ccbd. Each differs from git's automatic merge only in its conflicted files (nine in 2cb42aa, five in 288be09a).
 
-Retested on an AMD Instinct MI250X (gfx90a), ROCm 10.1, at c015150: all 8 extensions build; master's test suite gives 246 passed and 1 failed in the default set, 12 passed in the extended set, and 79 passed in the files that need PyTorch (GPU tensors, pinned input, low memory, texture leak); cone and parallel projection, FDK, OS-SART, SIRT and adjointness checks and the 20-fold repeat checks give the same numbers as the published tip. The failure is master's new test_forward_is_invariant_to_a_full_turn[parallel-interpolated] (2.4e-4 against 1e-4). It fails the same way at the published tip, so the merge did not cause it.
+What our commits do:
+- 2cb42aa (merge d21492f): HIP selected through master's select_backend; master's bounded Siddon loop and parallel-upload ordering replace the port's own cap and sync; master's multi-GPU texture code with the run-time filter mode.
+- 98b6b53: master's new headers include the compatibility header; eight more runtime names mapped.
+- 74cd65b: the AMD install section moves to docs/install/python.md (a sibling of "Choosing the GPU backend", not under it as its message says).
+- d9a9027: ROCm found from the hipcc on the PATH when ROCM_PATH is unset.
+- 4d0ded2: stray carriage return removed from voxel_backprojection_parallel.cu.
+- 880d691: the HIP build prints its target architectures.
+- c015150: changelog entry and install pages for AMD GPUs.
+- 288be09a (merge 6beb8c38): GD_AwTV.cu takes master's kernel-only file; the three backprojectors keep master's layered-texture reads through tex2DLayered_TIGRE; the install index keeps master's text plus the AMD sentence. Its message has no runnable test plan; the retest is below.
+- ba875639: tex2DLayered_TIGRE (hardware fetch, or bilinear in software where fp32 hardware filtering is missing), the filtering self-test also checks a layered texture, cudaMalloc3DArray takes master's flags argument, page_locking.hpp includes the compatibility header.
+- 147a288a: under HIP the parallel-beam ray length is computed as fma(dz,dz,fma(dx,dx,dy*dy)), which is how nvcc contracts it (PTX). On the MI250X the HIP compiler rounded both squares, which added a sample at a ceilf edge and failed test_forward_is_invariant_to_a_full_turn[parallel-interpolated] (2.4e-4 against 1e-4). It is now 1.1e-5.
+- 4f580a96: setup.py ships cuda_to_hip.h in the sdist (a build from the sdist failed without it; its message says the sdist "could not be built", meaning built from), and the internal BUILD_WITH_HIP variable becomes IS_HIP.
+- a7997d3d: on Windows the HIP build ignores build_ext -j, which raced on the shared compiler object and on shared object files. Not yet run on Windows. Upstream's CUDA build has the same race (from the code; not run).
+- 18e8c422: stray carriage return removed from tv_proximal.cu.
+- 4abd5d25: the hip changelog line moves from the released 3.3.0 section to Unreleased.
+- 2572129b: the cone backprojectors use 4 voxels per thread under HIP; master's 8 spilled registers on the MI250X (a one-time 26 MB scratch allocation that failed test_repeated_calls_do_not_leak) and ran about twice as slow (FDK 170.8 to 91.8 ms, matched 201.4 to 97.5 ms, 256^3 and 360 projections).
+- d0adc5d0, 183c2a45: comment, log-message and install-page corrections (ROCm named as the AMD requirement, the ROCM_PATH search order).
 
-Retested on an AMD Radeon AI PRO R9700 (gfx1201, wave32), ROCm 10.1, at c015150: all 8 extensions build; 247 passed with no failure in the default set, 12 passed in the extended set and 79 passed in the PyTorch files. The projection, reconstruction, solver and repeat checks give the same numbers as on the MI250X, and the adjointness residuals agree to within 1e-7. The full-turn test passes there (2.4e-5). On the MI250X, changing the angle by 1 to 8 float32 ulps moves the interpolated parallel projector by up to 6.6e-4. On the R9700 the same steps move it by at most 4.0e-5, with hardware texture filtering and also with the software filtering path the MI250X uses, so the MI250X's sensitivity is not yet explained. Multi-GPU tests did not run (one GPU per run). Not yet run at this head: Windows and the nvcc compile check.
+jeff's commitments, checked in the code: TIGRE_BACKEND=hip selects HIP and nothing named BUILD_WITH_HIP is left; HIP_ARCH is read as before; master's maxsteps bound (Siddon_projection.cu:276, Siddon_projection_parallel.cu:285) and its upload on the kernels' stream (Siddon_projection_parallel.cu:761) replace the port's changes, whose diff to master in those files is now one include line; fmaxf stays in maxdistanceCuboid (unguarded shared host code, as published; same behaviour on CUDA).
+
+Retested on an AMD Instinct MI250X (gfx90a), ROCm 10.1, at 183c2a45: all 8 extensions build; master's test suite gives 274 passed and 0 failed in the default set, 13 passed in the extended set, and 88 passed in the files that need PyTorch (GPU tensors, pinned input, low memory, texture leak, TV host bounds); cone and parallel projection, FDK, OS-SART, SIRT and the solvers give the c015150 numbers apart from adjointness and two solver digits that master's backprojector changes move; the 20-fold repeat checks are bitwise stable; a fan-beam run with several launches matches single-launch chunks bitwise. Multi-GPU tests did not run (one GPU). The CUDA build was checked with nvcc 13.5 for sm_80 (8 of 8 extensions, warnings identical to master's per compile); the nvcc 12.8 check for all architectures has not run yet. Not yet run at this head: a 32-lane GPU (Linux), Windows, and the nvcc 12.8 build.
 
 ## Upstream reply
 
-From my side the branch is ready for review and testing. I merged current master into it and switched the HIP build to `TIGRE_BACKEND=hip` in place of `BUILD_WITH_HIP`; `HIP_ARCH` and `ROCM_PATH` work as before, and the AMD instructions are now in `docs/install/python.md` with a changelog entry. The build and the whole new test suite pass on an AMD Radeon AI PRO R9700. On an AMD Instinct MI250X everything passes except `test_forward_is_invariant_to_a_full_turn[parallel-interpolated]` (2.4e-4 against 1e-4; 2.4e-5 on the R9700). It also fails on the MI250X before the merge, so this update did not cause it. I haven't found why that card's interpolated parallel projector is more sensitive to tiny angle changes (up to 6.6e-4 for a few float32 ulps, against 4e-5 on the R9700). I'll merge master again when 3.3.0 is out.
+Thanks for tagging 3.3.1. As promised, I merged master (v3.3.1 plus the documentation commits after it) into this branch in one update. The HIP build is selected with `TIGRE_BACKEND=hip`; `BUILD_WITH_HIP` is gone and `HIP_ARCH` works as before. The Siddon loop-bound change and the upload sync are dropped, since master has both, and `fmaxf` stays in `maxdistanceCuboid`.
+
+Most of the work was carrying the HIP path onto master's new code: the backprojectors' layered textures get the same software filtering fallback as the 3D ones on GPUs without fp32 hardware filtering. Two small HIP-only changes came out of testing: the parallel-beam interpolated projector now rounds the ray length the way nvcc does, which fixes `test_forward_is_invariant_to_a_full_turn[parallel-interpolated]` on the MI250X, and the cone backprojectors use 4 voxels per thread under HIP, because 8 spilled registers on that GPU and ran about half as fast. `setup.py` also now ships `cuda_to_hip.h` in the source distribution, which it had missed. The whole test suite passes on an AMD Instinct MI250X. From my side it is ready for review and testing.
 
 ## Notes for jeff on the 2026-11-20 round (not part of the review PR body)
 
@@ -2145,3 +2163,42 @@ Findings 2-5 are fixed as asked, and finding 1's content is fixed. One defect of
 
 ## Re-review 2026-11-24 (reviewer, linux-gfx90a, delta d0adc5d..183c2a4 -> review-passed)
 The delta is one comment line split in two; the header comment block is within 80 columns apart from one pre-existing 83-column line from ba875639 (`within a layer) mirror it through ...`), which is in the same range as the file's code lines and not worth another commit. Whole round c0151501..183c2a45: no open finding. The pre-existing items under "Review 2026-11-24" stay with jeff.
+
+## Validation 2026-11-24 (linux-gfx90a, validator, moat-fix-747 @ 183c2a45 -> completed)
+
+GPU: AMD Instinct MI250X / MI250 gfx90a, TheRock ROCm SDK 10.1 (`rocm-sdk path --root`), `HIP_VISIBLE_DEVICES=2` (dispatcher pin, idle per `amd-smi metric`), every GPU command under `ulimit -c 0`, one GPU process at a time. `projects/TIGRE/src` at 183c2a453248ce6da0a12c3ac242a90cb5489a51 (= `origin/moat-fix-747` = head_sha). Full real-GPU run from a clean build (build/ and all `.so` removed); no carry-forward (this platform's last record is c015150, and the delta has device-code changes).
+
+### Build
+Recipe of "Fix round 2026-11-24", Build: rc 0, 0 `error:`, 8/8 `.so`, `llvm-objdump --offloading` shows gfx90a; prints `building the hip backend (set by TIGRE_BACKEND)`, `compiling for the AMD GPU architectures gfx90a`, and at run time `fp32 hardware linear texture filtering on AMD Instinct MI250X / MI250: unsupported (software filtering fallback)`.
+
+### Results (pytest commands of "Sync round 2026-11-20", Tests; the torch run adds `tests/test_tv_host_bounds.py`)
+| set | 183c2a45 | c015150 (this platform's last record) |
+|---|---|---|
+| core (default markers) | **274 passed, 0 failed**, 24 skipped, 41 deselected (142 s) | 246 passed, 1 failed, 22 skipped, 16 deselected |
+| extended | **13 passed**, 37 skipped | 12 passed, 13 skipped |
+| torch files (image's ROCm torch, read-only) | **88 passed**, 25 skipped (468 s) = the recorded 9 files 80/9 + test_tv_host_bounds 8/16 | 79 passed, 9 skipped (9 files) |
+| `probe/tigre_gates.py all` | **RESULT PASS**, every number equal to the porter's 2572129b run | RESULT PASS |
+| full turn, parallel interpolated (turn probe) | 1.1014e-5 / 1.1018e-5 / 1.1013e-5 at accuracy 0.5 / 0.25 / 0.1; ulp steps 0/48 above 1e-4 | 2.404e-4 (test failed) |
+
+Differences against c015150 are explained in "Fix round 2026-11-24" (Tests): master's new and re-marked tests, the full-turn fix (147a288a), and master's backprojector changes moving the adjointness residuals and two solver digits. Skips: 2-, 3- and 4-GPU tests (one-GPU pin), ctypes CUDA-runtime tests (NVIDIA-only), torch-only cases in the job venv (covered by the torch run), one parallel-beam backprojector case.
+
+### Other gates
+- `jargon.py --port TIGRE`: clean (local `master` = upstream 6beb8c38).
+- Docs: `docs/install/python.md` "### AMD GPUs (ROCm)" with `TIGRE_BACKEND=hip`, requirement tabs naming ROCm, `ROCM_PATH` search order; install index; changelog Unreleased entry. Matches the build.
+- Integrity: `git -C projects/TIGRE/src status --porcelain`: no tracked modifications (untracked build output only).
+- **CUDA gate: `cuda-not-validated` for nvcc 12.8** (no CUDA 12.8 toolkit on this host). Supplementary, not the gate: a job-local CUDA 13.5 toolkit assembled from pip wheels (`nvidia-cuda-nvcc`, `nvidia-nvvm`, `nvidia-cuda-runtime`, `nvidia-cuda-crt`, `nvidia-curand`, `nvidia-cuda-cccl`, unpacked under the job directory with a symlinked `CUDA_HOME`) built head 183c2a45 and master 6beb8c38 side by side with `TIGRE_BACKEND=cuda TIGRE_CUDA_ARCH=80 setup.py build_ext --inplace -j 16`: both rc 0, 8/8 `.so`, 0 `error:`; nvcc compiles 22 vs 21 (the port adds `gpuUtils.cu` to `_Ax`, as in every earlier check); warnings identical per file except `gpuUtils.cu #550-D` 16 vs 14 (2 per compile, one more compile); no `hipcc`, `USE_HIP`, `offload-arch` or "AMD GPU" string in the head log. No `cuobjdump` in these wheels, so no device-code comparison.
+
+## Owed at 183c2a45 (for whoever runs next)
+- **wave32 (a 32-lane Linux GPU, gfx1100 or gfx1201):** full run. What this round changed for them: VPT 4 instead of 8 in the cone backprojectors (RDNA did not spill at 8; a speed check of 4 vs 8 on RDNA would be useful), the layered-texture hardware path (`tex2DLayered<float>` behind the self-test's new layered probe; RDNA reported hardware filtering supported), and the fma ray length (RDNA already contracted that way, so its full-turn numbers should not change).
+- **gfx942 (MI300X):** still blocked for the texture API (no change; the layered textures need the image API too). Nothing to run unless a person rules on a texture-free path.
+- **nvcc 12.8 compile check (mi355 host):** full build of 183c2a45 vs master 6beb8c38 for every architecture, with the per-object device comparison as at c015150. Look at: `voxel_backprojection*.cu` (`#if USE_HIP` VPT block; CUDA keeps 8), `ray_interpolated_projection_parallel.cu` (`#if USE_HIP` around the length), `cuda_to_hip.h` (`tex2DLayered_TIGRE` CUDA branch = `tex2DLayered<float>`), `setup.py` (`IS_HIP`, sdist list, the Windows -j block is HIP-only).
+- **Windows (gfx1151 laptop, or gfx1201/gfx1101):** full run with `TIGRE_BACKEND=hip`, plus `python setup.py build_ext --inplace -j 8`: expect `TIGRE: building the extensions one at a time (build_ext -j is not supported for hip on Windows).` and a clean build (a7997d3d is untested on Windows). Still open from 11-20: whether an isolated `pip install .` works on Windows.
+
+## Notes for jeff on the 2026-11-24 round (not part of the review PR body)
+- **Two departures from a pure merge, both HIP-only and both found by master's own tests on the MI250X:** the fma ray length (147a288a) and VPT=4 (2572129b). The reply gives each one sentence. The ray-length fix settles the 11-20 open question: nvcc's PTX shows CUDA computes the length the RDNA way and passes; the MI250X was the outlier. Deferral `tigre-parallel-interp-sample-count-knife-edge` is amended accordingly and left open for your ruling on suggesting a robust sample count upstream (that would change CUDA numerics).
+- **fmaxf:** your reply said "keep fmaxf in the HIP path"; the code has it unguarded in shared host code, as published since f779703 and as the maintainer reviewed it ("fine to keep"). Same behaviour on CUDA. If you want it literally HIP-only, it is a small `#if` change.
+- **Upstream build hazards, not ours:** the Linux `build_ext -j` path has the same thread-safety hazard in principle as the Windows one a7997d3d works around (upstream code, CUDA identical, never observed), and upstream's CUDA Windows build should fail under `-j` the way ours did (from the code, not run). Either could be a separate upstream issue; your call.
+- **The sdist fix (4f580a96) matters to CUDA users too:** the published branch's source distribution cannot be built with either backend because `cuda_to_hip.h` was missing from it. The reply mentions it.
+- **Process notes:** one local commit message was redone with `git reset --soft` before any push (wrong figure), and one comment rewrap was edited while the reviewer held the lock and pushed only after a changes-requested verdict and a porting transition. Nothing published was rewritten.
+- **Validated at 183c2a45: linux-gfx90a only**, so the reply names only the MI250X. If a 32-lane GPU or Windows validates before the review PR opens, add them to the retest paragraph and, if you like, the reply.
+- Pre-existing items carried from 11-20 (upstream multi-GPU `accuracy>1` texture-mode bug, the self-test clearing a pending error, pinning off on HIP): unchanged; details under "Review 2026-11-20".
