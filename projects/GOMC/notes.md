@@ -707,19 +707,19 @@ Retested at 25ba089d:
 - Radeon Pro W7800 (gfx1100, Linux): fresh build from the README recipe, then GPU vs CPU runs of the same build on GEMC AR_KR 3000 steps, GEMC ISOPEN_NEOPEN 3000 and 30000 (MEMC), GCMC PEN_HEX 200 and 2000 (Ewald), single-box NVT and NPT AR_KR 1000, plus Base/K_1/K_N checkpoint restarts for AR_KR and ISOPEN_NEOPEN. 9/9 pass, GPU energies and acceptance rates identical to CPU.
 - Instinct MI300X (gfx942, Linux): the same build recipe and the same 9 runs, 9/9 pass with GPU identical to CPU and every result identical to the W7800.
 - CUDA 12.8 compile (nvcc 12.8.93): all 8 executables build, 0 warnings. Compile only.
-- Still owed before approval: a Windows run at this head. Windows cannot be tested on this host. The delta adds no Windows-specific code, and upstream's new copy constructor avoids the array member initializer that clang rejected.
+- Radeon 8060S (gfx1151, Windows 11): the same 7 single-run and NPT cases' Windows subset (GEMC AR_KR and ISOPEN_NEOPEN 3000, GCMC PEN_HEX 200, NVT and NPT AR_KR 1000) plus the AR_KR and ISOPEN_NEOPEN Base/K_1/K_N checkpoint chains, all GPU identical to CPU. The checkpoint chains now run on Windows because #560 is in `development`.
 
 One result changed, and upstream's code causes it: NPT volume acceptance is now 100% (it was 50%) on GPU and CPU alike. Upstream's own CPU-only build moves the same way between 09ec304e and 411b8a73, and restoring only the old CellList files brings back 50%. With `dimensions` now a reference, `CellList::GridBox(newDim, ...)` in `VolumeTransfer::CalcEn` copies the trial box into the system box, so the acceptance ratio in `GetCoeff` is always 1 and rejected moves are not undone. This affects every input with volume moves (NPT, and NVT-GEMC volume transfer). The port keeps upstream's code unchanged.
 
 ## Upstream reply
 
-I merged the current `development` into this branch so it merges cleanly again. The only conflicts were the CMake warning text and the CellList copy constructor, where your new version already does what this branch had changed, so the PR no longer touches CellList.cpp. Retested on a Radeon Pro W7800 and an Instinct MI300X: GPU and CPU results are identical.
+I merged the current `development` into this branch so it merges cleanly again. The only conflicts were the CMake warning text and the CellList copy constructor, where your new version already does what this branch had changed, so the PR no longer touches CellList.cpp. Retested on a Radeon Pro W7800 and an Instinct MI300X on Linux and a Radeon 8060S on Windows: GPU and CPU results are identical, and with #560 in `development` the checkpoint restarts now also work on Windows.
 
 While retesting, NPT runs changed after #561: volume moves are now always accepted (50% before, 100% after on the AR_KR system, CPU-only builds too). With `CellList::dimensions` now a reference, `dimensions = dims;` in `GridBox`/`GridAll` copies the trial box from `VolumeTransfer::CalcEn` into the system's `BoxDimensions` instead of re-pointing, so `GetCoeff` compares the new volume with itself and a rejected move does not restore the box. NVT-GEMC volume transfers go through `GridAll` the same way. Restoring the pointer members brings the old acceptance back.
 
 ## Notes for jeff (not posted)
 
-- The reply names the W7800 and the MI300X, the GPUs completed at 25ba089d so far. Once Windows validates this head, add it if you want.
+- The reply names the W7800, the MI300X and the Radeon 8060S (Windows), all completed at 25ba089d. jeff ruled on 2026-11-24 to report the volume-move regression in this reply instead of a separate issue.
 - The second paragraph of the reply reports an upstream bug the maintainer did not ask about. Cut it if you would rather file a separate issue, or not raise it at all.
 - The fork's `development` mirror is still at 09ec304e (not touched here). Until it is fast-forwarded to 411b8a73, `audit-commits` and a fresh clone's `jargon.py --port` count upstream's three new commits as ours (set a local `development` to `upstream/development` first).
 
@@ -739,3 +739,33 @@ cmake --build <build> -j 16
 | 411b8a73 (upstream) | 0 | 8 | 0 | 0 | 115 s |
 
 The only warning in either log is CMake's identical "Manually-specified variables were not used: CUDAToolkit_ROOT". The GPU targets' `CUDA_FLAGS` are byte-identical between the trees (`-O3 -std=c++17 -arch=all -DENSEMBLE=1..4 ... -DGOMC_CUDA`; upstream's `-arch=all` override as recorded before). Result: PASS, the port adds no nvcc error or warning on the CUDA path.
+
+## Validation 2026-11-24 (windows-gfx1151, validator): fix round moat-fix-562 at 25ba089d
+
+Requested by jeff (the last gate this round owed). Fork staging branch `moat-fix-562` at 25ba089d (= head_sha), fresh clone in `projects/GOMC/src`, `git status --porcelain` empty. Host: Windows 11, AMD Radeon 8060S (gfx1151, RDNA3.5, wave32); TheRock ROCm SDK clang (all-clang build), runtime DLLs staged next to the executables (`rocm_stage_runtime`), `ulimit -c 0`, one GPU process at a time.
+
+Build, the same recipe as the 2026-10-31 windows-gfx1151 entry:
+```bash
+source agent_space/win_rocm_env.sh; unset CC CXX
+R=D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel
+cmake -S projects/GOMC/src -B agent_space/gomc-562/b -G 'Unix Makefiles' -DCMAKE_MAKE_PROGRAM=C:/Strawberry/c/bin/gmake.exe -DUSE_HIP=ON \
+  -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++.exe -DCMAKE_C_COMPILER=$R/lib/llvm/bin/clang.exe \
+  -DCMAKE_CXX_COMPILER=$R/lib/llvm/bin/clang++.exe -DCMAKE_HIP_ARCHITECTURES=gfx1151 -DCMAKE_PREFIX_PATH=$R -DCMAKE_BUILD_TYPE=Release
+cmake --build agent_space/gomc-562/b -j16      # rc=0, 125 s, all 8 executables, 0 errors
+python agent_space/gomc_val_win.py agent_space/gomc-562/b projects/GOMC/src agent_space/gomc-562/w
+python agent_space/gomc_ckpt_win.py agent_space/gomc-562/b projects/GOMC/src agent_space/gomc-562/w
+```
+
+GPU (`GOMC_GPU_*`) against CPU (`GOMC_CPU_*`) of the same build; every ENER row compared field by field and every acceptance line verbatim. GPU log: `Device Name: AMD Radeon(TM) 8060S Graphics`.
+
+| run | exit GPU/CPU | ENER rows | max rel diff | acceptance lines | GPU / CPU wall |
+|---|---|---|---|---|---|
+| GEMC AR_KR SingleRun 3000 | 0/0 | 62/62 | 0 | 67/67 identical | 0.67 s / 0.06 s |
+| GEMC ISOPEN_NEOPEN SingleRun 3000 (MEMC) | 0/0 | 62/62 | 0 | 70/70 identical | 2.55 s / 2.32 s |
+| GCMC PEN_HEX SingleRun 200 (Ewald) | 0/0 | 12/12 | 0 | 23/23 identical | 0.49 s / 0.14 s |
+| NVT AR_KR box 0, 1000 | 0/0 | 11/11 | 0 | 15/15 identical | 0.26 s / 0.05 s |
+| NPT AR_KR box 0, 1000 | 0/0 | 11/11 | 0 | 16/16 identical | 0.27 s / 0.05 s |
+| AR_KR Base / K_1 / K_N (checkpoint chain) | 0/0 each | 2/2 each | 0 | 6/6 identical each | 0.27-0.28 s |
+| ISOPEN_NEOPEN Base / K_1 / K_N (checkpoint chain) | 0/0 each | 2/2 each | 0 | 9/9 identical each | 1.03-1.10 s |
+
+Result: 7/7 cases pass (5 single runs plus 2 checkpoint chains), GPU identical to CPU. NPT volume acceptance is 100.0% on GPU and CPU alike: upstream 411b8a73's (#561) volume-move regression, as on gfx1100 and gfx942 at this head, not the port. The checkpoint chains run on Windows for the first time: the binary-mode stream fix (#560) is now in upstream `development`, so the K_1/K_N exit 127 recorded in October is gone. No hang, crash or bugcheck. `python3 utils/jargon.py --port GOMC` clean (local `development` = `upstream/development`). CUDA: the nvcc 12.8 check at this head is recorded above (mi355 host). The `gomc_ckpt_win.py` chain runner is a scratch script in `agent_space/`, not committed.
