@@ -266,6 +266,11 @@
    "id": "test:tests/ops (stage 2 vs stage 1 bit-identity)",
    "kind": "test",
    "where": "each stage 2 path compared bit for bit against the stage 1 reference build on the platform that runs it (ruling Q3 = b)"
+  },
+  {
+   "id": "kernel:stage2-rdna-wmma-gfx12",
+   "kind": "kernel",
+   "where": "gfx12 operand and result layouts of the RDNA WMMA paths (iu4 in gemm_w4a4_block_wmma, f16/bf16 in mma_rocm::wmma_m16n16k16_f32)"
   }
  ],
  "covered": [
@@ -392,6 +397,14 @@
   {
    "id": "example:app",
    "note": "pure Python, no device code; unchanged"
+  },
+  {
+   "id": "kernel:stage2-rdna-wmma-int4",
+   "note": "gemm_w4a4_block_wmma (fork 67db6fa) proven bit-identical to the NUNCHAKU_ROCM_MMA_REFERENCE=1 build on gfx1100 (notes, RDNA porter round 2026-11-24); the gfx12 operand layout is owed separately (kernel:stage2-rdna-wmma-gfx12)"
+  },
+  {
+   "id": "kernel:stage2-rdna-wmma-f16",
+   "note": "mma_m16n16k16_* on v_wmma_f32_16x16x16_{f16,bf16} (fork 8aa04e7) for the LoRA epilogues, attention_fp16 and the AWQ GEMM; gfx1100: primitive test vs reference and float64, op outputs within 2 units of roundoff of the reference build, tests/ops and end-to-end pass (notes); gfx12 owed (kernel:stage2-rdna-wmma-gfx12)"
   }
  ],
  "scoped_out": [
@@ -408,14 +421,6 @@
   {
    "id": "kernel:gemm_w4a4-nvfp4-gfx1250",
    "reason": "Q1 = c native FP4 on gfx1250 (WMMA f4): not written; same question 1; needs a gfx1250 host to run."
-  },
-  {
-   "id": "kernel:stage2-rdna-wmma-int4",
-   "reason": "gemm_w4a4_block_wmma written (fork 67db6fa) and compiled for gfx1100/gfx1201; UNPROVEN: an RDNA host must build default and NUNCHAKU_ROCM_MMA_REFERENCE=1, run the notes' mma_dump.py compare (all non-lora_act outputs identical) and tests/ops."
-  },
-  {
-   "id": "kernel:stage2-rdna-wmma-f16",
-   "reason": "RDNA f16/bf16 WMMA for the m16n8k16 primitive (plan RDNA stage 2): not written."
   },
   {
    "id": "kernel:zgemm-gemm_w8a8",
@@ -440,6 +445,10 @@
   {
    "id": "example:examples",
    "reason": "SANA examples pass; the FLUX examples need the gated FLUX.1 pipeline."
+  },
+  {
+   "id": "kernel:stage2-rdna-wmma-gfx12",
+   "reason": "Compiled for gfx1201 (fork 8aa04e7: v_wmma iu4, f16 and bf16 present in the code objects) but never run: needs a gfx1201 host to run the reference-build comparison (mma_dump.py and f16_dump.py in notes), the primitive test and tests/ops."
   }
  ],
  "removed_from_floor": []

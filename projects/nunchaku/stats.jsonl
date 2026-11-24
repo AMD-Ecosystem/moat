@@ -4,3 +4,4 @@
 {"kind":"session","ts":"2026-11-20T21:41:41Z","epoch":1795210901.618318,"event":"end","platform":"linux-gfx90a"}
 {"kind":"phase","ts":"2026-11-24T05:22:40Z","phase":"cuda-compile","seconds":285.508,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi355-20261123-210905-nvcc-nunchaku-prompt/scripts/build.sh /var/lib/jenkins/fleet/jobs/mi355-20261123-210905-nvcc-nunchaku-prompt/agent_space/base /var/lib/jenkins/fleet/jobs/mi355-20261123-210905-nvcc-nunchaku-prompt/agent_space/base.log"}
 {"kind":"phase","ts":"2026-11-24T05:22:43Z","phase":"cuda-compile","seconds":288.205,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi355-20261123-210905-nvcc-nunchaku-prompt/scripts/build.sh /var/lib/jenkins/fleet/jobs/mi355-20261123-210905-nvcc-nunchaku-prompt/agent_space/fork /var/lib/jenkins/fleet/jobs/mi355-20261123-210905-nvcc-nunchaku-prompt/agent_space/fork.log"}
+{"kind":"session","ts":"2026-11-24T05:10:32Z","epoch":1795497032.233873,"event":"start","platform":"linux-gfx1100"}
