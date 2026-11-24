@@ -8995,3 +8995,26 @@ Commands not given above: `suite.sh default` (= `suite2.sh` with the earlier per
 ## Ruling (Jeff Daily, 2026-11-24): strict-mode diagnostics test fix
 
 Question: the gfx1250 final-head evidence session found one port defect in strict mode, `test_diagnostics.test_print_diagnostics_cuda_device_structure`, whose arch regex (from the port's `bf6bd5ba`) rejects `gfx1250-strict`; options (a) commit the one-line regex fix now, carry the Linux validations forward (test-only, arch-independent delta) and run a delta review; (b) leave it and note it in the release notes. Jeff: "a".
+
+## Porting session 35 (2026-11-24, linux-gfx950 MI355X, porter): strict-mode diagnostics test fix
+
+Per jeff's ruling ("Ruling (Jeff Daily, 2026-11-24): strict-mode diagnostics test fix", option a). The round was entered with `set-state warp-1.14 linux-gfx950 porting` from `review-passed` at `1c94e68b`; there was no lock takeover. `HIP_VISIBLE_DEVICES=1` only, `ulimit -c 0`, and no process was stopped.
+
+- **Clone.** A fresh clone of `release/1.14.0.amd0` at `1c94e68b` in `projects/warp-1.14/src`, with 67 LFS files. The LFS `pre-push` was moved to `pre-push.lfs` and `protect-fork` was installed (hook v6). The previous clone was moved to `agent_space/src_4e0d02ab`.
+- **The change.** The two lines from the gfx1250 evidence session's item 3, in `warp/tests/test_diagnostics.py`:
+  - the comment now ends with "or gfx1250-strict";
+  - the regex is now `^gfx[0-9a-f]+(-strict)?(:[a-z]+[+-])*$`.
+- **The recorded diff is malformed.** Its hunk header says `-108,8 +108,8` but it shows only 7 lines, so `git apply` rejects it as corrupt. I applied the same two-line replacement by exact text match. The resulting diff is the recorded one plus its missing trailing context line.
+- **Checks before the commit.** `ruff` 0.15.9 (the pre-commit version) `check --fix` and `format`: no changes. `jargon.py --port`: clean (after fetching `release-1.14` into the fresh clone). `prose.py`: clean. `audit-commits`: OK.
+- **Commit `66ba4ffb` "[ROCm] Accept gfx1250-strict in the diagnostics arch check".** Signed off; only that path staged; pushed; `advance-head` recorded.
+- **Test.** gfx950 build of the new head (`python build_lib.py --rocm-path "$(rocm-sdk path --root)" --hip-arch gfx950 -j 32 --no-rocm-rpath`, "Warp build succeeded"), then `python -m warp.tests -s autodetect -p test_diagnostics.py` from the tree with a fresh cache: **Ran 14, OK**. `test_print_diagnostics_cuda_device_structure` ran and passed.
+- **Carry-forward refused for all four Linux platforms.** For linux-gfx942, linux-gfx90a, linux-gfx950 and linux-gfx1201 I ran `carry-forward warp-1.14 <platform> 66ba4ffb... source-class "test-only: ..."`. Each refusal was verbatim this, with only the platform name changing:
+  > moatlib: warp-1.14/linux-gfx942: the source classifier calls 1c94e68bd54c..66ba4ffb31bc `mixed`, not an arch-independent documentation or comment change, so it cannot be carried forward as source-class. Build both commits and compare them (utils/codeobj_diff.py, then `binary-equiv`), or revalidate on the GPU
+
+  Per the instructions I did not work around it. The four platforms still show `completed` at `1c94e68b`, which is not the head.
+- **Leaving the round.** `set-state warp-1.14 linux-gfx950 delta-ported`; the lock is released.
+
+### Next step
+
+- **Reviewer:** delta review of `1c94e68b..66ba4ffb`.
+- **Validators:** the Linux platforms need either revalidation at `66ba4ffb` or a person's decision on another route. The classifier reads a test-file regex change as `mixed`, so `source-class` does not apply. `binary-equiv` via `utils/codeobj_diff.py` would show identical library code objects, since no native file changed. Whether that route is acceptable for a test-only delta is the coordinator's or jeff's call.
