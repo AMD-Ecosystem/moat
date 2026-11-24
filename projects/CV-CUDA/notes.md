@@ -2109,3 +2109,10 @@ VERDICT: **changes-requested** (two small text findings; independent read-only c
 - D1: `e7a9d2c5` [ROCm] Name the types nvcc's p00 fusion was established for -- OpResize.cu:231-232 now reads "the p00 product for the float, half and 16-bit types" (comment only, inside `__HIP_DEVICE_COMPILE__`). `classify 4237e85b e7a9d2c5`: doc-only, inert.
 - D2: lesson rule (2) reworded: uchar4 right "in every chain that could be traced"; the sibling helper "mixed both choices in its 4-channel half, 16-bit and `uchar4` instantiations, and for `short4` was read to fuse different products in different channels".
 - Test: `cvcuda_test_system --gtest_filter='*Resize*'` 1274/1274 at `e7a9d2c5`. Pushed `4237e85b..e7a9d2c5` (plain), `advance-head`. Jargon: only `b623dffa`; the new message clean.
+
+## Review 2026-11-24 (e) (reviewer; re-review of `4237e85b..e7a9d2c5`; whole delta `db84d5c5..e7a9d2c5`)
+VERDICT: **review-passed**.
+- D1 closed: OpResize.cu:231-232 names exactly the types the nvcc entry classifies as p00-fused for LinearBlend (float, `__half`, short, ushort and their 3/4-channel vectors); comment only, inside `__HIP_DEVICE_COMPILE__`. `classify` reports it comment-only with a line-shift hazard (the porter response's "doc-only" is the verdict for `4237e85b`); the shift is in a HIP-only block's comment and below it, and no device code in OpResize.cu uses `__LINE__` in Release, so not a concern for the CUDA comparison, which will see it anyway.
+- D2 closed: rule (2) now states LinearBlend uchar4 "in every chain that could be traced", the sibling helper's 4-channel instantiations as mixed, and the per-channel split only for `short4`, matching the nvcc entry.
+- Whole delta: the CUDA-invariance and HIP-semantics findings of review (c) ("Verified clean") stand; `e7a9d2c5`'s message: title 63 chars, `[ROCm]`, AI disclosure, Test Plan, no trailer, ASCII, jargon clean.
+- Owed elsewhere (not a review gate): the nvcc comparison at the final tip must show every CUDA object identical to upstream, OpPairwiseMatcher included.
