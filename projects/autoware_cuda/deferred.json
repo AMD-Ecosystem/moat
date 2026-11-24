@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "migraphx-onnx-custom-op-unresolved",
+      "kind": "rocm-bug-report",
+      "component": "AMDMIGraphX",
+      "summary": "MIGraphX ONNX parser does not resolve operators registered with register_experimental_custom_op (parse_onnx: 'Unknown operator: <op_type>'; register_op_parser is not exported), so TensorRT-style plugin libraries cannot supply ONNX ops; feature request for a fallback to a registered custom op of the same name. Blocks autoware_universe stage 3's plugin route.",
+      "refs": [
+        "projects/autoware_cuda/notes.md#porter-round-2-fixes"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-24T10:51:01Z",
+      "decided": null
+    },
+    {
+      "id": "migraphx-empty-reduce-compile",
+      "kind": "rocm-bug-report",
+      "component": "AMDMIGraphX",
+      "summary": "MIGraphX f0239c965 parses ReduceSum over a zero-length axis ([0,4] -> [4]) but compile fails: 'benchmark: No valid tuned compilation for fused_reduce' with lens {0, 4}; TensorRT returns zeros. Also BROADCAST refuses an output size 0 when parsing a conv model with batch 0.",
+      "refs": [
+        "projects/autoware_cuda/notes.md#porter-round-2-fixes"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-24T10:51:01Z",
+      "decided": null
+    }
+  ]
+}
