@@ -404,3 +404,7 @@ These ran on this host while the child review was in progress, against head 6860
 
 - ROCm LibTorch runtime build at 6860e5f (`<job>/work/build-rocm`, see Porter round 3): built, not yet run.
 - ONNX export on the documented stack: see Porter round 3 (3.11 and 3.12).
+
+## Ruling on the LibTorch option design (Jeff Daily, 2026-11-23, after three review rounds)
+
+**b: stop inferring.** Add one explicit new CMake option for a local LibTorch that only the user sets and nothing else writes, and leave `Torch_DIR` and the download logic exactly as upstream has them. The three rounds of findings (cached value, symlinked source, relative path) all came from telling a user's `Torch_DIR` from the one `find_package` caches; that inference is removed, not refined.
