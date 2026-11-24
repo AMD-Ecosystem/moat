@@ -1491,6 +1491,83 @@ Recorded: `set-state anari-visionaray linux-gfx1201 validation-failed` at fd2375
 
 Still owed at fd2375aa or the next head: the raycast hang fix (porter; leads and next steps in the porter round 4 section); linux-gfx90a revalidation (full run: device and host code changed since its 6f1e7937 pass; run the raycast surface case last and watch it, the hang may not be gfx1201-specific); windows-gfx1201 and linux-gfx1100 GPU runs; linux-gfx1201 full sweep with the committed harness on a healthy card.
 
+## Fix round moat-fix-10 2026-11-24 round 5 (linux-gfx90a, porter) -- raycast lit-surface hang does NOT reproduce on gfx90a; no code change, head stays fd2375aa
+
+Requested by jeff after the R9700 host lost two GPUs to hung runs. Lock taken with `set-state anari-visionaray linux-gfx90a porting` (nobody held it). Fork clone at projects/anari-visionaray/src on moat-fix-10 at fd2375aa32bff0c6103f79ba5bb1ab4cff15840a, protect-fork hook installed, `git status --porcelain` empty. GPU: AMD Instinct MI250X / MI250 (gfx90a:sramecc+:xnack-), HIP_VISIBLE_DEVICES=2 (dispatcher pin, kept), ROCm 10.1.0 pip SDK (`rocm-sdk path --root`), gcc 13.3. Everything under `ulimit -c 0`, one GPU process at a time, every GPU run under `timeout -s TERM 90` with `-k 120`, and the 64-thread smoke kernel (`timeout -s TERM -k 120 60 ./smoke` -> `h[63]=126`) run before the first run and after every case: it passed every time (last check 00:18:52 UTC). No process was killed by hand, no case timed out.
+
+Build: the porter section's recipe for gfx90a, -j42, deps fresh in the job dir: ANARI-SDK next_release @ 47b22af, visionaray master @ 99d4829c plus the hip_bvh.h assign_indices fix (both rc 0); fork configure as recorded with `-DCMAKE_HIP_ARCHITECTURES=gfx90a`, `utils/timeit.sh anari-visionaray compile -- cmake --build $J/build -j42` + install: rc 0, 0 errors. libanari_library_visionaray_hip.so 8.3 MB, `.hip_fatbin` 6.0 MB (same size as the 6f1e7937 build on this host). CPU library built too.
+
+Harness: projects/anari-visionaray/gpu_tests/ as committed, plus three switches added in this round (same scenes, defaults unchanged, so counts stay comparable): `KILL_AFTER` (TERM-to-KILL grace, default 120 s, was a fixed 30 s), `NO_LIGHT=1` (surface scene without its light) and `MODE=<mode>` (renderer `mode` parameter). Non-hanging cases first, raycast surface last:
+```
+ulimit -c 0
+RUNS=8 TIMEOUT=90 KILL_AFTER=120 SCENES="volume-nearest volume-linear nanovdb-nearest nanovdb-linear gaussian-splat" \
+  utils/timeit.sh anari-visionaray test -- bash projects/anari-visionaray/gpu_tests/run_all.sh \
+  $J/deps/anari-install $J/build/install projects/anari-visionaray/src $J/out-fd2375a
+RUNS=8 TIMEOUT=90 KILL_AFTER=120 SCENES=surface RENDERERS=default  utils/timeit.sh ... (same)
+RUNS=1 TIMEOUT=90 KILL_AFTER=120 SCENES=surface RENDERERS=raycast  ...   # hang-prone run 1
+RUNS=8 TIMEOUT=90 KILL_AFTER=120 SCENES=surface RENDERERS=raycast  ...   # hang-prone run 2
+```
+
+Results at fd2375aa, HIP device (nonzero / distinct, runs identical), CPU in the same process:
+
+| renderer / scene | HIP | CPU | meanAbsDiff | result |
+|---|---|---|---|---|
+| pathtrace volume-nearest | 2071 / 510, 8/8 | 1929 / 279 | 2.617 | PASS |
+| pathtrace volume-linear | fault (HSA_STATUS_ERROR_MEMORY_FAULT, addr 0x0) | 1925 / 408 | -- | known deferral `visionaray-hip-texture-linear-float-cdna` |
+| pathtrace nanovdb-nearest | 6265 / 1597, 8/8 | 7076 / 798 | 7.533 | PASS |
+| pathtrace nanovdb-linear | 6242 / 2092, 8/8 | 7020 / 1131 | 7.489 | PASS |
+| pathtrace gaussian-splat | 9417 / 1804, 8/8 | n/a | -- | PASS |
+| pathtrace surface | 10584 / 10168, 8/8 | 10581 / 10151 | 0.469 | PASS |
+| raycast volume-nearest | 9099 / 2701, 8/8 | 9102 / 943 | 1.756 | PASS |
+| raycast volume-linear | fault (same) | 8995 / 330 | -- | known deferral |
+| raycast nanovdb-nearest | 15180 / 4526, 8/8 | 15180 / 825 | 16.472 | PASS |
+| raycast nanovdb-linear | 15011 / 6149, 8/8 | 15011 / 694 | 15.645 | PASS |
+| raycast gaussian-splat | 25001 / 18125, 8/8 | n/a | -- | PASS |
+| **raycast surface (lit)** | **10585 / 10577, 8/8 (and 1/1 in run 1), 0.2 s** | 10585 / 10577 | **0.000** | **PASS, no hang** |
+
+Every HIP count except raycast surface is identical to the gfx1201 records at fd2375aa / 6f1e7937 (2nd and 3rd jobs), so the two cards run the same code to the same images wherever gfx1201 finishes; and gfx90a's raycast lit surface is pixel-identical to the CPU device.
+
+Bisection runs on this card (hang-prone runs 3 and 4; neither hung, the card stayed healthy):
+- `NO_LIGHT=1 RUNS=2 ... raycast surface`: HIP 10585 / 10112, CPU 10585 / 10112, diff 0.000. The switch works (the light changes 467 colours) and is ready for the R9700 bisection.
+- `HIP_HOST_COHERENT=1 RUNS=2 ... raycast surface`: HIP 10585 / 10577, diff 0.000. Fine-grained (coherent) pinned host memory does not hang on CDNA2 either.
+- Also, not hang-prone: `MODE=Ng RUNS=1 ... raycast surface`: 10585 / 3 on both devices, diff 0.000 (switch works).
+Four of the six permitted hang-prone runs were used; none hung.
+
+### Why it hangs on gfx1201 and not here: what the evidence rules out
+
+1. **Not unmapped pinned host memory.** hipHostMalloc memory is mapped into every device's address space under unified addressing; the returned pointer is the device pointer, as with cudaHostAlloc after d5339fc (the HIP header defines `hipHostMallocDefault` as 0 = `hipHostAllocPortable`; coherence follows HIP_HOST_COHERENT unless a flag overrides it). Decisively, on gfx1201 itself the pathtrace kernel reads the same pinned arrays the raycast light path reads -- `world.allLights` (DeviceObjectArray<LightRef>) and `onDevice.lights` through `intersectLights` / `getLight` (renderer/common.h:1780-1827, used by pathtrace at common.h:1862) and `sampleLight` -- and finishes with the right image. `group.lights`, the one pinned pointer stored inside another structure, is read by host code only (VisionarayScene::commit); no kernel reads it. And on gfx90a the whole raycast lit path runs on the same pinned arrays and matches the CPU bit for bit.
+2. **Not a compile-wide or resource problem.** All raycast scenes run one kernel (the `hip::for_each` lambda in renderer/Raycast_impl.cpp:261-330); gfx1201 runs it to completion on volumes and splats. What hangs is a data path inside that kernel that only the lit surface scene takes.
+3. **Not the transparency loop** (getOpacity returns 1 for AlphaMode::Opaque, common.h:675; the loop breaks after the first hit) and **not a wave-width assumption in traversal**: visionaray's intersect_ray1_cwbvh.inl uses `__activemask` only under `__CUDA_ARCH__`; the HIP path uses `31 ^ __builtin_clz` for find_first_set_bit and plain bit-clear loops that terminate for any wave size.
+4. **Not fine-grained vs coarse-grained host memory as such** (HIP_HOST_COHERENT=1 passes here), though RDNA4 maps system memory with a different MTYPE than CDNA2 and this was tested only on CDNA2.
+
+What remains: a lit-surface-only path through the raycast kernel (surface hit + light loop + `evalMaterial` + `intersectLights` + `intersectVolumeBounds` over a surface-only TLS) that misbehaves only on gfx1201 -- a gfx1201 code-generation problem in that branch, or an RDNA4 memory-system behaviour on PCIe-host memory (writes to the pinned frame buffers, which every renderer does, are not the difference). The R9700 host also had a card wedge on a 1 MB copy before any of this code ran (first gfx1201 job), so a host or driver defect that this kernel's access pattern triggers is still possible.
+
+### What to run on a healthy R9700 (in this order, each once, each a new question)
+
+1. `NO_LIGHT=1 RENDERERS=raycast SCENES=surface RUNS=1 TIMEOUT=90 KILL_AFTER=120`. Passes -> the light branch; hangs -> the surface branch.
+2. If (1) passes: `MODE=Ng` with the light on (skips the light loop and evalMaterial, keeps intersectLights and intersectVolumeBounds). Passes -> sampleLight/evalMaterial in this kernel; hangs -> intersectLights or intersectVolumeBounds.
+3. Old device memory with only the host-read list staged: revert DeviceArray.h's HIP arm to hipMalloc locally and read `group.lights` in VisionarayScene::commit from a host copy. Passes -> pinned memory is involved on RDNA4 (then try `hipHostMallocNonCoherent` and `hipHostMallocCoherent` explicitly, to see which coherence mode RDNA4 stalls on); hangs -> unrelated to d5339fc.
+4. Compare the gfx1201 and gfx90a ISA of the raycast kernel for the branch (2) points at (`--save-temps`, the for_each_kernel of VisionarayRendererRaycast), and build Raycast_impl.hip for gfx1201 at -O1 as a codegen probe.
+5. Per-pixel iteration cap writing a sentinel colour, if a loop is suspected after (4).
+
+Card safety on that host: one HIP process at a time, never `kill -9`, never attach a debugger, smoke kernel after every hang.
+
+No commit on moat-fix-10 this round: there is no defect to fix on any GPU available today, and a speculative change would cost every platform a revalidation without evidence that it does anything. `set-state ... delta-ported` hands the unchanged head to the reviewer.
+
+## Review 2026-11-24 (linux-gfx90a, reviewer) -- moat-fix-10 fd2375aa..fd2375aa -- PASS (no delta)
+
+The porter round on gfx90a made no fork commit: moat-fix-10 is still at fd2375aa, the head reviewed in round 4 (`git -C projects/anari-visionaray/src rev-parse HEAD` = fd2375aa32bff0c6103f79ba5bb1ab4cff15840a; `git diff fd2375aa HEAD` empty). Nothing to review in the fork. Records-only changes this round: the harness switches above (gpu_tests/, MOAT branch only, not shipped). `jargon.py --port anari-visionaray` clean.
+
+## Validation 2026-11-24 (linux-gfx90a, validator) -- PASS at fd2375aa
+
+Head fd2375aa on moat-fix-10 (fork clone at projects/anari-visionaray/src, `git rev-parse HEAD` = fd2375aa32bff0c6103f79ba5bb1ab4cff15840a, `git status --porcelain` empty), stage review-passed. GPU and build: as in the porter round 5 section above (MI250X, gfx90a, HIP_VISIBLE_DEVICES=2, ROCm 10.1.0, porter recipe, 0 errors). Harness: the committed gpu_tests/ run with `run_all.sh` and the defaults except TIMEOUT=90 / KILL_AFTER=120 (jeff's GPU-safety limits), RUNS=8, every scene with both renderers (results table in the porter round 5 section; the validation cases are the RUNS=8 rows).
+
+Result: every case passes, raycast lit surface included (pixel-identical to the CPU device, 8/8 runs identical), except structured volume with linear filtering, which faults on gfx90a with both renderers exactly as recorded at 6f1e7937 and earlier (deferral `visionaray-hip-texture-linear-float-cdna`, known, does not count). Against the last linux-gfx90a record (6f1e7937, older harness rewritten on this host): surface, volume-nearest, NanoVDB and splats pass at both heads; the counts are not comparable number for number (different harness and splat scene), and are identical to gfx1201's at this head wherever gfx1201 finishes.
+
+CUDA compile check: no CUDA toolkit on this host (`/opt/conda/envs` and `/usr/local/cuda*` absent). Last nvcc check at 6f1e7937 (mi355 host, clean); the 6f1e7937..fd2375aa delta is 12 changed lines, all inside the `#elif defined(WITH_HIP)` DeviceArray of DeviceArray.h, so the CUDA path compiled there is unchanged. Content: `jargon.py --port anari-visionaray` clean; README documents the HIP build (unchanged).
+
+Recorded: `set-state anari-visionaray linux-gfx90a completed` at fd2375aa. wave64 is satisfied at this head. Still open at fd2375aa: linux-gfx1201 (validation-failed, raycast lit-surface hang, not reproducible on gfx90a; R9700 next steps above), linux-gfx1100 and windows-gfx1201 GPU runs.
+
 ## Fix review PR draft
 
 Title: Merge upstream main into the HIP device PR (#10)
@@ -1514,19 +1591,21 @@ Dependency: the HIP device needs a two-line fix in visionaray master, include/vi
 Retested (at fd2375a unless stated):
 
 - CUDA compile check: done at 6f1e793 (nvcc 12.8, sm_52 and sm_80, CPU and CUDA libraries, no new error or warning against upstream c1aa91b). fd2375a changes only the HIP arm of DeviceArray.h; the check is owed again only if a reviewer wants it per head.
-- linux gfx1201 (Radeon AI PRO R9700, ROCm 10.1): FAILED. The raycast renderer never finishes a frame of a lit surface scene (timeout); path tracing of the same scene now renders and matches the CPU device, Gaussian splats render with both renderers. Root cause open; see the notes.
-- linux gfx90a (MI250X): owed at fd2375a (its pass at 6f1e793 predates the pinned-memory change).
-- Owed before approval: a fix for the gfx1201 raycast hang, then GPU runs on gfx90a, gfx1100 or gfx1201, and Windows gfx1201 at the final head.
+- linux gfx90a (MI250X, ROCm 10.1): PASSED at fd2375a. Every scene renders with both renderers (path tracing and raycast): structured volumes (nearest), NanoVDB (nearest and linear), Gaussian splats, and the lit surface scene, which with the raycast renderer is pixel-identical to the CPU device. Linear-filtered structured volumes fault on this GPU family, as before this round (known limitation).
+- linux gfx1201 (Radeon AI PRO R9700, ROCm 10.1): FAILED. The raycast renderer never finishes a frame of a lit surface scene (timeout); path tracing of the same scene renders and matches the CPU device, Gaussian splats render with both renderers. The same case passes on gfx90a; root cause open, see the notes.
+- Owed before approval: a fix (or a ruling) for the gfx1201 raycast hang, then GPU runs on gfx1100 or gfx1201, and Windows gfx1201, at the final head.
 
 ## Upstream reply
 
 I merged main into this branch and resolved the conflicts. Main's HIP code needed a few fixes to build and run against visionaray master: the HIP device now uses CWBVHs like the CUDA device, the HIP library exports its entry point under the configured name again, the TAA history copy runs on the device, the cudaDevice selection works on HIP too, two HIP-only host staging paths now wait for their data, and HIP device arrays use pinned host memory like the CUDA ones, since host code now reads them.
 
+I tested this on an MI250X (gfx90a) with ROCm 10.1: structured and NanoVDB volumes, Gaussian splats and a lit triangle scene render with both the path tracer and the raycast renderer, and the raycast images of the surface scene match the CPU device exactly.
+
 The HIP device also needs a small fix in visionaray: in include/visionaray/detail/bvh/hip_bvh.h, the two assign_indices() overloads take cuda_index_bvh<P>& and cuda_bvh<P>& and should take hip_index_bvh<P>& and hip_bvh<P>&. Nothing in visionaray includes that header, so its CI doesn't catch it.
 
 ## Notes for us (not posted)
 
-- The reply names no GPU: no platform has a completed validation at fd2375a (gfx90a's pass was at 6f1e793, gfx1201 failed). Add the tested-GPU sentence (GPU, ROCm version, scenes) only for platforms that complete at the final head, before opening the fix review PR.
+- The reply names only gfx90a (MI250X), the one platform completed at fd2375a (2026-11-24). If the head moves, re-check that sentence; add other GPUs only when they complete at the final head.
 - Do not open the fix review PR while the gfx1201 raycast hang is open.
 - Whether to send the visionaray hip_bvh.h fix as a PR to szellmann/visionaray (a follow-up round on the visionaray project) or leave it to the maintainer from this reply is jeff's call (deferral visionaray-hip-lbvh-assign-indices).
 - Upstream CPU-device bug, outside this PR, jeff's call whether to report: the CPU DeviceArray emulation uses std::malloc (16-byte aligned) for dco::Gaussian (VSNRAY_ALIGN(64)), so the CPU device segfaults on any Gaussian splat volume (aligned AVX load in DeviceBVH<Gaussian>::rebuildHostBVH2).
