@@ -6,9 +6,9 @@
   "fork_default_branch": "release-1.14",
   "priority": 0.0,
   "ext_type": "python-build-nvrtc",
-  "stage": "review-passed",
+  "stage": "porting",
   "adopted_at": "2026-11-18T17:38:39Z",
-  "updated_at": "2026-11-24T03:20:42Z",
+  "updated_at": "2026-11-24T03:25:30Z",
   "head_sha": "4e0d02ab7eeb4af2be6380ff27c54d9bc8d43ef2",
   "depends_on": [],
   "waivers": {},
@@ -133,9 +133,9 @@
       "blocked_reason": null,
       "validated_sha": null,
       "failed_sha": "4e0d02ab7eeb4af2be6380ff27c54d9bc8d43ef2",
-      "started_at": null,
+      "started_at": "2026-11-24T03:25:30Z",
       "completed_at": null,
-      "updated_at": "2026-11-24T03:20:42Z",
+      "updated_at": "2026-11-24T03:25:30Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -196,5 +196,10 @@
     "since": "2026-11-24T02:24:06Z",
     "at": "2026-11-24T02:33:16Z"
   },
-  "reviewed_sha": "4e0d02ab7eeb4af2be6380ff27c54d9bc8d43ef2"
+  "reviewed_sha": "4e0d02ab7eeb4af2be6380ff27c54d9bc8d43ef2",
+  "porting": {
+    "arch": "linux-gfx90a",
+    "since": "2026-11-24T03:25:30Z",
+    "holder": "76f470ce0b26"
+  }
 }
