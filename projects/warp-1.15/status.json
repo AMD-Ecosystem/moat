@@ -1,0 +1,55 @@
+{
+  "schema_version": 4,
+  "name": "warp-1.15",
+  "upstream_url": "https://github.com/NVIDIA/warp",
+  "fork_url": "https://github.com/AMD-Ecosystem/warp",
+  "fork_default_branch": "release-1.15",
+  "priority": 0.0,
+  "ext_type": "python-build-nvrtc",
+  "stage": "unclaimed",
+  "adopted_at": "2026-11-24T19:54:09Z",
+  "updated_at": "2026-11-24T19:55:27Z",
+  "head_sha": null,
+  "depends_on": [
+    "warp-1.14"
+  ],
+  "porting": null,
+  "waivers": {},
+  "platforms": {},
+  "fork_branch": "release/1.15.0.amd0",
+  "fork_branch_ruling": {
+    "branch": "release/1.15.0.amd0",
+    "previous": null,
+    "by": "jeffdaily",
+    "at": "2026-11-24T19:54:11Z"
+  },
+  "delivery": {
+    "mode": "fork-release",
+    "by": "jeffdaily",
+    "at": "2026-11-24T19:54:12Z",
+    "tag_format": "v{version}+rocm10.2.{rev}"
+  },
+  "fork_url_ruling": {
+    "url": "https://github.com/AMD-Ecosystem/warp",
+    "previous": null,
+    "by": "jeffdaily",
+    "at": "2026-11-24T19:54:31Z"
+  },
+  "license_spdx": "Apache-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0",
+      "evidence": "https://github.com/NVIDIA/warp/blob/release-1.15/LICENSE.md",
+      "at": "2026-11-24T19:54:56Z"
+    }
+  ],
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "AMD-Ecosystem/warp release/1.14.0.amd0 (the previous line, this project's dependency)",
+    "viable": true,
+    "summary": "Warp release-1.15 line: release/1.15.0.amd0 on AMD-Ecosystem/warp, built on the warp-1.14 port, with ROCm 10.2 wheels; started by ruling 2026-11-24",
+    "at": "2026-11-24T19:55:27Z"
+  }
+}
