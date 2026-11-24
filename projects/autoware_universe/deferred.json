@@ -47,6 +47,32 @@
       "upstream_issue": null,
       "created_at": "2026-11-24T00:55:53Z",
       "decided": null
+    },
+    {
+      "id": "autoware-undistort-test-trips-stamp-assert",
+      "kind": "other",
+      "component": null,
+      "summary": "Upstream test bug, every backend: test_cuda_pointcloud_preprocessor UndistortionLeavesXyzirctTimeStampsUntouched sends a twist stamped exactly at the cloud stamp (1 s 0 ns), which trips upstream's assert(twist_global_stamp_nsec > pointcloud_stamp_nsec) in undistort_kernels.cu:234 (setupTwist2DStructs) and aborts the test in any build without NDEBUG (colcon's default empty CMAKE_BUILD_TYPE; FindCUDA adds no NDEBUG either, so CUDA aborts the same way). Release builds pass. Neither file is changed by the port. Reporting upstream is a person's call.",
+      "refs": [
+        "projects/autoware_universe/notes.md#porter-round-5"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-24T04:23:15Z",
+      "decided": null
+    },
+    {
+      "id": "autoware-ogm-tests-hip-when-reenabled",
+      "kind": "other",
+      "component": null,
+      "summary": "When upstream re-enables autoware_probabilistic_occupancy_grid_map's tests (disabled by #7724), the HIP branch needs two more changes before they build on ROCm: test/test_utils.cpp compiles with g++ and calls cudaMemcpyAsync/cudaMemcpyHostToDevice through cuda_pointcloud.hpp (not mapped outside HIP sources), and test_utils links CUDA_LIBRARIES, which FindCUDA leaves NOTFOUND on a machine without CUDA unless AUTOWARE_CUDA_USE_HIP=ON. Checked in a scratch copy with the block uncommented; costmap_unit_tests and fusion_policy_unit_tests then build. Not a break of the documented build today.",
+      "refs": [
+        "projects/autoware_universe/notes.md#porter-round-5"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-24T04:23:15Z",
+      "decided": null
     }
   ]
 }

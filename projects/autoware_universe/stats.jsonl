@@ -32,3 +32,5 @@
 {"kind":"phase","ts":"2026-11-24T03:17:26Z","phase":"test","seconds":4.784,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261123-184027-val-autoware-universe-w32-prompt/agent_space/gs_run.sh"}
 {"kind":"phase","ts":"2026-11-24T03:35:04Z","phase":"test","seconds":5.017,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261123-184027-val-autoware-universe-w32-prompt/agent_space/test_full.sh"}
 {"kind":"session","ts":"2026-11-24T03:41:42Z","epoch":1795491702.117531,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-11-24T03:50:15Z","epoch":1795492215.414764,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-24T04:16:03Z","phase":"compile","seconds":166.826,"exit":0,"cmd":"timeout 3000 bash /var/lib/jenkins/fleet/jobs/mi300b-20261123-194328-fix4-autoware-universe-s1-prompt/agent_space/readme_build.sh /var/lib/jenkins/fleet/jobs/mi300b-20261123-194328-fix4-autoware-universe-s1-prompt/moat/projects/autoware_universe/src /var/lib/jenkins/fleet/jobs/mi300b-20261123-194328-fix4-autoware-universe-s1-prompt/ws_fix"}

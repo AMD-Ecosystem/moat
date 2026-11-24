@@ -6,19 +6,15 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "cmake",
-  "stage": "porting",
+  "stage": "delta-ported",
   "adopted_at": "2026-11-05T23:13:25Z",
-  "updated_at": "2026-11-24T03:50:15Z",
-  "head_sha": "129d61b2dc9d63a7cab5d4b1e4bebf5f2c92030e",
+  "updated_at": "2026-11-24T04:24:20Z",
+  "head_sha": "fc79489cfa73487ee4a497ce6940e609f528910f",
   "depends_on": [
     "autoware_cuda",
     "cuda_blackboard"
   ],
-  "porting": {
-    "arch": "linux-gfx942",
-    "since": "2026-11-24T03:50:15Z",
-    "holder": "594fa8d56c3b"
-  },
+  "porting": null,
   "waivers": {
     "windows": {
       "reason": "Autoware is a Linux-only ROS 2 (Humble/Jazzy) stack; no Windows build exists upstream. Approved 2026-11-11 with the full-scope ruling.",
@@ -57,7 +53,7 @@
       "failed_sha": "9574fe17a463fa3384bfa0aa0f715923deb9787f",
       "started_at": "2026-11-23T21:41:30Z",
       "completed_at": "2026-11-24T02:33:40Z",
-      "updated_at": "2026-11-24T03:50:15Z",
+      "updated_at": "2026-11-24T04:24:20Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -120,8 +116,8 @@
   },
   "porting_released": {
     "arch": "linux-gfx942",
-    "since": "2026-11-24T02:10:34Z",
-    "at": "2026-11-24T02:16:24Z"
+    "since": "2026-11-24T03:50:15Z",
+    "at": "2026-11-24T04:24:20Z"
   },
   "reviewed_sha": "129d61b2dc9d63a7cab5d4b1e4bebf5f2c92030e"
 }
