@@ -550,3 +550,11 @@
 {"kind":"phase","ts":"2026-11-24T22:34:45Z","phase":"test","seconds":14.696,"exit":0,"cmd":"bash agent_space/v/run.sh matmul2 -s autodetect -p test_tile_matmul.py"}
 {"kind":"phase","ts":"2026-11-24T22:34:59Z","phase":"test","seconds":14.482,"exit":0,"cmd":"bash agent_space/v/run.sh matmul3 -s autodetect -p test_tile_matmul.py"}
 {"kind":"session","ts":"2026-11-24T22:36:23Z","epoch":1795559783.26691,"event":"end","platform":"linux-gfx950"}
+{"kind":"session","ts":"2026-11-24T22:16:48Z","epoch":1795558608.631119,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-24T22:19:23Z","phase":"compile","seconds":44.966,"exit":0,"cmd":"agent_space/v/build.sh /var/lib/jenkins/fleet/jobs/rx7900-20261124-141448-validator7-prompt/moat/projects/warp-1.14/src 32 /var/lib/jenkins/fleet/jobs/rx7900-20261124-141448-validator7-prompt/val/wheel"}
+{"kind":"phase","ts":"2026-11-24T22:33:40Z","phase":"test","seconds":845.309,"exit":0,"cmd":"agent_space/v/run.sh full -s autodetect"}
+{"kind":"phase","ts":"2026-11-24T22:38:23Z","phase":"test","seconds":274.344,"exit":0,"cmd":"agent_space/v/run.sh tiledebug -s autodetect --warp-debug -p test_tile*.py"}
+{"kind":"phase","ts":"2026-11-24T22:39:00Z","phase":"test","seconds":24.744,"exit":0,"cmd":"agent_space/v/run.sh matmul1 -s autodetect -p test_tile_matmul.py"}
+{"kind":"phase","ts":"2026-11-24T22:39:25Z","phase":"test","seconds":24.786,"exit":0,"cmd":"agent_space/v/run.sh matmul2 -s autodetect -p test_tile_matmul.py"}
+{"kind":"phase","ts":"2026-11-24T22:39:50Z","phase":"test","seconds":24.823,"exit":0,"cmd":"agent_space/v/run.sh matmul3 -s autodetect -p test_tile_matmul.py"}
+{"kind":"session","ts":"2026-11-24T22:40:51Z","epoch":1795560051.957853,"event":"end","platform":"linux-gfx1100"}

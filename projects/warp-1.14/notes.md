@@ -9092,3 +9092,48 @@ Skips. Full suite, 80: no suitable devices 24, conditional graph nodes 16, not b
 ### Scripts (`agent_space/v/`, scratch)
 
 `build.sh <tree> <jobs> <wheel dir>`: the two build commands above with `$FLEET_VENV/bin` first on PATH. `run.sh <label> <warp.tests args>`: `ulimit -c 0`, `HIP_VISIBLE_DEVICES=1`, cwd `<job>/run`, `rm -rf` then `WARP_CACHE_PATH=<job>/run/cache_<label>`, the site-packages assertion, then `$FLEET_VENV/bin/python -m warp.tests <args>`, logged to `<job>/run/<label>.log` with load average at start and end.
+## Validation 2026-11-24 (linux-gfx1100, Radeon Pro W7800 48GB, validator): release wheel at `66ba4ffb`
+
+Requested by jeff: validate `release/1.14.0.amd0` at `66ba4ffb` (porting session 35, the strict-mode diagnostics test fix; delta review 7 passed) on gfx1100 from the release wheel. No lock taken. **Verdict: pass (`completed`).** Every run is OK. No failure, no `Warp CUDA error` line in any log, no error 700, no `test_async` failure, so nothing needed a rerun alone. **`test_mesh_query_point.py`: 9 of 9 OK, none skipped (usd-core installed). `test_diagnostics.py`: 14 of 14 OK**, including `test_print_diagnostics_cuda_device_structure`, which exercises the changed regex against the device string.
+
+### Host, environment, build
+
+- Device "AMD Radeon Pro W7800 48GB" (gfx1100, wave32, 64 KiB shared memory per block). Dispatcher pin `HIP_VISIBLE_DEVICES=0` kept for every run, `ulimit -c 0` in the run script. `amd-smi process -g 0` showed no process on that GPU before the runs. Host load average 0.5 to 8. No process was stopped.
+- The job venv came with TheRock 10.1.0 wheels. Installed `"$FLEET_VENV/bin/python" -m pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple "rocm[devel,device-gfx1100]==10.2.0" "torch[device-gfx1100]==2.15.0+rocm10.2.0" numpy==1.26.4 usd-core build`, then `rocm-sdk init` (`rocm-sdk version` 10.2.0, usd-core 26.11). torch 2.15.0+rocm10.2.0 installed cleanly and ran a GPU tensor op correctly on the W7800. pip warns only about the stale `rocm-sdk-device-gfx*==10.1.0` packages. The fleet guard refuses `pip` through any other spelling of the venv path; write `"$FLEET_VENV/bin/python" -m pip` literally.
+- Clone: `git clone --branch release/1.14.0.amd0 https://github.com/AMD-Ecosystem/warp projects/warp-1.14/src`, detached at `66ba4ffb31bce1bd822943cfc764c34eb21a8eef`, `git lfs pull` (67 LFS files). `git status --porcelain` empty at the end.
+- Build plus wheel (`agent_space/v/build.sh <clone> 32 <job>/val/wheel`, under `utils/timeit.sh warp-1.14 compile`):
+  ```bash
+  python build_lib.py --rocm-path "$(rocm-sdk path --root)" --hip-arch gfx1100 -j 32 --no-rocm-rpath   # "Warp build succeeded"
+  python -m build --wheel -C--build-option=-Plinux-x86_64 -o <job>/val/wheel
+  ```
+  14 HIP compiles, each `--offload-arch=gfx1100` only. `warp_lang-1.14.0+rocm10.2.0-py3-none-manylinux_2_28_x86_64.whl`, 32,808,306 bytes, sha256 `62217b4062abe75de5440248dc7679b5085cbb52ed58f8756d374cb2566e46d6` (gfx1100 only). `strings warp.so`: `-ffp-contract=on`, `-ffp-contract=off`, `-DWP_FUSE_FP`.
+- Install: `"$FLEET_VENV/bin/python" -m pip install --force-reinstall --no-deps <wheel>`. The installed `warp.so` sha256 (`ef4db3f6b6c3cadc...`) equals the build's, and `warp.so.rocm` reads `10.2.0`. Banner: "Warp 1.14.0+rocm10.2.0 ... ROCm 10.2, HIP runtime 7.17".
+
+### Runs (installed wheel, cwd `<job>/val/run` outside the tree, `warp.__file__` asserted in site-packages, a new empty `WARP_CACHE_PATH` per run; `agent_space/v/run.sh <label> <args>` under `utils/timeit.sh warp-1.14 test`)
+
+| run | result |
+|---|---|
+| `python -m warp.tests -s autodetect` (full default suite) | **Ran 7610 tests in 836.6 s, OK (skipped=79)** |
+| `python -m warp.tests -s autodetect --warp-debug -p "test_tile*.py"` | **Ran 602 tests in 270.0 s, OK (skipped=15)** |
+| `-s autodetect -p test_tile_matmul.py`, cold cache, run 1 | **Ran 26, OK** (24.0 s; 119 hsaco compiled into the empty cache) |
+| same, run 2 (new cold cache) | **Ran 26, OK** (24.0 s; 119 hsaco) |
+| same, run 3 (new cold cache) | **Ran 26, OK** (24.1 s; 119 hsaco) |
+
+- `Warp CUDA error` lines: **0** in all five logs. Error 700: none, including the three cold-cache matmul runs. The four `test_tile_matmul_fragment_shapes_*` tests passed in each matmul run.
+- `test_async`: every test passed in the full suite.
+- `test_mesh_query_point.py` in the full suite: `test_mesh_query_point_cpu/cuda_0`, `test_adj_mesh_query_point_cpu/cuda_0`, `test_mesh_query_furthest_point_cpu/cuda_0`, `test_mesh_query_point_codegen_adjoints_with_select`, `test_set_mesh_points_cpu/cuda_0`: all ok.
+- `test_diagnostics.py` in the full suite: 14 ok: the nine `test_print_diagnostics_*` tests (`optional_frameworks` included, with usd-core and torch installed) and the five version tests (`host_compiler`, `libmathdx`, `llvm`, `nanovdb`, `nvrtc`).
+- torch installed: 34 `test_torch` tests ran and passed.
+- Full-suite skips, 79. That is 3 fewer than the 82 at `4e0d02ab` on this arch, because the three `test_copy_large_stride_*` host-RAM skips (insufficient free memory) did not trigger this time; all four ran and passed. The skips: no suitable devices 18; conditional graph nodes not supported 16; not built with MathDx 8, `MathDx is not enabled` 1, no-MathDx tolerance 1; at least two CUDA devices 7, multi-GPU not available 2; mempool access 5, without mempool 1, mempool with graph module-load 1; peer access 3, without peer 1, peer with graph module-load 1; `cuda:0 cannot access CPU memory` 2; NVRTC two architectures 2, NVRTC not available 1, `Requires CUDA` 1; rmm not installed 1; memory-usage flakiness 1 (upstream); HIP stream priorities 1; and the five 64 KiB shared-memory capability skips (`test_tile_reduce_axis_tier2` 66,816 B, `test_tile_reduce_axis_tier2_single_warp` 66,688 B, `test_tile_assign_2d` 66,688 B, `test_tile_shared_mem_func` and `test_tile_shared_mem_large` 67,584 B). There were no usd-core or torch skips.
+- Debug tile skips, 15: MathDx 8, `MathDx is not enabled` 1, no-MathDx tolerance 1, and the same five 64 KiB skips.
+- Other output, none of it a finding: the known `test_tile_load_scoped` "Failed to configure kernel dynamic shared memory ... 65536 bytes, but maximum available is 65536" UserWarning, printed once in the full suite and once in the debug run (that backward kernel is never launched, and the test passes). Three CPU `Warp: Compilation with PCH failed, retrying without precompiled headers` lines in the full suite (the CPU compiler's PCH fallback; upstream code). A numpy `RuntimeWarning: invalid value encountered in cast` from `test_bf16_ml_dtypes_conversion_helpers_cpu`, which is CPU-only and passes.
+
+### Gates
+
+- CUDA no-regression gate: not owed. The delta `1c94e68b..66ba4ffb` touches only `warp/tests/test_diagnostics.py` (delta review 7), and the gate at `1c94e68b` is recorded by the sixth review round.
+- `python3 utils/jargon.py --port warp-1.14`: clean (after local `release-1.14` and `release/1.14.0.amd0` branches were created in the clone).
+- Documentation: `docs/user_guide/installation.rst` documents the ROCm wheel and source build (`--rocm-path`, `--hip-arch`); this delta did not change it.
+
+### Scripts (`agent_space/v/`, scratch)
+
+`build.sh <tree> <jobs> <wheel dir>`: the two build commands above, with `$FLEET_VENV/bin` first on PATH. `run.sh <label> <args>`: `ulimit -c 0`, `HIP_VISIBLE_DEVICES=0`, cwd `<job>/val/run`, `rm -rf` then recreate `cache_<label>` as `WARP_CACHE_PATH`, the site-packages assertion, then `$FLEET_VENV/bin/python -m warp.tests <args>`, logged to `<job>/val/logs/<label>.log` with load average at start and end.
