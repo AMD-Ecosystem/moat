@@ -31,3 +31,8 @@
 {"kind":"session","ts":"2026-11-24T13:03:27Z","epoch":1795525407.01703,"event":"start","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-11-24T13:16:19Z","epoch":1795526179.034038,"event":"end","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-11-24T13:25:01Z","epoch":1795526701.350737,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-24T13:26:55Z","phase":"compile","seconds":0.002,"exit":127,"cmd":"./generate_projects.sh linux-gcc-rocm"}
+{"kind":"phase","ts":"2026-11-24T13:26:55Z","phase":"compile","seconds":0.002,"exit":2,"cmd":"make -C compiler/linux-gcc-rocm-release -j96"}
+{"kind":"phase","ts":"2026-11-24T13:26:55Z","phase":"compile","seconds":0.002,"exit":2,"cmd":"make -C compiler/linux-gcc-rocm-checked -j96"}
+{"kind":"phase","ts":"2026-11-24T13:27:42Z","phase":"compile","seconds":10.389,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi300c-20261124-051935-fix3-physx-notes-prompt/moat/projects/PhysX/src/physx && ./generate_projects.sh linux-gcc-rocm"}
+{"kind":"phase","ts":"2026-11-24T13:28:01Z","phase":"compile","seconds":18.546,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi300c-20261124-051935-fix3-physx-notes-prompt/moat/projects/PhysX/src/physx/compiler/linux-gcc-rocm-release -j96"}
