@@ -1356,3 +1356,50 @@ Equivalence:
 Verdict: the CUDA path of plugins/cudaCoord compiles and links with real nvcc 12.8 at `43ff1a58e`, with the same warnings, the same `make check-nogpu` result and the same sm_80 kernels as upstream master `b930e84be`. The fix round introduces no CUDA regression.
 
 Not covered: an MPI kernel build, and anything that runs on an NVIDIA GPU (`make check`, `make check-gpu`).
+## Validation 2026-11-24 (linux-gfx1201, fix round moat-fix-1648 tip)
+
+Validated sha: `43ff1a58e9eb9d5c3a28d8579624e0e5a6938669` (fresh fork clone checked out at the staging tip, `git status --porcelain` showing no modified tracked files before and after). Full run, not a carry-forward.
+
+GPU: AMD Radeon AI PRO R9700 (gfx1201, RDNA4, wavefront size 32 per rocminfo), HIP_VISIBLE_DEVICES=1 as the dispatcher pinned (one GPU, GPU 0 to the programs). All GPU runs under `ulimit -c 0`.
+
+Toolchain, the same method as the 2026-11-19 gfx1201 validations and today's gfx942 one:
+- ROCm 10.1 Python wheels (HIP 7.16.26385, AMD clang 24.0.0git), g++ 13.3.0.
+- MPICH 4.2.3 built from source in the job directory (`./configure --disable-fortran --with-device=ch3 --enable-fast=O2`).
+- PLUMED from `git archive b930e84be` (upstream master, the merge's second parent; identical to the tip outside the plugin), `./configure --prefix=<job>/deps/plumed CXX=mpicxx CC=mpicc`, `make -j24 && make install`. This PLUMED found MPI, zlib, LAPACK/BLAS and FFTW, so those appear in the plugin's NEEDED through its DYNAMIC_LIBS. Its CXXFLAGS are `-O3 -fPIC -Wall -pedantic -Wno-unknown-pragmas -std=c++17 -fopenmp` (configure did not add `-fno-gnu-unique` on this host; the plugin still has FLAGS_1 NODELETE).
+
+Build:
+```bash
+export PATH=<plumed>/bin:<mpich>/bin:$PATH PLUMED_KERNEL=<plumed>/lib/libplumedKernel.so LD_LIBRARY_PATH=<plumed>/lib:<mpich>/lib:$LD_LIBRARY_PATH
+cd plugins/cudaCoord
+USE_HIP=1 ./configure.sh
+make USE_HIP=1 HIP_ARCHITECTURES=gfx1201
+```
+Result: rc 0; only code object amdgcn-amd-amdhsa--gfx1201. 88 warnings, the known harmless set (84 nodiscard `hipError_t` -Wunused-value, 4 -Wreorder-ctor). NEEDED libamdhip64.so.7 and libplumedKernel.so, no libomp; SONAME CudaCoordination.so; FLAGS_1 NODELETE.
+
+Regtests:
+```bash
+make USE_HIP=1 HIP_ARCHITECTURES=gfx1201 check
+make USE_HIP=1 HIP_ARCHITECTURES=gfx1201 check-nogpu
+```
+- `check`: PASS, "35 tests performed, 0 tests not applicable, 0 errors found", and checkfail the same. cudatest 13, cudatestPair 8, cudatestWB 12 (rt-double-orthopbc-mpi: "Running over 2 nodes"), nogpu 2 (rt-input-errors, rt-no-gpu: all five inputs stop with "no GPU available" while HIP_VISIBLE_DEVICES=1 is set, so `43ff1a58e` does its job on this host too). The same 35 tests as the gfx942 run at this tip: the 33 GPU tests plus the two no-GPU tests. Logs say "gpu runs on GPU 0 (the default)".
+- `check-nogpu`: "+ the tests that do not need a GPU passed".
+
+GPU check:
+```bash
+make USE_HIP=1 HIP_ARCHITECTURES=gfx1201 check-gpu
+```
+- rc 0; gpucheck compiled with `hipcc -x hip --offload-host-only ...`, the 2 known nodiscard warnings (device_check.cpp:103, :182).
+- `follow`: 17/17 OK, "follow: 0 failure(s)".
+- `md`: "SKIP md mode needs at least 2 GPUs" (pin kept; another job owns the other card, and HIP device 0 of this host hangs).
+
+THREADS=32 over the full regtest set (scratch copy in agent_space, nothing committed; as in the 2026-11-19 gfx1201 run): every uncommented CUDACOORDINATION/CUDACOORDINATIONFLOAT action line rewritten to `THREADS=32` in its code part (existing THREADS=N replaced, otherwise appended before any trailing `#` comment; 153 lines), the plugin reached through a symlink so the LOAD paths stay as written. PASS: "35 tests performed, 0 tests not applicable, 0 errors found"; all 210 constructed GPU actions logged "threads per block (a warp per atom): 32". (Two earlier attempts of my rewrite left rt-double-bigbox at 256, because its line ends in a `#THREADS=1024` comment that the rewrite first appended after and then matched; fixed, and the result above is the rerun with 210 of 210 at 32. Not a plugin failure.)
+
+Debug-assertion build: a scratch copy of the plugin with `-DNDEBUG=1` removed from Makefile.conf, `make USE_HIP=1 HIP_ARCHITECTURES=gfx1201`. Its gfx1201 code object has 74 `s_trap` against 2 in the release one (22 kernels each), so HIP's `__hip_check_mask` shuffle-mask assertions are live. Default regtest set 35/35, 0 errors; THREADS=32 set 35/35, 0 errors, 210 actions at 32; no trap, no abort.
+
+Runtime init: no segfault or hang in any run on this wave32 host.
+
+CUDA gate at this head: NOT RUN here; this host has no nvcc. The commands for the mi355 session are in the porter section of this round.
+
+Content checks: `python3 utils/jargon.py --port plumed2` clean (local `master` set to upstream master `b930e84be`, local `moat-port` and `moat-fix-1648` from origin). The HIP build and `check`/`check-gpu` are documented in plugins/cudaCoord/README.md; `check-nogpu` is not, see the review's option (a).
+
+Gates at head after this run: wave64 by linux-gfx942, wave32 by this platform, windows waived. Still open: the CUDA compile at this head (mi355) and jeff's answer to the review's GPU-choice question.

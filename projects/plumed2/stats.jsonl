@@ -81,3 +81,9 @@
 {"kind":"phase","ts":"2026-11-24T03:35:28Z","phase":"test","seconds":41.133,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi300b-20261123-191506-plumed2-fix1648-prompt/moat/projects/plumed2/src/plugins/cudaCoord USE_HIP=1 HIP_ARCHITECTURES=gfx942 check"}
 {"kind":"phase","ts":"2026-11-24T03:35:33Z","phase":"test","seconds":2.878,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi300b-20261123-191506-plumed2-fix1648-prompt/moat/projects/plumed2/src/plugins/cudaCoord USE_HIP=1 HIP_ARCHITECTURES=gfx942 check-gpu"}
 {"kind":"session","ts":"2026-11-24T03:36:00Z","epoch":1795491360.174155,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-24T03:47:37Z","epoch":1795492057.991285,"event":"start","platform":"linux-gfx1201"}
+{"kind":"phase","ts":"2026-11-24T03:50:26Z","phase":"compile","seconds":8.03,"exit":0,"cmd":"make -C projects/plumed2/src/plugins/cudaCoord USE_HIP=1 HIP_ARCHITECTURES=gfx1201"}
+{"kind":"phase","ts":"2026-11-24T03:51:30Z","phase":"test","seconds":54.074,"exit":0,"cmd":"make -C projects/plumed2/src/plugins/cudaCoord USE_HIP=1 HIP_ARCHITECTURES=gfx1201 check"}
+{"kind":"phase","ts":"2026-11-24T03:51:46Z","phase":"test","seconds":5.499,"exit":0,"cmd":"make -C projects/plumed2/src/plugins/cudaCoord USE_HIP=1 HIP_ARCHITECTURES=gfx1201 check-nogpu"}
+{"kind":"phase","ts":"2026-11-24T03:51:49Z","phase":"test","seconds":2.836,"exit":0,"cmd":"make -C projects/plumed2/src/plugins/cudaCoord USE_HIP=1 HIP_ARCHITECTURES=gfx1201 check-gpu"}
+{"kind":"session","ts":"2026-11-24T03:58:41Z","epoch":1795492721.941154,"event":"end","platform":"linux-gfx1201"}
