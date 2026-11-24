@@ -1229,3 +1229,58 @@ Options, for jeff to choose (nothing changed in this round):
 Reviewer's recommendation: (a), possibly with (c) as one sentence in the PR comment.
 
 Also non-blocking, same docs delta if (a) is chosen: the HIP paragraph lists `make USE_HIP=1 check` and `make USE_HIP=1 check-gpu` but not upstream's new `make USE_HIP=1 check-nogpu`. On a fresh tree, `make check-nogpu` without USE_HIP would build with nvcc.
+
+## Validation 2026-11-24 (linux-gfx942, fix round moat-fix-1648 tip)
+
+Validated sha: `43ff1a58e9eb9d5c3a28d8579624e0e5a6938669` (fork clone checked out at the staging tip, `git status --porcelain` empty before and after). Full run, not a carry-forward.
+
+GPU: AMD Instinct MI300X (gfx942, wave64), HIP_VISIBLE_DEVICES=3 as the dispatcher pinned (one GPU, GPU 0 to the programs). All GPU runs under `ulimit -c 0`.
+
+Toolchain:
+- ROCm 10.1 Python wheels (HIP 7.16.26385, AMD clang 24.0.0git), g++ 13.3.0.
+- MPICH 4.2.3 built from source in the job directory.
+- PLUMED upstream master `b930e84be` (the merge's second parent; outside the plugin it is identical to the tip), built with `./configure CXX=mpicxx CC=mpicc` and installed.
+
+This is the same method as the 2026-11-19 gfx942 validations.
+
+Build (after `make clean` in cudaCoord and gpucheck):
+```bash
+cd plugins/cudaCoord
+USE_HIP=1 ./configure.sh
+make USE_HIP=1 HIP_ARCHITECTURES=gfx942
+```
+Result: rc 0. 88 warnings, the known harmless set (84 nodiscard `hipError_t`, 4 -Wreorder-ctor), the same count as before. NEEDED libamdhip64.so.7 and libplumedKernel.so, no libomp; SONAME CudaCoordination.so; FLAGS_1 NODELETE.
+
+Regtests:
+```bash
+make USE_HIP=1 HIP_ARCHITECTURES=gfx942 check
+make USE_HIP=1 HIP_ARCHITECTURES=gfx942 check-nogpu
+```
+- `check`: PASS, "35 tests performed, 0 tests not applicable, 0 errors found", and checkfail the same.
+  - cudatest 13/13 (includes rt-double-rotatedbox).
+  - cudatestPair 8/8.
+  - cudatestWB 12/12 (rt-double-orthopbc-mpi: "Running over 2 nodes").
+  - nogpu 2/2 (rt-input-errors with 15 cases, rt-no-gpu).
+- `check-nogpu`: "+ the tests that do not need a GPU passed".
+
+Compared with the 34 of the earlier gfx942 validation: the 33 GPU tests are the same tests and all pass. rt-input-errors moved from cudatest to nogpu (upstream `01755c14b`/`6c14ae547`) and gained 9 cases. rt-no-gpu is new upstream; it passes here only with `43ff1a58e` while HIP_VISIBLE_DEVICES is set. The logs now say "gpu runs on GPU 0 (the default)", which is upstream's new log format.
+
+GPU check:
+```bash
+make USE_HIP=1 HIP_ARCHITECTURES=gfx942 check-gpu
+```
+- rc 0; the 2 known nodiscard warnings in device_check.cpp (:103, :182).
+- `follow`: 17/17 OK, "follow: 0 failure(s)" (caller on GPU 0, the only visible GPU).
+- `md`: "SKIP md mode needs at least 2 GPUs". The pin was kept; at `b0e0fb6d1` md passed with two GPUs.
+
+Not covered by this run: the multi-GPU launcher case in the reviewer's open question. A child review measured it with two GPUs: `follow` fails under `SLURM_LOCALID`/`OMPI_COMM_WORLD_LOCAL_RANK` with 2 GPUs.
+
+Device code: the gfx942 code object is byte-identical to the published head `2571dcde4` (porter section), so the wave64 THREADS=32 debug-assertion evidence from the earlier rounds applies unchanged.
+
+CUDA gate at this head: NOT RUN. This host has no nvcc. The exact commands for the mi355 session are in the porter section of this round.
+
+Content checks:
+- `python3 utils/jargon.py --port plumed2` is clean.
+- The HIP build and its tests are documented in plugins/cudaCoord/README.md next to the nvcc build. `make USE_HIP=1 check-nogpu` is not mentioned there; see the review's option (a).
+
+Gates at head after this run: wave64 by this platform. wave32 (linux-gfx1201, linux-gfx1100) reads revalidate at `43ff1a58e`. windows is waived.
