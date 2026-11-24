@@ -195,6 +195,54 @@
     {
       "id": "test:ament_lint_auto-autoware_cuda_utils",
       "evidence": "copyright 13/13, lint_cmake 3/3, xmllint 1/1 pass; ament's cppcheck test skips cppcheck 2.13 by design, and cppcheck 2.13 run directly reports nothing on the port or on upstream; porter 2026-11-23 linux-gfx950 (MI355X, ROCm 10.2) at 2290174 (notes.md, Porter round 1 section)"
+    },
+    {
+      "id": "library:autoware_tensorrt_common",
+      "evidence": "MIGraphX branch: src/migraphx_common.cpp + src/onnx_model_io.cpp + shared src/tensorrt_common_io.cpp, stand-in NvInfer.h/NvInferRuntime.h/NvOnnxParser.h written from scratch, one #if in the private section of tensorrt_common.hpp; builds with 0 warnings under -Wall -Wextra -Wpedantic -Werror; exports the same 44 TrtCommon symbols as the TensorRT build (enqueueV3 takes ihipStream_t*); scratch consumer links it via target_link_libraries and ament_target_dependencies with -Werror and no CUDA lookup; porter 2026-11-24 linux-gfx942 (MI300X, ROCm 10.2 TheRock, MIGraphX 2.19.0 f0239c965 built with rocMLIR) at b60c8d7 (notes.md, Porter round 2 section)"
+    },
+    {
+      "id": "feature:tensorrt_common-onnx-build",
+      "evidence": "ONNX parsed by MIGraphX (parse_onnx with the profile opt shapes), compiled for the GPU with offload copy off; mnist-12, squeezenet1.1-7, mobilenetv2-12, resnet18-v1-7 fp32 match onnxruntime CPU within 1.4e-6 relative; porter 2026-11-24 linux-gfx942 (MI300X, ROCm 10.2 TheRock, MIGraphX 2.19.0 f0239c965 built with rocMLIR) at b60c8d7 (notes.md, Porter round 2 section)"
+    },
+    {
+      "id": "feature:tensorrt_common-engine-cache",
+      "evidence": "compiled program saved as <engine stem>.<gfx>.<precision>.mxr plus .mxr.key (MIGraphX version, gfx target, precision, profile); reload skips the compile (squeezenet setup 45 s -> 0.35 s); rebuilt when the key or the profile changes; .engine untouched (CachedProgramIsLoadedAndRebuiltWhenItsKeyChanges); porter 2026-11-24 linux-gfx942 (MI300X, ROCm 10.2 TheRock, MIGraphX 2.19.0 f0239c965 built with rocMLIR) at b60c8d7 (notes.md, Porter round 2 section)"
+    },
+    {
+      "id": "feature:tensorrt_common-dynamic-shapes",
+      "evidence": "setup compiles for profile opt; other shapes inside the profile compile once on first use (per-shape program cache); dummy network and conv network batches 1/3/8/16 correct, mobilenetv2 batch 1/3/4/8 with opt 4 correct; out-of-profile shapes refused by setInputShape. MIGraphX native dynamic dims evaluated and not used (one submodule per value of the range); porter 2026-11-24 linux-gfx942 (MI300X, ROCm 10.2 TheRock, MIGraphX 2.19.0 f0239c965 built with rocMLIR) at b60c8d7 (notes.md, Porter round 2 section)"
+    },
+    {
+      "id": "feature:tensorrt_common-precision-fp16",
+      "evidence": "quantize_fp16 before compile; conv network max error < 1e-2, squeezenet/mobilenetv2/resnet18/mnist fp16 relative error 0.7e-3..3.9e-3 vs onnxruntime fp32, top-1 identical; saved program has half_type ops; porter 2026-11-24 linux-gfx942 (MI300X, ROCm 10.2 TheRock, MIGraphX 2.19.0 f0239c965 built with rocMLIR) at b60c8d7 (notes.md, Porter round 2 section)"
+    },
+    {
+      "id": "feature:tensorrt_common-int8-calibration",
+      "evidence": "Q2 = a: TrtConvCalib hands its calibrator to the MIGraphX backend; getBatch batches copied to host and passed to quantize_int8 as calibration data; per-layer CalibrationConfig settings ignored with a logged warning; calibration cache neither read for MIGraphX nor written; conv network int8 error < 5e-2 with 4 batches; squeezenet/resnet18/mnist int8 programs contain mlir_quant_convolution ops, top-1 identical to fp32 reference; int8 programs run only at the calibrated shapes (enqueue at another shape fails with an error); porter 2026-11-24 linux-gfx942 (MI300X, ROCm 10.2 TheRock, MIGraphX 2.19.0 f0239c965 built with rocMLIR) at b60c8d7 (notes.md, Porter round 2 section)"
+    },
+    {
+      "id": "feature:tensorrt_common-io-binding-execution",
+      "evidence": "IO order and names from the ONNX graph (inputs minus initializers, then outputs); setTensorAddress/setInputShape record per tensor; enqueueV3 binds inputs and the #output_N parameters to the caller's device buffers and calls run_async on the caller's stream (null stream also works); outputs land in caller buffers (NaN-prefilled buffers overwritten); getTensorShape/DataType/IOMode follow the model with -1 for dynamic dims; porter 2026-11-24 linux-gfx942 (MI300X, ROCm 10.2 TheRock, MIGraphX 2.19.0 f0239c965 built with rocMLIR) at b60c8d7 (notes.md, Porter round 2 section)"
+    },
+    {
+      "id": "feature:tensorrt_common-plugin-loading",
+      "evidence": "plugin_paths dlopen loop kept unchanged on the MIGraphX branch (custom-op libraries register at load); initLibNvInferPlugins has no counterpart (built-in plugins scoped out, Q4); not exercised with a real custom-op library here; porter 2026-11-24 linux-gfx942 (MI300X, ROCm 10.2 TheRock, MIGraphX 2.19.0 f0239c965 built with rocMLIR) at b60c8d7 (notes.md, Porter round 2 section)"
+    },
+    {
+      "id": "feature:tensorrt_common-profiling",
+      "evidence": "host profiler timing around enqueueV3 kept as upstream; per-layer model profiler reports nothing (MIGraphX has no per-layer callback API), logged once when profile_per_layer is set; getLayerInformation returns empty with a warning; getNetwork()/getBuilderConfig() return null with an error log; porter 2026-11-24 linux-gfx942 (MI300X, ROCm 10.2 TheRock, MIGraphX 2.19.0 f0239c965 built with rocMLIR) at b60c8d7 (notes.md, Porter round 2 section)"
+    },
+    {
+      "id": "feature:tensorrt_common-public-types",
+      "evidence": "stand-in headers declare Dims (Dims64 layout: int32 nbDims, int64 d[8]), Dims2/3/4, DataType, TensorIOMode, LayerType, LayerInformationFormat, CalibrationAlgoType, ILogger(+Severity), IProfiler, IInt8Calibrator family, ITensor/ILayer/IConvolutionLayer interfaces, opaque IBuilderConfig/INetworkDefinition; tensorrt_conv_calib.hpp and conv_profiler.hpp compile against them; cudaStream_t mapped to hipStream_t with the same #ifndef guard as autoware_cuda_utils; porter 2026-11-24 linux-gfx942 (MI300X, ROCm 10.2 TheRock, MIGraphX 2.19.0 f0239c965 built with rocMLIR) at b60c8d7 (notes.md, Porter round 2 section)"
+    },
+    {
+      "id": "test:autoware_tensorrt_common_test",
+      "evidence": "unchanged test file passes 13/13 on MIGraphX (3 TensorInfoTest + 10 TrtCommonIOTest), 0 skipped; new autoware_tensorrt_common_migraphx_test 9/9; both 5/5 repeats; porter 2026-11-24 linux-gfx942 (MI300X, ROCm 10.2 TheRock, MIGraphX 2.19.0 f0239c965 built with rocMLIR) at b60c8d7 (notes.md, Porter round 2 section)"
+    },
+    {
+      "id": "test:ament_lint_auto",
+      "evidence": "autoware_tensorrt_common: cpplint 17/17, lint_cmake 3/3, xmllint 1/1 pass; ament_cppcheck skips all 17 files with cppcheck 2.13 by design, cppcheck 2.13 run directly finds nothing in the new files beyond upstream-style notes; copyright/flake8/pep257/uncrustify are disabled by upstream's CMakeLists; pre-commit (clang-format 23.1.1, cpplint, ros-include-guard, black, isort) clean on the changed files; porter 2026-11-24 linux-gfx942 (MI300X, ROCm 10.2 TheRock, MIGraphX 2.19.0 f0239c965 built with rocMLIR) at b60c8d7 (notes.md, Porter round 2 section)"
     }
   ],
   "scoped_out": [
@@ -213,56 +261,8 @@
   ],
   "owed": [
     {
-      "id": "library:autoware_tensorrt_common",
-      "reason": "Round 2 of the two-round staging Jeff Daily ruled on 2026-11-23 (Q3 = i): the MIGraphX layer of autoware_tensorrt_common is ported on the same branch after round 1 is reviewed and validated, before the single upstream PR."
-    },
-    {
-      "id": "feature:tensorrt_common-onnx-build",
-      "reason": "Round 2 of the two-round staging Jeff Daily ruled on 2026-11-23 (Q3 = i): the MIGraphX layer of autoware_tensorrt_common is ported on the same branch after round 1 is reviewed and validated, before the single upstream PR."
-    },
-    {
-      "id": "feature:tensorrt_common-engine-cache",
-      "reason": "Round 2 of the two-round staging Jeff Daily ruled on 2026-11-23 (Q3 = i): the MIGraphX layer of autoware_tensorrt_common is ported on the same branch after round 1 is reviewed and validated, before the single upstream PR."
-    },
-    {
-      "id": "feature:tensorrt_common-dynamic-shapes",
-      "reason": "Round 2 of the two-round staging Jeff Daily ruled on 2026-11-23 (Q3 = i): the MIGraphX layer of autoware_tensorrt_common is ported on the same branch after round 1 is reviewed and validated, before the single upstream PR."
-    },
-    {
-      "id": "feature:tensorrt_common-precision-fp16",
-      "reason": "Round 2 of the two-round staging Jeff Daily ruled on 2026-11-23 (Q3 = i): the MIGraphX layer of autoware_tensorrt_common is ported on the same branch after round 1 is reviewed and validated, before the single upstream PR."
-    },
-    {
-      "id": "feature:tensorrt_common-int8-calibration",
-      "reason": "Round 2 of the two-round staging Jeff Daily ruled on 2026-11-23 (Q3 = i): the MIGraphX layer of autoware_tensorrt_common is ported on the same branch after round 1 is reviewed and validated, before the single upstream PR."
-    },
-    {
-      "id": "feature:tensorrt_common-io-binding-execution",
-      "reason": "Round 2 of the two-round staging Jeff Daily ruled on 2026-11-23 (Q3 = i): the MIGraphX layer of autoware_tensorrt_common is ported on the same branch after round 1 is reviewed and validated, before the single upstream PR."
-    },
-    {
-      "id": "feature:tensorrt_common-plugin-loading",
-      "reason": "Round 2 of the two-round staging Jeff Daily ruled on 2026-11-23 (Q3 = i): the MIGraphX layer of autoware_tensorrt_common is ported on the same branch after round 1 is reviewed and validated, before the single upstream PR."
-    },
-    {
-      "id": "feature:tensorrt_common-profiling",
-      "reason": "Round 2 of the two-round staging Jeff Daily ruled on 2026-11-23 (Q3 = i): the MIGraphX layer of autoware_tensorrt_common is ported on the same branch after round 1 is reviewed and validated, before the single upstream PR."
-    },
-    {
-      "id": "feature:tensorrt_common-public-types",
-      "reason": "Round 2 of the two-round staging Jeff Daily ruled on 2026-11-23 (Q3 = i): the MIGraphX layer of autoware_tensorrt_common is ported on the same branch after round 1 is reviewed and validated, before the single upstream PR."
-    },
-    {
-      "id": "test:autoware_tensorrt_common_test",
-      "reason": "Round 2 of the two-round staging Jeff Daily ruled on 2026-11-23 (Q3 = i): the MIGraphX layer of autoware_tensorrt_common is ported on the same branch after round 1 is reviewed and validated, before the single upstream PR."
-    },
-    {
-      "id": "test:ament_lint_auto",
-      "reason": "Round 2 of the two-round staging Jeff Daily ruled on 2026-11-23 (Q3 = i): the MIGraphX layer of autoware_tensorrt_common is ported on the same branch after round 1 is reviewed and validated, before the single upstream PR. The autoware_cuda_utils half is covered as test:ament_lint_auto-autoware_cuda_utils."
-    },
-    {
       "id": "build:cuda-path-nvcc-tensorrt",
-      "reason": "Round 2 of the two-round staging Jeff Daily ruled on 2026-11-23 (Q3 = i): the MIGraphX layer of autoware_tensorrt_common is ported on the same branch after round 1 is reviewed and validated, before the single upstream PR. The autoware_cuda_utils half is covered as build:cuda-path-nvcc-autoware_cuda_utils."
+      "reason": "No nvcc on the linux-gfx942 host where round 2 was ported, so the CUDA build of autoware_tensorrt_common at b60c8d7 still has to be configured and compiled with nvcc and TensorRT 10 on a host that has them (mi355 fleet host). Partial evidence only: tensorrt_common.cpp, tensorrt_common_io.cpp, profiler.cpp and tensorrt_conv_calib.hpp compile with g++ 13 -Wall -Wextra -Wpedantic -Werror against the TensorRT 10.13 OSS headers and CUDA 12.8 runtime headers, and define the same 46 TrtCommon symbols as upstream (notes.md, Porter round 2 section). The autoware_cuda_utils half is covered as build:cuda-path-nvcc-autoware_cuda_utils."
     }
   ],
   "removed_from_floor": []
