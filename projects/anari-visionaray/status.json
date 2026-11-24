@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-23T14:02:30Z",
-  "updated_at": "2026-11-24T01:27:52Z",
+  "updated_at": "2026-11-24T01:28:05Z",
   "head_sha": "d7d363b99c462653d97ea76a54182e7f58077b38",
   "depends_on": [
     "visionaray"
@@ -15,12 +15,16 @@
   "pr_url": "https://github.com/szellmann/anari-visionaray/pull/10",
   "pr_number": 10,
   "pr_opened_at": "2026-06-25T17:31:32Z",
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx1201",
+    "since": "2026-11-24T01:28:05Z",
+    "holder": "8f78f3e67741"
+  },
   "waivers": {},
   "pr_state": "open",
   "license_spdx": "Apache-2.0",
   "upstream_repo_id": 674837115,
-  "stage": "delta-ported",
+  "stage": "reviewing",
   "platforms": {
     "windows-gfx1201": {
       "state": "completed",
@@ -114,7 +118,7 @@
       "failed_sha": "fd2375aa32bff0c6103f79ba5bb1ab4cff15840a",
       "started_at": "2026-11-23T20:28:03Z",
       "completed_at": null,
-      "updated_at": "2026-11-24T01:27:52Z",
+      "updated_at": "2026-11-24T01:28:05Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -128,7 +132,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator",
+      "last_agent": "reviewer",
       "state": "validation-failed"
     },
     "linux-gfx942": {
