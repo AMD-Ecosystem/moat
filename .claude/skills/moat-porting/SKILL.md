@@ -79,9 +79,14 @@ what passes and what does not).
   decline.
 - A dependency that already has a ROCm port (`spconv-triton`, pyg-rocm-build wheels,
   `amd_gsplat`) is consumed through the `_deps/` mechanism as environment, not adopted as a
-  deliverable. (This list used to name `spconv_rocm`; the GitHub repository of that name
-  is empty, checked 2026-11 by the Pointcept port. `cuda-to-rocm`'s strategy-b-torch.md
-  has the details.)
+  deliverable. `ZJLi2013/spconv_rocm` is not in that list on purpose: its default branch
+  is an unmodified spconv mirror and the work is on branch `rocm` (as is its cumm
+  counterpart `ZJLi2013/cumm-rocm`), a FlyDSL rewrite for gfx942 inference, not a ROCm
+  build of spconv as published. It can serve as environment where that is enough; it does
+  not make spconv or cumm `already-supported`, and MOAT's own cumm and spconv ports
+  proceed independently of it (recorded in the cumm notes). The repository that is empty
+  is the unrelated `jiaqiwang969/spconv-rocm`. `cuda-to-rocm`'s strategy-b-torch.md has
+  the details.
 - Generated CUDA belongs to its generator. colmap vendors Caspar kernels that SymForce
   generates; a colmap deferral placed the fix in colmap's `caspar_generate.py`, which
   contains no CUDA, while the templates and runtime were already ported in MOAT's own
