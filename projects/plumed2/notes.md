@@ -1284,3 +1284,75 @@ Content checks:
 - The HIP build and its tests are documented in plugins/cudaCoord/README.md next to the nvcc build. `make USE_HIP=1 check-nogpu` is not mentioned there; see the review's option (a).
 
 Gates at head after this run: wave64 by this platform. wave32 (linux-gfx1201, linux-gfx1100) reads revalidate at `43ff1a58e`. windows is waived.
+
+## CUDA compile check 2026-11-24 (real nvcc, mi355 host, fix round moat-fix-1648 tip 43ff1a58e)
+
+Evidence only. No stage or platform record changed, nothing was pushed to the fork, and there was no GitHub write. This host has no NVIDIA GPU (no `/dev/nvidia*`, no `nvidia-smi`), so nothing that needs one was run. No AMD GPU was touched either: the builds are nvcc-only and `HIP_VISIBLE_DEVICES` was unset. These are the commands the porter section of this round listed, and the same recipe as the 2026-11-19 checks.
+
+Disk: `df -h /` before: 3.5T size, 682G avail (81% used). One build tree (1.1G at the end, holding both installs and the logs). It was deleted when done; after: 682G avail.
+
+Trees: one fresh clone of AMD-Ecosystem/plumed2 with plumed/plumed2 added as a remote. It was built twice in sequence, with `git checkout --detach <sha> && git clean -xfd` between the builds:
+- port: `moat-fix-1648` at `43ff1a58e9eb9d5c3a28d8579624e0e5a6938669` (it was the branch tip when fetched)
+- base: upstream `master` at `b930e84be7d5f63762e705dd810d0066f5a0e016` (it was the tip when fetched)
+
+`git diff b930e84be 43ff1a58e --stat`: 10 files, +178/-9 (the PR's 9 files plus rt-no-gpu/config). `git status --porcelain` was empty before and after each run.
+
+Toolchain:
+- `/usr/local/cuda/bin/nvcc`: "Cuda compilation tools, release 12.8, V12.8.93", Build cuda_12.8.r12.8/compiler.35583870_0.
+- g++ 13.3.0 (Ubuntu 24.04).
+- No MPI: configure found no mpicxx, so the kernel is serial, the same as on 2026-11-19.
+- `nvdisasm` is not installed on this host, so the SASS comparison was done on the cubins' ELF sections instead (see below).
+
+Commands, the same for both trees (`<t>` = port or base, `J` = the job's build directory):
+
+```bash
+cd $J/src
+./configure --prefix=$J/install-<t>
+make -j64 && make install
+export PATH=$J/install-<t>/bin:/usr/local/cuda/bin:$PATH
+export PLUMED_KERNEL=$J/install-<t>/lib/libplumedKernel.so
+export LD_LIBRARY_PATH=$J/install-<t>/lib
+cd plugins/cudaCoord
+./configure.sh
+make
+make -B NVCCCFLAGS="-dc -dlto --gpu-architecture=sm_80" NVCCLDFLAGS="-shared -dlto --gpu-architecture=sm_80"
+make -C ../openaccPTM/gpucheck device_check
+make check-nogpu
+plumed --load $PWD/CudaCoordination.so manual --action CUDACOORDINATION
+make -B -n; make -B -n -C ../openaccPTM/gpucheck device_check
+```
+
+| | base b930e84be | port 43ff1a58e |
+|---|---|---|
+| kernel configure / make -j64 / install | rc 0 / 0 / 0 | rc 0 / 0 / 0 |
+| plugin configure.sh | rc 0 | rc 0 |
+| plugin make, default arch (lto.sm_52) | rc 0 | rc 0 |
+| plugin make -B, sm_80 | rc 0 | rc 0 |
+| gpucheck device_check (nvcc) | rc 0 | rc 0 |
+| `make check-nogpu` | rc 0, "+ the tests that do not need a GPU passed" | rc 0, same |
+| rt-input-errors (15 cases) | all expected errors | identical `errors` file |
+| rt-no-gpu (5 cases) | 5x "stopped with an error" | identical `errors` file |
+| plumed --load ... manual | rc 0 | rc 0 |
+| wall time of the whole run | 1m31s | 1m24s |
+
+Warnings:
+- Plugin and device_check: four nvcc "Support for offline compilation for architectures prior to '<compute/sm/lto>_75' will be removed" in each tree (3 in the default-arch plugin make, 1 in device_check). The sm_80 build has none.
+- The logs of plugin configure, both plugin makes, device_check and the manual load are byte-identical between the trees once the install prefix is masked (`diff` empty).
+- Kernel: 194 `warning:` lines in each tree, the same set after sorting (mostly -Wpedantic anonymous structs and -Wsign-compare in upstream code). The kernel sources are identical in the two trees.
+
+In rt-no-gpu, each case printed "ERROR in input to action CUDACOORDINATION with label gpu : no GPU available" and exited nonzero (below 128). The port runs it as `CUDA_VISIBLE_DEVICES=-1 HIP_VISIBLE_DEVICES=-1`, upstream as `CUDA_VISIBLE_DEVICES=-1` alone, and the CUDA build gives the same result for both. Caveat: with no NVIDIA driver on this host, the CUDA runtime finds no device whatever the variables say. So this shows that our extra variable does not break the CUDA test. It does not show that `CUDA_VISIBLE_DEVICES=-1` hides a real NVIDIA GPU (upstream's own claim, run by their gpuPluginsWF CI).
+
+Equivalence:
+- `make -B -n` output (cudaCoord plus gpucheck device_check, 10 lines) is identical in both trees once the install prefix is masked: 4 nvcc calls, 3 with `-ccbin`.
+- `Makefile.conf` from configure.sh differs only in the install-prefix lines (prefix, prefix_double_check, PLUMED_INCLUDE, PLUMED_KERNEL).
+- sm_80 .so in both trees: SONAME CudaCoordination.so, FLAGS_1 NODELETE, NEEDED libplumedKernel.so plus libstdc++/libm/libgcc_s/libc/ld-linux. `cuobjdump -lelf` shows one `lto.sm_80.cubin` (default build: one `lto.sm_52.cubin`). The .so files are not byte-identical, because embedded paths differ.
+- sm_80 cubin (`cuobjdump -xelf all`):
+  - Both cubins have the same 83 sections with the same sizes; only the section order differs.
+  - All 23 `.text.*` kernel sections are byte-identical (sha256 per section), and so are every `.nv.constant0.*`, `.nv.shared.*` and `.nv.global*` section.
+  - 4 `.nv.info.<kernel>` sections differ, in one 4-byte word each (offset 16). In every case that word is a symbol-table index that resolves to the same symbol name in both cubins: renumbering from the different order, not a code change.
+  - The 4 kernels are the two `CUDAHELPERS::reducePartials<float|double,256>` and the two thrust `uninitialized_fill` kernels.
+  - The device code at the staging tip is therefore the same as upstream master's.
+
+Verdict: the CUDA path of plugins/cudaCoord compiles and links with real nvcc 12.8 at `43ff1a58e`, with the same warnings, the same `make check-nogpu` result and the same sm_80 kernels as upstream master `b930e84be`. The fix round introduces no CUDA regression.
+
+Not covered: an MPI kernel build, and anything that runs on an NVIDIA GPU (`make check`, `make check-gpu`).
