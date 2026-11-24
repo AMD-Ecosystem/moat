@@ -794,3 +794,58 @@ Options, as in round 4: (a) correct both when splitting per package at PR prepar
 - **fmt fix.** It sits after both `ament_add_gtest` calls. Every earlier link of the two targets uses the plain signature (`ament_add_gtest_executable`, `ament_target_dependencies` with no keyword, the explicit calls), so the added plain calls are legal. The causal chain is verified: `libdistortion_corrector_core.so` has no libfmt NEEDED and 5 undefined fmt symbols, and `libautoware_utils_debug.so` (`NEEDED libfmt.so.9`) is on the link line. Linking the one library keeps lld's check, where `--allow-shlib-undefined` would drop it. `find_package(fmt REQUIRED)` cannot fail where autoware_utils is installed, because autoware_utils links fmt. `fmt::fmt` adds `-DFMT_SHARED` to the two test compiles, which is harmless.
 - **Commit hygiene.** Titles 58/52/61, `[ROCm]` right (HIP-branch-only changes), AI disclosure, fenced Test Plans, no trailer, ASCII. `jargon.py --port`: clean; `prose.py`: clean. The claims about which targets use the variables match the file (`:195-196`, `:250-254`, `:267-270`; ground segmentation `:128-129`).
 - **Notes corrected before this verdict.** In Porter round 5, ground segmentation's generate failure is now cited from its own observed run, and "fix 1 only" now says ground segmentation was not reached. The fmt-presence argument now rests on autoware_utils, not Sophus. In the lesson, "every FindCUDA result variable a shared line uses" replaces "the two variables", "does not appear" replaces "works", and an article is fixed.
+
+## Validation 2026-11-24 (validator, linux-gfx942 fleet job; AMD Instinct MI300X gfx942, Device ID 0x74a1, HIP_VISIBLE_DEVICES=3 pinned by the dispatcher; fork `moat-port` at fc79489cfa73487ee4a497ce6940e609f528910f)
+
+Verdict: **completed** (wave64). This is a full run on the **documented build**, the package READMEs' command run from an empty workspace, not the earlier rounds' Release + `AUTOWARE_CUDA_USE_HIP=ON` + linker-flag recipe. Every GPU test passes, every node runs end to end, and the ground-segmentation reference comparison is exact. Three results deviate, each known and upstream, each reproduced exactly as recorded before (below). The fork clone is clean at the head.
+
+### Environment
+
+As in `## Porter round 5` (same job). TheRock ROCm 10.2.0 in `$FLEET_VENV` (HIP 7.17.26434), no system ROCm. Ubuntu noble's libfmt9/libfmt-dev 9.1.0. `autoware_cuda_utils` from AMD-Ecosystem/autoware_cuda `992d7034b5396900593126e8f19a1982ae7bc682`, cuda_blackboard `9e0fb865cd2e38dcc0db5e0e55497f40fb71f733`, both built in the job's `aw_ws`. `MAX_JOBS=48`. Every GPU step under `ulimit -c 0` and `timeout`.
+
+### Build
+
+`<job>/agent_space/readme_build.sh <fork> <job>/ws_val` (wrapped in `utils/timeit.sh ... compile`), on a new empty workspace. The three README commands in turn, `colcon build --packages-up-to <pkg> --cmake-args -DCMAKE_PREFIX_PATH=$ROCM_SDK -DCMAKE_HIP_ARCHITECTURES=gfx942`, with no build type, no `AUTOWARE_CUDA_USE_HIP`, no linker flag, and tests on (colcon's default). All rc 0 (1 min 28 s, 47 s, 29 s), each `cuda was not found, building <pkg> with HIP 7.17.26434`. The device code in all three device libraries is `amdgcn-amd-amdhsa--gfx942` only. `ldd -r` over the 23 stage-1 libraries, node executables and gtests: 0 undefined symbols, except the 4 cuda_blackboard symbols in `libcuda_ground_segmentation_lib.so` recorded since round 2. Both gtests have `NEEDED libfmt.so.9`.
+
+A second build with the same command plus `-DCMAKE_BUILD_TYPE=Release` (`<job>/ws_rel`) also rc 0. It is used only for the full gtest run below.
+
+### Tests (driver `<job>/agent_space/validate_all.sh`, wrapped in `utils/timeit.sh ... test`; logs `<job>/logs/val-*.log`)
+
+- **Preprocessor gtests** (`<job>/val/test_pre.sh`):
+  - Documented build: test_cuda_combine_cloud_handler 8/8, 20 of 20 runs. test_cuda_pointcloud_preprocessor 19/19, 20 of 20 runs, excluding `UndistortionLeavesXyzirctTimeStampsUntouched`. Run alone, that test aborts on upstream's `undistort_kernels.cu:234` assert (equal twist and cloud stamps; the build has no `NDEBUG`; deferral `autoware-undistort-test-trips-stamp-assert`, identical on CUDA).
+  - Release build, `colcon test --packages-select autoware_cuda_pointcloud_preprocessor --ctest-args -R test_cuda --repeat until-fail:20`: 20/20 and 8/8, 20 `[  PASSED  ]` blocks each, "100% tests passed".
+  - `AMD_LOG_LEVEL=3`: Device ID `0x74a1`, 1014 `hipLaunchKernel` in the 19-test run.
+- **Occupancy grid** (upstream tests disabled, #7724; built out of tree from the fork's test sources, `harness/occupancy_grid_map`, against the documented build's install), `--repeat until-fail:20`: "100% tests passed, 0 tests failed out of 6". The six: test_utils, costmap_unit_tests, fusion_policy_unit_tests, test_pointcloud_based_method (GPU node), test_synchronized_grid_map_fusion_node and test_ogm_geometry.
+  - **`test_synchronized_grid_map_fusion_node`**: known upstream test race on a CPU-only node (it publishes before discovery completes; recorded on the Radeon host, 31 failures in 40 runs there). Not changed by this port. Here it failed **0 times in 60 runs**: 20 inside the repeat run above, and 40 alone (`ctest -R test_synchronized_grid_map_fusion_node`, `ROS_DOMAIN_ID=64`, nothing else running).
+- **Ground-segmentation reference comparison** (`harness/ground_segmentation`, built against the documented build's `libcuda_ground_segmentation_lib.so`):
+  - `./gs_fixed 20 <seed>` for seeds 7, 11 and 23: 60 of 60 runs with 0 label mismatches, 0 missing, and identical to run 0. Label hashes `04516cba11e18f95`, `7cd4bb48f4483e7f` and `957f6d786c501316`, identical to every earlier round and to wave32.
+  - Naive wave64 variant (`gs_naive 3 7`): 66,910 mismatches, all in the 180 odd sectors, hash `53c7d5f9646c3315`, unchanged.
+  - Scenes regenerated with `gs_fixed dump <seed>` are byte-identical to the earlier rounds' copies.
+- **Each node end to end** (plain `PointCloud2` in and out; probes in `<job>/agent_space/`; the nodes ran with asserts enabled, and none fired):
+  - `cuda_voxel_grid_downsample_filter_node`:
+    - 32x16x8 grid: 4096 of 4096 voxels, max centroid error 1.74e-6: PASS.
+    - 40x25x8 grid: 27,548 outputs for 8,000 voxels (probe rc 1). This is the upstream radix `end_bit` bug (`cuda-voxel-downsample-radix-end-bit`), the exact count of every earlier wave64 round.
+  - `cuda_pointcloud_preprocessor_node` vs the numpy kernel model:
+    - vx 0: 54,839 of 57,600 (2,111 cropped, 806 ring outliers).
+    - vx 10 m/s: 54,837.
+    - Max error 3.81e-6 m in both: PASS.
+  - `cuda_concatenate_and_time_sync_node` vs upstream's CPU node:
+    - Stationary: max GPU-vs-CPU 0.
+    - vx 5 m/s with `lidar_r` 40 ms late: both shift `lidar_r` by +0.200 m; max difference 3.81e-6 m.
+    - PASS.
+  - `cuda_polar_voxel_noise_filter_node` vs the CPU node: identical sets on seeds 3, 11 and 29 (66,373 / 66,442 / 66,259): PASS.
+  - `cuda_polar_voxel_outlier_filter_node` vs the CPU node:
+    - Seeds 3 and 11: identical (47,064 / 46,925).
+    - Seed 29 (probe rc 1): 47,007 on both with the same one-point swap as every earlier round (only-GPU point at r/0.5 = 119.8436, only-CPU point at az/res = 336.3876). This is the float-versus-double voxel-edge rounding traced in rounds 1-4: upstream design, the same on CUDA.
+  - `cuda_scan_ground_segmentation_filter_node` (shipped parameter file), seeds 7, 11 and 23: ground and non-ground sets equal the CPU reference exactly, no duplicates: PASS.
+  - Component container (preprocessor and ground segmentation, the working load order, `container_prefirst.launch.py`): ground segmentation passes twice and the preprocessor once. The other load order is the registered upstream issue `autoware-gs-component-preloads-preprocessor-components`.
+  - Occupancy grid, projective map (`agent_space/ogm_proj/test_ogm_proj_v.py`): 25 `map_projective::*` kernel launches (5 kernels x 5 frames). The cell assertions pass (wall 99, behind and side 50, free to 5.5 m): OK.
+  - Occupancy grid, pointcloud-based node: test_pointcloud_based_method and test_ogm_geometry above.
+- **Non-GPU tests**, `colcon test` of the three packages excluding the gtests: copyright, cpplint and lint_cmake pass. The only errors are the two cppcheck results ("Could not find 'cppcheck' executable", the environment gap of every round). Ground segmentation registers no tests.
+
+### Gates
+
+- **CUDA compile: not run. This host has no nvcc** (no `/opt/conda/envs`, no `/usr/local/cuda`). The last real nvcc check is at 9574fe1. Since then the CUDA-visible change is `bb4cd9a` (one copy-kind argument). `41440f4` and this round's three commits are HIP-branch-only CMake, and the rest are README, comment and HIP-header edits. The check is owed at fc79489 on the mi355 host before this is brought to Jeff.
+- Documentation: every package README's ROCm command builds from an empty workspace with tests enabled (above). Jeff's README build-type question is in Porter round 5.
+- `jargon.py --port autoware_universe`: clean. Fork clone clean at fc79489 (`git status --porcelain` empty).
+- linux-gfx1100 (wave32) reads `port-ready` after the head move and needs a full run of the documented build on a wave32 host.
