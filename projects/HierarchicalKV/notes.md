@@ -772,3 +772,52 @@ A clean clone at 4033ed6 without googletest, bazelisk 1.25.0 with `BAZELISK_HOME
 - Host hygiene: my first bazelisk call, made before I set `BAZELISK_HOME`, downloaded Bazel 9.3.3 into the default bazelisk cache in the shared home directory (`~/.cache/bazelisk`). Nothing used it, and it was left in place because that cache may hold other jobs' downloads.
 
 Logs (container-local): `agent_space/val4/` (`L<lane>-<n>.log`, `lane1.out`, `lane2.out`, `suite/`, `bench/`, `bazel.log`, `bazel-bench.log`).
+
+## CUDA compile check at 4033ed6 2026-11-24 (mi355 fleet host, real nvcc, no GPU used)
+
+Requested by Jeff Daily (fleet job). This is a CUDA no-regression compile of fork commit `4033ed6` ("[ROCm] Record memory pool events on a pool-owned stream") against the upstream base `451f240`, which is the merge-base with the fork's `master`. It reuses the method of "CUDA compile check 2026-11-24" (at 592f800) and adds a preprocessor and host-object check of every `memory_pool.cuh` user. No GPU was used or visible to the job. Nothing changed in the fork and nothing was pushed (`moat-port` is still `4033ed6` per `ls-remote`). The stage and the work lock were not touched. **Verdict: no CUDA regression.** All targets build at both commits, with no new errors or warnings. The sm_80 SASS of every binary is identical to the base. The delta changes the CUDA build only through the `__LINE__` values of four `CUDA_CHECK`s in host code, which the linux-gfx942 review predicted.
+
+Toolchain as before: CUDA 12.8 (`nvcc` V12.8.93, cuobjdump 12.8), gcc 13.3.0, CMake 3.31.6, Ninja 1.13.0. `NVDISASM_PATH` pointed at the image venv's triton wheel (`/opt/python-3.11-venv/.../triton/backends/nvidia/bin`, nvdisasm 13.1.80), because the toolkit has no `nvdisasm`. One clone with `--recurse-submodules` (googletest `0e0d9fe`) and detached worktrees at `451f240`, `592f800` and `4033ed6`, all under the job directory. `git diff --stat 592f800 4033ed6`: `include/merlin/memory_pool.cuh` only, +21 lines (four `#ifdef MERLIN_HIP` blocks).
+
+### Preprocessed output of every TU (592f800 vs 4033ed6)
+
+nvcc's own two preprocessing passes were run for each of the 44 CMake TUs. The commands were taken from `nvcc --dryrun --keep` on each TU's exact ninja command: the device pass (`gcc -D__CUDA_ARCH__=800 ... -E`, `.cpp1.ii`) and the host pass (`.cpp4.ii`). Before comparing, line markers and blank lines were dropped and the worktree path was replaced by a constant.
+- 41 TUs reach `memory_pool.cuh`: every TU that includes `merlin_hashtable.cuh`, plus `memory_pool_test`. In each of them, both the device and the host output differ in exactly 4 lines, the same 4 lines in all 82 files. After integer literals are masked the output is identical. The 4 lines are the `__LINE__` argument of `CUDA_CHECK` (`cuda_check_(..., __FILE__, __LINE__)`, `debug.hpp:48-51`) below the first inserted block: `cudaEventDestroy` 357->362, `state` in `collect_pending_unsafe` 470->479, `cudaEventRecord(ready_event, stream)` 569->578, `cudaDeviceSynchronize` 574->592. No `event_stream_`, `cudaStreamCreateWithFlags`, `cudaStreamWaitEvent` or new token reaches either CUDA pass.
+- The other 3 TUs (`group_lock_test`, `hash_sensitivity_benchmark`, `tbe_like_cache_baseline`) do not include the pool, and their output is byte-identical.
+
+### Compiled output of memory_pool.cuh users (host side, 592f800 vs 4033ed6)
+
+To keep `__FILE__` equal, `memory_pool_test`, `dynamic_max_capacity_test` and `reserved_keys_test` were compiled at each commit through one symlinked path (their exact ninja commands). Every byte difference between the objects is one of the following:
+- `objdump -d` of the `MemoryPool` member functions (`~MemoryPool`, `put_raw`, the `collect_pending_unsafe` lambda): only `mov $imm,%edx` immediates, 0x165->0x16a, 0x1d6->0x1df, 0x239->0x242 and 0x23e->0x250. These are the four line numbers above. `reserved_keys_test` instantiates none of them, so its disassembly is identical.
+- `.nv_fatbin` and `.rodata` (208, 360 and 315 bytes): these are equal once the 8-hex-digit TU hash in the `_INTERNAL_<hash>_..._cc_cu_<pathhash>` names is swapped (for example `9c53edd7` -> `b680ac92` for memory_pool_test). cudafe derives that hash from the TU content, so the `__LINE__` change moves it. The same hash appears in section and symbol names and in the debug info, which also carries the shifted line table.
+
+### CMake (same configure as the 592f800 check)
+
+```
+cmake -S . -B build-cuda -G Ninja -DCMAKE_BUILD_TYPE=Release -Dsm=80 -DHKV_BUILD_REPRO_BENCHMARKS=ON -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.8/bin/nvcc
+cmake --build build-cuda -j 25 -- -k 0
+```
+- Base `451f240`: 94/94 steps, rc 0, 280 s. `4033ed6`: 96/96, rc 0, 265 s. `592f800` (rebuilt for the host comparison): 96/96, rc 0, 281 s.
+- Targets: the base has 43 executables, and 4033ed6 has the same 43 plus `repeated_key_test` (`ninja -t targets`). Nothing was lost or renamed.
+- Errors: none. Default-flag warnings: 34 lines at each commit, and base and 4033ed6 have the same multiset once line numbers are dropped (the same five `#69-D`, three `#177-D` and one `-Wstringop-overflow` as before). 592f800 and 4033ed6 match exactly, line numbers included. None is in `memory_pool.cuh`, any `update*.cuh`, `kernel_utils.cuh`, `hip_compat.cuh` or `repeated_key_test.cc.cu`.
+- Stricter warnings: each of the 20 test TUs was recompiled with `-Xcompiler=-Wall,-Wextra` at 592f800 and at 4033ed6. All 40 compiles returned rc 0, with 1085 warning lines at each commit, and each TU's warnings are identical to the line. The only `memory_pool.cuh` warnings are the pre-existing upstream `-Wunused-parameter 'stream'` at lines 77, 84, 99 and 106, above the change.
+
+### Device code (cuobjdump SASS, sm_80)
+
+- Full `cuobjdump -sass` text (encodings and control words included, only path-derived symbol hashes normalized) for all 43 common executables, base against 4033ed6: **43/43 identical**, 58.1M lines, 22142 kernel bodies, no kernel added or removed. This covers the kernels the port changed (the `pipeline_update*`, TLPv1 `upsert`/`find_or_insert`/`upsert_and_evict` and `update_kernel_with_io` families listed in the 592f800 check). The result is the same as at 592f800 and agrees with the preprocessor result: the delta has no device code.
+- `repeated_key_test`, 4033ed6 against 592f800: identical, 334 kernels, 783631 lines. The 592f800 check matched each of those 334 kernels to an instantiation that already exists in a base binary, so this still holds.
+- No difference to explain.
+
+### Bazel CUDA build
+
+Same setup as the 592f800 check, rebuilt inside this job directory: bazelisk 1.25.0 fetched Bazel 5.0.0, with `BAZELISK_HOME` and `--output_user_root` under the job directory. The CUPTI and cuDNN wheels were installed with `pip install --no-deps --target <job>/bzdeps "nvidia-cuda-cupti-cu12==12.8.*" "nvidia-cudnn-cu12==9.*"`. Trees were checked out without googletest. The command is the one recorded at 592f800, with `--jobs=25`.
+- Base `451f240`: fails with the known upstream BUILD bug, `include/merlin_hashtable.cuh:38:10: fatal error: merlin/multi_vector.hpp: No such file or directory`, which fork commit `ffdd97b` fixes.
+- Base with only `ffdd97b` applied (local, uncommitted scratch tree): 7 targets, "Build completed successfully, 1822 total actions", rc 0.
+- `4033ed6`: 7 targets, 1822 actions, rc 0, no compiler warnings.
+- SASS of `//benchmark:benchmark_util`, `libbenchmark_lib.so`, `libbenchmark_lib.a` and `.pic.a`: identical between base+ffdd97b and 4033ed6, 379 kernels each. For the archives the only difference is cuobjdump's `member <path>` header line.
+
+### Nothing to fix
+
+There is no CUDA break, so no fix is proposed. On CUDA, 4033ed6 is 592f800 with four host-side `__LINE__` constants moved.
+
+Logs and scripts (container-local, job directory `cc/`): `logs/` (`*-build.log`, `*-bazel.log`, `ppcmp.txt`, `sass-base-p4033.txt`), `ppn/*.diff`, `host/`, `scripts/` (`pp.sh`, `ppcmp.sh`, `rawcmp.sh`, `hostsame.sh`, `strict.sh`, `bazel_cuda.sh`).
