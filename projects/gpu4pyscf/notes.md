@@ -6069,3 +6069,44 @@ Checklist line for the issue's Tracking section, unchanged from (h) (draft; noth
 ```
 
 **Open for jeff:** (1) the sentence "Because the wrong results come with no error, I think a contained workaround is worth carrying until then." is new, written in his voice as the answer to sunqm's #1055 point; drop it if he prefers the body without it. (2) The "130 AOs" in the third bullet is the (h) measurement at 0647712/871a54a7 (code path unchanged since); this job's Gamma check used 117 AOs (off by 13.0 through the nao*nao product). (3) The MI300X placeholder.
+
+## MI300X run of `pr-1054-gfx12-complex-gemm-2`, 2026-11-24 (fleet job, linux-gfx942 MI300X, upstream master c9eea22a vs branch a94d9e0f; not a pipeline round)
+
+Requested by jeff to fill the MI300X placeholder in the draft above. Evidence only: no stage, platform record or lock changed; nothing pushed to the fork; nothing posted on GitHub.
+
+### Environment
+AMD Instinct MI300X (`gcnArchName` gfx942:sramecc+:xnack-), `HIP_VISIBLE_DEVICES=7` from the dispatcher, every GPU command under `ulimit -c 0`. TheRock ROCm SDK 10.1.0 pip, `LD_LIBRARY_PATH=$(rocm-sdk path --root)/lib`. Job venv: numpy 2.2.6, scipy 1.17.1, cupy-rocm-7-0 14.2.0, pyscf 2.14.0, pyscf-dispersion 1.7.0, geometric 1.1.1, basis-set-exchange 0.12, MCFun 0.2.6, h5py 3.16.0, pytest 9.2.0, pytest-timeout 2.4.0, cmake 3.31.6 (the same versions as the R9700 job). Fresh clone of AMD-Ecosystem/gpu4pyscf, branch `pr-1054-gfx12-complex-gemm-2` checked out at **a94d9e0f** (parent c9eea22a; `git ls-remote` upstream master still c9eea22a), master in a worktree at **c9eea22a**. Scratch scripts in `agent_space/h2/` (`runfile.sh`, `runall.sh`, `count.py`, `scanrb.py`), not durable.
+
+### Build, both trees
+`GPU4PYSCF_BACKEND=hip HIP_ARCHITECTURES=gfx942 CMAKE_CONFIGURE_ARGS='-DCMAKE_HIP_FLAGS=-mllvm=-disable-machine-licm' CMAKE_BUILD_ARGS='--parallel 18 --verbose' python setup.py build_py`, the two trees at once, in `utils/timeit.sh gpu4pyscf compile`: exit 0 in 84 s (master) and 87 s (branch), 11 libraries each, `--offload-arch=gfx942` only, `-mllvm=-disable-machine-licm` on 96/96 HIP compile lines and 11/11 `--hip-link` lines in each verbose log. (`utils/timeit.sh` runs from the MOAT root, so the command is `bash -c "cd <tree> && python setup.py build_py"`.)
+
+### The change is inert here
+- `gpu4pyscf.BACKEND` is `hip` and `gpu4pyscf.pbc.df.ft_ao.COMPLEX_GEMM_MAX_N` is **None** on this GPU (branch tree).
+- The defect is absent: CuPy complex128 `(6, 6)^T @ (6, n)` with n = 2**21 + 4096 against NumPy, 0 wrong columns, max error 1.8e-15 past column 2**21.
+- `ROCBLAS_LAYER=2` (bench log, `scanrb.py`) over the six targets in test_pbc_aft.py, test_pbc_df_derivatives.py, test_pbc_scf_jk.py and test_pbc_grad_krhf.py (the `-k` also picks up the two `_long_range` siblings, 8 tests): **34 complex GEMM calls with n > 2**21 on master and the same 34 on the branch** (all `gemm_strided_batched_ex` f64_c: 4 x (6, 3515625, 6) + 1 x (6, 5334336, 6) in test_pbc_aft, 16 x (6, 3272481, 6) in test_pbc_df_derivatives, 6 x (3, 4194304, 3) in test_pbc_scf_jk, 7 x (2, 6892100, 2) in test_pbc_grad_krhf), 8531 rocBLAS calls in total on each; 8 passed on each tree. So with #1056 merged the tests do reach the changed products on this GPU, and the branch runs them unsplit through the `else:` lines. The R9700 job counted 79 on master, 52 of them in test_pbc_grad_krhf against 7 here; the other three files match call for call. Not investigated (the R9700 `sixlog.sh` selection is not recorded; the SCF iteration count may differ between GPUs); it does not bear on this result, because both trees here make the same calls.
+
+### Tests
+All 62 pbc test files, one pytest process per file, `-p no:xdist -m 'not slow and not benchmark and not special' -k 'not _high_cost'`, `OMP_NUM_THREADS=2`, `timeout -k 30 1800` per file, four files at a time per tree, both trees at once (8 processes on the 192 GB GPU), `utils/timeit.sh gpu4pyscf test`, wall 615 s. No timeout, no out-of-memory, no hang, nothing rerun. Exit codes per tree: 47 x 0, 14 x 1, 1 x 5 (test_multigrid_v2.py, its test skipped, as on the R9700). Counts from junit (passed/failed/skipped/errors):
+
+| directory | master c9eea22a | branch a94d9e0f |
+|---|---|---|
+| pbc/df (7 files) | 141/1/6/0 | 141/1/6/0 |
+| pbc/grad (18 files) | 186/7/3/0 | 186/7/3/0 |
+| pbc/scf (11 files) | 155/15/2/0 | 155/15/2/0 |
+| the other 26 pbc files (dft, gto, gw, hessian, lib, properties, tools, x2c) | 243/7/48/0 | 243/7/48/0 |
+| **total (814 tests)** | **725/30/59/0** | **725/30/59/0** |
+
+**Per test: 0 differences** between master and the branch (814 test cases keyed by file, class and name; `count.py`). The six gfx12 targets pass on both trees. These counts equal, directory by directory, the R9700 branch column; the per-test lists were not compared across GPUs.
+
+Against the old MI300X run (402/315/59/38 at 871a54a7): the `ft_ao_scheme` assert failures and setup errors are gone (#1056 and upstream's other commits since), 0 errors now.
+
+The 30 failures, the same on both trees (none in a file the change touches except test_pbc_ft_ao.py's test_ft_ao_strain_deriv, the 3e-8 bound miss recorded since 2026-11-19, which does not use the changed products): pbc/df test_pbc_ft_ao `test_ft_ao_strain_deriv`; pbc/dft test_multigrid_v3 `test_scf_2d_against_fft`, test_pbc_gks `test_KGKS`, `test_collinear_gks_gga`, `test_collinear_kgks_gga`, `test_collinear_kgks_lda`, `test_veff_vs_cpu`; pbc/grad test_pbc_grad_krks `test_df_rsh_grad`, `test_sr_rsh_grad`, test_pbc_grad_kuks `test_df_rsh_grad`, test_pbc_grad_rks `test_df_sr_rsh_grad`, test_pbc_grad_slabdipole `test_automatic_cut_and_scanner`, `test_scf_finite_difference`, test_pbc_grad_slabgate `test_fractional_scf_finite_difference`; pbc/scf test_pbc_gdm `test_pbc_gdm_krks_uniform_grid`, `test_pbc_gdm_kuhf`, test_pbc_scf_ghf `test_gamma_hf_conversion`, `test_gamma_scf_properties[gdf]`, `test_kpoint_hf_conversion`, `test_kpoint_scf_properties[gdf]`, test_pbc_scf_hf `test_get_rho_krhf_built`, `test_get_rho_rhf_built`, test_pbc_scf_uhf `test_get_rho_kuhf_built`, `test_get_rho_uhf_built`, test_pbc_soscf `test_nr_krhf`, `test_nr_krks_lda`, `test_nr_krks_rsh`, `test_nr_kuhf`, `test_nr_kuks_lda`; pbc/x2c test_pbc_x2c `test_to_cpu`. Not classified in this job (not needed for an identical-results comparison).
+
+### Replacement for the MI300X placeholder in the draft body
+`prose.py` and `jargon.py` on the paragraph: clean; ASCII only.
+
+```
+Also run on an AMD Instinct MI300X (gfx942) with the same ROCm, packages, build (`HIP_ARCHITECTURES=gfx942`) and selection. That GPU does not have the defect (a complex GEMM with n just past 2**21 matches NumPy in every column), COMPLEX_GEMM_MAX_N is None there, and nothing changes: the 62 pbc test files give 725 passed, 30 failed, 59 skipped on master and on this branch, with the same result for every test. The six tests named above pass on both trees, through the existing lines; rocBLAS logs the same 34 complex GEMM calls with n > 2**21 from them on both.
+```
+
+**For jeff:** the paragraph replaces the `[PLACEHOLDER, MI300X, ...]` block; the V100 placeholder is untouched. Nothing else in the draft changes.
