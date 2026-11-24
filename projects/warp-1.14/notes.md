@@ -8637,3 +8637,228 @@ Notes on the full suite:
 - `scripts/sum3.py`: min/median, ratios of medians, per-round ratios and spread.
 - `scripts/wnval.py` and `scripts/wncmp.py`: the value probe and the cross-tree bitwise comparison.
 - Logs and JSON are in `ws/logs/` and `ws/res/`. Trees `ws/fast`, `ws/on`, `ws/g` (never pushed).
+## Evidence session (candidate G, gfx90a) (2026-11-24, linux-gfx90a MI250X, evidence only)
+
+Coordinator request (jeff away, no ruling). Evidence only: nothing committed to the fork, no `set-state`, no `advance-head`, no `port-lock`, no test edited. This job still holds the porting lock from session 33 and keeps it; the stage stays `porting`, gfx90a `validation-failed` at `4e0d02ab`. `HIP_VISIBLE_DEVICES=0` (dispatcher pin) only, `ulimit -c 0`, no process stopped, GPU with no other process (amd-smi) before every timing run.
+
+**Verdict: G does NOT meet the bar on gfx90a, on one point.** The consistency counts are all 0 with default options and `nofuse`, and the full default suite passes (7564 OK). But **the winding-number query under G is 4.0% (lbvh) and 4.6% (sah) slower than plain ON, beyond noise in every round** (G 738.2-740.6 ms against ON 710.4-713.6 ms lbvh; 293.1-294.6 against 281.0-281.9 sah; noise floor about 0.2%). The faster of FAST and ON on this arch is ON, so the bar ("no slower than the faster of FAST and ON beyond noise") is missed. G is still 4.5x (lbvh) and 4.8x (sah) faster than FAST (`4e0d02ab`). On gfx90a, plain `on` already spills only 72 VGPRs, and the contracted region adds a few (76) rather than removing any, so on this arch the region costs a little where on gfx950 it gains a lot: the effect is arch-dependent, as the gfx950 addendum feared.
+
+### Trees (all at `4e0d02ab`, built for gfx90a with `python build_lib.py --rocm-path "$(rocm-sdk path --root)" --hip-arch gfx90a -j 64 --no-rocm-rpath`, "Warp build succeeded")
+
+- **FAST**: session 33's `before` tree (a copy of the package from the fork clone at `4e0d02ab` and its `warp/bin`), unchanged; `strings warp.so` shows `-ffp-contract=fast-honor-pragmas`, `-ffp-contract=off`.
+- **ON**: worktree at `4e0d02ab` with only the option string changed (the scripts file's one-line `warp.cu` change); `strings`: `-ffp-contract=on`, `-ffp-contract=off`.
+- **G**: worktree at `4e0d02ab` with the gfx950 addendum's diff, extracted from these notes and applied with `git apply` (**`git apply --check` clean, both files: `solid_angle.h` +6, `warp.cu` +3/-1**); `strings`: `-ffp-contract=on`, `-ffp-contract=off`, `-DWP_FUSE_FP`.
+- Every run: fresh kernel cache, and `warp.__file__` asserted to lie inside the selected tree before the script runs (runner `ra.py`, below; the asserted path is printed in each log).
+
+### 1. Consistency
+
+| check | G default | G `nofuse` | ON default | ON `nofuse` | FAST default (reference) |
+|---|---|---|---|---|---|
+| `user2.py` box_d2 / det2 / dot (of 4,194,304 each) | 0 / 0 / 0 | 0 / 0 / 0 | 0 / 0 / 0 | 0 / 0 / 0 | 0 / 0 / **1,399,489** (session 33) |
+| `sn.py` sign_normal, grid cube, 9 configs (of 2,094,912) | 0 | 0 | 0 | 0 | **158** (22, 15, 22, 22, 13, 22, 18, 9, 15) |
+| `sn.py` intersect_tri_tri twice (of 232,768; 124,347 hits) | 0 | 0 | 0 | 0 | 0 |
+| `twice.py` (24 rows, both meshes, 9 BVH configs, 5 ray directions; 88,451,840 checks) | 0 in every row | 0 | 0 | 0 | sign_normal 30 + 30 (spiky), 134 + 134 (grid cube), helpers 1 (session 33) |
+| `hel.py` k_helpers, k_helpers2, k_tt, k_ee on spiky and grid cube | 0 (all 8) | 0 | 0 | 0 | k_tt 1 on spiky (session 33) |
+
+`sn.py` is a **reconstruction**: the coordinator's text is not in these notes or on this host (the "as given in the request" sections do not include it), so it was rebuilt from its description (below). It reproduces FAST's sign_normal inconsistency (158), so it discriminates; its triangle pairs are not the coordinator's (124,347 hits against their 55,961), so its intersect_tri_tri count is not the same probe.
+
+**`fuse_fp=False` under G still means no fusion.** Value probe `wnprobe.py` (below): raw winding numbers through `func_native` (`wp::mesh_query_winding_number`, accuracy 2.0) and the `sign_winding_number` query's sign/face/u/v at twice.py's 232,768 points, on spiky, the grid cube and `perf.py`'s 2,000,000-triangle torus, lbvh and sah (1,396,608 values per tree):
+
+| comparison | winding-number values differ (bitwise) | max abs diff | query results differ |
+|---|---|---|---|
+| **G `nofuse` vs ON `nofuse`** | **0** | 0 | **0** |
+| G `nofuse` vs FAST `nofuse` | 0 | 0 | 0 |
+| G default vs ON default | 205,281 | 2.4e-7 | 0 |
+| G default vs FAST default | 458,988 | 3.3e-6 | 266,027 |
+| ON default vs ON `nofuse` | 855,056 | 4.0e-5 | 424,945 |
+
+So the `WP_FUSE_FP` guard works on gfx90a: with `nofuse` all three trees produce identical bits; with default options G differs from ON only in the last bits of the solid-angle sum (the region contracts it), never in a query result.
+
+### 2. perf2.py, FAST / ON / G, 5 interleaved rounds (ms per launch, median and range over rounds)
+
+| kernel | FAST ms median (range) | ON ms median (range) | G ms median (range) | G/FAST | G/ON | ON/FAST | per-round G/ON |
+|---|---|---|---|---|---|---|---|
+| lbvh/sign_winding_number | 3324 (3322-3326) | 711.7 (710.4-713.6) | 740.3 (738.2-740.6) | 0.223 | 1.040 | 0.214 | 1.038 / 1.042 / 1.036 / 1.037 / 1.041 |
+| lbvh/sign_normal | 276.4 (276-277.4) | 274.6 (274-275.9) | 274.5 (274.3-276.3) | 0.993 | 1.000 | 0.994 | 1.008 / 1.001 / 0.997 / 1.002 / 0.995 |
+| lbvh/ray | 110.5 (110.5-110.6) | 110.3 (110.3-110.4) | 110.2 (110.1-110.3) | 0.997 | 0.999 | 0.998 | 0.999 / 0.998 / 1.000 / 0.999 / 1.000 |
+| sah/sign_winding_number | 1420 (1419-1421) | 281.4 (281-281.9) | 294.4 (293.1-294.6) | 0.207 | 1.046 | 0.198 | 1.045 / 1.046 / 1.045 / 1.048 / 1.041 |
+| sah/sign_normal | 93.25 (92.88-94.32) | 92.8 (92.68-92.86) | 93.21 (92.61-96.25) | 1.000 | 1.004 | 0.995 | 1.037 / 0.999 / 1.014 / 0.999 / 1.004 |
+| sah/ray | 73.69 (73.57-73.71) | 73.55 (73.51-73.67) | 73.49 (73.4-73.54) | 0.997 | 0.999 | 0.998 | 0.998 / 0.999 / 0.998 / 1.000 / 0.998 |
+| tri_tri | 0.7405 (0.7332-0.8019) | 0.7452 (0.738-0.7456) | 0.7453 (0.7444-0.916) | 1.007 | 1.000 | 1.006 | 1.241 / 0.999 / 1.082 / 0.999 / 1.000 |
+| elementwise | 0.02225 (0.02224-0.02228) | 0.02229 (0.02226-0.02231) | 0.02229 (0.02227-0.02232) | 1.002 | 1.000 | 1.002 | 1.001 / 1.000 / 0.999 / 1.000 / 1.002 |
+
+- Winding number: G/ON 1.036 to 1.042 per round (lbvh) and 1.041 to 1.048 (sah); ranges do not overlap. Noise floor: elementwise 1.000 to 1.003, ray 0.996 to 0.999 across trees. G/FAST 0.22 (lbvh) and 0.21 (sah).
+- sign_normal: equal across trees within noise (0.99 to 1.01); unlike gfx950, `on` does not slow it here.
+- tri_tri: per-round ratios swing because single rounds jump (FAST 0.733 to 0.80 ms, G one round at 0.916 ms; seen in session 33 too); the medians are equal (0.741 / 0.745 / 0.745).
+- `k_wn_*_cuda_kernel_forward` (`llvm-readelf --notes` on the round-1 code objects): FAST `.vgpr_spill_count` **383**, `.private_segment_fixed_size` 864, `.sgpr_spill_count` 76; ON **72**, 560, 73; G **76**, 576, 73. `.vgpr_count` 128 in all three.
+
+### 3. Example benchmarks, FAST vs G (`exbench.py`, default module options, two independent sets of 5 interleaved rounds; us per call)
+
+First set:
+
+rounds: 5 / 5
+| case | FAST us (min / median) | G us (min / median) | G/FAST (min) | G/FAST (median) | per-round G/FAST |
+|---|---|---|---|---|---|
+| floor | 172.5 / 172.8 | 172.7 / 172.8 | 1.001 | 1.000 | 1.000 / 1.002 / 1.000 / 1.002 / 1.000 |
+| sph | 23349.2 / 23377.3 | 23328.0 / 23357.4 | 0.999 | 0.999 | 0.999 / 1.004 / 0.999 / 1.000 / 1.000 |
+| dem | 105478.4 / 105570.4 | 105086.3 / 105128.2 | 0.996 | 0.996 | 0.996 / 0.995 / 0.996 / 0.996 / 0.996 |
+| raycast | 2165.8 / 2166.5 | 2162.8 / 2164.1 | 0.999 | 0.999 | 0.998 / 1.001 / 0.999 / 0.999 / 0.999 |
+| fluid | 418.5 / 421.6 | 417.8 / 419.5 | 0.998 | 0.995 | 1.000 / 1.002 / 0.994 / 0.993 / 0.994 |
+| wave | 890.3 / 893.3 | 876.7 / 905.2 | 0.985 | 1.013 | 1.015 / 0.990 / 0.974 / 1.015 / 1.014 |
+| marching_cubes | 713.1 / 718.5 | 714.1 / 719.1 | 1.001 | 1.001 | 0.993 / 1.059 / 1.006 / 1.010 / 1.001 |
+| mesh_intersect | 642.7 / 643.0 | 658.9 / 659.2 | 1.025 | 1.025 | 1.025 / 1.027 / 1.025 / 1.023 / 1.026 |
+| navier_stokes | 666.8 / 679.7 | 650.7 / 689.6 | 0.976 | 1.015 | 1.034 / 1.006 / 0.957 / 0.986 / 1.028 |
+| tile_nbody | 2540.6 / 2541.1 | 2622.1 / 2622.6 | 1.032 | 1.032 | 1.032 / 1.032 / 1.032 / 1.032 / 1.032 |
+| tile_mcgp | 28233.7 / 28245.0 | 28293.8 / 28299.4 | 1.002 | 1.002 | 1.002 / 1.002 / 1.002 / 1.001 / 1.002 |
+| cloth | 2365.2 / 2368.5 | 2364.4 / 2369.1 | 1.000 | 1.000 | 0.997 / 1.014 / 1.000 / 1.000 / 0.999 |
+
+Second set:
+
+rounds: 5 / 5
+| case | FAST us (min / median) | G us (min / median) | G/FAST (min) | G/FAST (median) | per-round G/FAST |
+|---|---|---|---|---|---|
+| floor | 172.6 / 172.7 | 172.8 / 172.8 | 1.001 | 1.001 | 1.001 / 1.002 / 1.002 / 1.000 / 1.001 |
+| sph | 23371.7 / 23396.5 | 23345.0 / 23364.9 | 0.999 | 0.999 | 1.000 / 1.003 / 0.998 / 0.993 / 0.998 |
+| dem | 105531.8 / 105556.6 | 105131.9 / 105148.9 | 0.996 | 0.996 | 0.997 / 0.997 / 0.995 / 0.996 / 0.996 |
+| raycast | 2165.9 / 2166.4 | 2163.6 / 2164.5 | 0.999 | 0.999 | 0.999 / 1.001 / 0.999 / 0.997 / 0.999 |
+| fluid | 419.0 / 420.7 | 420.2 / 421.6 | 1.003 | 1.002 | 1.007 / 1.012 / 0.999 / 0.998 / 0.999 |
+| wave | 882.5 / 897.1 | 885.0 / 893.2 | 1.003 | 0.996 | 1.009 / 1.019 / 0.999 / 0.993 / 1.011 |
+| marching_cubes | 708.3 / 720.9 | 711.9 / 721.0 | 1.005 | 1.000 | 1.005 / 1.031 / 1.012 / 0.966 / 0.999 |
+| mesh_intersect | 643.1 / 643.3 | 658.8 / 659.2 | 1.024 | 1.025 | 1.025 / 1.026 / 1.024 / 1.021 / 1.025 |
+| navier_stokes | 667.7 / 669.4 | 666.4 / 685.6 | 0.998 | 1.024 | 0.995 / 1.031 / 1.002 / 1.001 / 1.034 |
+| tile_nbody | 2540.8 / 2541.1 | 2621.8 / 2621.9 | 1.032 | 1.032 | 1.032 / 1.032 / 1.032 / 1.032 / 1.032 |
+| tile_mcgp | 28234.1 / 28235.6 | 28286.5 / 28292.8 | 1.002 | 1.002 | 1.002 / 1.002 / 1.002 / 1.002 / 1.001 |
+| cloth | 2367.2 / 2372.4 | 2366.0 / 2367.9 | 1.000 | 0.998 | 1.001 / 1.011 / 1.000 / 0.989 / 0.985 |
+
+- **Slower under G beyond noise, every round of both sets: `example_tile_nbody` +3.2% and `example_mesh_intersect` +2.1% to +2.7%**, the same two cases and sizes as plain `on` in session 33's addendum (G does not touch either; the gfx950 addendum explains tile_nbody). `example_tile_mcgp` +0.1% to +0.2% in every round, against a floor of 1.000 to 1.002: at the edge of noise.
+- Faster: `example_dem` 0.4% (0.995 to 0.997 every round). Everything else within noise; wave, marching cubes and Navier-Stokes swing in both directions within a set.
+
+### 4. Tests on G (`t.sh`, fresh cache each)
+
+| file | result |
+|---|---|
+| test_mesh.py | 16 OK |
+| test_mesh_query_aabb.py | 15 OK |
+| test_mesh_query_point.py | **9 OK**, 0 `expect_eq` lines (fails at `4e0d02ab`) |
+| test_mesh_query_ray.py | 9 OK |
+| test_bvh.py | 13 OK |
+| test_intersect.py | 2 OK |
+| test_closest_point_edge_edge.py | 28 OK |
+
+**Full default suite on G** (`python -m warp.tests -s autodetect`, fresh cache, from outside the tree): **Ran 7564 tests in 1291.8 s, OK (skipped=83)**. No failure, no `Warp CUDA error` line; `test_async` passed in the run (no pool-off copy failure on this arch). 7564 = session 33's ON-tree count; 46 torch interop tests do not register because this job venv has no torch. Skips as in the session 33 addendum (shared-memory limit 5, "No suitable devices" 21, conditional graph nodes 16, MathDx 9, and so on, plus 2 `example_torch` cases).
+
+### For jeff
+
+On gfx90a G is consistent, passes the suite, and is 4.5x faster than `4e0d02ab` on the winding-number query, but it is 4% slower than plain `on` there, so it fails the coordinator's bar on this arch by that margin. Plain `on` and G are otherwise the same on gfx90a (same two examples 2.5% and 3.2% slower than `4e0d02ab`, same consistency, same suite). Whether 4% on one query on one arch matters against G's 2.5x gain on gfx950 is the ruling; a variant that keeps the region off on gfx90a (for example guarded on the target) was not tried here.
+
+### Scripts (job `agent_space/g/`, scratch; the others are `notes-contraction-scripts.md`'s, unchanged)
+
+`r.sh` and `t.sh` are the scripts file's, with `TREE` required and the `warp.__file__` assertion: `r.sh` runs `"$PY" -s ra.py <script> [args]`; `t.sh` runs `"$PY" -s -c '<the same assertion>' || exit 9` before `python -m warp.tests`. Interleaving: `for r in 1..5; for t in fast on g: TREE=<tree> utils/timeit.sh warp-1.14 test -- r.sh p2-$t-$r perf2.py out/p2-$t-$r.json` (and the same with `exbench.py`, trees fast and g, two sets).
+
+`ra.py`:
+```python
+# usage: ra.py <script> [args]; asserts warp is imported from $PYTHONPATH (the tree under test), then runs the script
+import os, runpy, sys
+import warp
+tree = os.path.realpath(os.environ["PYTHONPATH"])
+assert os.path.realpath(warp.__file__).startswith(tree + os.sep), (warp.__file__, tree)
+print("warp.__file__ =", warp.__file__, flush=True)
+script = sys.argv[1]
+sys.argv = sys.argv[1:]
+sys.path[0] = os.path.dirname(os.path.abspath(script))
+runpy.run_path(script, run_name="__main__")
+```
+
+`sn.py` (reconstruction; needs `twice.py` beside it):
+```python
+# usage: sn.py [nofuse]
+# Reconstruction (the coordinator's sn.py text was not available on this host) from its description in notes.md:
+# mesh_query_point_sign_normal out-parameter form then struct form in one kernel with an eval and a store between,
+# on a 24x24x24 grid cube surface, 232,768 points, leaf 1/2/4 x sah/median/lbvh; and intersect_tri_tri twice on
+# 232,768 random triangle pairs, with the hit count. Prints disagreement counts.
+import itertools, sys
+import numpy as np
+import warp as wp
+sys.path.insert(0, sys.path[0])
+import twice as tw  # gridcube(), points(), and k_normal_ctx (the test kernel's shape)
+
+if "nofuse" in sys.argv:
+    wp.set_module_options({"fuse_fp": False})
+    wp.set_module_options({"fuse_fp": False}, module=tw)
+
+
+@wp.kernel
+def k_tt2(a: wp.array[wp.vec3], hits: wp.array[int], bad: wp.array[int]):
+    i = wp.tid()
+    t = wp.intersect_tri_tri(a[6 * i], a[6 * i + 1], a[6 * i + 2], a[6 * i + 3], a[6 * i + 4], a[6 * i + 5])
+    hits[i] = t
+    t2 = wp.intersect_tri_tri(a[6 * i], a[6 * i + 1], a[6 * i + 2], a[6 * i + 3], a[6 * i + 4], a[6 * i + 5])
+    bad[i] = wp.where(t == t2, 0, 1)
+
+
+dev = tw.dev
+rng = np.random.default_rng(7)
+Pn, In = tw.gridcube()
+pn = tw.points(Pn, rng); n = len(pn)
+P = wp.array(Pn, dtype=wp.vec3, device=dev); I = wp.array(In.flatten(), dtype=int, device=dev)
+Q = wp.array(pn, dtype=wp.vec3, device=dev)
+bad = wp.zeros(n, dtype=int, device=dev); dist = wp.zeros(n, dtype=float, device=dev)
+tot = 0; per = []
+for leaf, con in itertools.product([1, 2, 4], ["sah", "median", "lbvh"]):
+    m = wp.Mesh(points=P, indices=I, support_winding_number=True, bvh_constructor=con, bvh_leaf_size=leaf)
+    bad.zero_()
+    wp.launch(tw.k_normal_ctx, n, inputs=[m.id, Q, dist, bad], device=dev)
+    c = int(np.count_nonzero(bad.numpy())); per.append(c); tot += c
+print(f"sn sign_normal grid cube: {tot} / {9 * n}  per config {per}")
+m = 232768
+# random triangle pairs: second triangle near the first, so that a good fraction intersect
+a = rng.standard_normal((m, 6, 3)).astype(np.float32)
+a[:, 3:] = a[:, :3].mean(1, keepdims=True) + 0.7 * rng.standard_normal((m, 3, 3)).astype(np.float32)
+A = wp.array(a.reshape(-1, 3), dtype=wp.vec3, device=dev)
+hits = wp.zeros(m, dtype=int, device=dev); b2 = wp.zeros(m, dtype=int, device=dev)
+wp.launch(k_tt2, m, inputs=[A, hits, b2], device=dev)
+print(f"sn intersect_tri_tri twice: {int(np.count_nonzero(b2.numpy()))} / {m}  hits {int(hits.numpy().sum())}")
+```
+
+`wnprobe.py` (needs `perf.py` and `twice.py` beside it):
+```python
+# usage: wnprobe.py <out.npz> [nofuse]; raw winding numbers (wp::mesh_query_winding_number via func_native) and the
+# sign_winding_number query's sign/face/u/v, for spiky, the grid cube and perf.py's 2M-triangle torus (lbvh, sah),
+# at twice.py's points; to compare one tree's results with another's bit for bit
+import sys
+import numpy as np
+import warp as wp
+sys.path.insert(0, sys.path[0])
+import perf as pf
+import twice as tw
+
+if "nofuse" in sys.argv:
+    wp.set_module_options({"fuse_fp": False})
+
+snippet = "return wp::mesh_query_winding_number(id, p, accuracy);"
+
+@wp.func_native(snippet)
+def wn_native(id: wp.uint64, p: wp.vec3, accuracy: float) -> float: ...
+
+@wp.kernel
+def k(m: wp.uint64, pts: wp.array[wp.vec3], w: wp.array[float], o: wp.array2d[float]):
+    i = wp.tid(); p = pts[i]
+    w[i] = wn_native(m, p, 2.0)
+    q = wp.mesh_query_point_sign_winding_number(m, p, 10012.0)
+    o[i, 0] = q.sign; o[i, 1] = float(q.face); o[i, 2] = q.u; o[i, 3] = q.v
+
+dev = tw.dev
+rng = np.random.default_rng(1)
+res = {}
+for name, (Pn, In) in [("spiky", tw.spiky()), ("gridcube", tw.gridcube()), ("torus", pf.torus(1000, 1000))]:
+    pn = tw.points(Pn, rng); n = len(pn)
+    P = wp.array(Pn, dtype=wp.vec3, device=dev); I = wp.array(In.flatten(), dtype=int, device=dev)
+    Q = wp.array(pn, dtype=wp.vec3, device=dev)
+    for con in ("lbvh", "sah"):
+        mesh = wp.Mesh(points=P, indices=I, support_winding_number=True, bvh_constructor=con)
+        w = wp.zeros(n, dtype=float, device=dev); o = wp.zeros((n, 4), dtype=float, device=dev)
+        wp.launch(k, n, inputs=[mesh.id, Q, w, o], device=dev)
+        res[f"{name}_{con}_wn"] = w.numpy(); res[f"{name}_{con}_q"] = o.numpy()
+np.savez(sys.argv[1], **res)
+print("saved", len(res), "arrays")
+```
