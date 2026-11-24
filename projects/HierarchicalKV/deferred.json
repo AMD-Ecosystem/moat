@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "hkv-tlpv2-eviction-skips-inflight-slot",
+      "kind": "other",
+      "component": null,
+      "summary": "Upstream HKV: the TLPv2 and pointer insert kernels (tlp_v2_upsert/upsert_and_evict/find_or_insert, *_lock_key paths) skip LOCKED slots when choosing an eviction victim, so concurrent inserts into one full bucket can evict the second-lowest key while an in-flight insert holds the lowest score. hkv_adversarial_performance_benchmark (default quick mode) fails its exact top-128 admission oracle on MI300X in scenario bucket_skew_1over16 (12 to 556 oracle errors, timing dependent; tlp_v2_upsert_kernel_with_io). Same code path on CUDA; not run on an NVIDIA GPU to confirm. Needs a CUDA run, then an upstream report if it reproduces.",
+      "refs": [
+        "projects/HierarchicalKV/notes.md#benchmarks"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-24T01:07:35Z",
+      "decided": null
+    },
+    {
+      "id": "hkv-lookup-modes-lf075-bucket-overflow",
+      "kind": "other",
+      "component": null,
+      "summary": "Upstream HKV: hkv_lookup_modes_benchmark with its default CMake parameters (capacity 134217728, kThroughput, bucket 128) inserts keys 0..100663295 at LF 0.75, which overflows 779 buckets (2661 keys must be evicted, computed on the CPU from the hash), so its 'membership_only failed successful-query check' (all queried keys found) cannot pass on any GPU. Seen on MI300X. An upstream benchmark issue, not a port defect.",
+      "refs": [
+        "projects/HierarchicalKV/notes.md#benchmarks"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-24T01:07:35Z",
+      "decided": null
+    },
+    {
+      "id": "hkv-dual-bucket-hardcodes-bucket-128",
+      "kind": "other",
+      "component": null,
+      "summary": "Upstream HKV: dual-bucket (TableMode::kMemory) upsert hard-codes BUCKET_SIZE = 128 (dual_bucket_pipeline_upsert_kernel_with_io, Launch_DualBucket_Pipeline_Upsert, its SharedMemoryManager) and takes no bucket-capacity argument, while HashTable::init accepts any max_bucket_size in kMemory mode. A 64-slot dual-bucket table is therefore indexed as 128-slot buckets (out of bounds on every GPU). e10_dual_bucket_analysis (Part 2, bucket_size=64) hits hipErrorIllegalAddress / HSA_STATUS_ERROR_MEMORY_FAULT in that kernel on MI300X. Fix belongs upstream (reject max_bucket_size != 128 in kMemory init, or parameterize the kernels).",
+      "refs": [
+        "projects/HierarchicalKV/notes.md#benchmarks"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-24T02:22:39Z",
+      "decided": null
+    }
+  ]
+}

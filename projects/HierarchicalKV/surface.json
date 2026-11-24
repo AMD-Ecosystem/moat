@@ -306,7 +306,40 @@
       "doc": "Planner-added: cuda::atomic<T, thread_scope_device> lock-free bucket locking via libhipcxx on ROCm; <cuda/barrier> and <cuda/std/semaphore> includes must be guarded out (they #error on AMD)"
     }
   ],
-  "covered": [],
+  "covered": [
+    "benchmark:concurrency_rw_lock",
+    "benchmark:digest_ablation_no_digest",
+    "benchmark:dual_bucket_benchmark",
+    "benchmark:find_with_missed_keys_benchmark",
+    "benchmark:hkv_repro_benchmarks",
+    "benchmark:merlin_hashtable_benchmark",
+    "build:bazel",
+    "feature:hybrid-host-memory-values",
+    "feature:inline-ptx-globaltimer",
+    "feature:libcudacxx-atomics",
+    "library:hierarchical_kv",
+    "option:CLANGFORMAT",
+    "option:HKV_BUILD_REPRO_BENCHMARKS",
+    "test:accum_or_assign_test",
+    "test:assign_score_test",
+    "test:assign_values_test",
+    "test:correctness_stress_test",
+    "test:dual_bucket_test",
+    "test:dynamic_max_capacity_test",
+    "test:export_batch_if_test",
+    "test:find_or_insert_ptr_lock_test",
+    "test:find_or_insert_ptr_test",
+    "test:find_or_insert_test",
+    "test:find_with_missed_keys_test",
+    "test:group_lock_test",
+    "test:insert_and_evict_test",
+    "test:lock_unlock_test",
+    "test:merlin_hashtable_test",
+    "test:merlin_memory_pool_test",
+    "test:reserved_keys_test",
+    "test:save_and_load_test",
+    "test:uint32_score_test"
+  ],
   "scoped_out": [
     {
       "id": "benchmark:bght_bench",
@@ -341,135 +374,6 @@
       "reason": "Out of scope by Jeff Daily's scope ruling C (2026-11-23, notes.md 'Rulings on the planner's questions'): baselines/ builds third-party hash tables (warpcore, BGHT, cuCollections) for comparison, outside every scope option."
     }
   ],
-  "owed": [
-    {
-      "id": "benchmark:concurrency_rw_lock",
-      "reason": "In scope C; not yet ported (porter round 2026-11-23 in progress)."
-    },
-    {
-      "id": "benchmark:digest_ablation_no_digest",
-      "reason": "In scope C; not yet ported (porter round 2026-11-23 in progress)."
-    },
-    {
-      "id": "benchmark:dual_bucket_benchmark",
-      "reason": "In scope C; not yet ported (porter round 2026-11-23 in progress)."
-    },
-    {
-      "id": "benchmark:find_with_missed_keys_benchmark",
-      "reason": "In scope C; not yet ported (porter round 2026-11-23 in progress)."
-    },
-    {
-      "id": "benchmark:merlin_hashtable_benchmark",
-      "reason": "In scope C; not yet ported (porter round 2026-11-23 in progress)."
-    },
-    {
-      "id": "library:hierarchical_kv",
-      "reason": "In scope C; not yet ported (porter round 2026-11-23 in progress)."
-    },
-    {
-      "id": "option:CLANGFORMAT",
-      "reason": "In scope C; not yet ported (porter round 2026-11-23 in progress)."
-    },
-    {
-      "id": "option:HKV_BUILD_REPRO_BENCHMARKS",
-      "reason": "In scope C; not yet ported (porter round 2026-11-23 in progress)."
-    },
-    {
-      "id": "test:accum_or_assign_test",
-      "reason": "In scope C; not yet ported (porter round 2026-11-23 in progress)."
-    },
-    {
-      "id": "test:assign_score_test",
-      "reason": "In scope C; not yet ported (porter round 2026-11-23 in progress)."
-    },
-    {
-      "id": "test:assign_values_test",
-      "reason": "In scope C; not yet ported (porter round 2026-11-23 in progress)."
-    },
-    {
-      "id": "test:correctness_stress_test",
-      "reason": "In scope C; not yet ported (porter round 2026-11-23 in progress)."
-    },
-    {
-      "id": "test:dual_bucket_test",
-      "reason": "In scope C; not yet ported (porter round 2026-11-23 in progress)."
-    },
-    {
-      "id": "test:dynamic_max_capacity_test",
-      "reason": "In scope C; not yet ported (porter round 2026-11-23 in progress)."
-    },
-    {
-      "id": "test:export_batch_if_test",
-      "reason": "In scope C; not yet ported (porter round 2026-11-23 in progress)."
-    },
-    {
-      "id": "test:find_or_insert_ptr_lock_test",
-      "reason": "In scope C; not yet ported (porter round 2026-11-23 in progress)."
-    },
-    {
-      "id": "test:find_or_insert_ptr_test",
-      "reason": "In scope C; not yet ported (porter round 2026-11-23 in progress)."
-    },
-    {
-      "id": "test:find_or_insert_test",
-      "reason": "In scope C; not yet ported (porter round 2026-11-23 in progress)."
-    },
-    {
-      "id": "test:find_with_missed_keys_test",
-      "reason": "In scope C; not yet ported (porter round 2026-11-23 in progress)."
-    },
-    {
-      "id": "test:group_lock_test",
-      "reason": "In scope C; not yet ported (porter round 2026-11-23 in progress)."
-    },
-    {
-      "id": "test:insert_and_evict_test",
-      "reason": "In scope C; not yet ported (porter round 2026-11-23 in progress)."
-    },
-    {
-      "id": "test:lock_unlock_test",
-      "reason": "In scope C; not yet ported (porter round 2026-11-23 in progress)."
-    },
-    {
-      "id": "test:merlin_hashtable_test",
-      "reason": "In scope C; not yet ported (porter round 2026-11-23 in progress)."
-    },
-    {
-      "id": "test:merlin_memory_pool_test",
-      "reason": "In scope C; not yet ported (porter round 2026-11-23 in progress)."
-    },
-    {
-      "id": "test:reserved_keys_test",
-      "reason": "In scope C; not yet ported (porter round 2026-11-23 in progress)."
-    },
-    {
-      "id": "test:save_and_load_test",
-      "reason": "In scope C; not yet ported (porter round 2026-11-23 in progress)."
-    },
-    {
-      "id": "test:uint32_score_test",
-      "reason": "In scope C; not yet ported (porter round 2026-11-23 in progress)."
-    },
-    {
-      "id": "benchmark:hkv_repro_benchmarks",
-      "reason": "In scope C; not yet ported (porter round 2026-11-23 in progress)."
-    },
-    {
-      "id": "build:bazel",
-      "reason": "In scope C; not yet ported (porter round 2026-11-23 in progress)."
-    },
-    {
-      "id": "feature:inline-ptx-globaltimer",
-      "reason": "In scope C; not yet ported (porter round 2026-11-23 in progress)."
-    },
-    {
-      "id": "feature:hybrid-host-memory-values",
-      "reason": "In scope C; not yet ported (porter round 2026-11-23 in progress)."
-    },
-    {
-      "id": "feature:libcudacxx-atomics",
-      "reason": "In scope C; not yet ported (porter round 2026-11-23 in progress)."
-    }
-  ],
+  "owed": [],
   "removed_from_floor": []
 }
