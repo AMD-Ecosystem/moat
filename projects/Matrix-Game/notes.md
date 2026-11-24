@@ -244,3 +244,119 @@ How each finding candidate was settled (fact-checked against the code and on the
 - The `windows` waiver recorded in status.json (approved by Jeff Daily, 2026-11-12) is his and stands. The sentence in the rulings section above saying the waiver was "not approved or declined yet" was wrong (written by the dispatching session).
 - The SageAttention check result was reported to Jeff; the `-sage` presets stay deferred.
 - Porter questions 1 and 2 (the PR #67 comment and the `--fa_version 0` upstream bug): the draft was shown to Jeff; not ruled yet. Nothing is posted without his approval.
+## Validation 2026-11-24 (validator, linux-gfx950, job 153422)
+
+Head `6d94b2fb5ccdd1351b3ce5b5242cadda5f367f70`, AMD Instinct MI355X (gfx950), one GPU (`HIP_VISIBLE_DEVICES=7`, the dispatcher's pin), `ulimit -c 0`, `timeout` on every run. Everything was rebuilt and re-run in this job's own directory. Nothing was reused from the porter's job.
+
+### Environment
+
+- `$FLEET_VENV` (Python 3.11): `torch 2.12.0+rocm10.2.0a20261015`, torchvision 0.27.0, `triton 3.8.0+git669b31ac.rocm10.2.0a20261015`, `rocm[devel]==10.2.0a20261015`. Index `https://nightly.repo.amd.com/rocm/whl-next/`, installed with `torch[device-gfx950]`. HIP 7.17.26412. MG-4: `pip install -e '.[inference,server,download,test]'` (transformers 5.17.0). MG-3 extras: `easydict decord opencv-python==4.10.0.84 trimesh pandas==2.2.3`. MG-3 again ran on torch 2.12 rather than its pinned 2.10 (same deviation as the porter: TheRock 10.2 has no torch 2.10).
+- flash-attention `v2.8.3.post2` (`49774b31`), two builds:
+  - CK: `BUILD_TARGET=rocm GPU_ARCHS=gfx950 OPT_DIM=128 MAX_JOBS=42 pip wheel --no-build-isolation --no-deps .` with `ROCM_HOME` = `rocm-sdk path --root`. 704 objects, about 35 minutes.
+  - Triton AMD backend: `FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE`, a pure-Python wheel; the same variable is needed at run time.
+  - Standalone varlen check against SDPA (lens 1000+777, H 24, D 128, bf16): CK max abs err 2.0e-3.
+- AITER `v0.1.30` (`77ba72b7`): `GPU_ARCHS=gfx950 PREBUILD_KERNELS=0 pip wheel --no-build-isolation --no-deps .`. Same check against SDPA: max abs err 0.
+- **Triton swap during the AITER build (caught and redone).** AITER's `setup.py` uninstalled the venv's TheRock triton while its wheel built (`Successfully uninstalled triton-3.8.0+git669b31ac.rocm10.2.0a20261015`) and installed `triton-kernels` from pypi.amd.com. Python then fell back to the base image's `triton 3.8.0+amd.rocm7.2.0.git7cb7b059` through the fleet venv's base-env links. The base env itself was not modified. With that triton, flash-attention's Triton backend failed at import (`ValueError: key contains names that are not kernel arguments` in `bwd_prefill_onekernel.py`).
+  - Fix: `pip install --no-deps triton==3.8.0+git669b31ac.rocm10.2.0a20261015` from the nightly index. Every GPU run reported below was redone afterwards, and each phase's log prints the triton path in use.
+  - The first runs under the wrong triton are kept as `out-basetriton`. Realtime under the wrong triton is bit-identical to realtime under the right one.
+- `flash_attn_interface` is not importable (MG-3's FA3 path cannot trigger; plan risk 3 does not occur).
+- Weights in the job directory (680 GB free before download):
+  - MG-4 `Skywork/Matrix-Game-4.0` revision `2c53100457da7abcf0e966f75637c644d3423a63`, scene ancient-egypt, models plus game-assets manifests, every file SHA256-verified by `matrix-game download` (23 GB plus 23 GB HF cache).
+  - MG-3 `Skywork/Matrix-Game-3.0` at `d4c84ef2b8e9028a00a5d58b6be2df04f1cb6042` (53 GB).
+
+### Non-GPU tests
+
+`python -m unittest discover -s tests -p 'test_*.py'` in Matrix-Game-4: **81 tests OK** on `moat-port` and 81 OK on upstream `51913b2`. No regression.
+
+### CUDA gate
+
+There is no CUDA C++ in the change; the shared code it touches is Triton. Done in the review above, at this head: PyPI `triton==3.7.0` (the CUDA torch 2.12.0 pin) compiled the five changed kernel instances for sm_90, sm_100 and sm_120 from upstream and from the port. With `TRITON_DISABLE_LINE_INFO=1` the PTX, cubin and SASS are byte-identical (15/15). nvcc itself has nothing to compile here.
+
+### MG-4 end to end (gfx950)
+
+- Command: `matrix-game render --scene ancient-egypt --resources <res> --input egypt-pan-120.mp4 --prompt-mode fixed --seed 42 --preset <p> [--dit-runtime native --no-vae-graph]`.
+- Input: a 120-frame lossless pan/zoom over `models/ancient-egypt/sink.png` (sha256 `94e03c1a...45f6`); the clip is sha256 `a9f744dd...d9ce`. That is 30 latent chunks, so the 21-chunk window evicts.
+- Every run below: rc 0, 120/120 frames at 864x480, no NaN in the logs, minimum per-frame std 44 or more.
+- FPS is the CLI's "processing FPS" at frame 101; peak memory is `torch.cuda.max_memory_allocated`.
+
+**What the frame-wise comparison is against:** no CUDA reference video exists on this host, so nothing below is compared to NVIDIA output. The reference is upstream's own release gate (docs/testing.md): the bf16 `native` runtime (`--dit-runtime native --no-vae-graph`, SDPA) on the same MI355X, same clip, same seed. The model is autoregressive, so any numerical difference grows along the clip. Each row gives mean and minimum PSNR, plus the first-10 and last-10 frame means, which show that growth. Run-to-run noise is zero: realtime repeated (`realtime-rep`) is bit-identical, and rtx5070ti with and without flash-attn installed is bit-identical. So every number below is a real numerical difference between paths, not noise.
+
+| run (SDPA unless noted) | FPS | peak alloc GiB | PSNR vs native mean / min dB | first10 / last10 dB |
+|---|---|---|---|---|
+| native (reference) | 31.5 | 20.2 | -- | -- |
+| realtime | 40.0 | 20.2 | 22.21 / 19.60 | 33.1 / 21.0 |
+| realtime, repeat | 38.8 | 20.2 | identical to realtime (bit-exact) | |
+| rtx5090 (FP8) | 52.8 | 15.65 (18.1 reserved) | 19.27 / 17.18 | 25.0 / 18.4 |
+| rtx5080 (FP8, padded/transposed) | 61.4 | 10.90 | 19.95 / 17.80 | 25.7 / 19.3 |
+| rtx5070ti (INT8 + MXFP8 `cross_q`) | 62.4 | 10.90 | 18.93 / 16.79 | 26.4 / 17.8 |
+| rtx5070ti, MXFP8 forced to the BF16 fallback (what non-gfx950 AMD GPUs run) | 57.6 | 10.90 | 19.95 / 17.94 | 28.0 / 19.0 |
+| native, FA2 CK | 25.1 | 20.2 | 21.22 / 18.23 | 31.1 / 19.9 |
+| native, FA2 Triton | 28.6 | 20.2 | 21.78 / 18.63 | 31.6 / 20.4 |
+| realtime, FA2 CK | 31.1 | 20.2 | 20.09 / 17.83 vs native-CK | 30.0 / 19.0 |
+| realtime, FA2 Triton | 9.7 | 20.2 | 21.48 / 18.89 vs native-Triton | 31.4 / 19.9 |
+
+Against bf16 realtime instead of native: rtx5090 19.19, rtx5080 19.73, rtx5070ti 18.67, rtx5070ti-BF16-fallback 19.77 dB mean. rtx5070ti against its own BF16 fallback: 19.47 dB.
+
+| quality path (Wan VAE, native DiT, flex_attention) | FPS | peak alloc GiB | PSNR vs quality-SDPA mean / min dB |
+|---|---|---|---|
+| quality, SDPA | 18.0 | 42.05 | -- |
+| baseline, SDPA | 17.6 | 42.05 | 21.81 / 19.09 |
+| quality, FA2 CK | 15.1 | 42.05 | 19.51 / 17.21 |
+| quality, FA2 Triton | 14.6 | 42.05 | 19.66 / 17.21 |
+
+Reading:
+- The three RTX presets sit 2 to 3 dB below bf16 realtime against the same reference, and start 25 to 28 dB from native instead of 33. That is the cost of quantization, not of a defect.
+- The MXFP8 role costs about 1 dB against its BF16 fallback. A layer-level check shows the ROCm MX GEMM computes the intended MXFP8 function: `MXFP8Linear` output against an exact software dequantize (e4m3 x 2^(e8m0-127), FP32 matmul, + bias) has rel 4.0e-3 and max error at most one BF16 ulp, at M = 1, 37, 405 and 4096 (`mx_emul.py`). So the drop is quantization error that CUDA's MXFP8 path would share, not a layout error.
+- Contact sheet `data/montage-mg4.png`: every preset gives a coherent scene that follows the input pan, with no corruption, smearing or colour faults.
+- CUDA-graph capture works with SDPA, FA2 CK and FA2 Triton.
+- FA2 Triton is slow under the realtime runtime (9.7 FPS) but correct. That is a performance observation about the flash-attention Triton backend, not a port issue.
+
+**`-sage` refusal path.** `--preset rtx5090-sage`, `rtx5080-sage` and `rtx5070ti-sage` each exit 1 and write no output. The error is `ImportError: this runtime requires SageAttention 2.2 built with matrix_game/inference/rtx5090_sage/sageattention.patch` (cause `ModuleNotFoundError: No module named 'sageattention'`), after 20 s, 56 s and 52 s (after the DiT load). This matches the review's reading and the README's AMD note.
+
+**Kernel trace** (`rocprofv3 --kernel-trace --stats`, 24-frame clip, CK flash-attn and AITER installed):
+- rtx5070ti: rocRoller `RR_GEMM_TN_FP8_FP8_BFloat16_BFloat16_Float_SA_BE8M0_32_SB_BE8M0_32_WGT_256x32x128_UR_2` (2574 calls), `_mxfp8_quantize_kernel` (2604), `_int8_gemm_kernel` (12876), `_quantize_rows_kernel` (12876).
+- rtx5080: hipBLASLt `Cijk_..._F8SS_...` FP8 GEMMs (15582 + 2574 + 2574), `_scale_quantize_rows_padded` (15570), `_bias_transpose_kernel` (5148).
+- Both: `aiter::fmha_fwd_hd128_bf16` (5148) for attention.
+
+### MG-3 end to end (gfx950)
+
+`generate.py --size 704*1280 --ckpt_dir Matrix-Game-3.0 --use_int8 --num_iterations 4 --num_inference_steps 3 --image demo_images/001/image.png --prompt "<README prompt>" --seed 42 --vae_type mg_lightvae --lightvae_pruning_rate 0.5`. Each run produces 177 frames at 1280x704. No CUDA reference here either: the comparison is FA2 CK against the other backends on the same GPU.
+
+| code | attention installed | result | wall | PSNR vs FA2 CK mean / min dB |
+|---|---|---|---|---|
+| upstream `main`, `--fa_version 0` | none | `AssertionError` at `wan/modules/attention.py:114` (porter question 2 reproduced) | 58 s | -- |
+| upstream `main`, `--fa_version 2` | FA2 CK | OK | 130 s | reference |
+| upstream `main`, `--fa_version 2 --compile_vae` | FA2 CK | OK | 86 s | 59.2 / 33.3 |
+| upstream `main`, `--fa_version 2` | FA2 Triton | OK | 90 s | 24.8 / 15.4 |
+| PR #67 head `9ad32b1d` | AITER only | OK; banner prints `Actual: None (SDPA)` | 94 s | 24.8 / 13.7 |
+| PR #67, `--compile_vae` | AITER only | OK; same banner | 89 s | 24.8 / 13.7 |
+| PR #67 | AITER + FA2 CK | OK; AITER is used for self/cross attention, banner prints `Actual: Flash Attention 2` | 93 s | 25.8 / 15.4 |
+
+The last-10-frame PSNR between any two backends is 14 to 16 dB. That is autoregressive divergence over 4 iterations, and it hits FA2 Triton against CK exactly as hard as AITER against CK. PR #67 with FA2 also installed differs from AITER-only (24.8 dB) because `wan/modules/action_module.py` takes flash-attn's `flash_attn_func` whenever flash-attn imports. Contact sheet `data/montage-mg3.png`: all four backends give the same scene and camera path, with the late frames differing only in detail (building texture). Multi-GPU torchrun was not run: one GPU.
+
+### Not run, and why
+
+- The documented install line (`download.pytorch.org/whl/rocm7.2`, `torch==2.12.0+rocm7.2`, cp312; the wheel exists on the index, checked) was not installed: this job was told to use the TheRock 10.2 wheels.
+- gfx942 (FNUZ branch) and gfx12 remain unexecuted, as the porter recorded. The wave32 gate needs its own validator. gfx942 evidence would need an MI300 host.
+- Matrix-Game-4's racing scene with `--prompt-mode dynamic` (plan step 7) was not run.
+
+### Questions for Jeff (nothing assumed)
+
+The porter's three questions (comment on PR #67, the `--fa_version 0` upstream bug, the windows waiver record) are still open. One correction to the PR #67 draft follows from the runs above. Point 2 says the banner prints `Actual: None (SDPA)` while AITER is in use. That is true only when flash-attn is absent; with flash-attn also installed it prints `Actual: Flash Attention 2` while AITER runs. Revised draft (options as before: post as drafted, post a shorter results-only version, or post nothing yet; NOT posted):
+
+====
+My agent came up with this analysis, but I've read and approved it.
+
+> Tested this PR's head (9ad32b1d) on an AMD Instinct MI355X (gfx950) with a ROCm build of PyTorch 2.12 and AITER built from source (v0.1.30). `python generate.py --size 704*1280 --use_int8 --num_iterations 4 --num_inference_steps 3 --vae_type mg_lightvae --lightvae_pruning_rate 0.5 --image demo_images/001/image.png --seed 42` completes with and without `--compile_vae` (177 frames), with AITER alone and with flash-attention also installed. The output agrees with the flash-attention 2.8.3 paths on the same GPU (CK and Triton builds) to the level any two of those backends agree with each other, with no visible difference. AITER's varlen call also matches SDPA exactly on a standalone check.
+>
+> Three small things:
+> 1. `pip install aiter` in the README and in the new RuntimeError installs an unrelated PyPI package (async iterator helpers). The AMD package is `amd-aiter`, or the source build from ROCm/aiter that the README also lists.
+> 2. The "Flash Attention Configuration" banner in `pipeline/inference_pipeline.py` and `pipeline/inference_interactive_pipeline.py` does not know about AITER: with AITER alone it prints `Actual: None (SDPA)`, and with flash-attn also installed it prints `Actual: Flash Attention 2`, while AITER is the backend in use in both cases.
+> 3. Unrelated to this PR: `--fa_version 0` does not give an SDPA run, because `wan/modules/model.py` calls `flash_attention()` directly, so without flash-attn or AITER it still fails at the assert.
+====
+
+Verdict for linux-gfx950: **pass**. Unit tests 81/81. All six generic and RTX presets plus `baseline` render end to end with SDPA, FA2 CK and FA2 Triton. The three `-sage` presets refuse with upstream's message. MG-3 runs through FA2 (CK and Triton) and through PR #67 + AITER. The tree is clean at `6d94b2f`, and `jargon.py --port Matrix-Game` is clean.
+
+## Lesson for cuda-to-rocm: building AITER from source replaces the environment's Triton
+
+For `libraries.md` (or wherever AITER is covered). ROCm/aiter's `setup.py` (seen at v0.1.30, torch 2.9.1 or newer) uninstalls whatever Triton is installed (`triton`, `pytorch-triton-rocm`, `triton-rocm`, ...) and installs its own pin from pypi.amd.com, even under `pip wheel --no-deps`. A ROCm environment whose PyTorch was built against a specific Triton then silently runs on a different one. Here, flash-attention's Triton AMD backend broke at import (`ValueError: key contains names that are not kernel arguments`). Set `AITER_USE_SYSTEM_TRITON=1` when building AITER to keep the installed Triton. Then check `python -c "import triton; print(triton.__version__, triton.__file__)"` before trusting any later run.

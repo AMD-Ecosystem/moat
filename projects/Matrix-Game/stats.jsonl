@@ -18,3 +18,14 @@
 {"kind":"phase","ts":"2026-11-23T23:27:45Z","phase":"test","seconds":303.598,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi355-20261123-144930-port-matrix-game-b-prompt/scripts/queue4.sh"}
 {"kind":"session","ts":"2026-11-23T23:32:35Z","epoch":1795476755.986783,"event":"end","platform":"linux-gfx950"}
 {"kind":"session","ts":"2026-11-23T23:37:36Z","epoch":1795477056.664876,"event":"start","platform":"linux-gfx950"}
+{"kind":"phase","ts":"2026-11-23T23:48:01Z","phase":"compile","seconds":0.34,"exit":1,"cmd":"/var/lib/jenkins/fleet/jobs/mi355-20261123-153422-review-matrix-game-prompt/venv/bin/python -m pip wheel -v --no-build-isolation --no-deps -w /var/lib/jenkins/fleet/jobs/mi355-20261123-153422-review-matrix-game-prompt/deps/wheels ."}
+{"kind":"phase","ts":"2026-11-23T23:48:09Z","phase":"test","seconds":0.078,"exit":1,"cmd":"/var/lib/jenkins/fleet/jobs/mi355-20261123-153422-review-matrix-game-prompt/venv/bin/python -m unittest discover -s tests -p test_*.py"}
+{"kind":"phase","ts":"2026-11-23T23:48:41Z","phase":"test","seconds":4.998,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi355-20261123-153422-review-matrix-game-prompt/scripts/unittest.sh /var/lib/jenkins/fleet/jobs/mi355-20261123-153422-review-matrix-game-prompt/moat/projects/Matrix-Game/src/Matrix-Game-4"}
+{"kind":"phase","ts":"2026-11-23T23:50:11Z","phase":"compile","seconds":26.679,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi355-20261123-153422-review-matrix-game-prompt/scripts/aiter_build.sh"}
+{"kind":"phase","ts":"2026-11-23T23:50:57Z","phase":"misc","seconds":176.075,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi355-20261123-153422-review-matrix-game-prompt/scripts/dl.sh"}
+{"kind":"phase","ts":"2026-11-23T23:53:02Z","phase":"compile","seconds":272.721,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi355-20261123-153422-review-matrix-game-prompt/scripts/fa_ck_build.sh"}
+{"kind":"phase","ts":"2026-11-24T00:00:23Z","phase":"test","seconds":596.29,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi355-20261123-153422-review-matrix-game-prompt/scripts/queue_sdpa.sh"}
+{"kind":"phase","ts":"2026-11-24T00:12:18Z","phase":"test","seconds":554.065,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi355-20261123-153422-review-matrix-game-prompt/scripts/queue_ck.sh"}
+{"kind":"phase","ts":"2026-11-24T00:13:27Z","phase":"test","seconds":14.025,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi355-20261123-153422-review-matrix-game-prompt/scripts/queue_triton.sh"}
+{"kind":"phase","ts":"2026-11-24T00:43:01Z","phase":"test","seconds":1681.874,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi355-20261123-153422-review-matrix-game-prompt/scripts/queue_all.sh"}
+{"kind":"session","ts":"2026-11-24T00:47:38Z","epoch":1795481258.1689,"event":"end","platform":"linux-gfx950"}
