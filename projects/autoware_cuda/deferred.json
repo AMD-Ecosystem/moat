@@ -12,7 +12,12 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-11-24T10:51:01Z",
-      "decided": null
+      "decided": {
+        "choice": "defer",
+        "by": "Jeff Daily",
+        "at": "2026-11-24T18:47:28Z",
+        "note": "2026-11-24: belongs to autoware_universe stage 3 (MIGraphX custom ops)"
+      }
     },
     {
       "id": "migraphx-empty-reduce-compile",
