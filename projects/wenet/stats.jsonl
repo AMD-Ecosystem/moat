@@ -103,3 +103,8 @@
 {"kind":"phase","ts":"2026-11-24T11:02:17Z","phase":"compile","seconds":58.146,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300c-20261124-021320-re-fix3-wenet-prompt/moat/agent_space/build-rocm.sh /var/lib/jenkins/fleet/jobs/mi300c-20261124-021320-re-fix3-wenet-prompt/work/build-rocm"}
 {"kind":"session","ts":"2026-11-24T11:06:07Z","epoch":1795518367.549599,"event":"start","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-11-24T11:15:04Z","epoch":1795518904.92736,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-24T19:28:11Z","epoch":1795548491.038494,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-24T19:34:54Z","phase":"misc","seconds":97.215,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300c-20261124-112348-fix4-wenet-prompt/moat/agent_space/readme-main.sh"}
+{"kind":"phase","ts":"2026-11-24T19:42:11Z","phase":"misc","seconds":367.797,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300c-20261124-112348-fix4-wenet-prompt/moat/agent_space/real-seq.sh real-new HEAD"}
+{"kind":"phase","ts":"2026-11-24T19:46:19Z","phase":"misc","seconds":174.158,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300c-20261124-112348-fix4-wenet-prompt/moat/agent_space/real-seq.sh real-base be6ad97"}
+{"kind":"phase","ts":"2026-11-24T19:47:39Z","phase":"compile","seconds":63.346,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300c-20261124-112348-fix4-wenet-prompt/moat/agent_space/build-rocm.sh /var/lib/jenkins/fleet/jobs/mi300c-20261124-112348-fix4-wenet-prompt/work/build-porter porter /var/lib/jenkins/fleet/jobs/mi300c-20261124-112348-fix4-wenet-prompt/deps/torch-724-unpacked/torch"}
