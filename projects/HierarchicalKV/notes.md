@@ -723,7 +723,7 @@ Build and checks:
 ### Summary
 The delta is the HIP-only event re-anchor in `MemoryPool` (`include/merlin/memory_pool.cuh`, +20 lines, one commit). **Verdict: Approve; no findings.** Investigation done inline (the delta is one file), each point checked against the code at 4033ed6:
 
-- **Stream and event lifetime, destruction order.** The stream is created in the constructor after the `max_pending` events (`memory_pool.cuh:350-353`) and destroyed last in the destructor (`:368-370`), after `await_pending()` (which queries every pending event, all of them now recorded on `event_stream_`), the event destroys, and `deplete_stock()`. No event outlives the stream it is recorded on. Every `cudaEventRecord` in the library is `put_raw`'s (`grep` of `include/`), so no event can still name a caller stream once `put_raw` returns. The wait and the re-record (`:585-586`) run under `mutex_` (`:530`), and every `cudaEventQuery` path (`collect_pending_unsafe`, called from `get_raw`, `put_raw` and `await_pending`) also holds `mutex_`, so no query sees the event between the two records. The wait is issued while the caller's stream is still alive (same call), and HIP stores the stream of the last record, so after `:586` the stored stream is `event_stream_`, which the round-3 standalone test confirmed (3/3 success with the re-anchor against 3/3 hangs without).
+- **Stream and event lifetime, destruction order.** The stream is created in the constructor after the `max_pending` events (`memory_pool.cuh:350-353`) and destroyed last in the destructor (`:368-370`), after `await_pending()` (which queries every pending event, all of them now recorded on `event_stream_`), the event destroys, and `deplete_stock()`. No event outlives the stream it is recorded on. Every `cudaEventRecord` in the library is `put_raw`'s (`grep` of `include/`), so no event can still name a caller stream once `put_raw` returns. The wait and the re-record (`:585-586`) run under `mutex_` (`:539`), and every `cudaEventQuery` path (`collect_pending_unsafe`, called from `get_raw`, `put_raw` and `await_pending`) also holds `mutex_`, so no query sees the event between the two records. The wait is issued while the caller's stream is still alive (same call), and HIP stores the stream of the last record, so after `:586` the stored stream is `event_stream_`, which the round-3 standalone test confirmed (3/3 success with the re-anchor against 3/3 hangs without).
 - **Device for multi-GPU tables.** `HashTable::init` calls `cudaSetDevice(options_.device_id)` (`merlin_hashtable.cuh:1062-1066`) before it constructs both pools (`:1117-1120`), so `event_stream_` is created on the table's device, the same device as the pool's events (created in the same constructor). The re-record therefore pairs an event and a stream of one device, whatever device is current at `put_raw`. A caller stream on another device fails at the pre-existing `cudaEventRecord(ready_event, stream)` first, as before; a cross-device `cudaStreamWaitEvent` would be legal anyway.
 - **Host pool.** `MemoryPool<HostAllocator<char>>` is the same template: it gets its own stream on the same device, and the change is identical for it. Two streams per table, as the round-3 cost note says.
 - **Copy and move.** `MemoryPool` declares no copy or move members and holds a `std::mutex` and a `const MemoryPoolOptions`, so its implicit copy and move constructors and assignments are deleted; the raw `event_stream_` handle cannot be duplicated or double-destroyed. The table holds the pools through `std::unique_ptr` (`merlin_hashtable.cuh:1117`). `Workspace` objects hold a pool pointer, not the stream.
@@ -733,3 +733,42 @@ The delta is the HIP-only event re-anchor in `MemoryPool` (`include/merlin/memor
 
 ### Recommendation
 **Approve.** GPU evidence (the full suite and the 30-run loop) is the validator's next step.
+
+## Validation 2026-11-24 (round 2, linux-gfx942 MI300X, validator role, fork head 4033ed6): PASSED
+
+Requested by Jeff Daily (same fleet job, after the round-3 review passed). Built and run at `4033ed6` (`git -C projects/HierarchicalKV/src rev-parse HEAD`), the build from "Porter 2026-11-24 round 4" (`build-hip`, 54/54 under `timeit.sh compile`). Toolchain as recorded there: TheRock ROCm 10.2.0 wheels in the job venv, builds invoke `<sdk>/lib/llvm/bin/clang++` (AMD clang 24.0.0git, HIP 7.17.26434). `ulimit -c 0`, a timeout around every GPU run, `IS_BLOSSOM_CI` unset.
+
+**Device: one whole MI300X, not a partition.** `HIP_VISIBLE_DEVICES=3` resolves to PCI 0000:65:00 (`hipGetDeviceProperties`: AMD Instinct MI300X, gfx942:sramecc+:xnack-, 304 CUs, 192 GiB). `amd-smi static --partition` reports that GPU (amd-smi GPU 3, BDF 0000:65:00.0) as ACCELERATOR_PARTITION SPX, MEMORY_PARTITION NPS1, and `amd-smi process` showed no other process on it.
+
+### `FindOrInsertPtrTest.test_find_or_insert_multi_threads`, 30 runs: 30 pass, 0 hang, 0 crash, 0 abort
+
+Conditions match the round-3 diagnosis baseline: two lanes running at the same time on the one GPU, 15 runs each, every run launched under gdb (`timeout --kill-after=30 1500 gdb -q -batch -nx -ex run -ex 'info threads' -ex 'thread apply all bt' --args build-hip/find_or_insert_ptr_test --gtest_filter=FindOrInsertPtrTest.test_find_or_insert_multi_threads`), with a stall watchdog at 900 s that would save `/proc/<pid>/task/*/wchan` and maps and SIGINT the test so gdb prints every stack. Nothing else used the GPU during the loop (the suite, benchmarks and Bazel build ran afterwards). Result: all 30 logs show `[  PASSED  ] 1 test.` and gdb's `exited normally`. The watchdog never fired, gdb caught no signal, and no log has `Failure`, `hipError` or `Aborted`. Run time 270-286 s (mean 278.7 s). Baseline for comparison: unpatched, 6 hangs or crashes in 81 runs across both heads (round-3 table and validator runs); here 0 in 30.
+
+### Full suite, per binary under a 3600 s timeout: 20/20 binaries pass, 241 gtest cases
+
+All 20 test executables CMake builds (19 gtest binaries plus `export_batch_if_test`), as built, nothing filtered or resized. Cases and seconds: repeated_key 9 (2), correctness_stress 62 (11), dynamic_max_capacity 1 (3), lock_unlock 1 (1), reserved_keys 1 (1), merlin_memory_pool 6 (0), save_and_load 5 (24), group_lock 4 (21), find_with_missed_keys 7 (19), uint32_score 4 (47), assign_values 3 (79), export_batch_if main (rc 0, prints `done`, 76), dual_bucket 33 (151), find_or_insert_ptr_lock 13 (315), accum_or_assign 14 (313), assign_score 8 (317), insert_and_evict 9 (645), merlin_hashtable 24 (747), find_or_insert 19 (977), find_or_insert_ptr 18 (1097). No `[  FAILED  ]` line. The default benchmarks ran on the GPU during the first part of the suite.
+
+Count correction: the first validation's "all 21 binaries" is one too many. The CMakeLists has 23 executables, 20 tests and 3 benchmarks, and that validation's own list names the same 20 tests (19 with case counts plus `export_batch_if_test`) and the same 241 cases. Nothing is missing.
+
+### Repeated-key tests
+
+`repeated_key_test`: 9/9 in the suite run and again in runs 2 and 3 (2 s, 1 s).
+
+### Default benchmarks (10-minute cap each)
+
+- `dual_bucket_benchmark`: rc 0 in 2 s, "Benchmark Complete".
+- `find_with_missed_keys_benchmark`: still printing measurements at the cap (rc 124 from `timeout`), no error, fault or abort line, as in earlier rounds.
+- `merlin_hashtable_benchmark`: still producing measurements at the cap. It did not exit within the 30 s grace after SIGTERM, so `timeout` sent SIGKILL (rc 137; earlier rounds got rc 124). It was then in the `dim = 64, capacity = 512 Million-KV, HBM = 32 GB, HMEM = 96 GB` configuration, which sets up 96 GB of host memory; a process inside a large host-memory pin is slow to act on SIGTERM. The log has the earlier tables and no error, fault or abort line.
+
+### ROCm Bazel build
+
+A clean clone at 4033ed6 without googletest, bazelisk 1.25.0 with `BAZELISK_HOME` under the job directory (Bazel 5.0.0 per `.bazeliskrc`), fresh output root: `ROCM_PATH=$R ROCM_AMDGPU_TARGETS=gfx942 bazelisk --output_user_root=<job>/bazel/root build --config=rocm --jobs=$MAX_JOBS //...` under `timeit.sh compile`: "Build completed successfully, 13 total actions", rc 0, 76 s. The ROCm crosstool calls `<sdk>/lib/llvm/bin/clang`. `bazel-bin/benchmark/benchmark_util` ran on the GPU for 300 s (stopped by the cap, rc 124), printing its HBM tables (insert_or_assign 0.438 B-KV/s at LF 0.5, dim 8) with no error lines.
+
+### Other items
+
+- Integrity: `git -C projects/HierarchicalKV/src status --porcelain` shows no modified tracked file (only the untracked `build-hip/`).
+- `python3 utils/jargon.py --port HierarchicalKV`: clean. The README's HIP CMake and Bazel sections still apply (the delta changes no build step).
+- **CUDA compile gate: not run here; this host has no nvcc. The recheck on another host covers the one file the delta touches: `include/merlin/memory_pool.cuh`.** The review predicts identical SASS, with CUDA host objects differing only in the `__LINE__` constants of the `CUDA_CHECK`s below line 348.
+- Host hygiene: my first bazelisk call, made before I set `BAZELISK_HOME`, downloaded Bazel 9.3.3 into the default bazelisk cache in the shared home directory (`~/.cache/bazelisk`). Nothing used it, and it was left in place because that cache may hold other jobs' downloads.
+
+Logs (container-local): `agent_space/val4/` (`L<lane>-<n>.log`, `lane1.out`, `lane2.out`, `suite/`, `bench/`, `bazel.log`, `bazel-bench.log`).
