@@ -1,455 +1,477 @@
 {
- "generated_by": "utils/surface.py",
- "source_sha": "302e0e97024e",
- "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
- "cuda": {
-  "files": [
-   "src/Linear.cpp",
-   "src/Linear.h",
-   "src/common.h",
-   "src/kernels/activation_kernels.cu",
-   "src/kernels/activation_kernels_impl.cuh",
-   "src/kernels/awq/dequantize.cuh",
-   "src/kernels/awq/gemm_awq.cu",
-   "src/kernels/awq/gemv_awq.cu",
-   "src/kernels/awq/semaphore.h",
-   "src/kernels/dispatch_cutlass.h",
-   "src/kernels/dwconv.cu",
-   "src/kernels/gemm_batched.cu",
-   "src/kernels/gemm_f16.cu",
-   "src/kernels/gemm_w8a8.cu",
-   "src/kernels/layernorm_kernels.cu",
-   "src/kernels/layernorm_kernels_impl.cuh",
-   "src/kernels/misc_kernels.cu",
-   "src/kernels/misc_kernels_impl.cuh",
-   "src/kernels/reduction_utils.cuh",
-   "src/kernels/utils.cuh",
-   "src/kernels/zgemm/attention.cu",
-   "src/kernels/zgemm/attention.cuh",
-   "src/kernels/zgemm/epilogues.cuh",
-   "src/kernels/zgemm/gemm_base.cuh",
-   "src/kernels/zgemm/gemm_utils.cuh",
-   "src/kernels/zgemm/gemm_w4a4.cu",
-   "src/kernels/zgemm/gemm_w4a4.cuh",
-   "src/kernels/zgemm/gemm_w4a4_launch.cuh",
-   "src/kernels/zgemm/gemm_w4a4_launch_bf16_fp4.cu",
-   "src/kernels/zgemm/gemm_w4a4_launch_bf16_int4.cu",
-   "src/kernels/zgemm/gemm_w4a4_launch_fp16_fp4.cu",
-   "src/kernels/zgemm/gemm_w4a4_launch_fp16_int4.cu",
-   "src/kernels/zgemm/gemm_w4a4_launch_fp16_int4_fasteri2f.cu",
-   "src/kernels/zgemm/gemm_w4a4_launch_impl.cuh",
-   "src/kernels/zgemm/gemm_w4a4_test.cu",
-   "src/kernels/zgemm/gemm_w8a8.cu",
-   "src/kernels/zgemm/gemm_w8a8.cuh",
-   "src/kernels/zgemm/lora.cuh",
-   "src/kernels/zgemm/mma.cuh",
-   "src/kernels/zgemm/mma_earlycuda.cuh"
+  "generated_by": "utils/surface.py",
+  "source_sha": "302e0e97024e",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [
+      "src/Linear.cpp",
+      "src/Linear.h",
+      "src/common.h",
+      "src/kernels/activation_kernels.cu",
+      "src/kernels/activation_kernels_impl.cuh",
+      "src/kernels/awq/dequantize.cuh",
+      "src/kernels/awq/gemm_awq.cu",
+      "src/kernels/awq/gemv_awq.cu",
+      "src/kernels/awq/semaphore.h",
+      "src/kernels/dispatch_cutlass.h",
+      "src/kernels/dwconv.cu",
+      "src/kernels/gemm_batched.cu",
+      "src/kernels/gemm_f16.cu",
+      "src/kernels/gemm_w8a8.cu",
+      "src/kernels/layernorm_kernels.cu",
+      "src/kernels/layernorm_kernels_impl.cuh",
+      "src/kernels/misc_kernels.cu",
+      "src/kernels/misc_kernels_impl.cuh",
+      "src/kernels/reduction_utils.cuh",
+      "src/kernels/utils.cuh",
+      "src/kernels/zgemm/attention.cu",
+      "src/kernels/zgemm/attention.cuh",
+      "src/kernels/zgemm/epilogues.cuh",
+      "src/kernels/zgemm/gemm_base.cuh",
+      "src/kernels/zgemm/gemm_utils.cuh",
+      "src/kernels/zgemm/gemm_w4a4.cu",
+      "src/kernels/zgemm/gemm_w4a4.cuh",
+      "src/kernels/zgemm/gemm_w4a4_launch.cuh",
+      "src/kernels/zgemm/gemm_w4a4_launch_bf16_fp4.cu",
+      "src/kernels/zgemm/gemm_w4a4_launch_bf16_int4.cu",
+      "src/kernels/zgemm/gemm_w4a4_launch_fp16_fp4.cu",
+      "src/kernels/zgemm/gemm_w4a4_launch_fp16_int4.cu",
+      "src/kernels/zgemm/gemm_w4a4_launch_fp16_int4_fasteri2f.cu",
+      "src/kernels/zgemm/gemm_w4a4_launch_impl.cuh",
+      "src/kernels/zgemm/gemm_w4a4_test.cu",
+      "src/kernels/zgemm/gemm_w8a8.cu",
+      "src/kernels/zgemm/gemm_w8a8.cuh",
+      "src/kernels/zgemm/lora.cuh",
+      "src/kernels/zgemm/mma.cuh",
+      "src/kernels/zgemm/mma_earlycuda.cuh"
+    ],
+    "markers": {
+      "device_code": 307,
+      "warp_intrinsic": 28,
+      "kernel": 22,
+      "launch": 45
+    },
+    "libraries": {
+      "cublas": 18,
+      "cutlass": 195
+    }
+  },
+  "components": [
+    {
+      "id": "build:setup-py-rocm",
+      "kind": "build",
+      "where": "setup.py (arch list from PYTORCH_ROCM_ARCH, hipcc flags, +rocm version tag, source list)"
+    },
+    {
+      "id": "build:windows-rocm",
+      "kind": "build",
+      "where": "setup.py MSVC/nvcc_msvc flag sets under a TheRock clang-cl host; scripts/build_windows_wheel.cmd"
+    },
+    {
+      "id": "python:arch-detection",
+      "kind": "python",
+      "where": "nunchaku/utils.py get_precision, is_turing, check_hardware_compatibility (device-capability collision on ROCm)"
+    },
+    {
+      "id": "kernel:primitive-layer-int4",
+      "kind": "kernel",
+      "where": "zgemm/mma.cuh mma_m16n8kx_s32common<s4|u4,s4>, gemm_w4a4.cuh GEMM_W4A4::mma"
+    },
+    {
+      "id": "kernel:primitive-layer-int8",
+      "kind": "kernel",
+      "where": "zgemm/gemm_w8a8.cuh GEMM_W8A8::mma (s8 m16n8k32)"
+    },
+    {
+      "id": "kernel:primitive-layer-f16",
+      "kind": "kernel",
+      "where": "zgemm/mma.cuh mma_m16n8k16_f16f16f16f16, mma_m16n8k16_f32f16f16f32<bf16>"
+    },
+    {
+      "id": "kernel:stage2-cdna-mfma-int4",
+      "kind": "kernel",
+      "where": "W4A4 GEMM main loop on CDNA (gfx90a, gfx942, gfx950): s4/u4 unpacked to s8, i8 32x32 MFMA, proven bit-identical to the stage 1 lane-gather reference (ruling Q3 = b)"
+    },
+    {
+      "id": "kernel:stage2-rdna-wmma-int4",
+      "kind": "kernel",
+      "where": "W4A4 GEMM main loop on RDNA (gfx11, gfx1151, gfx12): WMMA iu4, proven bit-identical to stage 1 (ruling Q3 = b)"
+    },
+    {
+      "id": "kernel:stage2-rdna-wmma-f16",
+      "kind": "kernel",
+      "where": "f16/bf16 m16n8k16 primitive (LoRA, attention, AWQ GEMM) on RDNA through WMMA f16/bf16 (plan stage 2 RDNA bullet; ruling Q3 = b)"
+    },
+    {
+      "id": "kernel:ptx-helpers",
+      "kind": "kernel",
+      "where": "zgemm/gemm_utils.cuh ldmatrix, movmatrix, ld/st.shared, load/store_pred, cvt.pack.sat, approx math, red.add, lop3/prmt i2f; utils.cuh cvt.rni.sat, __nanosleep"
+    },
+    {
+      "id": "kernel:arch-macro-gates",
+      "kind": "kernel",
+      "where": "gemm_base.cuh invoke_kernel, __CUDA_ARCH__ gates in utils.cuh, mma.cuh, attention.cuh, gemm_w4a4.cuh:724, gemv_awq.cu, gemm_awq.cu, semaphore.h; __CUDACC_VER_MAJOR__"
+    },
+    {
+      "id": "kernel:wavefront-width-sweep",
+      "kind": "kernel",
+      "where": "width-32/64-bit-mask shuffles in epilogues.cuh, reduction_utils.cuh, gemv_awq.cu, gemm_base.cuh, lora.cuh, attention.cuh, gemm_w4a4.cuh"
+    },
+    {
+      "id": "kernel:gemm_w4a4-int4",
+      "kind": "kernel",
+      "where": "zgemm/gemm_w4a4.cu, gemm_w4a4_launch_{fp16,bf16}_int4.cu, gemm_w4a4_launch_fp16_int4_fasteri2f.cu, epilogues.cuh, lora.cuh"
+    },
+    {
+      "id": "kernel:quantize_w4a4_act_fuse_lora-int4",
+      "kind": "kernel",
+      "where": "zgemm/gemm_w4a4.cuh quantize_w4a4_fuse_lora_kernel, quantize_w4a4_act/wgt kernels"
+    },
+    {
+      "id": "kernel:gemm_w4a4-nvfp4",
+      "kind": "kernel",
+      "where": "zgemm/gemm_w4a4_launch_{fp16,bf16}_fp4.cu, gemm_w4a4.cuh mma_fp4, gemm_utils.cuh quantize_float2_fp4/quantize_float4_fp8 on targets without FP4 matrix instructions: trap as upstream does below sm_120 (ruling Q1 = c)"
+    },
+    {
+      "id": "kernel:gemm_w4a4-nvfp4-gfx950",
+      "kind": "kernel",
+      "where": "gemm_w4a4.cuh compute_fp4 (ROCm) and gemm_utils.cuh float_to_e2m1/e4m3_satfinite on gfx950: e2m1 x ue4m3 decoded to f16 in registers (exact), four m16n8k16 f16 products per m16n8k64 on the CDNA f16 MFMA (rulings Q1 = c, refined 2026-11-24 to option b)"
+    },
+    {
+      "id": "kernel:gemm_w4a4-nvfp4-gfx1250",
+      "kind": "kernel",
+      "where": "gemm_w4a4.cuh compute_fp4_wmma on gfx1250: native v_wmma_scale16_f32_16x16x128_f8f6f4 with FP4 operands and E4M3 block-16 scales (ruling Q1 of 2026-11-24)"
+    },
+    {
+      "id": "kernel:attention_fp16",
+      "kind": "kernel",
+      "where": "zgemm/attention.cu, attention.cuh (nunchaku-fp16 attention impl)"
+    },
+    {
+      "id": "kernel:zgemm-gemm_w8a8",
+      "kind": "kernel",
+      "where": "zgemm/gemm_w8a8.cu/.cuh (GEMM_W8A8 module, QuantizedGEMM88 binding)"
+    },
+    {
+      "id": "kernel:gemm_w4a4_test-entry-points",
+      "kind": "kernel",
+      "where": "zgemm/gemm_w4a4_test.cu (ops.test_rmsnorm_rope, ops.test_pack_qkv)"
+    },
+    {
+      "id": "kernel:awq-gemm",
+      "kind": "kernel",
+      "where": "awq/gemm_awq.cu, dequantize.cuh, semaphore.h (ldmatrix x4/trans, mma m16n8k16 f16/bf16, cp.async, acquire/release)"
+    },
+    {
+      "id": "kernel:awq-gemv",
+      "kind": "kernel",
+      "where": "awq/gemv_awq.cu"
+    },
+    {
+      "id": "kernel:elementwise-norm-misc",
+      "kind": "kernel",
+      "where": "activation_kernels.cu, layernorm_kernels.cu, misc_kernels.cu (+_impl.cuh), reduction_utils.cuh"
+    },
+    {
+      "id": "library:cutlass-gemm_f16",
+      "kind": "library",
+      "where": "kernels/gemm_f16.cu -> hipBLAS(Lt) on ROCm"
+    },
+    {
+      "id": "library:cutlass-dwconv",
+      "kind": "library",
+      "where": "kernels/dwconv.cu -> HIP depthwise kernel on ROCm"
+    },
+    {
+      "id": "library:cutlass-gemm_batched",
+      "kind": "library",
+      "where": "kernels/gemm_batched.cu, reached only with sparsityRatio>0 (ruling Q2)"
+    },
+    {
+      "id": "library:cutlass-gemm_w8a8_fp16",
+      "kind": "library",
+      "where": "kernels/gemm_w8a8.cu, no caller (ruling Q2)"
+    },
+    {
+      "id": "library:flash-attn2-dense-mha_fwd",
+      "kind": "library",
+      "where": "third_party/Block-Sparse-Attention flash_api mha_fwd from FluxModel.cpp:120,246 -> torch SDPA on ROCm"
+    },
+    {
+      "id": "library:flash-attn2-varlen-mha_varlen_fwd",
+      "kind": "library",
+      "where": "third_party/Block-Sparse-Attention flash_api mha_varlen_fwd from SanaModel.cpp:166 (Sana cross attention; missed by the planner's inventory) -> per-sample torch SDPA on ROCm"
+    },
+    {
+      "id": "library:block-sparse-mha_fwd_block",
+      "kind": "library",
+      "where": "third_party/Block-Sparse-Attention mha_fwd_block from FluxModel.cpp:203, reached only with sparsityRatio>0 (ruling Q2)"
+    },
+    {
+      "id": "library:cublas",
+      "kind": "library",
+      "where": "Linear.cpp cublasHgemm x4, common.h handle -> hipBLAS"
+    },
+    {
+      "id": "runtime:tensor-alloc-nvtx",
+      "kind": "runtime",
+      "where": "Tensor.h cudaHostAlloc/cudaMallocAsync; NVTX in Linear.cpp, SanaModel.cpp, FluxModel.cpp"
+    },
+    {
+      "id": "test:tests/ops (new op-level golden tests)",
+      "kind": "test",
+      "where": "tests/ops/ (to be authored with the port)"
+    },
+    {
+      "id": "test:tests/flux",
+      "kind": "test",
+      "where": "tests/flux (C++ QuantizedFluxModel path; speed/turing/device_id skip rules in plan)"
+    },
+    {
+      "id": "test:tests/sana",
+      "kind": "test",
+      "where": "tests/sana (C++ QuantizedSanaModel path)"
+    },
+    {
+      "id": "test:tests/v1/flux",
+      "kind": "test",
+      "where": "tests/v1/flux"
+    },
+    {
+      "id": "test:tests/v1/qwenimage",
+      "kind": "test",
+      "where": "tests/v1/qwenimage"
+    },
+    {
+      "id": "test:tests/v1/sdxl",
+      "kind": "test",
+      "where": "tests/v1/sdxl"
+    },
+    {
+      "id": "test:tests/v1/z_image",
+      "kind": "test",
+      "where": "tests/v1/z_image"
+    },
+    {
+      "id": "example:examples",
+      "kind": "example",
+      "where": "examples/*.py, examples/v1 (exercised through tests/*/test_examples.py)"
+    },
+    {
+      "id": "example:app",
+      "kind": "example",
+      "where": "app/flux.1, app/sana gradio demos (pure Python, no device code)"
+    },
+    {
+      "id": "test:tests/ops (stage 2 vs stage 1 bit-identity)",
+      "kind": "test",
+      "where": "each stage 2 path compared bit for bit against the stage 1 reference build on the platform that runs it (ruling Q3 = b)"
+    },
+    {
+      "id": "kernel:stage2-rdna-wmma-gfx12",
+      "kind": "kernel",
+      "where": "gfx12 operand and result layouts of the RDNA WMMA paths (iu4 in gemm_w4a4_block_wmma, f16/bf16 in mma_rocm::wmma_m16n16k16_f32)"
+    },
+    {
+      "id": "kernel:stage2-cdna-mfma-f16",
+      "kind": "kernel",
+      "where": "f16/bf16 m16n8k16 primitive (LoRA, attention, AWQ GEMM) on CDNA through the four-block 16x16x4 MFMA, mma_rocm::mfma_m16n16k16_f32 (ruling Q2 of 2026-11-24)"
+    },
+    {
+      "id": "kernel:stage2-gfx1250",
+      "kind": "kernel",
+      "where": "INT4 main loop and f16/bf16 products on gfx1250, which has none of the gfx11/gfx12 16x16x16 WMMA forms: lane-gather reference path (fork 75e2528)"
+    }
   ],
-  "markers": {
-   "device_code": 307,
-   "warp_intrinsic": 28,
-   "kernel": 22,
-   "launch": 45
-  },
-  "libraries": {
-   "cublas": 18,
-   "cutlass": 195
-  }
- },
- "components": [
-  {
-   "id": "build:setup-py-rocm",
-   "kind": "build",
-   "where": "setup.py (arch list from PYTORCH_ROCM_ARCH, hipcc flags, +rocm version tag, source list)"
-  },
-  {
-   "id": "build:windows-rocm",
-   "kind": "build",
-   "where": "setup.py MSVC/nvcc_msvc flag sets under a TheRock clang-cl host; scripts/build_windows_wheel.cmd"
-  },
-  {
-   "id": "python:arch-detection",
-   "kind": "python",
-   "where": "nunchaku/utils.py get_precision, is_turing, check_hardware_compatibility (device-capability collision on ROCm)"
-  },
-  {
-   "id": "kernel:primitive-layer-int4",
-   "kind": "kernel",
-   "where": "zgemm/mma.cuh mma_m16n8kx_s32common<s4|u4,s4>, gemm_w4a4.cuh GEMM_W4A4::mma"
-  },
-  {
-   "id": "kernel:primitive-layer-int8",
-   "kind": "kernel",
-   "where": "zgemm/gemm_w8a8.cuh GEMM_W8A8::mma (s8 m16n8k32)"
-  },
-  {
-   "id": "kernel:primitive-layer-f16",
-   "kind": "kernel",
-   "where": "zgemm/mma.cuh mma_m16n8k16_f16f16f16f16, mma_m16n8k16_f32f16f16f32<bf16>"
-  },
-  {
-   "id": "kernel:stage2-cdna-mfma-int4",
-   "kind": "kernel",
-   "where": "W4A4 GEMM main loop on CDNA (gfx90a, gfx942, gfx950): s4/u4 unpacked to s8, i8 32x32 MFMA, proven bit-identical to the stage 1 lane-gather reference (ruling Q3 = b)"
-  },
-  {
-   "id": "kernel:stage2-rdna-wmma-int4",
-   "kind": "kernel",
-   "where": "W4A4 GEMM main loop on RDNA (gfx11, gfx1151, gfx12): WMMA iu4, proven bit-identical to stage 1 (ruling Q3 = b)"
-  },
-  {
-   "id": "kernel:stage2-rdna-wmma-f16",
-   "kind": "kernel",
-   "where": "f16/bf16 m16n8k16 primitive (LoRA, attention, AWQ GEMM) on RDNA through WMMA f16/bf16 (plan stage 2 RDNA bullet; ruling Q3 = b)"
-  },
-  {
-   "id": "kernel:ptx-helpers",
-   "kind": "kernel",
-   "where": "zgemm/gemm_utils.cuh ldmatrix, movmatrix, ld/st.shared, load/store_pred, cvt.pack.sat, approx math, red.add, lop3/prmt i2f; utils.cuh cvt.rni.sat, __nanosleep"
-  },
-  {
-   "id": "kernel:arch-macro-gates",
-   "kind": "kernel",
-   "where": "gemm_base.cuh invoke_kernel, __CUDA_ARCH__ gates in utils.cuh, mma.cuh, attention.cuh, gemm_w4a4.cuh:724, gemv_awq.cu, gemm_awq.cu, semaphore.h; __CUDACC_VER_MAJOR__"
-  },
-  {
-   "id": "kernel:wavefront-width-sweep",
-   "kind": "kernel",
-   "where": "width-32/64-bit-mask shuffles in epilogues.cuh, reduction_utils.cuh, gemv_awq.cu, gemm_base.cuh, lora.cuh, attention.cuh, gemm_w4a4.cuh"
-  },
-  {
-   "id": "kernel:gemm_w4a4-int4",
-   "kind": "kernel",
-   "where": "zgemm/gemm_w4a4.cu, gemm_w4a4_launch_{fp16,bf16}_int4.cu, gemm_w4a4_launch_fp16_int4_fasteri2f.cu, epilogues.cuh, lora.cuh"
-  },
-  {
-   "id": "kernel:quantize_w4a4_act_fuse_lora-int4",
-   "kind": "kernel",
-   "where": "zgemm/gemm_w4a4.cuh quantize_w4a4_fuse_lora_kernel, quantize_w4a4_act/wgt kernels"
-  },
-  {
-   "id": "kernel:gemm_w4a4-nvfp4",
-   "kind": "kernel",
-   "where": "zgemm/gemm_w4a4_launch_{fp16,bf16}_fp4.cu, gemm_w4a4.cuh mma_fp4, gemm_utils.cuh quantize_float2_fp4/quantize_float4_fp8 on targets without FP4 matrix instructions: trap as upstream does below sm_120 (ruling Q1 = c)"
-  },
-  {
-   "id": "kernel:gemm_w4a4-nvfp4-gfx950",
-   "kind": "kernel",
-   "where": "gemm_w4a4.cuh mma_fp4 / quantize_*_fp4 on gfx950: scaled MFMA f8f6f4 with FP4 operands, NVFP4 ue4m3 block-16 scales in software (ruling Q1 = c)"
-  },
-  {
-   "id": "kernel:gemm_w4a4-nvfp4-gfx1250",
-   "kind": "kernel",
-   "where": "gemm_w4a4.cuh mma_fp4 / quantize_*_fp4 on gfx1250: WMMA f4, NVFP4 ue4m3 block-16 scales in software (ruling Q1 = c)"
-  },
-  {
-   "id": "kernel:attention_fp16",
-   "kind": "kernel",
-   "where": "zgemm/attention.cu, attention.cuh (nunchaku-fp16 attention impl)"
-  },
-  {
-   "id": "kernel:zgemm-gemm_w8a8",
-   "kind": "kernel",
-   "where": "zgemm/gemm_w8a8.cu/.cuh (GEMM_W8A8 module, QuantizedGEMM88 binding)"
-  },
-  {
-   "id": "kernel:gemm_w4a4_test-entry-points",
-   "kind": "kernel",
-   "where": "zgemm/gemm_w4a4_test.cu (ops.test_rmsnorm_rope, ops.test_pack_qkv)"
-  },
-  {
-   "id": "kernel:awq-gemm",
-   "kind": "kernel",
-   "where": "awq/gemm_awq.cu, dequantize.cuh, semaphore.h (ldmatrix x4/trans, mma m16n8k16 f16/bf16, cp.async, acquire/release)"
-  },
-  {
-   "id": "kernel:awq-gemv",
-   "kind": "kernel",
-   "where": "awq/gemv_awq.cu"
-  },
-  {
-   "id": "kernel:elementwise-norm-misc",
-   "kind": "kernel",
-   "where": "activation_kernels.cu, layernorm_kernels.cu, misc_kernels.cu (+_impl.cuh), reduction_utils.cuh"
-  },
-  {
-   "id": "library:cutlass-gemm_f16",
-   "kind": "library",
-   "where": "kernels/gemm_f16.cu -> hipBLAS(Lt) on ROCm"
-  },
-  {
-   "id": "library:cutlass-dwconv",
-   "kind": "library",
-   "where": "kernels/dwconv.cu -> HIP depthwise kernel on ROCm"
-  },
-  {
-   "id": "library:cutlass-gemm_batched",
-   "kind": "library",
-   "where": "kernels/gemm_batched.cu, reached only with sparsityRatio>0 (ruling Q2)"
-  },
-  {
-   "id": "library:cutlass-gemm_w8a8_fp16",
-   "kind": "library",
-   "where": "kernels/gemm_w8a8.cu, no caller (ruling Q2)"
-  },
-  {
-   "id": "library:flash-attn2-dense-mha_fwd",
-   "kind": "library",
-   "where": "third_party/Block-Sparse-Attention flash_api mha_fwd from FluxModel.cpp:120,246 -> torch SDPA on ROCm"
-  },
-  {
-   "id": "library:flash-attn2-varlen-mha_varlen_fwd",
-   "kind": "library",
-   "where": "third_party/Block-Sparse-Attention flash_api mha_varlen_fwd from SanaModel.cpp:166 (Sana cross attention; missed by the planner's inventory) -> per-sample torch SDPA on ROCm"
-  },
-  {
-   "id": "library:block-sparse-mha_fwd_block",
-   "kind": "library",
-   "where": "third_party/Block-Sparse-Attention mha_fwd_block from FluxModel.cpp:203, reached only with sparsityRatio>0 (ruling Q2)"
-  },
-  {
-   "id": "library:cublas",
-   "kind": "library",
-   "where": "Linear.cpp cublasHgemm x4, common.h handle -> hipBLAS"
-  },
-  {
-   "id": "runtime:tensor-alloc-nvtx",
-   "kind": "runtime",
-   "where": "Tensor.h cudaHostAlloc/cudaMallocAsync; NVTX in Linear.cpp, SanaModel.cpp, FluxModel.cpp"
-  },
-  {
-   "id": "test:tests/ops (new op-level golden tests)",
-   "kind": "test",
-   "where": "tests/ops/ (to be authored with the port)"
-  },
-  {
-   "id": "test:tests/flux",
-   "kind": "test",
-   "where": "tests/flux (C++ QuantizedFluxModel path; speed/turing/device_id skip rules in plan)"
-  },
-  {
-   "id": "test:tests/sana",
-   "kind": "test",
-   "where": "tests/sana (C++ QuantizedSanaModel path)"
-  },
-  {
-   "id": "test:tests/v1/flux",
-   "kind": "test",
-   "where": "tests/v1/flux"
-  },
-  {
-   "id": "test:tests/v1/qwenimage",
-   "kind": "test",
-   "where": "tests/v1/qwenimage"
-  },
-  {
-   "id": "test:tests/v1/sdxl",
-   "kind": "test",
-   "where": "tests/v1/sdxl"
-  },
-  {
-   "id": "test:tests/v1/z_image",
-   "kind": "test",
-   "where": "tests/v1/z_image"
-  },
-  {
-   "id": "example:examples",
-   "kind": "example",
-   "where": "examples/*.py, examples/v1 (exercised through tests/*/test_examples.py)"
-  },
-  {
-   "id": "example:app",
-   "kind": "example",
-   "where": "app/flux.1, app/sana gradio demos (pure Python, no device code)"
-  },
-  {
-   "id": "test:tests/ops (stage 2 vs stage 1 bit-identity)",
-   "kind": "test",
-   "where": "each stage 2 path compared bit for bit against the stage 1 reference build on the platform that runs it (ruling Q3 = b)"
-  },
-  {
-   "id": "kernel:stage2-rdna-wmma-gfx12",
-   "kind": "kernel",
-   "where": "gfx12 operand and result layouts of the RDNA WMMA paths (iu4 in gemm_w4a4_block_wmma, f16/bf16 in mma_rocm::wmma_m16n16k16_f32)"
-  }
- ],
- "covered": [
-  {
-   "id": "build:setup-py-rocm",
-   "note": "setup.py ROCm branch (9875a78); the documented editable install built on gfx942"
-  },
-  {
-   "id": "python:arch-detection",
-   "note": "nunchaku/utils.py get_rocm_arch/ROCM_FP4_ARCHS; int4 on ROCm"
-  },
-  {
-   "id": "kernel:primitive-layer-int4",
-   "note": "zgemm/mma_rocm.cuh stage 1 lane gather; reference for the stage 2 bit-identity check"
-  },
-  {
-   "id": "kernel:primitive-layer-int8",
-   "note": "mma_rocm.cuh s8 m16n8k32 used by GEMM_W8A8::mma; compiled, only reachable through the QuantizedGEMM88 binding"
-  },
-  {
-   "id": "kernel:primitive-layer-f16",
-   "note": "mma_rocm.cuh f16/bf16 m16n8k16 stage 1; exercised by LoRA (tests/ops/test_svdq_linear.py), attention (test_attention_fp16.py), AWQ GEMM"
-  },
-  {
-   "id": "kernel:ptx-helpers",
-   "note": "gemm_utils.cuh, utils.cuh, awq/*: HIP arms of every asm helper"
-  },
-  {
-   "id": "kernel:arch-macro-gates",
-   "note": "invoke_kernel ROCm arm, IS_SM80 on ROCm, __CUDA_ARCH__ gates"
-  },
-  {
-   "id": "kernel:wavefront-width-sweep",
-   "note": "shfl_warp/shfl_xor_warp pin width 32; syncwarp wrapper"
-  },
-  {
-   "id": "kernel:gemm_w4a4-int4",
-   "note": "tests/ops/test_gemm_w4a4.py, end-to-end SDXL/SDXL-Turbo/Z-Image/SANA on gfx942"
-  },
-  {
-   "id": "kernel:quantize_w4a4_act_fuse_lora-int4",
-   "note": "tests/ops/test_svdq_linear.py; bit-identity script quantize cases"
-  },
-  {
-   "id": "kernel:gemm_w4a4-nvfp4",
-   "note": "traps on AMD targets without FP4 matrix instructions (Q1 = c), as upstream below sm_120"
-  },
-  {
-   "id": "kernel:stage2-cdna-mfma-int4",
-   "note": "gemm_w4a4_block_mfma; bit-identical to stage 1 on gfx942 (notes 2026-11-24); gfx90a/gfx950 compiled, their validators rerun the script"
-  },
-  {
-   "id": "kernel:attention_fp16",
-   "note": "tests/ops/test_attention_fp16.py vs SDPA; FLUX transformer run with nunchaku-fp16"
-  },
-  {
-   "id": "kernel:gemm_w4a4_test-entry-points",
-   "note": "compiled; the same epilogues (RMSNormRope, PackQKV) checked bit for bit against the default epilogue (notes)"
-  },
-  {
-   "id": "kernel:awq-gemm",
-   "note": "tests/ops/test_awq.py, all five tile configurations incl. split-K"
-  },
-  {
-   "id": "kernel:awq-gemv",
-   "note": "tests/ops/test_awq.py (group size 64, the only size the kernel supports)"
-  },
-  {
-   "id": "kernel:elementwise-norm-misc",
-   "note": "exercised by the end-to-end model tests"
-  },
-  {
-   "id": "library:cutlass-gemm_f16",
-   "note": "hipBLAS GemmEx + bias kernel; SANA examples"
-  },
-  {
-   "id": "library:cutlass-dwconv",
-   "note": "direct depthwise kernel; SANA examples"
-  },
-  {
-   "id": "library:cutlass-gemm_batched",
-   "note": "hipBLAS strided-batched (Q2 = a); reachable only with sparsityRatio > 0, not exercised"
-  },
-  {
-   "id": "library:flash-attn2-dense-mha_fwd",
-   "note": "torch SDPA (src/interop/flash_api_rocm.cpp); FLUX C++ transformer with flashattn2"
-  },
-  {
-   "id": "library:flash-attn2-varlen-mha_varlen_fwd",
-   "note": "per-sample torch SDPA; SANA cross attention in the SANA examples"
-  },
-  {
-   "id": "library:block-sparse-mha_fwd_block",
-   "note": "raises 'Block-sparse attention is not supported on ROCm' (Q2 = a)"
-  },
-  {
-   "id": "library:cublas",
-   "note": "hipify to hipBLAS"
-  },
-  {
-   "id": "runtime:tensor-alloc-nvtx",
-   "note": "NVTX no-op on ROCm; hipHostRegisterReadOnly"
-  },
-  {
-   "id": "test:tests/ops (new op-level golden tests)",
-   "note": "tests/ops, 38 tests"
-  },
-  {
-   "id": "test:tests/ops (stage 2 vs stage 1 bit-identity)",
-   "note": "gfx942 done (CDNA MFMA); the script is in notes for the other platforms"
-  },
-  {
-   "id": "test:tests/sana",
-   "note": "2 passed on gfx942"
-  },
-  {
-   "id": "test:tests/v1/sdxl",
-   "note": "test_sdxl_lpips, test_sdxl_turbo_lpips passed on gfx942"
-  },
-  {
-   "id": "test:tests/v1/z_image",
-   "note": "test_zimage_turbo 3 passed on gfx942"
-  },
-  {
-   "id": "example:app",
-   "note": "pure Python, no device code; unchanged"
-  },
-  {
-   "id": "kernel:stage2-rdna-wmma-int4",
-   "note": "gemm_w4a4_block_wmma (fork 67db6fa) proven bit-identical to the NUNCHAKU_ROCM_MMA_REFERENCE=1 build on gfx1100 (notes, RDNA porter round 2026-11-24); the gfx12 operand layout is owed separately (kernel:stage2-rdna-wmma-gfx12)"
-  },
-  {
-   "id": "kernel:stage2-rdna-wmma-f16",
-   "note": "mma_m16n16k16_* on v_wmma_f32_16x16x16_{f16,bf16} (fork 8aa04e7) for the LoRA epilogues, attention_fp16 and the AWQ GEMM; gfx1100: primitive test vs reference and float64, op outputs within 2 units of roundoff of the reference build, tests/ops and end-to-end pass (notes); gfx12 owed (kernel:stage2-rdna-wmma-gfx12)"
-  },
-  {
-   "id": "kernel:stage2-rdna-wmma-gfx12",
-   "note": "gfx1201 (fork 8aa04e7, notes gfx12 proof round 2026-11-24): iu4 path bit-identical to the NUNCHAKU_ROCM_MMA_REFERENCE=1 build (5c32be5 default vs reference, only fp32 lora_act_out differs, as between two reference runs); f16/bf16 primitive test PASS; op outputs within 2 units of roundoff of the reference build; tests/ops 38 passed; end-to-end set 10 passed"
-  }
- ],
- "scoped_out": [
-  {
-   "id": "library:cutlass-gemm_w8a8_fp16",
-   "reason": "Ruling Q2 = a (Jeff Daily, 2026-11-23): no caller anywhere in src/ or nunchaku/, left out of the ROCm source list."
-  }
- ],
- "owed": [
-  {
-   "id": "kernel:gemm_w4a4-nvfp4-gfx950",
-   "reason": "Q1 = c native FP4 on gfx950: not written; design question 1 for jeff in notes (ue4m3/16 scales vs e8m0/32 hardware scales). After the answer: write, compile with --offload-arch=gfx950, prove on a gfx950 host."
-  },
-  {
-   "id": "kernel:gemm_w4a4-nvfp4-gfx1250",
-   "reason": "Q1 = c native FP4 on gfx1250 (WMMA f4): not written; same question 1; needs a gfx1250 host to run."
-  },
-  {
-   "id": "kernel:zgemm-gemm_w8a8",
-   "reason": "QuantizedGEMM88 (zgemm/gemm_w8a8.cu) compiles but requests 92160 B of dynamic LDS, above 64 KB on gfx90a/gfx942; no caller in nunchaku/. Needs a smaller ROCm tile or a scope ruling."
-  },
-  {
-   "id": "build:windows-rocm",
-   "reason": "Windows gate: setup.py passes no nvcc MSVC flags to hipcc on ROCm; untested; Windows runs go last (ruling 2026-11-23)."
-  },
-  {
-   "id": "test:tests/flux",
-   "reason": "FLUX.1 base models are gated; this host has no HF token. Needs a host with a token that accepted the FLUX licence."
-  },
-  {
-   "id": "test:tests/v1/flux",
-   "reason": "same as tests/flux (gated FLUX.1)."
-  },
-  {
-   "id": "test:tests/v1/qwenimage",
-   "reason": "not run this round (public, ~40 GB reference); run on a 64+ GB GPU."
-  },
-  {
-   "id": "example:examples",
-   "reason": "SANA examples pass; the FLUX examples need the gated FLUX.1 pipeline."
-  }
- ],
- "removed_from_floor": []
+  "covered": [
+    {
+      "id": "build:setup-py-rocm",
+      "note": "setup.py ROCm branch (9875a78); the documented editable install built on gfx942"
+    },
+    {
+      "id": "python:arch-detection",
+      "note": "nunchaku/utils.py get_rocm_arch/ROCM_FP4_ARCHS; int4 on ROCm"
+    },
+    {
+      "id": "kernel:primitive-layer-int4",
+      "note": "zgemm/mma_rocm.cuh stage 1 lane gather; reference for the stage 2 bit-identity check"
+    },
+    {
+      "id": "kernel:primitive-layer-int8",
+      "note": "mma_rocm.cuh s8 m16n8k32 used by GEMM_W8A8::mma; compiled, only reachable through the QuantizedGEMM88 binding"
+    },
+    {
+      "id": "kernel:primitive-layer-f16",
+      "note": "mma_rocm.cuh f16/bf16 m16n8k16 stage 1; exercised by LoRA (tests/ops/test_svdq_linear.py), attention (test_attention_fp16.py), AWQ GEMM"
+    },
+    {
+      "id": "kernel:ptx-helpers",
+      "note": "gemm_utils.cuh, utils.cuh, awq/*: HIP arms of every asm helper"
+    },
+    {
+      "id": "kernel:arch-macro-gates",
+      "note": "invoke_kernel ROCm arm, IS_SM80 on ROCm, __CUDA_ARCH__ gates"
+    },
+    {
+      "id": "kernel:wavefront-width-sweep",
+      "note": "shfl_warp/shfl_xor_warp pin width 32; syncwarp wrapper"
+    },
+    {
+      "id": "kernel:gemm_w4a4-int4",
+      "note": "tests/ops/test_gemm_w4a4.py, end-to-end SDXL/SDXL-Turbo/Z-Image/SANA on gfx942"
+    },
+    {
+      "id": "kernel:quantize_w4a4_act_fuse_lora-int4",
+      "note": "tests/ops/test_svdq_linear.py; bit-identity script quantize cases"
+    },
+    {
+      "id": "kernel:gemm_w4a4-nvfp4",
+      "note": "traps on AMD targets without FP4 matrix instructions (Q1 = c), as upstream below sm_120"
+    },
+    {
+      "id": "kernel:stage2-cdna-mfma-int4",
+      "note": "gemm_w4a4_block_mfma; bit-identical to stage 1 on gfx942 and gfx90a (8aa04e7) and gfx950 (8aa04e7, gfx950 round 2026-11-24)"
+    },
+    {
+      "id": "kernel:attention_fp16",
+      "note": "tests/ops/test_attention_fp16.py vs SDPA; FLUX transformer run with nunchaku-fp16"
+    },
+    {
+      "id": "kernel:gemm_w4a4_test-entry-points",
+      "note": "compiled; the same epilogues (RMSNormRope, PackQKV) checked bit for bit against the default epilogue (notes)"
+    },
+    {
+      "id": "kernel:awq-gemm",
+      "note": "tests/ops/test_awq.py, all five tile configurations incl. split-K"
+    },
+    {
+      "id": "kernel:awq-gemv",
+      "note": "tests/ops/test_awq.py (group size 64, the only size the kernel supports)"
+    },
+    {
+      "id": "kernel:elementwise-norm-misc",
+      "note": "exercised by the end-to-end model tests"
+    },
+    {
+      "id": "library:cutlass-gemm_f16",
+      "note": "hipBLAS GemmEx + bias kernel; SANA examples"
+    },
+    {
+      "id": "library:cutlass-dwconv",
+      "note": "direct depthwise kernel; SANA examples"
+    },
+    {
+      "id": "library:cutlass-gemm_batched",
+      "note": "hipBLAS strided-batched (Q2 = a); reachable only with sparsityRatio > 0, not exercised"
+    },
+    {
+      "id": "library:flash-attn2-dense-mha_fwd",
+      "note": "torch SDPA (src/interop/flash_api_rocm.cpp); FLUX C++ transformer with flashattn2"
+    },
+    {
+      "id": "library:flash-attn2-varlen-mha_varlen_fwd",
+      "note": "per-sample torch SDPA; SANA cross attention in the SANA examples"
+    },
+    {
+      "id": "library:block-sparse-mha_fwd_block",
+      "note": "raises 'Block-sparse attention is not supported on ROCm' (Q2 = a)"
+    },
+    {
+      "id": "library:cublas",
+      "note": "hipify to hipBLAS"
+    },
+    {
+      "id": "runtime:tensor-alloc-nvtx",
+      "note": "NVTX no-op on ROCm; hipHostRegisterReadOnly"
+    },
+    {
+      "id": "test:tests/ops (new op-level golden tests)",
+      "note": "tests/ops, 38 tests"
+    },
+    {
+      "id": "test:tests/ops (stage 2 vs stage 1 bit-identity)",
+      "note": "gfx942 done (CDNA MFMA); the script is in notes for the other platforms"
+    },
+    {
+      "id": "test:tests/sana",
+      "note": "2 passed on gfx942"
+    },
+    {
+      "id": "test:tests/v1/sdxl",
+      "note": "test_sdxl_lpips, test_sdxl_turbo_lpips passed on gfx942"
+    },
+    {
+      "id": "test:tests/v1/z_image",
+      "note": "test_zimage_turbo 3 passed on gfx942"
+    },
+    {
+      "id": "example:app",
+      "note": "pure Python, no device code; unchanged"
+    },
+    {
+      "id": "kernel:stage2-rdna-wmma-int4",
+      "note": "gemm_w4a4_block_wmma (fork 67db6fa) proven bit-identical to the NUNCHAKU_ROCM_MMA_REFERENCE=1 build on gfx1100 (notes, RDNA porter round 2026-11-24); the gfx12 operand layout is owed separately (kernel:stage2-rdna-wmma-gfx12)"
+    },
+    {
+      "id": "kernel:stage2-rdna-wmma-f16",
+      "note": "mma_m16n16k16_* on v_wmma_f32_16x16x16_{f16,bf16} (fork 8aa04e7) for the LoRA epilogues, attention_fp16 and the AWQ GEMM; gfx1100: primitive test vs reference and float64, op outputs within 2 units of roundoff of the reference build, tests/ops and end-to-end pass (notes); gfx12 owed (kernel:stage2-rdna-wmma-gfx12)"
+    },
+    {
+      "id": "kernel:stage2-rdna-wmma-gfx12",
+      "note": "gfx1201 (fork 8aa04e7, notes gfx12 proof round 2026-11-24): iu4 path bit-identical to the NUNCHAKU_ROCM_MMA_REFERENCE=1 build (5c32be5 default vs reference, only fp32 lora_act_out differs, as between two reference runs); f16/bf16 primitive test PASS; op outputs within 2 units of roundoff of the reference build; tests/ops 38 passed; end-to-end set 10 passed"
+    },
+    {
+      "id": "kernel:gemm_w4a4-nvfp4-gfx950",
+      "note": "fork 9ce05de: FP4 GEMM vs float64, FP4 quantize vs rounding bounds, NVFP4 SVDQW4A4Linear (tests/ops/test_gemm_w4a4_fp4.py, 14 passed on gfx950); Z-Image Turbo svdq-fp4 r32/r128 LPIPS 0.349/0.293 (notes, gfx950 round 2026-11-24)"
+    },
+    {
+      "id": "kernel:stage2-cdna-mfma-f16",
+      "note": "fork 5db74f4, proven on gfx950 (primitive test, op outputs within 2 units of roundoff of the reference build, deterministic, tests/ops and end-to-end pass); the gfx942 (same 16x16x4_4b instructions) and gfx90a (16x16x4f16/bf16_1k) runs are owed (kernel:stage2-cdna-mfma-f16-runs)"
+    }
+  ],
+  "scoped_out": [
+    {
+      "id": "library:cutlass-gemm_w8a8_fp16",
+      "reason": "Ruling Q2 = a (Jeff Daily, 2026-11-23): no caller anywhere in src/ or nunchaku/, left out of the ROCm source list."
+    }
+  ],
+  "owed": [
+    {
+      "id": "kernel:zgemm-gemm_w8a8",
+      "reason": "QuantizedGEMM88 (zgemm/gemm_w8a8.cu) compiles but requests 92160 B of dynamic LDS, above 64 KB on gfx90a/gfx942; no caller in nunchaku/. Needs a smaller ROCm tile or a scope ruling."
+    },
+    {
+      "id": "build:windows-rocm",
+      "reason": "Windows gate: setup.py passes no nvcc MSVC flags to hipcc on ROCm; untested; Windows runs go last (ruling 2026-11-23)."
+    },
+    {
+      "id": "test:tests/flux",
+      "reason": "FLUX.1 base models are gated; this host has no HF token. Needs a host with a token that accepted the FLUX licence."
+    },
+    {
+      "id": "test:tests/v1/flux",
+      "reason": "same as tests/flux (gated FLUX.1)."
+    },
+    {
+      "id": "test:tests/v1/qwenimage",
+      "reason": "not run this round (public, ~40 GB reference); run on a 64+ GB GPU."
+    },
+    {
+      "id": "example:examples",
+      "reason": "SANA examples pass; the FLUX examples need the gated FLUX.1 pipeline."
+    },
+    {
+      "id": "kernel:gemm_w4a4-nvfp4-gfx1250",
+      "reason": "native scale16 WMMA path written and compiled for gfx1250 (fork 75e2528; 2688 v_wmma_scale16 per FP4 launch file); unproven until tests/ops runs on a gfx1250 GPU"
+    },
+    {
+      "id": "kernel:stage2-cdna-mfma-f16-runs",
+      "reason": "run f16_dump/reldiff, mma_dump, tests/ops and the end-to-end set on gfx942 and gfx90a at fork 75e2528 (notes, gfx950 round)"
+    },
+    {
+      "id": "kernel:stage2-gfx1250",
+      "reason": "gfx1250 takes the lane-gather reference for INT4 and f16/bf16 (no 16x16x16 WMMA there); a gfx1250 matrix-instruction path for them is not written; whether it is owed is jeff's call (gfx1250 is not a required gate)"
+    }
+  ],
+  "removed_from_floor": []
 }
