@@ -379,6 +379,19 @@
       "upstream_issue": null,
       "created_at": "2026-11-23T23:03:58Z",
       "decided": null
+    },
+    {
+      "id": "rocprim-stale-last-error-aborts-algorithm",
+      "kind": "rocm-bug-report",
+      "component": null,
+      "summary": "rocPRIM/hipCUB algorithms (SortPairs measured) check hipGetLastError() after their own launches and return on any error, so an error left by an unrelated earlier failed HIP call (hipIpcGetEventHandle -> 9, a refused hipModuleLaunchKernel -> 1) makes the next sort return that error and leave the data unsorted (2,096,613 of 4,194,303 pairs out of order at n = 4,194,304). Standalone reproducer t2.hip in the fourth review's commands.",
+      "refs": [
+        "notes.md Review 2026-11-24, fourth round, changes requested 2; rocprim/common.hpp ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-24T01:24:37Z",
+      "decided": null
     }
   ]
 }

@@ -9543,3 +9543,7 @@ $R/lib/llvm/bin/clang++ -x hip --rocm-path=$R --offload-arch=gfx950 -O2 -w t2.hi
 <porter venv>/bin/python -I warp_repro.py                     # Warp: radix_sort_pairs after a failed Event.ipc_handle()
 git -C projects/warp-1.14/src apply --check testfix.diff      # the evidence session's addendum diff at 4ae8babd
 ```
+
+## Coordinator note on the fourth review's finding 2 and the gfx1250 failures (2026-11-24)
+
+The stale-last-error defect probably accounts for part of the gfx1250 evidence session's item 5: there, fem `test_hex_mesh` failed with `Warp CUDA error 209: no kernel image is available ... (in function radix_sort_pairs_device ...)` and was read as "the library's built-in radix sort kernel did not load". Error 209 is what the translator-failed module load of the neighbouring fem kernel left behind, and a sort that returns a stale 209 is exactly this defect. The wrong `mesh_query_point` results there may have the same origin if an earlier failed call preceded the BVH build (the HIP LBVH build calls `SortPairs` directly); not established. Both need a rerun on gfx1250 after the fix, when that host is available again. Registered for jeff: deferred item `rocprim-stale-last-error-aborts-algorithm` (the rocPRIM side of it).
