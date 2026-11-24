@@ -8,7 +8,7 @@
   "ext_type": "python-build-nvrtc",
   "stage": "review-passed",
   "adopted_at": "2026-11-18T17:38:39Z",
-  "updated_at": "2026-11-24T02:33:16Z",
+  "updated_at": "2026-11-24T02:58:42Z",
   "head_sha": "4e0d02ab7eeb4af2be6380ff27c54d9bc8d43ef2",
   "depends_on": [],
   "porting": null,
@@ -59,6 +59,29 @@
         "last_session_at": null
       },
       "last_agent": "reviewer"
+    },
+    "linux-gfx1201": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "4e0d02ab7eeb4af2be6380ff27c54d9bc8d43ef2",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-11-24T02:58:42Z",
+      "updated_at": "2026-11-24T02:58:42Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed"
     }
   },
   "license_spdx": "Apache-2.0",

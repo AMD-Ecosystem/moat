@@ -6557,3 +6557,45 @@ $R/lib/llvm/bin/clang++ -x hip --rocm-path=$R --offload-arch=gfx950 -O2 -w nr.hi
 g++ -E -P -DWP_ENABLE_CUDA=1 -DNDEBUG -I/usr/local/cuda-12.8/include -I<tree>/warp/native <tree>/warp/native/cuda_util.cpp   # both commits, equal modulo __LINE__
 PYTHONPATH=<dir>/new <porter venv>/bin/python -s frag.py <dir>/new <cache> [1]  # fragment_shapes x4 OK; forced 64 KiB skips only (81920, 96)
 ```
+
+## Validation 2026-11-24 (linux-gfx1201, Radeon AI PRO R9700, validator): release wheel at `4e0d02ab`
+
+Requested by jeff. **Result: pass. Every run is clean: no failure, no error, no `Warp CUDA error` line anywhere, no error 700.** Platform recorded `completed` at `4e0d02ab7eeb4af2be6380ff27c54d9bc8d43ef2`.
+
+### Setup
+
+- Device: AMD Radeon AI PRO R9700, gfx1201, wave32, 32 GiB, `max_shared_memory_per_block` 65536. Dispatcher pin `HIP_VISIBLE_DEVICES=1` kept for every run; `ulimit -c 0`. `amd-smi process` showed no process on any GPU before the runs; host load average 1 to 7. No process was stopped.
+- ROCm: the job venv came with TheRock 10.1.0. Installed `"$FLEET_VENV/bin/python" -m pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple "rocm[devel,device-gfx1201]==10.2.0" numpy==1.26.4 usd-core`, then `"torch[device-gfx1201]==2.15.0+rocm10.2.0"` from the same index, then `rocm-sdk init` (`rocm-sdk version` 10.2.0; usd-core 26.11). `export PATH=$FLEET_VENV/bin:$PATH` first. Banner: `Warp 1.14.0+rocm10.2.0 initialized: ROCm 10.2, HIP runtime 7.17`, `"cuda:0" : "AMD Radeon AI PRO R9700" (32 GiB, gfx1201, mempool enabled)`.
+- Fork: fresh clone of `AMD-Ecosystem/warp`, detached at `4e0d02ab` (= `origin/release/1.14.0.amd0`), `git lfs pull`; `git status --porcelain` empty before and after every step.
+
+### Build, wheel, install
+
+- `python build_lib.py --rocm-path "$(rocm-sdk path --root)" --hip-arch gfx1201 --no-rocm-rpath -j 12`: "Warp build succeeded", 36.5 s. warp.so 6,454,088 bytes, RUNPATH `$ORIGIN`. The log's only warnings are `-Wunused-value` (ignored nodiscard `hipError_t`) in the HIP compiles, at nanovdb `PointsToGrid.cuh:518,769`, `GridHandle.cuh:138` and `warp.cu:594,767,1228,3453,3454`; the `-Werror` host compiles have none.
+- `python -m build --wheel -C--build-option=-Plinux-x86_64 -o <job>/val/wheel`: `warp_lang-1.14.0+rocm10.2.0-py3-none-manylinux_2_28_x86_64.whl`, 32,824,549 bytes, sha256 `2a76d183563875c0a67f7a82be2bac85e92d678ffacb04be60edf685eaafac9d`; 548 entries; warp.so 6,454,088, warp-clang.so 67,239,296, warp.so.rocm 8 (`'\n10.2.0\n'`); no member contains the job path; `Version: 1.14.0+rocm10.2.0`, `Requires-Dist: rocm<10.3,>=10.2`. (A gfx1201-only wheel, as the request asked; the release's 26-target wheel is session 32's.)
+- `"$FLEET_VENV/bin/pip" install --force-reinstall --no-deps <wheel>`: installed size 101,998,974 bytes (`du -sb`); installed warp.so sha256 `b9470dd0...3e813` equals the build's. Every test below ran from the installed wheel, cwd outside the tree (`warp.__file__` in site-packages), each with a new empty `WARP_CACHE_PATH`.
+
+### Results
+
+| run | result |
+|---|---|
+| `python -m warp.tests -s autodetect` (full default suite) | **Ran 7610 tests in 723.3 s, OK (skipped=82)**, wall 731 s |
+| `python -m warp.tests -s autodetect --warp-debug -p "test_tile*.py"` | **Ran 602 tests in 194.0 s, OK (skipped=15)**; no device assertion |
+| `python -m warp.tests -s autodetect -p "test_tile_matmul.py"`, cold cache, run 1 | **Ran 26, OK** (17.4 s; 119 code objects compiled into the empty cache) |
+| same, run 2 (new cold cache) | **Ran 26, OK** (17.4 s; 119 compiled) |
+| same, run 3 (new cold cache) | **Ran 26, OK** (17.5 s; 119 compiled) |
+
+- **`Warp CUDA error` lines: none** in any of the five logs. **Error 700: none.** No `test_async` failure, so nothing needed a rerun alone (the gfx942/gfx950 load rule did not come into play).
+- The one Warp warning, in the full suite and the debug tile run: `Failed to configure kernel dynamic shared memory ... test_tile_load_scoped_kernel_cf796b16_cuda_kernel_backward kernel for 65536 bytes, but maximum available is 65536`. This is the known harmless one (upstream `test_tile_load.py`; that backward kernel is never launched, the test passes; see the gfx942 evidence session of 2026-11-23). It was not followed by any error line, and the stale-last-error fix means a refused attribute call no longer reaches a later sort.
+- The 64 KiB guard (`10942265`) works on this 64 KiB device: the four `test_tile_matmul_fragment_shapes_*` tests pass in all three cold runs and in the debug run (fp64 32x64x32 is the shape the guard skips on a 64 KiB device; no launch error was printed).
+- Full-suite skips (82): no suitable devices 18; conditional graph nodes not supported 16 (Q4 ruling); not built with MathDx 8, MathDx not enabled 1, no-MathDx tolerance 1; at least two CUDA devices 7, multi-GPU not available 2; mempool access 5 and without mempool 1; peer access 3 and without peer 1; peer/mempool with graph module-load 1 each; insufficient free memory 3; cuda:0 cannot access CPU memory 2; NVRTC two architectures 2, NVRTC not available 1, Requires CUDA 1; rmm not installed 1; memory-usage flakiness 1; HIP stream priorities 1; and the five 64 KiB capability skips (`Needs 67584` x2, `66688` x2, `66816` x1), the same five as every earlier gfx1201 run.
+- Debug tile skips (15): 8 FFT + `MathDx is not enabled` 1 + no-MathDx tolerance 1 (`test_tile_mlp`) + the same five 64 KiB skips. The 602 here against 599 in session 32's gfx950 debug tile run is `test_tile_mlp`'s 3 tests, which run with torch installed. The full suite's 7610 against 7562 on gfx950 was not attributed test by test; the run has torch (34 test_torch tests) and usd-core installed, and every test in it passed.
+
+### Gates
+
+- CUDA no-regression gate: already recorded at this head by porting session 32 (nvcc 12.8: `cuda_util.cpp` CUDA preprocessing identical, 24 of 24 `.cu` units identical, CUDA build of a `4e0d02ab` worktree succeeds); not repeated.
+- `python3 utils/jargon.py --port warp-1.14`: clean (after fetching `release-1.14` and `release/1.14.0.amd0` into the clone).
+- Documentation: `docs/user_guide/installation.rst` documents the ROCm wheels and the ROCm source build (`--rocm-path`, `--hip-arch`) beside the CUDA build.
+
+### Scripts (`<job>/val/`, scratch)
+
+`runsuite.sh <label> <cache> <args...>`: `ulimit -c 0`, wipes and recreates `<cache>`, `cd <job>/val/run`, `WARP_CACHE_PATH=<cache> $FLEET_VENV/bin/python -m warp.tests <args>` into `logs/<label>.log`. Each run wrapped as `utils/timeit.sh warp-1.14 test -- <job>/val/runsuite.sh ...`.
