@@ -6182,3 +6182,44 @@ Draft pull request title (69 characters): `Document the ROCm 10.1 and 10.2 misco
 ## Lesson for cuda-to-rocm: confirm a compiler fix with the full test run, not the original symptom
 
 Before dropping a compiler workaround (here `-mllvm -disable-machine-licm`) because a newer ROCm contains the upstream LLVM fix, build without it on the new release and run the whole GPU test selection, not just the reproducer. In gpu4pyscf, ROCm 10.2's compiler contained the fix for the 10.1 register clobber, the original crash was gone and a static check of the kernel was clean, yet the same flag was still needed: 10.2 had a different miscompile that produced wrong nuclear gradients with no error, visible only in the gradient tests. Isolate compiler from runtime by running the new-compiler build on the old runtime and vice versa, and by rebuilding with the workaround flag on the new compiler. (gpu4pyscf)
+
+## ROCm 10.2 on the MI200 (gfx90a) (2026-11-24)
+
+Fleet job requested by jeff, evidence only (not a pipeline round): which ROCm releases the README known issue must name for the MI200. No stage, platform record, lock, `moat-port` or README branch touched; nothing pushed to the fork. **Result: on gfx90a, ROCm 10.2.0 without `-mllvm=-disable-machine-licm` no longer faults on RHF water/def2-svp, but the nuclear-gradient J/K path with d shells (`test_jk_energy_per_atom`) hangs the GPU; the flag fixes it (scf/dft identical to the MI300X flagged run). ROCm 10.1 still faults on RHF/def2-svp here. So both 10.1 and 10.2 are affected on MI200, with different symptoms from the MI300X 10.2 one (a hang, not silently wrong numbers).**
+
+### Environment
+MI200 series (`gcnArchName` `gfx90a:sramecc+:xnack-`), `HIP_VISIBLE_DEVICES=1` from the dispatcher, every GPU run under `ulimit -c 0` and `timeout`. Upstream master c9eea22a, one fresh worktree and install prefix per build. Python 3.11.17 venvs under `$FLEET_VENV` with numpy 2.2.6, scipy 1.17.1, cupy-rocm-7-0 14.2.0, pyscf 2.14.0, pyscf-dispersion 1.7.0, geometric 1.1.1, MCFun 0.2.6, pytest 9.2.0, pytest-timeout 2.4.0, cmake 3.31.6 (the MI300X job's pins).
+- **ROCm 10.2.0**: `$FLEET_VENV/v102/bin/pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ 'rocm[libraries,devel,device-gfx90a]==10.2.0'` (rocm, rocm-sdk-core, -devel, -libraries, -device-gfx90a all 10.2.0). HIP 7.17.26434; clang `AMD clang version 24.0.0git (https://github.com/ROCm/llvm-project.git bdc35841c97ff51400273b91d7bc05c96e19c2d9)`, the same compiler as the MI300X 10.2 run.
+- **ROCm 10.1.0**: the image's own TheRock SDK (`/opt/python-3.11-venv`, `rocm 10.1.0`, HIP 7.16.26385, clang d6f6cb691863e9258034ab48c1dfce21689d5606), used read-only as compiler and runtime; the Python packages above in a separate `$FLEET_VENV/v101`.
+- Each build and run: `PATH=<venv>/bin:<SDK root>/bin:/usr/bin:/bin`, `ROCM_PATH=HIP_PATH=<SDK root>`, `LD_LIBRARY_PATH=<SDK root>/lib` (SDK root = `rocm-sdk path --root`), so the runtime matches the compiler. Here the venv's own `cmake` worked inside pip's build (no shim problem), and the package name came out `gpu4pyscf-rocm7x` for both.
+
+### Builds (README command; `--prefix` and logging only added)
+```
+cd <worktree at c9eea22a>
+GPU4PYSCF_BACKEND=hip CMAKE_BUILD_ARGS="--verbose -j 64" pip install -v --no-deps --prefix <prefix> .
+GPU4PYSCF_BACKEND=hip CMAKE_CONFIGURE_ARGS="-DCMAKE_HIP_FLAGS=-mllvm=-disable-machine-licm" CMAKE_BUILD_ARGS="--verbose -j 64" pip install -v --no-deps --prefix <prefix> .
+```
+All three exit 0 (about 2.5 min each at `-j 64` = this job's `MAX_JOBS`), 11 libraries each. Verbose logs: `CMAKE_HIP_COMPILER` is the 10.2 SDK's `llvm/bin/clang++` for both 10.2 builds and the image SDK's for the 10.1 build; 96 HIP compile lines and 11 `--hip-link` lines each, `--offload-arch=gfx90a` only; `disable-machine-licm` on 96/96 and 11/11 in the flag build, 0 in the others. Producer string (`clang-offload-bundler --unbundle --targets=hipv4-amdgcn-amd-amdhsa--gfx90a` of `.hip_fatbin` from libgvhf_rys.so, then `llvm-readelf -p .comment`): both 10.2 builds `AMD clang version 24.0.0git (... bdc35841...)` and `AMD LLD 24.0.0 (... bdc35841...)`; the 10.1 build `d6f6cb69...`.
+
+### Runs
+RHF one-liner from #1055's description under `timeout -k 30 300`; the seven tests one pytest process each (`pytest -p no:cacheprovider -p no:xdist --import-mode=importlib -q <src>/gpu4pyscf/scf/tests/<file>::<test>`, from an empty directory with `PYTHONPATH=<prefix>/lib/python3.11/site-packages`, `gpu4pyscf.__file__` checked to be the install), `timeout -k 30 180` (the first plain-10.2 attempt used 600); `OMP_NUM_THREADS=4`.
+
+| build (compiler = runtime) | RHF water/def2-svp | test_jk_energy_per_atom | fermi_smearing::test_gradient + 5 diffuse_orbital tests | scf + dft, CI selection |
+|---|---|---|---|---|
+| 10.2.0 plain | -75.96097516696526, rc 0 | **GPU hang, killed by timeout, 3/3** (600 s, 180 s, 900 s in the file run) | 6/6 pass, 3/3 repetitions | 346 passed / 1 failed / 23 skipped / 0 errors + the hang (scf 210/1/14, dft 136/0/9) |
+| 10.2.0 + `-mllvm=-disable-machine-licm` | -75.96097516696526, rc 0 | pass (1.0 s) | 6/6 pass | **347 passed / 1 failed / 23 skipped / 0 errors** (scf 211/1/14, dft 136/0/9) in 232 s |
+| 10.1.0 plain (image SDK) | **`HSA_STATUS_ERROR_MEMORY_APERTURE_VIOLATION` in `rys_k_kernel`**, GPU hang analysis, then hung until `timeout` (rc 124) | pass (1.0 s) | 6/6 pass | not run (not requested) |
+
+- The one scf failure in both 10.2 builds is test_diffuse_orbital.py::test_rhf_df_against_qchem (`BasisNotFoundError` d-aug-cc-pvdz, not in pyscf 2.14; environment, as in every earlier round). The flagged result is identical to the MI300X 10.2 flagged run (347/1/23).
+- scf/dft command, one process per file, four files at a time (counts exclude pytest subtests):
+```
+ls <src>/gpu4pyscf/scf/tests/test_*.py <src>/gpu4pyscf/dft/tests/test_*.py | xargs -P 4 -I{} \
+  timeout -k 30 900 pytest -p no:cacheprovider -p no:xdist --import-mode=importlib -q -rfE \
+    -m "not slow and not benchmark and not special" -k "not _high_cost" {}
+```
+- Plain 10.2: test_scf_jk.py stopped after 11 passing tests (the 12th in file order is test_jk_energy_per_atom) and was killed at 900 s; rerun with `-k "not _high_cost and not test_jk_energy_per_atom"`: 28 passed / 3 skipped / 1 deselected. All other 31 files finished, no fault.
+- Isolation probe (`_jk_energy_per_atom` on the test's O2 geometry and random antisymmetric density, one process per case, `timeout 90`), plain 10.2: K matches the CPU `int2e_ip1` contraction to all printed digits for sto-3g and 6-31g, and J equals the flag build's value exactly; **def2-svp hangs for both J-only and K-only** (GPU hang analysis, grid [6656,4,1], workgroup [64,4,1]). Flag build, def2-svp: K matches CPU, no hang. So on gfx90a the 10.2 defect shows only once d shells reach the ip1 kernels, and as a hang rather than the MI300X's wrong values (which hit sto-3g too). Not narrowed to a kernel or instruction.
+- The diffuse_orbital and fermi_smearing gradient tests, which failed with wrong values on the MI300X 10.2 plain build, pass on gfx90a in 3/3 runs.
+
+### What this means for the README
+On MI200 (gfx90a): ROCm 10.1 faults on any d-shell energy; ROCm 10.2 fixes that but hangs in the d-shell nuclear-gradient J/K; `-mllvm=-disable-machine-licm` fixes both releases on both Instinct GPUs tested. A README line for 10.2 covering gfx90a and gfx942 would need to say "wrong nuclear gradients or a hang", or more simply that gradient calculations with d shells are broken. The 10.3 nightly was not tried here (not requested). README wording is jeff's call; nothing drafted beyond this.
