@@ -3262,7 +3262,7 @@ arrayfire/arrayfire#3741 (base `experimental/hip` 950dcdd02, head `AMD-Ecosystem
 
 ## Sync review PR draft
 
-Title: `[ROCm] Merge upstream master (b11d700) into the HIP backend branch` (66 chars). Branch `moat-sync-b11d700` -> `moat-port`. No `## Upstream reply` section (no maintainer is waiting on anything in this round). `prose.py` clean, `jargon.py -` clean, ASCII. If this body is reused for an `experimental/hip` pull request, drop the compare links and the Delivery paragraph. Updated 2026-11-24 (gfx1201 porter/validator) for head 2f25788dc: before opening the review PR, replace the MI300X line in the Test plan with the gfx942 rerun at 2f25788dc and add the Windows result there (both owed; see the gfx1201 validation entry of 2026-11-24 at 2f25788dc).
+Title: `[ROCm] Merge upstream master (b11d700) into the HIP backend branch` (66 chars). Branch `moat-sync-b11d700` -> `moat-port`. No `## Upstream reply` section (no maintainer is waiting on anything in this round). `prose.py` clean, `jargon.py -` clean, ASCII. If this body is reused for an `experimental/hip` pull request, drop the compare links and the Delivery paragraph. Updated 2026-11-24 (gfx1201 porter/validator) for head 2f25788dc: before opening the review PR, replace the MI300X line in the Test plan with the gfx942 rerun at 2f25788dc and add the Windows result there (both owed; see the gfx1201 validation entry of 2026-11-24 at 2f25788dc). Updated 2026-11-24 (gfx942 validator): the MI300X line now gives the gfx942 rerun at 2f25788dc; the Windows result is still owed.
 
 ~~~markdown
 Merge upstream `master` at b11d70079 (6 commits past 64c88d932, the last upstream commit merged into this branch) into the HIP port branch, plus a comment-only cleanup and a fix for a crash in sparse plus sparse arithmetic on GPUs with a small BAR. Merge, not rebase, so the published commits stay as they are.
@@ -3310,7 +3310,7 @@ ctest --test-dir build-hip-gfx1201 -R '_cuda$' -j1 --output-on-failure
 
 Result: 131/132 test binaries pass. The one failure is `confidence_connected` (21 of 36 cases fail and 12 skip because Image IO is not configured, 3 pass), as in every run with `AF_WITH_IMAGEIO=OFF`. `sparse_arith` passes 123/123; at 539d4be10 it segfaulted on this GPU at the first sparse plus sparse case. `reduce` passes 1062/1062. The HIP runtime compiler needs `ROCM_PATH` set when ROCm is not installed in `/opt/rocm`.
 
-MI300X (gfx942) at 539d4be10, before the sparse fix: the same 131/132 with the same single failure.
+AMD Instinct MI300X (gfx942, wave64, large BAR), ROCm 7.16, at 2f25788dc, with the same commands and `-DCMAKE_HIP_ARCHITECTURES=gfx942`: the same 131/132 with the same single failure, `sparse_arith` 123/123 and `reduce` 1062/1062. On this GPU `sparse_arith` also passed before the fix, because the device memory is CPU-mapped there.
 
 Not tested here: the Windows installer and standalone-install changes, and the CUDA build (no CUDA toolkit on this machine).
 
@@ -3512,3 +3512,22 @@ Recorded `set-state arrayfire linux-gfx1201 completed --agent validator` at 2f25
 - **windows**: any Windows platform at 2f25788dc. The earlier windows-gfx1201, windows-gfx1101 and windows-gfx1151 records listed `sparse_arith` as a Windows rocSPARSE csrgeam2 crash; that was this defect, so a Windows run here should show `sparse_arith` passing for the first time. If it still crashes there, the mechanism differs from the one measured here and that is new information.
 - CUDA compile: nothing owed (above).
 - After those: `fix-ready`, then the review PR from the `## Sync review PR draft` (Test plan lines to finish as noted above the draft), and jeff's delivery decision on arrayfire/arrayfire#3741 from the gfx942 porter entry still stands.
+
+## Validation 2026-11-24 (validator, linux-gfx942, sync round moat-sync-b11d700 head 2f25788dc) -- RESULT: COMPLETED (131/132)
+
+Asked for by jeff (fleet job on the mi300 host); this platform passed at 539d4be10 and the head moved to 2f25788dc (the csrgeam2Nnz host-count fix). Fresh clone of the fork's `moat-sync-b11d700` into `projects/arrayfire/src` at `2f25788dce71ec94799164d08ce90d5d48bdb5b3` (= `head_sha` = `reviewed_sha`), `protect-fork` installed, nothing pushed to the fork; `git status --porcelain` empty after the run (build dir gitignored). GPU: AMD Instinct MI300X HF (gfx942, wave64), `HIP_VISIBLE_DEVICES=0` as pinned by the dispatcher, all 8 GPUs idle at start, `ulimit -c 0`, one run. BAR0 of the pinned card (0000:0c:00.0) is 256 GiB, i.e. large BAR. Toolchain: ROCm SDK wheel 7.16.26385 (`_rocm_sdk_devel`), no /opt/rocm, `ROCM_PATH` exported.
+
+Build: the configure and build of the 2026-11-23 gfx942 porter entry (`agent_space/af-build.sh`, `-j 56`), fresh dir `build-hip-gfx942`: 9 matrices restored, configure exit 0, 1657/1657, exit 0. `info_cuda`: `ArrayFire v3.10.1 (CUDA, 64-bit Linux, build 2f25788dc)`.
+```
+export ROCM_PATH=$R HIP_VISIBLE_DEVICES=0; rm -rf ~/.arrayfire
+$B/test/sparse_arith_cuda
+utils/timeit.sh arrayfire test -- ctest --test-dir $PWD/$B -R '_cuda$' -j1 --output-on-failure
+$B/test/reduce_cuda
+```
+- `sparse_arith_cuda` standalone: **123/123** (17.1 s, cold JIT cache).
+- ctest `_cuda$`: **131/132 PASS** (371 s). Only failure `test_confidence_connected_cuda` (3 pass, 12 skip, 21 fail: "Image IO Not Configured"), the standing `AF_WITH_IMAGEIO=OFF` disposition. sparse 7.4 s, sparse_arith 13.7 s, sparse_convert 3.9 s, threading 14.5 s, jit 7.7 s, binary 6.0 s, blas 3.1 s passed. JIT cache holds 3195 `KER*_HIP_gfx942` code objects (same count as at 539d4be10).
+- `reduce_cuda`: 1062/1062.
+
+Comparison: identical to this platform at 539d4be10 (131/132, same sole failure and case split, sparse_arith passing) and to linux-gfx1201 at 2f25788dc (131/132, sparse_arith 123/123). No difference to explain: on this large-BAR card the old device-pointer count was CPU-readable, so sparse_arith passed before the fix and passes after it; the fix's host `int` path is now exercised on wave64 as well. No HIP fault, NaN or timeout.
+
+Gates: `jargon.py --port arrayfire` -- only the standing frozen `6800d5586` 'MOAT' commit-message hit. Documentation: the delta changes no build or docs. CUDA compile: nothing owed (the delta is `src/backend/hip/sparse_arith.cu` only; see the gfx1201 validation entry). Recorded `set-state arrayfire linux-gfx942 completed --agent validator` at 2f25788dc; wave64 and wave32 gates are satisfied at the head. `fix-ready` is still False: the windows gate is owed (any Windows platform at 2f25788dc, where `sparse_arith` is expected to pass for the first time). The draft's Test plan MI300X line now gives this run.
