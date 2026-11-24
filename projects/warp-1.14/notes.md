@@ -6712,7 +6712,7 @@ The wheel depends on the ROCm 10.2 Python packages (`rocm>=10.2,<10.3`), which p
 
 ## Supported GPUs
 
-The library contains code for every GPU target ROCm 10.2 supports on the operating system: 25 targets on Linux (gfx908, gfx90a, gfx942, gfx950, gfx1010, gfx1011, gfx1012, gfx1030 to gfx1036, gfx1100 to gfx1103, gfx1150 to gfx1153, gfx1200, gfx1201, gfx1250) and 22 on Windows. Kernels written in Python are compiled at run time for the GPU present.
+The library contains code for every GPU target ROCm 10.2 supports on the operating system: 26 targets on Linux (gfx908, gfx90a, gfx942, gfx950, gfx1010, gfx1011, gfx1012, gfx1030 to gfx1036, gfx1100 to gfx1103, gfx1150 to gfx1153, gfx1200, gfx1201, gfx1250, and gfx1250-strict for gfx1250 GPUs in strict mode) and 22 on Windows. Kernels written in Python are compiled at run time for the GPU present.
 
 Tested on hardware with Warp's test suite: AMD Instinct MI355X (gfx950), MI300X (gfx942) and MI250X (gfx90a), Radeon Pro W7800 (gfx1100) and Radeon AI PRO R9700 (gfx1201) on Linux, and a Ryzen AI Max (gfx1151) on Windows. The other targets are compiled but have not been run.
 
@@ -6730,12 +6730,16 @@ Tested on hardware with Warp's test suite: AMD Instinct MI355X (gfx950), MI300X 
 - Stream priorities are accepted and reported, but the HIP runtime schedules all streams at normal priority.
 - On Windows, a graph launch waits for the graph to finish before returning (it works around a HIP runtime race between successive launches of a graph).
 - Floating-point contraction matches CUDA: multiply-adds are fused across statements as with NVRTC's default, and half-precision (fp16) arithmetic is not fused, as on CUDA. Results of the same kernel can still differ from a CUDA build in the last bits, as between any two compilers.
+- `fast_math` enables approximate division, square root, exponential and logarithm and flushes denormals to zero, as NVRTC's `--use_fast_math` does; `sin`, `cos`, `tan` and `pow` keep their full-precision forms on AMD GPUs.
+- On Linux, OpenGL interop (`wp.RegisteredGLBuffer`) needs a windowed (GLX) context.
+- Headless (EGL) rendering copies through the host on ROCm.
 - The precompiled library stores its GPU code compressed; the first use of each part of it in a process costs a few tens of milliseconds while the HIP runtime's code-object cache is empty (later about 2 ms).
 - Not included: MathDx, NVRTC and the CUDA runtime. The wheel contains no NVIDIA software, and its licence files list only what it contains.
 
 ## Known issues
 
 - On MI300X and MI355X, arrays allocated with the memory pool disabled can lose kernel writes when other processes share the GPU (ROCm/rocm-systems#16355). Keep the memory pool enabled, which is the default.
+- `wp.GLTextureResource` is not supported on ROCm in this release.
 ```
 
 Notes for Jeff on the draft (not part of the body):
@@ -9284,3 +9288,43 @@ python build_lib.py --rocm-path $R --hip-arch <25 dist_info targets>[,gfx1250-st
 ## Coordinator finding: the fragment tests take about 30 minutes on NVIDIA with libmathdx (2026-11-23)
 
 Rerun on a V100 (upstream `warp-lang==1.14.0`, the fork's `test_tile_matmul.py` at `2ce30148` with `device.is_hip` read through `getattr(..., False)` because upstream's Device has no such attribute): no block size fails or hangs (`tile_matmul` float32 16x16 at block_dim 32, 48, 64 and 96: error 0, 24 to 28 s each, almost all of it the cuBLASDx LTO compile), but the whole file did not finish inside a 30 minute allocation, where upstream's file takes 96 s. Six shapes times four block sizes times three types is 72 cuBLASDx compiles at about 25 s. Fix owed by the porter: on non-HIP GPU devices the fragment tests run one shape at one block size per type (the cases exist to cover the HIP matrix-core fragment boundaries; cuBLASDx has upstream's own tests), all cases stay on HIP, test ids unchanged. The coordinator re-times the file on the V100 afterwards.
+
+## Porting session 31 (2026-11-24, linux-gfx950 MI355X, porter): third-review changes 1 to 4, fragment tests on NVIDIA
+
+Entered with `set-state warp-1.14 linux-gfx950 porting` from `changes-requested`. Standing rule from jeff (this round): `moatlib.py port-lock --take` is a person's command and an agent never uses it; session 30's use of it was wrong. Fork `release/1.14.0.amd0` `2ce30148..4ae8babd`: five commits, pushed; `advance-head` recorded. `HIP_VISIBLE_DEVICES=1` (amd-smi GPU 0) only, `ulimit -c 0`; no process stopped.
+
+### The commits
+
+| commit | item | change |
+|---|---|---|
+| `fa20eb13` | 1 | `warp.cu`: hipRTC `fast_math` passes `-fapprox-func -freciprocal-math -fgpu-flush-denormals-to-zero` (session 29's patch as recorded) |
+| `7b3e6a2b` | 2 | `cuda_util.cpp` (HIP section): `make_gl_symbols_global()` dlopens `libGL.so.1` with `RTLD_LAZY \| RTLD_GLOBAL` once before GL buffer and image registration; comment describes that form (global scope because HIP looks up the GLX entry points with `dlsym(RTLD_DEFAULT, ...)` and caches a failed lookup; covers ctypes' RTLD_LOCAL and GLFW-only applications; handle never closed; NULL without libGL.so.1) |
+| `de0c380b` | 3 | `build_dll.py` `get_hip_architectures`: append `gfx1250-strict` when the SDK's list (dist_info.json) contains `gfx1250`; explicit `--hip-arch` unchanged |
+| `2fc6edd1` | 4 | `build_dll.py`: `build_lib.py --fast-math` gives the HIP compiles the same three flags instead of `-ffast-math` (host C++ flags unchanged) |
+| `4ae8babd` | 5 | `test_tile_matmul.py`: `fragment_cases(device)` returns all 6 shapes x block_dim (16, 32, 48, 64, 96) on HIP devices, and the 16x16x16 tile at block_dim 32 elsewhere; both fragment tests use it; test ids unchanged |
+
+Evidence per item (gfx950, ROCm 10.2):
+1. test_fast_math 14 OK (1 skipped); fast_math probe: `(x + 1e8) - 1e8` 0.0, `1/(-0 + 0)` +inf, `1e-40 + 1e-40` 0, division 300,713 of 2^20 off by at most 2 ulp (as session 29). Performance as session 29's table (accepted by the ruling). Release notes: the option (a) sentence added under the differences from the CUDA build.
+2. HIP build with `-Werror`: no warning in `cuda_util.cpp`. No runtime GL test here (no display); the commit body cites the gfx1201 evidence session 2 `fixload` results (buffers under NONE/READ_ONLY/WRITE_DISCARD with 0 mismatches over three map/unmap cycles, the GLFW-only application, the renderer's `get_pixels` bit-identical, EGL copy fallback unchanged). The native `Warp CUDA error 1` line per failed registration is kept. Release notes: "On Linux, OpenGL interop (`wp.RegisteredGLBuffer`) needs a windowed (GLX) context." and "Headless (EGL) rendering copies through the host on ROCm." under the differences; "`wp.GLTextureResource` is not supported on ROCm in this release." under known issues.
+3. `get_hip_architectures` against the ROCm 10.2 Python packages: 26 entries ending `gfx1250, gfx1250-strict`; `--hip-arch gfx1250,gfx950` returns exactly those two. Release build of the commit (26 targets): 177 s, warp.so 11,025,224 bytes; the `.hip_fatbin` of warp.cu lists 26 code objects including `hip-amdgcn-amd-amdhsa--gfx1250-strict`. Release notes: "26 targets on Linux (..., gfx1250, and gfx1250-strict for gfx1250 GPUs in strict mode)"; no strict-mode run is claimed (the hardware sentence lists only GPUs that ran, and says the other targets are compiled only).
+4. `python build_lib.py --rocm-path <root> --hip-arch gfx950 -j 64 --fast-math`: succeeds; 14 of 14 HIP compile lines carry the three flags and none `-ffast-math` (the 22 host C++ compiles keep it). ROCm clang, gfx950, `isnan(a) + 2 * isinf(a)`: 0 `v_cmp` with `-ffast-math`, 2 with the three flags.
+5. **An NVIDIA (non-HIP) GPU now runs, per fragment test (float16, float32, float64, and bfloat16 where compute capability is 8.0 or newer), exactly one case: the 16x16x16 tile at block_dim 32, GPU against the CPU (for the float types forward and both adjoints, for bf16 forward).** HIP devices keep 6 shapes x 5 block sizes. On the MI355X: `fragment_cases` gives `((16,16,16), (48,16,32), (24,16,16), (17,33,15), (16,32,16), (32,64,32)), (16, 32, 48, 64, 96)`, for a non-HIP device `((16,16,16),), (32,)`; test_tile_matmul 26 OK with the same four test names. Note for the V100 re-run: the file uses `device.is_hip`, which upstream's `Device` lacks (third review); the copied file still needs the `getattr` edit on an upstream wheel.
+
+Commit-gate note: the first commit of item 5 (`a13a7e99`, local, never pushed) failed `audit-commits` because its comment said "AMD matrix-core" under a title without `[ROCm]`. I reset that one unpushed commit (`git reset --soft HEAD~1`), reworded the comment, and recommitted as `4ae8babd`; no published commit was rewritten.
+
+nvcc check: `cuda_pp.sh` (nvcc 12.8) of `2ce30148` against `4ae8babd`: 22 IDENTICAL, `warp` (device and host) LINE-ONLY (the HIP-only fast_math lines). `cuda_util.cpp` preprocessed for the CUDA configuration (`g++ -E -DWP_ENABLE_CUDA=1`) at both commits: identical apart from line numbers. CUDA build of `4ae8babd` (worktree `agent_space/wcuda_s24`, no libmathdx): "Warp build succeeded". jargon, prose and `audit-commits`: clean.
+
+### Final step (head `4ae8babd`)
+
+- Release build (release recipe, `agent_space/relbuild.sh <clone> 64`: now 26 targets, `--offload-compress`, `--no-rocm-rpath`), wall 187 s: 26 `--offload-arch` per HIP compile, `gfx1250-strict` among them; the `.hip_fatbin` bundle of every one of the 11 HIP translation units lists a `gfx1250-strict` code object. warp.so 11,025,224 bytes (25 targets: 10,922,824), RUNPATH `$ORIGIN`, no build-path string.
+- Wheel (`python -m build --wheel -C--build-option=-Plinux-x86_64 -o <job>/wheel`, clean clone at `4ae8babd`): **`/var/lib/jenkins/fleet/jobs/mi355-20261119-154230-warp114-perf-porter-mi355-prompt/wheel/warp_lang-1.14.0+rocm10.2.0-py3-none-manylinux_2_28_x86_64.whl`, 37,296,705 bytes, sha256 `246cc460f599607498cb715c3dd9f8dc5656e93d0c1373777db4e8c599dc6fa6`.** warp.so 11,025,224 (RUNPATH `$ORIGIN`), warp-clang.so 67,136,896, warp.so.rocm 8 (`'\n10.2.0\n'`); 548 entries; no member contains the job path; `Version: 1.14.0+rocm10.2.0`, `Requires-Dist: rocm<10.3,>=10.2`. Session 30's wheel moved to `<job>/wheel/old_2ce30148/`.
+- Installed into the job venv with the job's pip (force-reinstall, no deps; dependency check clean): **installed size 106,468,441 bytes**; installed warp.so sha256 equals the build's.
+- Full default suite from the installed wheel (outside the tree, fresh cache): **Ran 7562 tests in 578.8 s, OK (skipped=81)**, wall 583 s; no other process on the GPU, host load average 37 to 87.
+- Tile tests in debug mode from the installed wheel: **Ran 599 tests in 153.8 s, OK (skipped=9)**, no device assertion, no error 700.
+- Every result clean: stage moved to `ported` (lock released).
+
+### Next step
+
+- A gfx908 (MI100) hardware run by the coordinator is in progress and has shown tile test failures that are not yet explained, so one more porter round may follow.
+- Coordinator: re-time `test_tile_matmul.py` on the V100 with libmathdx (each fragment test now one case).
+- Validators revalidate at `4ae8babd` (26 Linux targets now).
