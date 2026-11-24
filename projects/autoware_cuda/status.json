@@ -8,8 +8,8 @@
   "ext_type": "cmake",
   "stage": "porting",
   "adopted_at": "2026-11-11T18:07:23Z",
-  "updated_at": "2026-11-24T11:21:53Z",
-  "head_sha": "a2c82de8227b3a097af81765691c61a4f5dcf2d8",
+  "updated_at": "2026-11-24T12:08:11Z",
+  "head_sha": "00693fbee8ef925a3b074f17c7600fac5b06224f",
   "depends_on": [],
   "porting": {
     "arch": "linux-gfx942",

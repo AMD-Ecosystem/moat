@@ -48,3 +48,7 @@
 {"kind":"session","ts":"2026-11-24T10:51:24Z","epoch":1795517484.730663,"event":"end","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-11-24T10:51:39Z","epoch":1795517499.102941,"event":"start","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-11-24T10:57:02Z","epoch":1795517822.3285,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-24T11:56:35Z","epoch":1795521395.107297,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-24T11:57:02Z","phase":"compile","seconds":27.687,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300c-20261124-031719-fix4-autoware-cuda-prompt/scripts/build_ws.sh"}
+{"kind":"phase","ts":"2026-11-24T12:00:20Z","phase":"test","seconds":191.295,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300c-20261124-031719-fix4-autoware-cuda-prompt/scripts/test_ws.sh"}
+{"kind":"phase","ts":"2026-11-24T12:05:46Z","phase":"test","seconds":191.235,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300c-20261124-031719-fix4-autoware-cuda-prompt/scripts/test_ws.sh"}
