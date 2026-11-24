@@ -438,3 +438,81 @@ pr-review skill, local-branch mode, run inline in the same job as Porter round 3
 1. `sensing/autoware_cuda_pointcloud_preprocessor/hip/include/cuda_pointcloud_preprocessor_hip_compat.hpp:41-43`: `#define cudaErrorInvalidValue hipErrorInvalidValue` maps a name nothing in this package compiles. `grep -rlw cudaErrorInvalidValue` over the package's `.cu/.cpp/.hpp/.cuh/.h/.ipp` (minus the header itself), cuda_blackboard's and autoware_cuda_utils' include trees and the job's overlay `install/*/include` finds no user; its only users are `autoware_ground_segmentation_cuda/include/.../cuda_utility.cuh:57,113` (served by that package's own compat header) and stage-2 `autoware_lidar_frnet`. Orphaned since `175821e` (likely carried over from the ground-segmentation header); earlier reviews missed it. It matters now because `f45a1ac`'s message says the header "maps only the names the package uses", which is false while this line stays. Remove the three lines in a new `[ROCm]` commit (no amend). The same check over the ground-segmentation (30 defines) and occupancy-grid (9 defines) compat headers finds no other unused name, so this is the last one.
 
 Checked and not a finding (so the next round does not redo it): the removed `cudaMemcpyDefault` has no user in any compiled source or included header (grep as above, and the package builds and its gtests pass without it at 4f3358e). README line 22 "need no HIP-specific code" is true: the package's only source edits on the branch are the two shared CUDA-valid fixes (`cuda_voxel_grid_downsample_filter.cu`, `cuda_polar_voxel_outlier_filter.cu`), and `src/`, `include/`, `test/` contain no `__HIP`/`hip*` spelling. Both commit titles <= 72 (68, 64), `[ROCm]` right on each (HIP-only header; README ROCm section), AI disclosure, fenced Test Plans, no trailer, ASCII, `jargon.py --port`: clean. Lesson `hipMemcpyToSymbol rejects hipMemcpyDefault`: probe (`agent_space/rev_probe/sym.hip`, HIP 7.17.26434, gfx942) gives `hipErrorInvalidMemcpyDirection` for Default on `hipMemcpyToSymbol`, `hipMemcpyToSymbolAsync`, `hipMemcpyFromSymbol` and also `hipMemcpyFromSymbolAsync`; `HostToDevice` and `DeviceToDevice` to a symbol succeed sync and async, `DeviceToHost` from one sync and async, kernel reads the copied value; the lesson as written is accurate (for the promoter: the Async FromSymbol variant fails the same way). Lesson `host sources compiled as HIP ...`: probe with a library calling an undefined function: lazy binding starts and dies with "symbol lookup error" only at the call (rc 127); `LD_BIND_NOW=1` and a library linked `-Wl,-z,now` die at load; `ldd -r` lists it; `ldd -r libcuda_ground_segmentation_lib.so` at 4f3358e lists exactly the 4 cuda_blackboard symbols the lesson alludes to. Both lessons now name one reference file each.
+
+## Porter round 4 (2026-11-24, porter agent, linux-gfx942 fleet job; AMD Instinct MI300X, HIP_VISIBLE_DEVICES=3 pinned by the dispatcher)
+
+Requested by Jeff Daily: address the one item of `## Review 2026-11-24, round 3 delta`. Because two reviews in a row found an unused compat-header name, also check every name in all three packages' compat headers against real uses in that package and remove every unused one in the same commit. Nothing else changes. Stage 1 only; every stage 2-4 surface entry stays `owed` (surface.json untouched). Fork `moat-port` = `4f3358e` + 1 commit, head **`129d61b2dc9d63a7cab5d4b1e4bebf5f2c92030e`**, pushed (plain push). **This host has no nvcc**, so no CUDA compile was run here. The commit changes only the two HIP-only force-included headers, which a CUDA build never sees.
+
+### What changed on the fork
+
+- `129d61b` `[ROCm] Drop runtime names the packages never use from compat headers`, 21 lines deleted:
+  - `cuda_pointcloud_preprocessor_hip_compat.hpp`: removes `cudaErrorInvalidValue` (the review's finding), plus four more unused names the review missed: `cudaError_t`, `cudaSuccess`, `cudaGetErrorName`, `cudaGetErrorString`.
+  - `cuda_ground_segmentation_hip_compat.hpp`: removes `cudaGetErrorName` and `cudaGetErrorString`.
+
+  The occupancy-grid header has no unused name.
+
+### Why the round-3 review undercounted
+
+It counted a name as used when it appeared anywhere the package's code could reach, including the headers of its dependencies. This round's criterion is stricter: a name is used only if some source in the package itself spells it (any `.cu/.cpp/.hpp/.cuh/.h/.ipp` outside `hip/`, macros included). The seven removed names appear only in `autoware_cuda_utils`' `cuda_check_error.hpp` (`::cudaError_t`, `::cudaSuccess`, `::cudaGetErrorName`, `::cudaGetErrorString`) and cuda_blackboard's `cuda_error.hpp`. On HIP, each of those headers maps the names itself before using them: `cuda_check_error.hpp` includes `<cuda_runtime_api.h>`, which resolves to autoware_cuda_utils' `hip/include` shim (`cuda_runtime_hip_compat.h`), and `cuda_error.hpp` includes `cuda_blackboard/cuda_runtime_compat.hpp`. So the package compat headers' copies did no work. `cudaErrorInvalidValue` has no user at all in the preprocessor or its dependencies' headers.
+
+The build confirms it. All three packages build rc 0 at 129d61b with the names gone, and `harness/ground_segmentation` (which force-includes the ground-segmentation header) uses none of them.
+
+### Every remaining name and its use (package source that spells it; count of whole-word occurrences outside `hip/`)
+
+autoware_cuda_pointcloud_preprocessor (27 names):
+- Types: `cudaStream_t` (51, every kernel/filter source and header), `cudaMemPool_t` (10: `cub_executor.hpp`, `cuda_pointcloud_preprocessor.hpp`, the polar filters, downsample, `thrust_custom_allocator.hpp`), `cudaMemPoolProps` (1, `cuda_voxel_grid_downsample_filter.cu`).
+- Constants:
+  - `cudaMemcpyHostToDevice` (8: preprocessor, polar filters, downsample, undistort, the combine-cloud test)
+  - `cudaMemcpyDeviceToHost` (13: same files plus `test_cuda_pointcloud_preprocessor.cpp`)
+  - `cudaMemcpyDeviceToDevice` (3: downsample, `cuda_combine_cloud_handler.cpp`)
+  - `cudaMemAllocationTypePinned`, `cudaMemLocationTypeDevice`, `cudaMemPoolAttrReleaseThreshold` (1 each, downsample pool setup)
+  - `cudaDeviceScheduleBlockingSync` (1, `cuda_pointcloud_preprocessor_node.cpp`)
+  - `cudaDevAttrMultiProcessorCount` (1, `cuda_pointcloud_preprocessor.cu`)
+- Errors and devices: `cudaGetLastError` (11, after kernel launches in common/outlier/undistort/combine kernels and the preprocessor), `cudaGetDevice` (3, polar filters and downsample pool location), `cudaSetDeviceFlags` (1, preprocessor node), `cudaDeviceGetAttribute` (1, preprocessor).
+- Memory:
+  - `cudaMemcpy` (4: downsample, both gtests)
+  - `cudaMemcpyAsync` (21)
+  - `cudaMemcpyToSymbolAsync` (1, downsample `voxel_info_dev`)
+  - `cudaMemsetAsync` (6: preprocessor, downsample, `thrust_custom_allocator.hpp`)
+  - `cudaMemPoolCreate` (1, downsample), `cudaMemPoolDestroy` (1, noise filter), `cudaMemPoolSetAttribute` (1, downsample)
+  - `cudaMallocFromPoolAsync` (4), `cudaFreeAsync` (5) (polar filters, downsample, thrust allocator)
+- Streams: `cudaStreamCreate` (5: preprocessor, polar filters, downsample, combine-cloud handler), `cudaStreamDestroy` (1, noise filter), `cudaStreamSynchronize` (24).
+- Non-macro content, all used:
+  - `<cuda/std/cmath>`: `::cuda::std::abs` on floats, `cuda_polar_voxel_{outlier,noise}_filter.cu:174/156`.
+  - `<cuda/std/functional>`: `::cuda::std::not_equal_to`, `cuda_voxel_grid_downsample_filter.cu:494`.
+  - `thrust::cuda = ::thrust::hip` alias: the four `thrust::cuda::par_nosync` calls, downsample `.cu:356,482,491,498`.
+  - The cub stand-ins: `cub/cub.cuh` is included by the preprocessor and both polar filters, and `cub/device/device_radix_sort.cuh` and `cub/device/device_run_length_encode.cuh` by the downsample filter.
+
+autoware_ground_segmentation_cuda (27 names; every use is in the package's own headers `cuda_utility.cuh`, `cuda_mempool_wrapper.hpp`, `cuda_stream_wrapper.hpp`, `device_vector.hpp` or in `cuda_scan_ground_segmentation_filter.cu`):
+- `cuda_utility.cuh`: `cudaError_t` (6), `cudaSuccess` (3), `cudaErrorInvalidValue` (2), `cudaErrorLaunchFailure` (1), `cudaGetLastError` (2); `cudaStream_t` (4, also in `cuda_stream_wrapper.hpp`).
+- `cuda_mempool_wrapper.hpp`: `cudaMemPool_t` (2), `cudaMemPoolProps`, `cudaMemAllocationTypePinned`, `cudaMemLocationTypeDevice`, `cudaMemPoolAttrReleaseThreshold`, `cudaMemPoolCreate`, `cudaMemPoolDestroy`, `cudaMemPoolSetAttribute` (1 each).
+- `cudaGetDevice` (2): `cuda_mempool_wrapper.hpp` and the filter `.cu`.
+- `cudaMalloc` (1): the filter `.cu`.
+- `device_vector.hpp`:
+  - `cudaMemcpyHostToDevice`, `cudaMemcpyDeviceToHost`, `cudaMemcpyDeviceToDevice` (1 each)
+  - `cudaMallocAsync` (1), `cudaMemcpyAsync` (3), `cudaMemsetAsync` (2)
+  - `cudaMallocFromPoolAsync`, `cudaFreeAsync`, `cudaStreamSynchronize` (1 each)
+- `cuda_stream_wrapper.hpp`: `cudaStreamCreate`, `cudaStreamDestroy` (1 each).
+- The `cub/cub.cuh` stand-in: included by `cuda_utility.cuh:23` and the filter `.cu:19`.
+
+autoware_probabilistic_occupancy_grid_map (8 names, no change):
+- `cudaStream_t` (31, every kernel header and `.cu`, `occupancy_grid_map_base`, `cuda_pointcloud.hpp`, the node header).
+- `cudaMemcpyHostToDevice` (13: `utils.cpp`, the fixed and projective maps, `binary_bayes_filter_updater.cpp`, `cuda_pointcloud.hpp`).
+- `cudaMemcpyDeviceToHost` (1, `occupancy_grid_map_base.cpp`).
+- `cudaStreamNonBlocking` and `cudaStreamCreateWithFlags` (1 each, `pointcloud_based_occupancy_grid_map_node.cpp`).
+- `cudaMemcpyAsync` (14), `cudaMemsetAsync` (8), `cudaStreamSynchronize` (3).
+
+Audit command (each name, per package): `grep -rnw --include='*.cu' --include='*.cpp' --include='*.hpp' --include='*.cuh' --include='*.h' --include='*.ipp' <name> <pkg> --exclude-dir=hip`.
+
+### Environment and checks
+
+- Rebuilt inside this job directory from the round-3 job's sources and scripts, with paths repointed, in 1125 s, all steps rc 0:
+  - TheRock ROCm 10.2.0 wheels into `$FLEET_VENV` (`rocm[devel,device-gfx942]==10.2.0`, HIP 7.17.26434); no system ROCm.
+  - System libraries in 438 s, then the ROS 2 Jazzy underlay and the 74-package overlay.
+  - `autoware_cuda_utils` from AMD-Ecosystem/autoware_cuda at `992d7034b5396900593126e8f19a1982ae7bc682` (`-- cuda is not found, building autoware_cuda_utils with HIP 7.17.26434`).
+  - cuda_blackboard at `9e0fb865cd2e38dcc0db5e0e55497f40fb71f733`, the current `moat-port` tip (`-- cuda was not found, building cuda_blackboard with HIP 7.17.26434`).
+  - Both dependencies were cloned and built in the job's `aw_ws`, with `MAX_JOBS=48` respected. The fmt link workaround of earlier rounds is still needed (environment only).
+- Build at 129d61b (recipe of the Porter stage 1 section): rc 0, 1 min 38 s, all three `cuda was not found, building <pkg> with HIP 7.17.26434`.
+- Pre-push gtests under `ulimit -c 0` and `timeout`: test_cuda_combine_cloud_handler 8/8, test_cuda_pointcloud_preprocessor 20/20.
+- `jargon.py --port autoware_universe`: clean. Fork clone clean.
+- Tooling note: the fleet guard resolves a `git push` remote from the directory the command starts in, so `cd <fork> && git push origin` from the moat checkout is refused as a push to the moat repository. `git -C <fork path> push origin moat-port` is the form it accepts.
