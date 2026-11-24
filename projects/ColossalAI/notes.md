@@ -423,3 +423,69 @@ I checked the porter's prepared commands ("Multi-GPU batch commands for the vali
 
 - Upstream's script asserts `torch.cuda.device_count() == <expected>` before each batch; the prepared `run()` does not. Run `python -c 'import torch; print(torch.cuda.device_count())'` with the batch's `HIP_VISIBLE_DEVICES` first. On these fleet images a job venv with newer TheRock wheels reports 0 devices without the amdsmi `.pth` fix, and the distributed tests then skip instead of running.
 - Use the venv's `python` first on PATH (`ROCM_HOME` resolves from `hipcc` on PATH), and a flash-attn build in the venv, so the fa2 cases in batches 8 and 9 run instead of skipping.
+
+## CUDA compile check 2026-11-24 (linux-gfx950 fleet job with NVIDIA nvcc, no NVIDIA GPU, fork `moat-port` at `e2b767e8`, base `main` = upstream `da3df39e`)
+
+Verdict: **pass, no CUDA regression.** Both checkouts build all seven extensions with nvcc 12.8. The object set, the compile and link command lines and the warnings are identical. The kernel machine code of 10 of the 17 device objects is byte-identical at every architecture. In the other 7, every difference was traced to one of two causes: an `assert`/`TORCH_CHECK` line-number immediate that moved because the port added lines above it, or the layernorm `WARP_SHFL(..., 32)` width, which equals CUDA's default. Compile-checked only; nothing ran (no NVIDIA GPU, and no AMD GPU was used). No fix is needed. Nothing in the fork was changed or pushed.
+
+### Setup
+
+- Toolkit: the host's `/usr/local/cuda-12.8`, `nvcc` "Cuda compilation tools, release 12.8, V12.8.93". Host compiler g++ 13.3.0 (Ubuntu 24.04), ninja 1.13.0, Python 3.11.17.
+- PyTorch: `torch==2.11.0+cu128` (CUDA 12.8) installed into the job venv with `pip install "torch==2.11.0+cu128" --index-url https://download.pytorch.org/whl/cu128`. The upstream pin allows `<2.14`, but the cu128 index stops at 2.11.0, so 2.11 is the newest cu128 build inside the pin. torch's CUDA major/minor matches nvcc, so `check_system_pytorch_cuda_match` passes.
+- The toolkit on this host has no `nvdisasm`. SASS was read with the `nvdisasm` 12.8.55 that the venv's Triton wheel ships (`NVDISASM_PATH`), and section bytes were compared with pyelftools.
+- Clone: `git clone https://github.com/AMD-Ecosystem/ColossalAI`, branch `moat-port` = `e2b767e85f8b`, `git merge-base origin/main moat-port` = `da3df39e66ed` = the fork's `main`. Two detached worktrees (`base` at `da3df39e`, `head` at `e2b767e8`), so both builds have the same path length and layout. Both worktrees show a clean `git status --porcelain` after building.
+
+Build, run identically in each worktree (upstream's AOT build; the arch list is upstream's own default for "no visible GPU, CUDA >= 12.8, torch >= 2.7" from `extensions/utils.py:set_cuda_arch_list`, which printed `TORCH_CUDA_ARCH_LIST=6.0;6.1;6.2;7.0;7.5;8.0;8.6;8.9;9.0;10.0;12.0`):
+
+```
+export PATH=$FLEET_VENV/bin:/usr/local/cuda-12.8/bin:$PATH CUDA_HOME=/usr/local/cuda-12.8
+export BUILD_EXT=1 FORCE_CUDA=1 MAX_JOBS=21 CUDA_VISIBLE_DEVICES= HIP_VISIBLE_DEVICES= ROCR_VISIBLE_DEVICES=
+unset TORCH_CUDA_ARCH_LIST
+python setup.py build_ext --inplace > build.log 2>&1
+```
+
+Base: exit 0, 524 s. Head: exit 0, 525 s. Both builds: `[extension] Building extensions cpu_adam_x86, layernorm_cuda, moe_cuda, fused_optim_cuda, inference_ops_cuda, scaled_masked_softmax_cuda, scaled_upper_triangle_masked_softmax_cuda`. Seven `.so` files each; the six CUDA ones carry `.nv_fatbin` and `cpu_adam_x86` is host code.
+
+Runtime (JIT) path, both checkouts: `LayerNormCudaExtension().build_jit()` with the cache folder redirected to a job directory. Exit 0, the module loads, and it exports `forward_affine` and `backward_affine`. The generated `build.ninja` is identical between base and head once paths are normalized. This exercises `device_flags()` and the `with_cuda=` argument on CUDA.
+
+### Comparison method and results
+
+1. Object set: 24 objects in each tree, same names (17 nvcc device objects, 6 pybind host objects, `cpu_adam.o`).
+2. Command lines: all 31 compile and link commands are identical once paths are normalized and ninja's `[n/m]` prefix is dropped. The same flags (`-DCOLOSSAL_WITH_CUDA`, `--use_fast_math`, `-lineinfo`, `--expt-relaxed-constexpr`, `-maxrregcount=50` for layernorm, the 11 `-gencode` pairs) reach nvcc. This confirms that `device_flags()` returns `nvcc_flags()` unchanged on CUDA.
+3. Warnings: after normalizing paths and line numbers, the warning lines (783 per build) are the same set with the same counts. All are pre-existing upstream warnings: `std::unary_function`/`std::binary_function` deprecation in the functor headers, `#940-D missing return` in `CastFunctor<__nv_bfloat16, uint8_t>` (the sm_75 `assert(false)` branch, unchanged CUDA code), the pre-sm_75 offline-compilation deprecation, a pybind11 visibility warning and `#pragma unroll` in `cpu_adam.cpp`. No new warning anywhere, and none in the changed files. No errors.
+4. Device code: `cuobjdump -xelf all` on each device object (11 cubins each, 187 per tree), then each `.text.<kernel>` section compared byte by byte, with `nvdisasm -c` diffs where they differ:
+
+| object | kernel code base vs head | cause of difference |
+|---|---|---|
+| activation, get_cos_and_sin, flash_decoding_attention, rms_layernorm, multi_tensor_{adam,l2norm,lamb,scale,sgd}, scaled_masked_softmax, scaled_upper_triang_masked_softmax | identical at all 11 archs | none |
+| context_kv_cache_memcpy, decode_kv_cache_memcpy, convert_fp8, fused_rotary_emb_and_cache | identical at sm_80..sm_120; differ at sm_60..sm_75 | only `R8 = 430` becomes `R8 = 550`: the `__assertfail` line argument of the sm_75 `assert(false)` in `CastFunctor<__nv_bfloat16, uint8_t>`. Base `cast_functor.h:430` and head `cast_functor.h:550` are the same line; the ROCm helpers inserted above it moved it. Same instruction count. |
+| moe_kernel | differs at all archs | only the `__assertfail` line argument in R8, +5 at every site (lines 14, 35, 57, 80, 109, 137, 172, 203, 369, the `assert(cols % pack_size == 0)` checks), because of the 5-line `USE_ROCM` block added at the top. sm_80..sm_120 encode some of these immediates as `HFMA2 R8, -RZ, RZ, 0, <n * 2^-24>` and sm_120 switches some between `MOV` and `HFMA2`; the decoded values all shift by exactly 5. Same instruction count. |
+| layer_norm_kernel | identical at sm_100, sm_120; differs at sm_60..sm_90 (e.g. sm_80: 12519 -> 12495 SASS lines, 44 -> 47 registers in one kernel) | `WARP_SHFL(v, lane)` became `WARP_SHFL(v, lane, 32)`. ATen's default width is `warpSize`, so base computes the `shfl.sync.idx` clamp operand at run time as `((32 - WARP_SZ) << 8) \| 31`, and head passes the constant `31`. These are the same value on every NVIDIA GPU (`WARP_SZ` = 32), and ptxas folds both to identical code for sm_100/sm_120. PTX at sm_80: 95 `shfl.sync` in both, `WARP_SZ` reads 10 -> 5 (the five remaining are the unchanged `WARP_SHFL_XOR` default-width calls). The `rsqrt` host-template guard is `#if !defined(USE_ROCM)`, a no-op on CUDA. Same semantics; the code differs only in register allocation and scheduling. |
+
+5. Host code: `objdump -d -j .text` of each object, with addresses removed. Every pybind object and `cpu_adam.o`, plus 11 of the 17 device objects, are identical. In flash_decoding, rms_layernorm, both softmax kernels, layer_norm and moe, every changed instruction is `mov $<line>,%edx`, the `__LINE__` argument of `TORCH_CHECK`. The shifts equal the number of lines the port added above each check (flash_decoding +21, rms_layernorm +9, softmax +9, upper-triangle softmax +9, layer_norm +4, moe +5). Defined symbols (`nm --defined-only`) are identical for all 24 objects.
+
+### Per-file result (port-changed files in the CUDA build)
+
+All pass. Each header is covered by every object that includes it.
+
+- Build scripts: `extensions/cuda_extension.py`, `extensions/utils.py`: pass. On CUDA, `is_rocm_pytorch()` is False, so `device_flags()` returns `nvcc_flags()` as is, `with_cuda=None` is `load()`'s default, `set_cuda_arch_list` and `append_nvcc_threads` take the original path (the new early return needs `torch.version.hip`), and `get_cuda_home_include` and `assert_build_compatible` keep the CUDA_HOME branch. Evidence: identical command lines (AOT) and an identical `build.ninja` (JIT). `setup.py` is unchanged.
+- `common/data_type.h`, `common/micros.h`, `common/mp_type_traits.h`, `common/vec_type_traits.h`, `funcs/binary_functor.h`, `funcs/ternary_functor.h`, `funcs/unary_functor.h`, `funcs/reduce_function.h`: pass. The guard widening to `|| defined(COLOSSAL_WITH_HIP)` leaves CUDA (`-DCOLOSSAL_WITH_CUDA`) unchanged. `COLOSSAL_FULL_WARP_MASK` is `0xffffffffu` on CUDA, the same value as the removed `kWarpReduceMask`. The new bf16 helpers are `USE_ROCM`-only.
+- `funcs/cast_functor.h`: pass. The CUDA bodies are unchanged; the only code effect is the assert line number above.
+- `kernel/cuda/attention/attention_utils.h`: pass. The added width argument `WARP_SIZE` (32) equals CUDA's default; flash_decoding's kernel code is byte-identical at all archs.
+- `flash_decoding_attention_kernel.cu`, `rms_layernorm_kernel.cu`, `multi_tensor_l2norm_kernel.cu`, `scaled_masked_softmax_kernel.cu`, `scaled_upper_triang_masked_softmax_kernel.cu`: pass, kernel code byte-identical (host side: `TORCH_CHECK` line numbers only).
+- `moe_kernel.cu`: pass (assert line numbers only).
+- `layer_norm_kernel.cu`: pass (equivalent shuffle width; see the table).
+- Not part of the CUDA build: `.gitignore`, `README.md`, `docs/.../installation.md`, and the tests.
+
+### Pure-Python changes: the CUDA branch stays reachable
+
+Each new branch keys on `torch.version.hip`, which is `None` on a CUDA PyTorch build. A CUDA install therefore takes the original code everywhere:
+
+- `colossalai/accelerator/cuda_accelerator.py:get_version`: `hip is not None` is False, so it returns `torch.version.cuda` as before.
+- `colossalai/cli/check/check_installation.py`: the extra HIP line prints only on ROCm; the CUDA output is unchanged.
+- `colossalai/kernel/kernel_loader.py:_flash_attention_support`: upstream refused whenever `hip is not None`, and the port refuses when `hip is not None and hopper`. Both are False on CUDA. The new `if torch.version.hip is not None: return _rocm_flash_attention_support(q)` is also skipped, so CUDA reaches the original SM checks (`(9, 0)` for fa3, `major >= 8` and so on). `import os` is used only by the ROCm helper.
+- `colossalai/kernel/triton/rms_layernorm.py`: `max_num_warps = 1024 // get_device_properties(x.device).warp_size` is `1024 // 32 = 32` on every NVIDIA GPU, so `num_warps = min(max(next_pow2(N) // 256, 8), 32)`, the same expression as before. This change is unguarded. `_CudaDeviceProperties.warp_size` first appears in torch v2.5.0 (pytorch `f6a0be5023d`, "Add warpSize to Device properties (#128449)"; absent in v2.4.0), which is exactly the floor of the `torch>=2.5` pin, so every supported CUDA torch has it. It is present in 2.11.0+cu128 here.
+- `colossalai/quantization/fp8.py`: `scaled_mm_fp8_formats()` returns `("e4m3", "e5m2")` immediately when `hip is None`; the probe (`_rocm_scaled_mm_fp8_formats`) is never called on CUDA. `_LinearFp8.forward` then casts with `"e4m3"` and stores `ctx.e5m2 = "e5m2"`, which `backward` uses, as the old hard-coded strings did. `cast_to_fp8` now uses `_FP8_TYPES.get(fp8_format, torch.float8_e5m2)`. For `"e4m3"` that is `float8_e4m3fn` and for anything else `float8_e5m2`, the same mapping as upstream's `e4m3fn if fp8_format == "e4m3" else e5m2` for every string except the two new FNUZ names. The `cuda_arch < 89` compile gate is unchanged.
+- Tests: the fp8 skips keep `get_device_capability()[0] < 9` on CUDA, `TRITON_CUDA_SUPPORT` keeps `version.parse(torch.version.cuda) > 11.4` after a short-circuited `hip is not None`, and the flash-decoding reference keeps `ref_dtype = dtype` on CUDA. The new `tests/test_kernels` files run on any GPU (`torch.cuda.is_available()`).
+
+Proposed fix: none needed. Optional, not a regression: `assert(false)` without a return in `CastFunctor<__nv_bfloat16, uint8_t>` (sm_75 path) gives the pre-existing `#940-D` warning in base and head alike; it is upstream code and out of the port's scope.

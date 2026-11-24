@@ -39,3 +39,5 @@
 {"kind":"phase","ts":"2026-11-23T23:57:38Z","phase":"test","seconds":172.706,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300c-20261123-151350-review-colossalai-prompt/agent/run1gpu.sh fa2"}
 {"kind":"phase","ts":"2026-11-24T00:01:56Z","phase":"test","seconds":258.471,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300c-20261123-151350-review-colossalai-prompt/agent/run-jit.sh"}
 {"kind":"session","ts":"2026-11-24T00:02:55Z","epoch":1795478575.852154,"event":"end","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-24T04:57:50Z","phase":"compile","seconds":523.842,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi355-20261123-204404-nvcc-colossalai-prompt/cc/build.sh /var/lib/jenkins/fleet/jobs/mi355-20261123-204404-nvcc-colossalai-prompt/cc/base"}
+{"kind":"phase","ts":"2026-11-24T04:57:51Z","phase":"compile","seconds":525.254,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi355-20261123-204404-nvcc-colossalai-prompt/cc/build.sh /var/lib/jenkins/fleet/jobs/mi355-20261123-204404-nvcc-colossalai-prompt/cc/head"}
