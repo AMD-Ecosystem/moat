@@ -392,3 +392,36 @@ Signs: the result changes when a `printf` is added in the kernel, and the device
 ## Lesson for cuda-to-rocm: addendum to "masks and counters that rely on a 32-bit shift by 32 being 0"
 
 As the reviewer asked: the first sweep in this port grepped for mask expressions and missed sites in the same file (`RadixSort.cuh`, eight more shifts) and elsewhere. The best examples of form (2) are the solver's last-sub-warp mask `(1 << ((subWarpIndex + 1) * numThreadsPerBody)) - 1`, whose count is exactly 32 on every launch (it breaks bodies with more than 16 slabs), and contact-count masks after polygon clipping, where the count can exceed 32 because the clipper keeps counting past its buffer. A sweep that would have caught them: list every shift whose count is not a literal, then classify each count's range. A script that strips comments and takes the right operand up to the first lower-precedence operator is enough; PhysX had 280 such sites.
+
+## Review 2026-11-24, delta 4764ca13...064e809b (linux-gfx942, reviewer, headless fleet job mi300c-20261124-035623)
+
+Scope: `git diff 4764ca13...064e809b`, the ten commits of the porter round above, read with the surrounding code. Three independent child reviews (CMake and flags; kernel shift fixes with a fresh sweep of their own; header, comments, harness and lessons) were run, and each finding was fact-checked against the code. The CMake review configured scratch builds (direct, standalone GPU, GPU-static) and inspected `compile_commands.json`, link lines and RUNPATH; nothing ran on a GPU.
+
+Verdict: **changes requested** (two small fork changes). All eight findings of "Review 2026-11-24" are closed:
+- 1: all 8 single-warp shifts go through `radixShiftLeft`; the counts were re-derived (the result is nonzero only for radix - i in 0..3).
+- 2: the root cause holds up against the asm and the readback evidence. Both flags reach 61/61 HIP objects in the top-level, standalone and GPU-static configures, no host `.cpp`, and the SHELL-in-genex form expands correctly.
+- 3: every listed site, plus `cudaGJKEPA.cu:950/984`, matches the NVIDIA value for every count including 33 to 63. An independent sweep (all non-literal shifts plus every ballot with a computed mask) found nothing new.
+- 4: `PxCudaTypes.h` is identical to upstream, and a HIP-runtime-first consumer compiles.
+- 5: the user's `CMAKE_HIP_FLAGS` is preserved and does not accumulate on reconfigure; amdhip64 still reaches shared, standalone and static consumers; `PX_THEROCK` has no leftovers.
+- 6: `.gitignore` is gone.
+- 7: the comments are accurate, and the removed define is unconditionally redefined by HIP at `amd_hip_vector_types.h:25`.
+- 8: four scenes, with teeth recorded per fix. "many slabs" really reaches 169+ partitions and 22+ slabs (`PxgContext.cpp:1618`, `PxgConstraintPartition.cpp:921-958`).
+
+The CUDA module-load loop now matches upstream line for line.
+
+### Build system
+1. **`HIPFLAGS` from the environment is ignored on the first configure.** `physx/source/compiler/cmakegpu/linux/CMakeLists.txt:112` builds a normal `CMAKE_HIP_FLAGS` from the cache value before `enable_language(HIP)` creates the cache entry from `$ENV{HIPFLAGS}`; the normal variable then shadows it. A fresh configure with `HIPFLAGS=-DPX_ENV_CHECK` gave 0/61 `.cu` commands with it; a plain reconfigure gave 61/61. (The old FORCE dropped it every time, so this is a new inconsistency rather than a regression, but this round wrote the line.) Fix: when `CACHE{CMAKE_HIP_FLAGS}` is not yet defined, use `$ENV{HIPFLAGS}` as the caller's value. Check with a fresh configure under `HIPFLAGS=...`.
+
+### Testing
+2. **The large-face scene does not check the face size it depends on.** `physx/snippets/snippetgpuparity/SnippetGpuParity.cpp:869-871` prints `largestFace` but never checks it. If cooking ever splits the 31-vertex cap, the scene silently loses the more-than-32-clipped-points coverage that is its purpose (its teeth come from the mask fix at `cudaGJKEPA.cu:950/984`). Add `check(largestFace >= 31, ...)`. In the same scene and `primitivesOnMesh`, a NULL cooked mesh (`cube`, `prism`) would crash at `setSolverIterationCounts` instead of failing a check. Guard it with a check as well.
+
+### Commit hygiene (not fixable on the published branch; carry into the PR-prep squash message, which is a person's push)
+3. `e1080687`'s Test Plan reports "1x1, 8x8 and 40x40 ... all 12 cases", but at that commit the snippet has no mesh scene. Even at 064e809b it has one 8x8 grid with 4 primitives; the 12 cases came from a scratch program. `3ebaa20c`'s Test Plan cites "the parity snippet's self-colliding aggregate stack", a scene added later (and renamed "aggregate pile"). `a2667442` says the convexTriangle.cuh contact count can exceed 32; that file's `addContacts` (`convexTriangle.cuh:905-927`) counts only stored contacts, so there it reaches exactly 32, never more. The fix is still needed. `0b3fd207`'s Test Plan exercises only ROCm; say that the CUDA branch is textually upstream's, or give the nvcc build line.
+
+### Non-blocking notes for the porter (record, no reviewer verdict depends on them)
+- `convexTriangle.cuh:1872` `PxU32 startIndex;` is still uninitialized; `-Xclang -no-enable-noundef-analysis` is an internal frontend option. Initializing it (`= 0`, the same result on CUDA) keeps the confirmed site correct if the option ever changes. The flag stays for the other sites.
+- `638c5b36` says amdhip64 is now found once. The link line still names it twice, because CMake's HIP runtime library (`CMAKE_HIP_RUNTIME_LIBRARY_DEFAULT=SHARED`) adds it after the glob's. This is harmless.
+
+### Lessons in this file
+- "clang's strict aliasing and noundef rules": accurate, but "relies on two things clang's HIP front end does not guarantee" implies nvcc guarantees them. Both patterns are undefined behaviour that nvcc does not exploit. Reword before promotion.
+- Addendum to "masks and counters": "breaks bodies with more than 16 slabs" is imprecise. `numSlabs` is scene-wide and the threshold scales with `gpuMaxNumPartitions` (16 x 8 = 128 partitions at the default). Once any body exceeds it, `numThreadsPerBody` is 32 for every body in the solve. "exactly 32 on every launch" holds for the last sub-warp of each warp. Reword before promotion.

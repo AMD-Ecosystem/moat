@@ -6,16 +6,12 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "cmake",
-  "stage": "reviewing",
+  "stage": "changes-requested",
   "adopted_at": "2026-11-06T11:13:50Z",
-  "updated_at": "2026-11-24T12:47:24Z",
+  "updated_at": "2026-11-24T12:54:15Z",
   "head_sha": "064e809b70fba13623f1969015ff3bd4d26bffda",
   "depends_on": [],
-  "porting": {
-    "arch": "linux-gfx942",
-    "since": "2026-11-24T12:47:24Z",
-    "holder": "cc7831834c8e"
-  },
+  "porting": null,
   "waivers": {},
   "platforms": {
     "linux-gfx942": {
@@ -25,7 +21,7 @@
       "failed_sha": null,
       "started_at": "2026-11-23T23:32:20Z",
       "completed_at": null,
-      "updated_at": "2026-11-24T12:47:24Z",
+      "updated_at": "2026-11-24T12:54:15Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -90,7 +86,7 @@
   },
   "porting_released": {
     "arch": "linux-gfx942",
-    "since": "2026-11-24T11:58:54Z",
-    "at": "2026-11-24T12:47:05Z"
+    "since": "2026-11-24T12:47:24Z",
+    "at": "2026-11-24T12:54:15Z"
   }
 }

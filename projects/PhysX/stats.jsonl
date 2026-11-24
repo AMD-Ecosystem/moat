@@ -26,3 +26,5 @@
 {"kind":"phase","ts":"2026-11-24T12:26:29Z","phase":"compile","seconds":23.039,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi300c-20261124-035623-fix-physx-prompt/moat/projects/PhysX/src/physx/compiler/linux-gcc-rocm-release -j64"}
 {"kind":"phase","ts":"2026-11-24T12:36:50Z","phase":"compile","seconds":22.154,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi300c-20261124-035623-fix-physx-prompt/moat/projects/PhysX/src/physx/compiler/linux-gcc-rocm-release -j64"}
 {"kind":"phase","ts":"2026-11-24T12:37:38Z","phase":"compile","seconds":47.539,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi300c-20261124-035623-fix-physx-prompt/moat/projects/PhysX/src/physx/compiler/linux-gcc-rocm-checked -j64"}
+{"kind":"session","ts":"2026-11-24T12:47:24Z","epoch":1795524444.241629,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-24T12:54:16Z","epoch":1795524856.066077,"event":"end","platform":"linux-gfx942"}
