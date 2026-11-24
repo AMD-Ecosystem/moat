@@ -7,7 +7,7 @@
   "priority": 6.119,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:03Z",
-  "updated_at": "2026-11-24T05:53:04Z",
+  "updated_at": "2026-11-24T06:11:05Z",
   "head_sha": "310dd19d21880f518adbd5181a12725528a4eb9b",
   "pr_url": "https://github.com/CVCUDA/CV-CUDA/pull/293",
   "pr_number": 293,
@@ -147,11 +147,11 @@
     "linux-gfx1201": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "e7a9d2c5b0760640777c2a55e64a5152945392b8",
+      "validated_sha": "310dd19d21880f518adbd5181a12725528a4eb9b",
       "failed_sha": null,
       "started_at": null,
-      "completed_at": "2026-11-24T04:38:01Z",
-      "updated_at": "2026-11-24T04:38:01Z",
+      "completed_at": "2026-11-24T06:11:05Z",
+      "updated_at": "2026-11-24T06:11:05Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -168,7 +168,8 @@
       "state": "completed",
       "last_agent": "validator",
       "validated_prior": [
-        "db84d5c56069f2a7d751d7297a6c6db227cb4943"
+        "db84d5c56069f2a7d751d7297a6c6db227cb4943",
+        "e7a9d2c5b0760640777c2a55e64a5152945392b8"
       ]
     }
   },
