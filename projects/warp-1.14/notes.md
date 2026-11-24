@@ -9330,3 +9330,5 @@ nvcc check: `cuda_pp.sh` (nvcc 12.8) of `2ce30148` against `4ae8babd`: 22 IDENTI
 - Validators revalidate at `4ae8babd` (26 Linux targets now).
 
 Addendum to the coordinator finding above (V100, same setup, each fragment test in its own process at `2ce30148`): float32 OK in 570 s, float16 OK in 774 s, float64 OK in 657 s, 2001 s in all. So at `2ce30148` every NVIDIA case passes (block sizes 32, 48, 64, 96) and the only CUDA-side problem left is the 33 minutes, which the reduced non-HIP case list addresses.
+
+Coordinator check of `4ae8babd` on NVIDIA (V100, upstream `warp-lang==1.14.0` with the fork's `test_tile_matmul.py` at `4ae8babd`, `device.is_hip` read through `getattr`): `python -m warp.tests -s autodetect -p "test_tile_matmul.py"`: Ran 21 tests in 166.6 s, OK (skipped=1, the bf16 case). Upstream's own file takes 96 s there; at `2ce30148` the three fragment tests alone took 2001 s. The CUDA test regression is closed.
