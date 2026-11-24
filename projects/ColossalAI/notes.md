@@ -570,3 +570,62 @@ Belongs in linux-host-setup.md (pip-installed ROCm). With TheRock's per-architec
 ## Lesson for cuda-to-rocm: flash-attn 2.8.3's Triton AMD backward reads dout with out's strides
 
 Belongs in libraries.md (FlashAttention on ROCm). In flash-attn 2.8.3.post2's Triton AMD backend (the RDNA path, `FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE`), the backward preprocess indexes `dout` with `out`'s strides. A non-contiguous `dout` with last stride 1 (for example, the gradient of `out.transpose(1, 2)`) passes `maybe_contiguous` and gives wrong dq and dk while dv stays correct. The same backend returns `rng_state=None` without dropout, which breaks `torch.compile` against the op's fake implementation. Both are fixed on flash-attn main, where the backend comes from ROCm/aiter; no release had the fix as of 2026-11. Test an fa2 integration on RDNA with a transposed upstream gradient and under `torch.compile`, not only with a contiguous `dout`. (ColossalAI)
+
+## Porting round 2 (2026-11-24, linux-gfx1100 fleet job, porter role, fork `moat-port` `e2b767e8` -> `f780f7ea`)
+
+Implements the validator's option (a) from "Validation 2026-11-24 (linux-gfx1100 ...)": the Triton backend stays admitted on gfx11/gfx12 (Jeff's Q2 ruling), but only with a flash-attn that has both fixes; otherwise fa2 is not selected and attention falls back to SDPA. No workaround code for the 2.8.3.post2 bugs (option b) and RDNA is not dropped (option c). One commit on top of `moat-port`, pushed plainly: `f780f7ea [ROCm] Require flash-attn 2.8.4 for its Triton backend`.
+
+### The check and why a version check is justified here
+
+`colossalai/kernel/kernel_loader.py`: new `_ROCM_FA2_TRITON_MIN_VERSION = "2.8.4"` and `_rocm_flash_attention_triton_support()` (`lru_cache`d, so it runs and warns once per process). `_rocm_flash_attention_support` calls it only when the Triton list was chosen (`FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE`) and the arch passed. It reads `importlib.metadata.version("flash-attn")`; below 2.8.4 it emits one `UserWarning` ("Attention backend 'fa2' is not used: it requires flash-attn >= 2.8.4 with the Triton backend (flash-attn X computes wrong gradients for a non-contiguous output gradient and fails under torch.compile); build flash-attn from its main branch with FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE.") and returns that reason, so `auto` moves on to sdpa and an explicit `fa2` raises `NotImplementedError` with it. flash-attn not installed: returns None and leaves it to the existing availability check (unchanged behaviour: auto skips, strict raises ModuleNotFoundError).
+
+Main does bump the version, and the bump postdates both fixes, so the version string identifies the fixed code. Evidence from flash-attn's history (clone in the job directory):
+- `701ebe05` (2026-01-28, "[AMD] Triton Backend for ROCm #3") rewrote the in-tree backend: `_bwd_preprocess` takes `stride_dob, stride_doh, stride_dom, stride_dod`, and `interface_v2.py` returns `rng_state = torch.as_tensor([philox_seed, philox_offset])` in `fwd` and `varlen_fwd`. `flash_attn/__init__.py` still said `2.8.3` then.
+- `4219765d` (2026-03-11) set `__version__ = "2.8.4"`; `3f94643f` (2026-03-12) moved the backend to ROCm/aiter. setup.py's `get_package_version()` takes the metadata version from `__version__` (plus an optional `+FLASH_ATTN_LOCAL_VERSION`), so a main build installs as `flash_attn 2.8.4`.
+- aiter's `aiter/ops/triton/_triton_kernels/flash_attn_triton_amd/` was added in aiter `e0d86ba5b` (2025-11-13) already with `stride_dob` in the preprocess and a tensor `rng_state`, so the system-aiter option (`FLASH_ATTENTION_USE_SYSTEM_AITER=TRUE`) cannot pair 2.8.4 with an unfixed backend either.
+
+How it behaves:
+- flash-attn 2.8.3.post2 (the release; `__version__ = "2.8.3.post2"`): rejected. Verified on this GPU: auto selects `sdpa` twice with exactly one warning; strict `fa2` raises with the reason.
+- flash-attn main `b038b497` (`flash_attn 2.8.4`, backend module `aiter.ops.triton._triton_kernels.flash_attn_triton_amd.interface_v2`): admitted, auto selects `fa2`, no warning.
+- A main build from 2026-01-28 to 2026-03-10 (fixed, but reporting `2.8.3`): rejected. Conservative; it falls back to SDPA, never to the bugs.
+- Any version, Triton backend not enabled: the check is not reached.
+
+Behaviour on Instinct (stated plainly):
+- gfx942/gfx90a/gfx950 with the CK backend (`FLASH_ATTENTION_TRITON_AMD_ENABLE` unset, the documented and validated path): one new line executes, `if supported is _ROCM_FA2_TRITON_ARCHS:`, which is False, then `return None` as before. The selection result is identical; nothing else on that path changed. Import time additionally defines the new constant and function and imports `PackageNotFoundError` (every platform, CUDA included).
+- gfx942 etc. with `FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE` (Triton backend on CDNA, not the validated path): now also gated, because the two bugs are the Triton backend's, not RDNA's. With 2.8.3.post2 this changes fa2 to an SDPA fallback there.
+- CUDA: `_rocm_flash_attention_support` is never called; no executed line changes.
+
+Tests (`tests/test_shardformer/test_layer/test_attention_backends.py`): `test_attention_rocm_fa2_architectures` now pins the version to 2.8.4 and clears the cache, so its six cases do not depend on the installed flash-attn. New `test_attention_rocm_fa2_triton_version` (5 cases: gfx1100/2.8.3.post2, gfx1201/2.8.3, gfx942+Triton/2.8.3.post2 -> sdpa with the warning; gfx1100/2.8.4 and 2.8.4+rocm -> fa2), which also checks that a second selection does not warn again (warnings as errors) and that strict fa2 raises the reason.
+
+Docs: README.md and docs/source/en/get_started/installation.md (the ROCm install section, after the existing flash-attn paragraph, both identical): CK on gfx90a/gfx942/gfx950; on gfx11/gfx12 flash-attn >= 2.8.4, built from main, with the backend enabled at build and run time:
+
+```
+git clone https://github.com/Dao-AILab/flash-attention.git
+cd flash-attention
+FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE AITER_USE_SYSTEM_TRITON=1 pip install --no-build-isolation .
+export FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE
+```
+
+Verified here exactly (with `$FLEET_VENV/bin/python -m pip`) at flash-attn `b038b497`, aiter submodule `f0966b0a`: installs `flash_attn-2.8.4` and `amd-aiter` (plus `flydsl 0.3.4.1`); `pip freeze` before/after shows torch, triton 3.8.0+git66b3f9ff.rocm10.2.0a20261022 and the rocm wheels unchanged. `AITER_USE_SYSTEM_TRITON=1` is flash-attn's own documented switch to keep the PyTorch-matched Triton (without it aiter's setup installs its own Triton).
+
+### Environment (this job)
+
+Fresh job venv, TheRock `10.2.0a20261022`: `rocm[libraries,devel]`, `rocm-sdk-device-gfx1100`, `torch==2.13.0+rocm10.2.0a20261022`, `amd-torch-device-gfx1100`, `amd-torch-device-gfx110x`, `torchvision==0.28.0+rocm10.2.0a20261022`, the amdsmi `.pth`, requirements + requirements-test constrained to the installed torch/triton/rocm pins. GPU: AMD Radeon PRO W7800 48GB (gfx1100), `HIP_VISIBLE_DEVICES=0` kept, device count 1. Extensions: `BUILD_EXT=1 PYTORCH_ROCM_ARCH=gfx1100 MAX_JOBS=32 pip install --no-build-isolation --no-deps -v -e projects/ColossalAI/src` (17 gfx1100 compiles). flash-attn 2.8.3.post2: wheel as in the validator's recipe. Lint: black 120 / isort profile black clean on the two Python files. Gotcha: `utils/timeit.sh` runs its command from the MOAT root, so give `pip install -e` an absolute path.
+
+### Results at `f780f7ea` (one gfx1100 GPU, `ulimit -c 0`, `timeout`, `FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE`, `FAST_TEST=1`)
+
+| flash-attn | run | result |
+|---|---|---|
+| any | `test_attention_backends.py -k 'not gpu'` | 92 passed, 568 deselected |
+| 2.8.3.post2 | selection probe | auto -> sdpa, sdpa; 1 warning; strict fa2 -> NotImplementedError with the reason |
+| 2.8.3.post2 | `COLOSSALAI_TEST_ATTENTION_BACKEND=sdpa -k gpu` | 198 passed, 370 skipped, 92 deselected |
+| 2.8.3.post2 | `=fa2 -k gpu` (`--maxfail=3`) | 3 failed, all the intended `NotImplementedError: Attention backend 'fa2' requires flash-attn >= 2.8.4 ...` (strict mode refuses instead of falling back) |
+| main 2.8.4 | selection probe | auto -> fa2, no warning |
+| main 2.8.4 | `=fa2 -k gpu`, no scratch patch, `PYTHONPATH` = the fork checkout only | **185 passed**, 383 skipped, 92 deselected (349 s) |
+| main 2.8.4 | `=sdpa -k gpu` | 198 passed, 370 skipped, 92 deselected |
+
+The 5 more deselected tests than in the validator's run are the new CPU test's cases (`-k gpu` deselects them).
+
+### For the CUDA compile recheck owed elsewhere
+
+The delta `e2b767e8..f780f7ea` touches four files, none compiled: `colossalai/kernel/kernel_loader.py`, `tests/test_shardformer/test_layer/test_attention_backends.py`, `README.md`, `docs/source/en/get_started/installation.md`. No C++/CUDA source, header, setup.py or extension build file changed, so the nvcc compile of the extensions is unaffected; the recheck needs only `python -c "import colossalai.kernel.kernel_loader"` and `pytest tests/test_shardformer/test_layer/test_attention_backends.py -k 'not gpu'` under a CUDA torch.
