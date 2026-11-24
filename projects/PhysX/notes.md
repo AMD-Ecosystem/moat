@@ -519,3 +519,91 @@ Verdict: **review passed.**
 2. Line-number sentence: `git diff -U0 4764ca13 886c3529` on `SnippetGpuParity.cpp` gives `+601,174` and `+860,42`; `git diff --stat 064e809b 886c3529` touches only the three files named; every bullet's cited lines were checked at 886c3529 and match.
 
 Non-blocking, for the trunk session that promotes the lesson: the addendum's lead-in "The best examples of form (2) are the solver's last-sub-warp mask ..." is now followed by one example and a separate "A second example ..." sentence; write "The best example of form (2) is ..." when promoting.
+
+## CUDA compile check at 886c3529 2026-11-24 (mi355 fleet host, nvcc 12.8, no GPU used)
+
+Requested by Jeff: recheck the CUDA path of fork `886c3529` (the head; later commits ignored) with real nvcc against upstream 5.13 `7d6f6ac8`, which the branch merges, using the method of "CUDA compile check 2026-11-24". Nothing ran on a GPU (this job had none and used none), nothing in the fork changed, nothing was pushed, and the project's stage and lock were not touched. Builds lived in the job directory (`<job>/nvcc/`): `up/` at `7d6f6ac8`, `port/` at `886c3529`, and `same/`, one worktree built at `7d6f6ac8`, its build tree saved, then checked out at `886c3529` and rebuilt in place, so objects compare byte for byte with identical paths.
+
+Verdict: **no CUDA regression.** Both commits build with no errors and no warnings beyond nvcc's deprecated-target note for sm_52/sm_70 (61 per build at both commits, one per `.cu`; every host file builds with `-Werror` and every `.cu` with `-Werror=all-warnings`). Compile commands are identical for every shared file, the CUDA module-load loop is upstream's line for line, the four changed host objects differ only in `__LINE__` immediates, and 54 of the 61 kernel TUs have identical SASS on all 8 targets. The other 7 differ only in kernels that use a shared-source edit, each traced to its source lines by recompiling with those lines reverted, and each edit computes the same values on NVIDIA. Nothing to fix.
+
+### Toolchain and what was substituted
+
+Same as the previous check: nvcc `/usr/local/cuda-12.8/bin/nvcc` "release 12.8, V12.8.93" (upstream pins CUDA 12.8, so no version substitution), gcc 13.3.0, CMake 3.31.6; packman fetched upstream's public `clang-physxmetadata` and `rapidjson` packages; freeglut v3.6.0 (built from source earlier, for the snippets' GLUT dependency) and NVIDIA's `cuda_nvdisasm-linux-x86_64-12.8.90` redist archive (the toolkit has no nvdisasm) were copied from the previous check's job directory. GPU targets are upstream's full list: SASS for sm_52, 70, 80, 86, 89, 90, 100 and 120, plus compute PTX (`PX_GENERATE_GPU_REDUCED_ARCHITECTURES=False`).
+
+### Builds (all exit 0)
+
+| Build | 7d6f6ac8 | 886c3529 |
+|---|---|---|
+| preset `linux-gcc`, release, full tree (SDK, PhysXGpu, snippets), `make -j64` | 890 objects, 61 `.cu.o` | 892 objects (plus `SnippetGpuParity.cpp.o` and its `ClassicMain.cpp.o`), 61 `.cu.o` |
+| preset `linux-gcc`, checked | 899 objects, 61 `.cu.o` | 901 objects, 61 `.cu.o` |
+| direct `cmake -S physx -B build-top -G Ninja -DPHYSX_PRESET=linux-gcc -DCMAKE_BUILD_TYPE=release -DPX_USE_HIP=OFF`, build, `cmake --install` | 632/632 steps | 632/632 steps |
+
+- Compile commands (paths normalized): preset release 734 shared files and direct configure 590 files, **0 differ**. No `.cu` command carries `-fno-strict-aliasing`, `-no-enable-noundef-analysis`, `-include cuda_to_hip.h`, `PX_USE_HIP` or a `hip_compat` path, and none of the 1780 dependency files of the 886c3529 builds names `cuda_to_hip.h`, `hip_compat/` or `PxgSdfLinearGrid.h`. A fresh direct configure at 886c3529 with `HIPFLAGS=-DPX_ENV_CHECK` in the environment gives the same 590 commands with no trace of it: the two HIP-only compiler flags (inside `IF(PX_USE_HIP)` and a `$<COMPILE_LANGUAGE:HIP>` genex) and the HIPFLAGS handling never reach the CUDA build.
+- All 87 `link.txt` files of the release build are identical (normalized); `SnippetGpuParity` adds one. `libPhysXGpu_64.so`: the same 210 exported symbols, no `hip` symbol, `NEEDED` only libstdc++/libm/libc, at both commits.
+- Installed `PhysXConfig.cmake`: upstream `if(ON OR OFF)`, port `if((ON OR OFF) AND NOT "OFF")`. Both are true under CMP0012 NEW and false under an unset policy (`cmake -P`), so they always agree; a consumer project (`cmake_minimum_required(VERSION 3.16)`, `find_package(PhysX CONFIG)`) finds CUDAToolkit 12.8.93 with either install.
+
+### Host objects
+
+67 objects differ: 61 `.cu.o`, 4 host objects of the GPU library, and the 2 new snippet objects. 7 of the `.cu.o` (`broadphase`, `MemCopyBalanced`, `compressOutputContacts`, `sparseGridStandalone`, `constraintBlockPrePrep`, `preIntegration`, `preIntegrationTGS`) have identical cubins and PTX on every target and differ only in the host `.strtab` FILE symbol `tmpxft_<pid>_..._cudafe1.cpp`, nvcc's process-id temp name. It differs between any two builds, so it is build noise, not a port change.
+
+The 4 host objects (`CudaContextManager.cpp.o`, `CudaKernelWrangler.cpp.o`, `PxgGeometryManager.cpp.o`, `PxPhysXGpuModuleLoader.cpp.o`): only `.text` sections differ (no data, rodata or symbol differences). In `objdump -dr` the instruction count is the same, and every differing instruction (82, 3, 7 and 3) differs only in one immediate that maps an upstream source line to its line at 886c3529 (checked mechanically against a line map of each file). These are `__LINE__` arguments to the error reporters, moved by the inserted HIP blocks.
+
+**CUDA module-load loop.** Taking the `#if defined(__HIP_PLATFORM_AMD__) && !defined(__HIPCC__)` branches out of the loop at 886c3529 (`CudaContextManager.cpp:472-539`) leaves text identical to upstream's loop (`diff` empty, blank lines and comments included): `CUresult ret = CUDA_ERROR_UNKNOWN;`, `if (moduleTable[i])` around `moduleLoadDataEx`, and the error report for every result other than `CUDA_SUCCESS` and `CUDA_ERROR_NO_BINARY_FOR_GPU`. The `continue` is only in the HIP branch. With its code equal to upstream apart from line immediates, finding 1 of the previous check is closed.
+
+### Kernels
+
+Per-kernel `cuobjdump -sass` on all 8 targets (whitespace-normalized, encodings included): 54 TUs are identical in every kernel. Every TU that includes `RadixSort.cuh` (4), `atomic.cuh` (11) or `warpHelpers.cuh` (1) is among them. So are the `cudaNpCommon.h`, `PxgArticulationBlockData.h` and `sdfCollision.cuh` includers outside the 7 below, and those 7 are shown below to owe nothing to any header. The 7 TUs that differ, each attributed by recompiling it with the exact nvcc command line from a copy of the 886c3529 sources with only the named lines reverted (an unmodified copy reproduces the 886c3529 SASS exactly, so moving the source path changes nothing):
+
+| TU, kernel(s) differing | Reverting only ... | gives SASS equal to upstream on 8/8 targets | Cause |
+|---|---|---|---|
+| `convexMeshMidphase.cu`, `triangleTriangleOverlaps` | the file | yes | BV32 root masks (as in the previous check: +2 `ISETP.GE.U32` and +2 `SEL` on sm_90, 2368 to 2376 instructions; the SDF kernels are identical) |
+| `algorithms.cu`, `scanPerBlockKernel`, `scanPerBlockKernel4x4`, `addBlockSumsKernel4x4`, `radixFourBitCountPerBlockKernel` on sm_52 to sm_90 | the file | yes | `PXG_LOGICAL_WARP_SIZE = 32` for `warpSize` (as before; identical on sm_100 and sm_120, where nvcc folds `warpSize` itself) |
+| `solverMultiBlock.cu`, `computeAverageSolverBodyVelocity` | the file (`:720-722` only differ) | yes | `maskHigh` select |
+| `solverMultiBlockTGS.cu`, `computeAverageSolverBodyVelocityTGS` | the file (`:325-327` only differ) | yes | `maskHigh` select |
+| `cudaGJKEPA.cu`, `convexConvexNphase_stage2Kernel`, `convexPlaneNphase_Kernel` | the file (`:130-134`, `:156-157`, `:483`, `:950`, `:984`, `:2997` only differ) | yes | mask selects |
+| `convexMesh.cu`, `convexTrimeshNarrowphase` | `convexTriangle.cuh:1003`, `:1855` and `:1872` | yes | mask selects and `startIndex = 0`, each on its own |
+| `convexHeightfield.cu`, `convexHeightfieldNarrowphase` | the same three lines | yes | same |
+
+`convexMeshPostProcess.cu` and `femClothPrimitives.cu` also include `convexTriangle.cuh` but use neither `polyClip` nor `convexTriangleContactGen`; their SASS is identical. The SDF texture path is unchanged on CUDA: the same `TEX*` counts on sm_90 at both commits (`convexMeshMidphase` 399, `particleSystemMeshMidphase` 120, `femClothPrimitives` 90, `softbodySoftbodyMidPhase` 93).
+
+**Mask selects.** Upstream's `(1 << n) - 1` reaches PTX as `shl.b32` by a register. PTX defines a shift by 32 or more to give 0, so upstream's mask is `0xffffffff` at n = 32 (and above), and the port's `n < 32 ? ... : -1` (`0xffffffff`) is the same value for every n. In PTX the change is `setp.lt.u32` plus `selp.b32` in place of the shift (seen in `computeAverageSolverBodyVelocity`). In SASS it is one `ISETP.GE.U32 ..., 0x20` (an `ISETP.GE` for the signed `int` counts in `cudaGJKEPA.cu`) and one `SEL` per mask, with register and scheduling changes around them. Per kernel on sm_90: PGS and TGS +1/+1; `convexPlaneNphase_Kernel` +1/+1; `convexConvexNphase_stage2Kernel` +10 `ISETP.GE.U32`, +2 `ISETP.GE`, +12 `SEL` (the `reduce` wrapper at `:483` is inlined at several call sites); `convexTrimeshNarrowphase` and `convexHeightfieldNarrowphase` +3/+3 and one more `BRA` from block layout on sm_70 and later. No atomic, shuffle, global/shared memory or barrier instruction is added or removed by the masks on any target. The total `SHFL` count per kernel is the same at both commits (sm_52/sm_90: `convexTrimeshNarrowphase` 193/389, `convexHeightfieldNarrowphase` 224/460, `convexConvexNphase_stage2Kernel` 967/1938), and so are the PTX `shfl.sync` and `atom.` counts of each TU (203/6, 243/6, 1233/24).
+
+**`startIndex = 0` (`convexTriangle.cuh:1872`).** The PTX of `convexMesh.cu` and `convexHeightfield.cu` without the initialization and with it (all other lines at 886c3529) differs in 5 lines on sm_52 to sm_90 and 2 on sm_100/sm_120, apart from the TU hash in internal names. One `mov.u32 %r, 0` feeds the value that reaches `shfl.sync.idx` on the path that skips the lane-0 atomic, and the constant 0 is now shared with the shuffle's source-lane operand (sm_90, `convexTrimeshNarrowphase`):
+
+```
+popc.b32 %r228, %r1386;
+mov.u32 %r1387, %r1230;        // new: %r1230 = 0
+@%p32 bra $L__BB0_156;         // threadIdx.x != 0 skips the atomic, in both versions
+atom.global.add.u32 %r1387, [%rd184], %r228;
+...
+$L__BB0_156:
+shfl.sync.idx.b32 %r231|%p519, %r1387, %r1230, %r1234, %r1251;   // source lane 0
+```
+
+nvcc keeps the `@%p32 bra` guard around the lane-0 atomic in both versions (the clang miscompile this line fixes on HIP does not happen here), and the shuffle reads lane 0's value, which the initialization does not touch. The change is therefore inert on CUDA, and the SASS differences are ptxas register allocation and scheduling. On sm_52 `convexTrimeshNarrowphase` swaps one `NOP` for one `MOV` (3516 instructions both). On sm_70 to sm_120 instruction counts change by -8 to +16 (`IMAD.MOV`/`MOV`/`LEA`/`VIADD` mix), with no atomic, shuffle or memory instruction added. In `convexHeightfieldNarrowphase` the register allocation spills slightly less (2 `LDL` and 1 `STL` fewer on sm_86 to sm_120). The porter's expectation ("nvcc may emit one extra move or none") holds at the PTX level.
+
+### Shared (non-HIP-guarded) source lines changed since 4764ca13, each checked
+
+- `RadixSort.cuh:513-516`, `:639-642`: the text is the `radixShiftLeft` calls; SASS is identical in all 4 including TUs.
+- `solverMultiBlock.cu:720-722`, `solverMultiBlockTGS.cu:325-327`: mask select, attributed and equivalent (above).
+- `cudaGJKEPA.cu:130-134`, `:156-157`, `:483`, `:950`, `:984`, `:2997`: mask selects, attributed and equivalent (above).
+- `convexTriangle.cuh:1003`, `:1855`, `:1872`: attributed and equivalent (above).
+- `CudaContextManager.cpp:521-536`, `:474-477`, `:488`, `:542`: the CUDA loop is upstream's text, the `continue` and the two comments are in the HIP branch, and the object differs only in `__LINE__` immediates.
+- `PxCudaTypes.h`: `git diff 7d6f6ac8 886c3529` is empty.
+- `SnippetGpuParity.cpp` (fork-only file): compiles under `-Werror` in the release and checked builds.
+- Not seen by nvcc: `cuda_to_hip.h` (in no dependency file); `cmakegpu/linux/CMakeLists.txt` and `PhysXGpu.cmake` (HIP branch only; the CUDA `ELSE()` branch is upstream's text, and the compile commands are identical); `CudaKernelWrangler.cpp` (object differs only in 3 `__LINE__` immediates); `physx/CMakeLists.txt` (link lines identical); root `.gitignore`.
+
+### Reproduce
+
+```
+cd <clone>/physx
+export PM_PACKAGES_ROOT=<dir> PM_CUDA_PATH=/usr/local/cuda-12.8 CUDACXX=/usr/local/cuda-12.8/bin/nvcc
+export PATH=/usr/local/cuda-12.8/bin:/usr/bin:/bin CMAKE_PREFIX_PATH=<freeglut prefix>
+./generate_projects.sh linux-gcc
+make -C compiler/linux-gcc-release -j64
+make -C compiler/linux-gcc-checked -j64
+cuobjdump -sass -arch sm_90 <obj>.cu.o   # nvdisasm 12.8.90 on PATH
+cuobjdump -xptx all <obj>.cu.o
+```
+
+Comparison scripts (job-local, not kept): the previous check's `cmpcmds.py`, `sasscmp.py` and `cubincmp.py`, plus `linecheck.py` (host disassembly differences against a source line map), `variant.sh` (one TU recompiled from an edited source copy with the build's exact nvcc command), `sass2.py`, `kdiff.sh`, `semops.py` (per-kernel SASS, opcode and memory/atomic/shuffle deltas) and `ptxdiff.sh`.
