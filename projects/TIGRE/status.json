@@ -7,8 +7,8 @@
   "priority": 0.0,
   "ext_type": "setuptools-cuda",
   "adopted_at": "2026-06-04T01:07:42Z",
-  "updated_at": "2026-11-24T20:37:32Z",
-  "head_sha": "183c2a453248ce6da0a12c3ac242a90cb5489a51",
+  "updated_at": "2026-11-24T20:54:52Z",
+  "head_sha": "719b396fed5a5be993c96aa9a48d3a8d75943eb9",
   "depends_on": [],
   "pr_url": "https://github.com/CERN/TIGRE/pull/747",
   "pr_number": 747,
@@ -17,7 +17,7 @@
   "pr_state": "open",
   "license_spdx": "BSD-3-Clause",
   "upstream_repo_id": 61034131,
-  "stage": "porting",
+  "stage": "ported",
   "platforms": {
     "linux-gfx942": {
       "blocked": true,
@@ -126,7 +126,7 @@
       "validated_sha": "183c2a453248ce6da0a12c3ac242a90cb5489a51",
       "started_at": "2026-06-04T01:41:19Z",
       "completed_at": "2026-11-24T19:48:41Z",
-      "updated_at": "2026-11-24T20:37:32Z",
+      "updated_at": "2026-11-24T20:54:52Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -206,8 +206,8 @@
   },
   "porting_released": {
     "arch": "linux-gfx90a",
-    "since": "2026-11-24T19:32:08Z",
-    "at": "2026-11-24T19:32:12Z"
+    "since": "2026-11-24T20:37:32Z",
+    "at": "2026-11-24T20:54:52Z"
   },
   "pr_approval": {
     "approved_by": "jeffdaily",
@@ -217,10 +217,6 @@
     "review_pr": "https://github.com/AMD-Ecosystem/TIGRE/pull/2"
   },
   "fix_merged_at": "2026-11-05T07:33:27Z",
-  "porting": {
-    "arch": "linux-gfx90a",
-    "since": "2026-11-24T20:37:32Z",
-    "holder": "14053663d470"
-  },
+  "porting": null,
   "reviewed_sha": "183c2a453248ce6da0a12c3ac242a90cb5489a51"
 }

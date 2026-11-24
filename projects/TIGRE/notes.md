@@ -2298,3 +2298,29 @@ Outputs of the 4 and 8 builds are bitwise equal for all three calls. So 8 does n
 - Integrity: `git -C projects/TIGRE/src status --porcelain`: no tracked modifications (untracked build output only); the scratch worktree is removed (`git worktree list` shows only the clone).
 - `cuda-not-validated: no CUDA toolkit on this host (no conda, no nvcc).` The nvcc 12.8 build of 183c2a45 is still owed by the mi355 host.
 - Wave32 gate: satisfied by this record at 183c2a45. Still owed at this head: windows, and the nvcc 12.8 compile check.
+
+## Porter round 2026-11-24 (linux-gfx90a, moat-fix-747, 183c2a45 -> 719b396f, stage -> ported): CUDA build of ray_interpolated_projection.cu back to master's code
+
+jeff asked for this run (fleet job, MI250X, `HIP_VISIBLE_DEVICES=2` kept, idle per `amd-smi metric`). It answers the one device-code difference in "CUDA compile check (nvcc 12.8) at 183c2a45": `kernelPixelDetector<0/1>` differed from master 6beb8c38 on 14 of 17 targets because of the port's `if (geo.accuracy>1) tex3D<float> else tex3D_TIGRE` in the sampling loop. jeff's rule: the port leaves the CUDA build unchanged.
+
+State: `set-state TIGRE linux-gfx90a porting` (no warning), `fix-branch TIGRE` -> "fix round on moat-fix-747 (base f77970329857, review PR not yet open)". Fresh fork clone at `projects/TIGRE/src`, `protect-fork TIGRE`, local `master` = 6beb8c38 (jargon base).
+
+### Does HIP need the branch? Yes; guarded, not removed
+- With `accuracy>1`, `CreateTextureInterp` creates the texture `cudaFilterModePoint` (on a by-value `geo`; the kernel is launched with `geoArray[sp]`, which still has `accuracy>1`), and upstream's kernel point-samples it with `tex3D<float>`.
+- `tex3D_TIGRE` under HIP forwards to `tex3D<float>` only when `tigre_hw_linear_filter` is set; `tigre_sync_hw_linear()` sets that flag from the self-test verdict alone, whatever filter mode the texture was created with. On the MI250X the verdict is "unsupported", so without the branch the accuracy>1 point texture would get the 8-tap software trilinear lerp: interpolation where CUDA point-samples. On RDNA (hardware filtering) the branch is redundant but harmless. So HIP needs it, and the commit confines it to `#if defined(USE_HIP)`, with master's line `sum += tex3D<float>(tex, tx+0.5f, ty+0.5f, tz+0.5f); // this line is 94% of time.` verbatim in the `#else` (`git diff master` of that hunk now shows master's line as context).
+- Side observation (pre-existing comment, not changed): the `cuda_to_hip.h` comment above `tigre_set_hw_linear` says the flag is set "for a deliberately Point texture that the caller wants point-sampled as-is"; no caller does that (`tigre_set_hw_linear` is called only from `tigre_sync_hw_linear`), and the accuracy>1 path is handled by this kernel branch instead. Left for the reviewer.
+
+### Commit (one, on top of 183c2a45; nothing amended, rebased or force-pushed)
+**719b396f** `[ROCm] Keep the accuracy>1 texture read out of the CUDA build` (5 insertions, CRLF preserved; the file is CRLF).
+
+### Evidence
+- HIP code objects: clean build of 183c2a45 and of the change in the same tree (`projects/TIGRE/src`, recipe of "Fix round 2026-11-24", Build), `.so` copied aside after each, then `python3 utils/codeobj_diff.py <183c2a45 .so dir> <719b396f .so dir>`: **verdict=identical for all 8** (`_Atb _AwminTV _Ax _RandomNumberGenerator _gpuUtils _minPICCS _minTV _tv_proximal`, device ISA + exports), and `cmp` says all 8 `.so` are **byte-identical**, `_Ax` included (HIP sees the same tokens plus one comment line).
+- CUDA, supplementary (not the nvcc 12.8 gate): job-local nvcc 13.5.37 (`pip install --target agent_space/nvcc_pip nvidia-cuda-nvcc nvidia-nvvm nvidia-cuda-runtime nvidia-cuda-crt nvidia-cuda-cccl`), `nvcc -ptx -O3 -DIS_FOR_PYTIGRE -arch=sm_<a> -ICommon/CUDA ray_interpolated_projection.cu` for master 6beb8c38, 183c2a45 and 719b396f: head PTX **byte-identical to master's** for sm_75, sm_80, sm_90, sm_120 (all three entries: `vecAddInPlaceInterp`, `kernelPixelDetector<0/1>`); 183c2a45 differed from master on all four (348 changed lines on sm_75/80/90, 166 on sm_120). sm_50-sm_70 are not supported by CUDA 13, so the 12.8 SASS check is still owed.
+- GPU tests (from the commit's build, run before the commit; the commit's tree is the tested tree), `bash agent_space/run_tests.sh` wrapped in `utils/timeit.sh TIGRE test`, `ulimit -c 0`, one process at a time on GPU 2: the commands of "Sync round 2026-11-20", Tests, with `tests/test_tv_host_bounds.py` added to the torch run:
+  - core **274 passed, 0 failed**, 24 skipped, 41 deselected (149 s)
+  - extended **13 passed**, 37 skipped
+  - torch files (image's ROCm torch 2.16, read-only) **88 passed**, 25 skipped (459 s)
+  - `probe/tigre_gates.py all`: **RESULT PASS**, every printed number equal to the 183c2a45 record (cone 27.46/111.2, 0.0040, FDK 0.2864, OS-SART 0.1929, adjointness 1.905e-05 / 2.187e-05; parallel 0.0043/0.0041/0.0056, adjointness 1.471e-05/7.580e-05/5.271e-05 Siddon, 3.675e-06/9.701e-08/1.823e-07 interp; FBP 0.0833, SIRT 0.1952; solvers identical; repeats 0/20 in all 8 cases). Expected, since the binaries are byte-identical.
+- `jargon.py --port TIGRE`: clean. `prose.py` on the message: clean. ASCII. Title 61 chars. No Co-Authored-By.
+- Integrity: `git -C projects/TIGRE/src status --porcelain`: untracked build output only.
+- Pushed only `moat-fix-747` (183c2a4..719b396, plain push); `git ls-remote`: moat-port still f779703. `advance-head TIGRE 719b396fed5a5be993c96aa9a48d3a8d75943eb9`; `classify 183c2a45 719b396f`: `mixed (token count differs)`, not inert. `set-state TIGRE linux-gfx90a ported`.
