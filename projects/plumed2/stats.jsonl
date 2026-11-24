@@ -80,3 +80,4 @@
 {"kind":"phase","ts":"2026-11-24T03:34:46Z","phase":"compile","seconds":12.059,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi300b-20261123-191506-plumed2-fix1648-prompt/moat/projects/plumed2/src/plugins/cudaCoord USE_HIP=1 HIP_ARCHITECTURES=gfx942"}
 {"kind":"phase","ts":"2026-11-24T03:35:28Z","phase":"test","seconds":41.133,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi300b-20261123-191506-plumed2-fix1648-prompt/moat/projects/plumed2/src/plugins/cudaCoord USE_HIP=1 HIP_ARCHITECTURES=gfx942 check"}
 {"kind":"phase","ts":"2026-11-24T03:35:33Z","phase":"test","seconds":2.878,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi300b-20261123-191506-plumed2-fix1648-prompt/moat/projects/plumed2/src/plugins/cudaCoord USE_HIP=1 HIP_ARCHITECTURES=gfx942 check-gpu"}
+{"kind":"session","ts":"2026-11-24T03:36:00Z","epoch":1795491360.174155,"event":"end","platform":"linux-gfx942"}
