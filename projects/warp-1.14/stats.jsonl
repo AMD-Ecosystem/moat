@@ -517,3 +517,11 @@
 {"kind":"phase","ts":"2026-11-24T20:15:50Z","phase":"test","seconds":19.919,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/gfx1201-20261124-115255-validator6-prompt/val/runsuite.sh matmul2 /var/lib/jenkins/fleet/jobs/gfx1201-20261124-115255-validator6-prompt/val/cache_matmul2 -s autodetect -p test_tile_matmul.py"}
 {"kind":"phase","ts":"2026-11-24T20:16:10Z","phase":"test","seconds":19.836,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/gfx1201-20261124-115255-validator6-prompt/val/runsuite.sh matmul3 /var/lib/jenkins/fleet/jobs/gfx1201-20261124-115255-validator6-prompt/val/cache_matmul3 -s autodetect -p test_tile_matmul.py"}
 {"kind":"session","ts":"2026-11-24T20:16:47Z","epoch":1795551407.147028,"event":"end","platform":"linux-gfx1201"}
+{"kind":"session","ts":"2026-11-24T19:55:12Z","epoch":1795550112.59282,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-24T19:58:03Z","phase":"compile","seconds":67.761,"exit":0,"cmd":"agent_space/v/build.sh /var/lib/jenkins/fleet/jobs/mi200-20261124-115304-validator6-prompt/moat/projects/warp-1.14/src 64 /var/lib/jenkins/fleet/jobs/mi200-20261124-115304-validator6-prompt/wheel"}
+{"kind":"phase","ts":"2026-11-24T20:20:54Z","phase":"test","seconds":1346.686,"exit":0,"cmd":"agent_space/v/run.sh full -s autodetect"}
+{"kind":"phase","ts":"2026-11-24T20:28:16Z","phase":"test","seconds":424.427,"exit":0,"cmd":"agent_space/v/run.sh tiledebug -s autodetect --warp-debug -p test_tile*.py"}
+{"kind":"phase","ts":"2026-11-24T20:28:58Z","phase":"test","seconds":33.545,"exit":0,"cmd":"agent_space/v/run.sh matmul1 -s autodetect -p test_tile_matmul.py"}
+{"kind":"phase","ts":"2026-11-24T20:29:32Z","phase":"test","seconds":33.706,"exit":0,"cmd":"agent_space/v/run.sh matmul2 -s autodetect -p test_tile_matmul.py"}
+{"kind":"phase","ts":"2026-11-24T20:30:06Z","phase":"test","seconds":33.7,"exit":0,"cmd":"agent_space/v/run.sh matmul3 -s autodetect -p test_tile_matmul.py"}
+{"kind":"session","ts":"2026-11-24T20:30:48Z","epoch":1795552248.030524,"event":"end","platform":"linux-gfx90a"}
