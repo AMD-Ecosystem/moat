@@ -74,3 +74,4 @@
 {"kind":"phase","ts":"2026-11-24T16:52:36Z","phase":"compile","seconds":0.002,"exit":2,"cmd":"make -C compiler/linux-gcc-rocm-checked -j24"}
 {"kind":"phase","ts":"2026-11-24T16:55:07Z","phase":"compile","seconds":27.75,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/gfx1201-20261124-083657-diag-physx-race-prompt/moat/projects/PhysX/src/physx/compiler/linux-gcc-rocm-release -j24"}
 {"kind":"phase","ts":"2026-11-24T16:55:51Z","phase":"compile","seconds":44.025,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/gfx1201-20261124-083657-diag-physx-race-prompt/moat/projects/PhysX/src/physx/compiler/linux-gcc-rocm-checked -j24"}
+{"kind":"session","ts":"2026-11-24T21:08:16Z","epoch":1795554496.625395,"event":"start","platform":"linux-gfx942"}
