@@ -7,7 +7,7 @@
   "priority": 5.508,
   "ext_type": "make",
   "adopted_at": "2026-05-29T23:57:04Z",
-  "updated_at": "2026-11-23T23:59:41Z",
+  "updated_at": "2026-11-24T01:14:43Z",
   "head_sha": "0bb29e76d332048323622110374fa8a47e4fc88f",
   "waivers": {},
   "license_clearance": {
@@ -189,6 +189,30 @@
       },
       "last_agent": "validator",
       "failed_sha": "5f6596ec7b656eac5f0c96df882f8bdda36565df"
+    },
+    "linux-gfx1201": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "0bb29e76d332048323622110374fa8a47e4fc88f",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-11-24T01:14:43Z",
+      "updated_at": "2026-11-24T01:14:43Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "last_agent": "validator"
     }
   },
   "porting_released": {

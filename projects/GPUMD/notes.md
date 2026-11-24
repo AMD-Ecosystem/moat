@@ -2272,6 +2272,14 @@ Retested on an AMD Instinct MI300X (gfx942), against the last run on this GPU at
 - `tests_regression` full suite (`-DDEBUG`, self-comparison): 249 of 255 and relations 25 of 25, the same 249 upstream cases as before (our ILP_NEP case is gone); the 6 failures are the known `rand()`-reseed cases and `qnep_pppm_future_bec` float noise, unchanged in fields and magnitudes.
 - Seed test 10 of 10; new TB suite 32 of 32.
 
+Also retested on an AMD Radeon AI PRO R9700 (gfx1201, RDNA4, wave32) on Linux, the first run on this GPU, with the same commands and `HIP_ARCH=gfx1201`:
+
+- The build succeeds (227 of 227 sources).
+- `tests_pytest/test_replica.py`: 20 of 20, including the bitwise batched-versus-per-slot PRD and REMD tests.
+- `tests_pytest/test_spin_*.py`: 173 of 174, so upstream's 64-bit `tile_mask()`/`warp_ballot()` masks also work on wave32. `-m "not slow"`: 937 passed, 2 failed, 638 skipped, with the same 2 upstream failures as above.
+- `tests_regression` full suite: 244 of 255 and relations 25 of 25. The 11 failures are the 5 `rand()`-reseed cases (all pass under an `srand` no-op shim) and float-atomic noise just past the absolute bounds: `qnep_ewald_future_bec`, `qnep_pppm_future_bec`, `qnep_actions_before_potential` (also seen on the RX 7900 XTX), `pppm_round_above` (1.1e-7 to 2.1e-7 against 1e-7), `predict_nep_pbte_batch` (2.0e-7 against 2e-7) and `train_charge_vdw_mixed` (`rmse_force_train` 0.62040 vs 0.62041). Across reruns the noise cases fail on different fields, or pass.
+- Seed test passes; TB suite 32 of 32.
+
 Still owed before approval: the CUDA compile comparison on a host with nvcc, the MI250X (gfx90a) batched-versus-per-slot replica check now that `-ffp-contract=on` is gone, and test runs on the RDNA GPUs and on Windows (upstream's `makefile.hip` changed the Windows build procedure).
 
 ## Review 2026-11-23 (linux-gfx942, reviewer) -- sync round 3, d3658389..0bb29e76, REVIEW PASSED
@@ -2379,3 +2387,52 @@ Every failure classified, none new:
 - Integrity: `git status --porcelain --untracked-files=no` empty in the clone and `agent_space/dbg`, both at 0bb29e76.
 
 Result: **completed** at 0bb29e76 on linux-gfx90a.
+
+## Validation 2026-11-24 (linux-gfx1201, validator) -- sync round 3 at 0bb29e76, PASS (first linux-gfx1201 record)
+
+jeff asked for this run. Host: AMD Radeon AI PRO R9700 (gfx1201, RDNA4, wave32), `HIP_VISIBLE_DEVICES=0` (dispatcher-pinned; `amd-smi process` showed every GPU idle at the start and at the end), every GPU run under `ulimit -c 0`. Toolchain: TheRock pip SDK, HIP 7.16.26385, AMD clang 24.0.0git. `orient.sh` on `port/GPUMD` named validator (`port-ready`). The platform had no earlier Linux record; the 2026-06-04 windows-gfx1201 record is a different platform.
+
+GPU health check first (two cards on this host were reset that day): a trivial HIP kernel (`hipcc --offload-arch=gfx1201`, 64 threads writing `2*i`, copy back) on the pinned GPU reported `AMD Radeon AI PRO R9700 gfx1201 warp=32`, `no error`, all values correct, no hang.
+
+Fresh clone of AMD-Ecosystem/GPUMD at `projects/GPUMD/src`, detached at **0bb29e76d332048323622110374fa8a47e4fc88f** (= `origin/moat-sync-91287ce`; `moat-port` not used), `protect-fork` installed; a detached worktree `agent_space/dbg` at the same commit for the DEBUG build. No fork edit, no push. Job venv: ase 3.29.0, pytest 7.3.2, hypothesis 6.56.4, numpy 1.26.4, calorine from a source clone of gitlab materials-modeling/calorine at **1c94125** (reports 4.1). Full run, since there was no earlier record to carry forward. jeff asked for single runs with no stress loops, so the replica subset repeats (3x/5x) and the 10-run seed loop from the earlier records were **not** repeated: the replica file ran once (which includes the subset) and the seed test ran once.
+
+### Builds (gfx1201, from the MOAT root)
+    utils/timeit.sh GPUMD compile -- make -C projects/GPUMD/src/src -f makefile.hip HIP_ARCH=gfx1201 -j24
+    utils/timeit.sh GPUMD compile -- make -C agent_space/dbg/src -f makefile.hip HIP_ARCH=gfx1201 -j24 gpumd nep CFLAGS="-O3 -std=c++17 --offload-arch=gfx1201 -DUSE_HIP -Wno-inconsistent-missing-override -Wno-unused-result -Wno-pass-failed -DDEBUG"
+
+Both rc 0, 0 errors; release log 227 compiles, 132 warning lines (84 nodiscard `-Wunused-value`, 48 backend `loop not unrolled` remarks), no `-ffp-contract`. Release: gpumd 18985648 B, nep 2857448 B, tb 315280 B; DEBUG gpumd 18985504 B, nep 2857368 B.
+
+### Tests (real gfx1201), against gfx942 and gfx90a at 0bb29e76
+| command (from the clone or `$D` = DEBUG worktree root) | gfx1201 0bb29e76 | gfx942 0bb29e76 | gfx90a 0bb29e76 |
+|---|---|---|---|
+| `python3 -m pytest tests_pytest/test_replica.py -v` (release) | **20/20 passed** (156 s), including `test_batched_matches_per_slot_prd`/`_remd` and `test_qnep_large_box_concurrent_resume` | 20/20 | 20/20 |
+| `python3 -m pytest tests_pytest/test_spin_*.py` (release) | **173 passed, 1 failed** (360 s): `test_prediction_wall[1]` | 173/1 | 173/1 |
+| `python3 -m pytest tests_pytest -m "not slow"` (release; overlapped the regression run) | **937 passed, 2 failed, 638 skipped, 30 deselected** (2833 s): `test_prediction_wall[1]`, `test_ediff_loss.py::test_input_errors[nan lambda_d]` | 937/2/638/30 | 937/2/638/30 |
+| `python3 tests_regression/run_regression.py --repo-root $D --suite full --baseline $D/src/gpumd --candidate $D/src/gpumd --baseline-nep $D/src/nep --candidate-nep $D/src/nep` (DEBUG) | **244/255 cases, relations 25/25** | 249/255, 25/25 | 250/255, 25/25 |
+| the 11 failures rerun once (`--case` x11), plain / under `LD_PRELOAD` of `void srand(unsigned){}` | 3/11 / **8/11** | 0/6 / 5/6 | 0/5 / 5/5 |
+| `python3 -m pytest tests_pytest/test_nep_seed.py::test_same_seed_gives_the_same_model`, once | **passed** | 10/10 | 10/10 |
+| `python3 tests_regression/tb/run_regression.py --old src/tb --new src/tb` | **32/32** | 32/32 | 32/32 |
+
+Every failure falls in a known class; none is new to the port:
+- **rand() reseed** (deferral `gpumd-hip-runtime-reseeds-rand`, ruled defer; TheRock#9865): `replicate_velocity_unseeded`, `graphene_hac`, `graphene_nemd_shc`, `graphene_hnemd_shc`, `silicon_liquid_transport`. They fail plain and pass under the shim, the same 5 as on gfx942/gfx90a.
+- **float-atomic noise at absolute bounds**. This accounts for the 5 extra failures relative to gfx942. All of them flip between runs:
+  - `qnep_ewald_future_bec`: dpdt.out field 16, 1.0e-6 vs atol 2e-7. It failed in the full run and passed in both reruns.
+  - `qnep_pppm_future_bec`: bec.xyz field 17 1.43e-5 / thermo field 9 1.87e-7 / bec field 22727 1.10e-5, against atol 1e-5 or 1e-7.
+  - `qnep_actions_before_potential`: dpdt.out field 23, 1.0e-6 vs 2e-7. It passed under the shim.
+  - `pppm_round_above`: thermo field 8, 1.12e-7 then 2.11e-7 vs 1e-7. It passed in the plain rerun.
+  - `predict_nep_pbte_batch`: force_train.out field 36673, abs 2.0e-7 against atol 2e-7 plus rtol 1e-5 (rel 1.2e-5). It passed in both reruns.
+  - `train_charge_vdw_mixed`: loss.out `rmse_force_train` 0.62040 vs 0.62041, the signature on record. It failed in all three runs, and it is already in the body's float-atomic trainer list.
+
+  The three qNEP cases are the same set, fields and magnitudes as the gfx1100 (wave32) records at 3b0f1908/d3658389, and `train_charge_vdw_mixed` is noisy there and on gfx90a too. `pppm_round_above` and `predict_nep_pbte_batch` are new names in this class. Each misses its bound by about 1-2x, on a self-comparison of two runs of the same binary, so they are run-to-run nondeterminism from float atomics, not a wrong answer. These cases also passed on another run.
+- **HIP build lacks runtime specialization** (upstream's guard; deferral `gpumd-hip-nep-runtime-specialization`): `test_prediction_wall[1]`.
+- **upstream code/test mismatch** (platform-independent): `test_input_errors[nan lambda_d]`.
+
+Wave32: this is the first wave32 run at this head. Upstream's NEP-spin `tile_mask()`/`warp_ballot(~0ULL)` path, which the reviewer flagged for wave32, passed: 173/174 spin tests with no `__hip_check_mask` trap (the build has no `-DNDEBUG`).
+
+### Gates
+- CUDA compile: already recorded at 0bb29e76 (mi355 nvcc 12.8, identical to upstream 91287ce2); not repeated.
+- `python3 utils/jargon.py --port GPUMD` (local `master` = `origin/master`, local `moat-sync-91287ce` = origin's): **clean**.
+- Documentation: upstream's `doc/installation.rst` AMD section matches `makefile.hip` (`HIP_ARCH=...`).
+- Integrity: `git status --porcelain --untracked-files=no` empty in the clone and `agent_space/dbg`, both at 0bb29e76.
+
+Result: **completed** at 0bb29e76 on linux-gfx1201. The sync review PR draft's Retested part now also names this GPU. Its "Still owed" sentence was left as the porter wrote it; it still lists the nvcc and gfx90a checks, both of which are now recorded.
