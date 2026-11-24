@@ -13,6 +13,19 @@
       "upstream_issue": null,
       "created_at": "2026-11-24T11:13:56Z",
       "decided": null
+    },
+    {
+      "id": "hip-small-d2h-copy-host-visibility",
+      "kind": "rocm-bug-report",
+      "component": "clr",
+      "summary": "HIP runtime defect, ROCm 10.2 CLR on gfx1201: an async device-to-host copy of 16 KiB or less runs as a copy kernel released only at device scope, so a later store to mapped host memory (a kernel, or hipStreamWriteValue32) on the same stream can reach the host before the copied bytes. PhysX's spin-wait read-back read stale results (checked build lost contacts in every run). Workaround committed on the fork: a system-scope fence in bpSignalComplete under __HIP_PLATFORM_AMD__. Issue draft with reproducer in notes for Jeff to file on ROCm/rocm-systems (labels bug, project: clr).",
+      "refs": [
+        "projects/PhysX/notes.md#porter-round-2026-11-24-ordering-race-diagnosis-linux-gfx1201-headless-fleet-job-gfx1201-20261124-083657-diag-physx-race-prompt"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-24T18:10:13Z",
+      "decided": null
     }
   ]
 }

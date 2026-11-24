@@ -750,3 +750,157 @@ Not run here (no nvcc on this host); covered at this head by "CUDA compile check
 ### Content checks
 - `jargon.py -C projects/PhysX/src --diff 7d6f6ac8..886c3529` and `--commits 7d6f6ac8..886c3529`: clean. (`--port PhysX` needs the fork's `main` in the clone; this single-branch clone lacks it.)
 - Integrity: `git -C projects/PhysX/src status --porcelain` shows only untracked `physx/bin/` and `physx/lib/`; HEAD 886c3529.
+
+## Porter round 2026-11-24, ordering race diagnosis (linux-gfx1201, headless fleet job gfx1201-20261124-083657-diag-physx-race-prompt)
+
+Diagnosis of "Finding: an ordering race between host and GPU work" from the gfx1201 validation. **Verdict: a HIP runtime defect (ROCm 10.2 CLR), not the port's driver-API mapping and not upstream's stream or event usage.** A small async device-to-host copy (16 KiB or less) into host memory is run as a copy kernel whose writes are released only at device scope, so its bytes can still be in the GPU L2 cache when the next kernel on the stream runs; a later store to mapped host memory can reach the host first. PhysX's read-back pattern (copy, then the one-thread `bpSignalComplete` kernel stores 1 to a mapped flag, host spins on the flag and reads the copied data with no runtime call) therefore reads stale data. CUDA guarantees the copy has landed before the next stream operation runs. Workaround committed (HIP-only, changes no result): a system-scope fence in `bpSignalComplete`. Deferral `hip-small-d2h-copy-host-visibility` registered with the issue draft below for Jeff to file. Also committed: `-O3` for the HIP checked and profile configurations, and `cuCtxSynchronize` mapped to `hipDeviceSynchronize`.
+
+### Questions for Jeff
+- **File the ROCm issue** drafted under "Issue draft" below (rocm-systems, labels `bug`, `project: clr`). Nothing was posted.
+- **The workaround touches upstream's `broadphase.cu`** (6 lines, under `#if defined(__HIP_PLATFORM_AMD__)`, so nvcc sees no change). It is confined to the HIP build and changes no value, so it was committed per the round's instructions; if you would rather carry it only until the runtime is fixed, say so and it can be reverted when a fixed ROCm ships.
+
+### Toolchain (this job)
+- `$FLEET_VENV/bin/python -m pip install --index-url https://nightly.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple "rocm[libraries,devel]==10.2.0a20261022" "rocm-sdk-device-gfx1201==10.2.0a20261022"`; `rocm-sdk path --root` (once) = `<job>/venv/lib/python3.11/site-packages/_rocm_sdk_devel`, `.info/version` 10.2.0, `hipconfig --version` 7.17.26422. `therock_manifest.json`: TheRock `f93a7c76`, rocm-systems pin **`1a455a9bc1441b9762a50c6a8188534536e92025`** (2026-10-20) plus the patch `0001-rocr-honor-build-time-hotswap-default.patch`; all HIP runtime source cited below is at that commit. Driver amdgpu 6.19.14.31400100, kernel 6.11.0-26.
+- **Compiler the builds invoked:** `CMAKE_HIP_COMPILER=<job>/venv/.../_rocm_sdk_devel/lib/llvm/bin/amdclang++` (AMD clang 24.0.0git `2792f8ceeb5a`) in release, checked and debug `CMakeCache.txt`; all 61 `.cu` entries of each `compile_commands.json` start with it and carry `--offload-arch=gfx1201` only. Host `/usr/bin/c++` (gcc 13.3.0).
+- `HIP_VISIBLE_DEVICES=0` (the dispatcher's pin), `$FLEET_VENV/bin` first on PATH, `MAX_JOBS=24`, `ulimit -c 0`, `timeout` around every GPU run. Fork cloned from the validator's local clone (`GIT_LFS_SKIP_SMUDGE=1`, origin reset to `AMD-Ecosystem/PhysX`, `moat-port` at 886c3529), snippet dependencies and packman cache copied from the validator's job. Build recipe as in INSTALL_ROCm.md (`./generate_projects.sh linux-gcc-rocm`, `cmake -DCMAKE_HIP_ARCHITECTURES=gfx1201 compiler/linux-gcc-rocm-<cfg>`, `make -C ... -j24`).
+
+### Step 1: the driver-API mapping against CUDA (`cuda_to_hip.h`, `CudaContextManager.cpp`)
+
+| CUDA call as PhysX uses it | HIP mapping | Same semantics? (HIP source at 1a455a9b) |
+|---|---|---|
+| `cuEventCreate(CU_EVENT_DISABLE_TIMING)` | `hipEventCreateWithFlags(hipEventDisableTiming)` | Yes. New in this CLR: consecutive records of the same timing-disabled event on one stream with no work between are coalesced (`hip_event.cpp:217-226`, `rocvirtual.cpp:5352-5360`); the skipped record reuses the previous barrier's signal through `AttachHwEvent` (`rocvirtual.cpp:2945-2955`), so query, synchronize and waits stay correct. (I first misread `AttachHwEvent` as an empty stub because a `sed` range cut it off; it is complete.) |
+| `cuEventRecord` | `hipEventRecord` | Yes. A barrier packet with a system-scope release (`recordCommand` uses `kCacheStateInvalid` unless `hipEventDisableSystemFence`, which PhysX never passes). |
+| `cuEventQuery` / `cuEventSynchronize` | `hipEventQuery` / `hipEventSynchronize` | Yes. **ROCm/rocm-systems#15025** (use of a destroyed recording stream; fix `99ad3502`, 2026-11-18, not in the pin, verified with `git merge-base --is-ancestor`) needs an event queried after the stream it was last recorded on is destroyed. PhysX destroys streams only at shutdown and in `PxgSDFBuilder` (cooking), which records no event on its stream; every queried or synchronized event belongs to a core's long-lived stream. Not triggered. |
+| `cuStreamWaitEvent` | `hipStreamWaitEvent` | Yes. `Event::streamWait` captures the event's current record at call time (`hip_event.cpp:153-185`) and enqueues a marker that waits on that record's signal; re-recording the event later does not change what an already-enqueued wait waits for, as in CUDA. An unrecorded event is a no-op in both. `synchronizeStreams`' reused event is therefore fine. A wait on a record that has no HSA signal would be skipped with `Waiting event(%p) doesn't have a HSA signal!` (`rocvirtual.cpp:2868-2875`); a failing checked run with `AMD_LOG_LEVEL=1` printed no such line (stderr empty). |
+| `cuStreamCreate(CU_STREAM_NON_BLOCKING)`, `cuStreamCreateWithPriority` | `hipStreamCreateWithFlags`, `hipStreamCreateWithPriority` | Yes. |
+| `cuCtxCreate(LMEM_RESIZE_TO_MAX \| SCHED_BLOCKING_SYNC \| MAP_HOST)` | `hipCtxCreate` | Yes for PhysX: returns the device's primary context and stores the flags (`hip_context.cpp:155-169`). |
+| `cuCtxSynchronize` | was `hipCtxSynchronize` | **No.** `hipCtxSynchronize` returns `hipErrorNotSupported` and waits for nothing (`hip_context.cpp:325-328`). PhysX calls it only under `PX_STOMP_ALLOCATED_MEMORY` (PX_DEBUG builds, `CudaContextManager.cpp:872/876`), so it is not the checked/release race. Fixed: mapped to `hipDeviceSynchronize`. |
+| `cuMemHostAlloc(PORTABLE)` / `(PORTABLE\|DEVICEMAP)` | `hipHostMalloc(hipHostMallocPortable[\|Mapped])` | Differs but not relevant: HIP returns fine-grained (coherent) memory only for flags 0, Coherent, Mapped, NumaUser or Uncached (`hip_memory.cpp:479-492`), so PhysX's Portable-only pinned heap is non-coherent; all CUDA page-locked memory is coherent. The reproducer below shows the race with every flag combination, coherent included, so this is not the cause; left unchanged. |
+| `cuMemcpyDtoHAsync` from device to pinned host memory | `hipMemcpyDtoHAsync` | **No (runtime).** Copies of at most `GPU_FORCE_BLIT_COPY_SIZE` (16 KiB) to or from host memory take the shader-copy path (`useShaderCopyBufferPath`, `rocblit.cpp:2785-2796`). For an async copy the runtime adds no system scope ("For non blocking rely on the release scope issued by synchronization packet", `rocblit.cpp:3324-3334`; unchanged on develop `985bf6ca`, 2026-11-24), so the copy is complete for the stream while its bytes may still be in L2. In CUDA, completion means the bytes are in host memory. |
+| `cuMemcpyHtoDAsync`, `cuMemsetD*Async`, synchronous copies and memsets | 1:1 | Yes (synchronous forms are followed by `cuStreamSynchronize` in the wrappers). The validator's "synchronize after every host-to-device copy" did not help, consistent with the defect being on the device-to-host side. |
+| `cuLaunchKernel` | `hipModuleLaunchKernel` | Yes. |
+
+### Step 2: the failing operation pair in PhysX
+Temporary instrumentation in the local build only (`agent_space/diag-stale.patch`, reverted before any commit): `CudaCtx::memcpyDtoHAsync` logs (destination, size, stream, caller); a 1x1x1 launch with one pointer argument (the `bpSignalComplete` launches) attaches that stream's logged copies to the flag; after `spinWait` succeeds, the destinations are snapshotted, `cuStreamSynchronize(stream)` runs, and any byte that changed is reported. A change means the host was about to read bytes whose producing copy had not landed.
+
+- Checked at -O0 (as 886c3529 builds it), one run: **5 stale of 15,421 checked copies**, all in `PxgSimulationCore::gpuMemDmaBack` on the simulation core's stream: the third copy (`deactiveArray <- mDeactivateBuffer`, `sizeof(PxU32)*numActiveBodies`, call at `libPhysXGpu_64.so+0x270f8d5`) 4 bytes twice and 48 bytes twice, the second copy (`activateArray <- mActivateBuffer`, `+0x270f851`) 48 bytes once (identified from the disassembly: the call before them passes size 0x98 = `sizeof(PxgSimulationCoreDesc)`). **The two operations:** the async device-to-host copy of the activate/deactivate lists (a runtime copy kernel, under 16 KiB) and the later `bpSignalComplete` kernel's store to `mEventMapped`, both on `PxgSimulationCore::mStream`; the host reads the lists in `PxgSimulationCore::syncDmaback` right after `spinWait(*mEventMapped)`. What was supposed to order them: stream order, i.e. CUDA's guarantee that the copy has landed in host memory before the next kernel on the stream runs.
+- The same run still failed 6 checks, because the instrumentation only repairs copies attached to a flag: kernels on these streams also write mapped host memory directly, which the same L2 behaviour leaves unflushed. With a system-scope fence in `bpSignalComplete` (the committed workaround) and the instrumentation still in, checked at -O0: **3/3 runs 48/0, 0 stale of 42,210 checked copies.**
+- `GPU_FORCE_BLIT_COPY_SIZE=0` (small device-to-host copies go to SDMA instead of a copy kernel) on the validator's unmodified checked binary: **2/2 runs 48/0**, values identical to release.
+- Release with the instrumentation and the counting interposer (`SHIM_STATS=1 LD_PRELOAD=libsyncshim.so`), no fence: 5/5 48/0, 0 stale of 74,730; release timing on this card does not open the window at these sites today. Unfixed release under the same interposer, 20 runs: 20/20 48/0 (the validator saw failures in a few of its perturbed runs). Unfixed checked at -O3: 1 of 13 runs failed (`many slabs` 19.63 m, 2 checks). Unfixed checked at -O0: failed in every run (validator 5/5, 16 to 26 checks; this job 2/2, 7 and 6 checks).
+- A rocprofv3 trace was not needed once the instrumentation named the copy and the reproducer isolated the runtime path.
+
+### Step 3: standalone reproducer (no PhysX)
+`agent_space/repro/d2h_visibility.cpp` (in the issue draft below) and the more general `agent_space/repro/flag_after_copy.cpp` (flags, sizes, signal kinds). Built with `hipcc -O2 --offload-arch=gfx1201`. Fill a device buffer with the iteration number, `hipMemcpyDtoHAsync` it into pinned host memory, then signal the host on the same stream; the host spins on the flag and checks the buffer.
+
+| Signal after the copy (`flag_after_copy`, 200,000 iterations unless noted) | 512 B | 4 KiB | 64 KiB / 1 MiB (SDMA) |
+|---|---|---|---|
+| one-thread kernel stores 1 to a mapped flag (PhysX's pattern) | 12 stale | 15 stale | 0 / 0 (20,000 it.) |
+| `hipStreamWriteValue32(flag, 1)` | 199,212 stale | 199,113 stale | 0 / 0 (20,000 it.) |
+| `hipEventRecord` (default flags) then the kernel | 0 | 0 | |
+| `__threadfence_system()` in the kernel before the store | 0 | 0 | |
+| kernel, `GPU_FORCE_BLIT_COPY_SIZE=0` | 0 | 0 | |
+| `hipStreamWriteValue32`, `GPU_FORCE_BLIT_COPY_SIZE=0` (20,000 it.) | 0 | | |
+
+20,000-iteration sweep with the kernel signal over host flags `Portable`, `Portable|WriteCombined`, `NonCoherent`, `Portable|Coherent`, `Default` at 512 B / 4 KiB / 16 KiB / 64 KiB: stale reads (1 to 7) at 512 B to 16 KiB with every flag, coherent included; 0 at 64 KiB with every flag. Some stale reads had the first word new and the last word old (the copy only partly visible). With `hipStreamWriteValue32` the buffer usually still holds its initial 0xffffffff when the flag is seen. `submitBatchMemoryOperation` (`rocvirtual.cpp:4398-4404`) describes this hazard ("data left in this agent's L2 by a preceding agent-scope dispatch ... has not drained yet, so the value overtakes it") and counts on a system-scope acquire on the later packet; on gfx1201 that does not drain the earlier copy's dirty lines. Not run on gfx942 (no such GPU here; MI300X passed every PhysX run, so its cache policy for host memory evidently differs). The two-stream event pattern the round suggested was not needed: the failing pattern is a single stream plus a mapped flag.
+
+### Decision
+A HIP runtime defect. Smallest HIP-only workaround, committed: `__threadfence_system()` before `*signal = 1` in `bpSignalComplete` (`broadphase.cu`, under `__HIP_PLATFORM_AMD__`). Every host read of GPU results that is not preceded by a runtime synchronization goes through one of the three `spinWait` sites (`PxgCudaBroadPhaseSap::gpuDMABack`, `PxgCudaSolverCore`/`PxgTGSCudaSolverCore::syncDmaBack`, `PxgSimulationCore::syncDmaback`), and all three use this kernel. Cost: one system-scope release (an L2 write-back) in a one-thread kernel, three times per step; no host wait. Considered and rejected: forcing `GPU_FORCE_BLIT_COPY_SIZE=0` (process-wide, changes copy performance for the application), recording a system-fence event after every device-to-host copy in the compatibility header (a barrier per copy, 22,716 copies per harness run), mapping `Portable` to `Coherent` (does not help, see the reproducer). This is not blanket synchronization: no host wait is added, and the fence restores exactly the guarantee CUDA's stream order gives at these three points.
+
+### Commits on `moat-port` (above 886c3529; pushed, new head 42d4c033)
+1. `8f87766f` `[ROCm] Write back the GPU cache before signalling completion to the host` (`broadphase.cu`)
+2. `eb3d5004` `[ROCm] Optimize device code in the checked and profile HIP builds` (`cmakegpu/linux/CMakeLists.txt`: `CMAKE_HIP_FLAGS_CHECKED`/`_PROFILE` default to `-O3` when the caller has not set them; CUDA's checked and profile flags are identical, so profile had the same gap)
+3. `42d4c033` `[ROCm] Map cuCtxSynchronize to a device-wide wait` (`cuda_to_hip.h`)
+
+### Results at the new head (Radeon AI PRO R9700, gfx1201)
+| Build | Runs | Result |
+|---|---|---|
+| checked (-O3 + fence) | 10 | 48/0 each, about 24 s per run (was 220 to 380 s at -O0) |
+| release + fence, `SHIM_STATS=1 LD_PRELOAD=libsyncshim.so` | 10 | 48/0 each |
+| release + fence | 3 | 48/0 each |
+| checked built at -O0 (`-DCMAKE_HIP_FLAGS_CHECKED=-O0`) + fence | 10 | 48/0 each (about 221 s per run; unfixed at -O0: failed every run, 7 of 7) |
+| debug GPU library (`make ... PhysXGpu`) | build | exit 0; both `cuCtxSynchronize` calls resolve to `hipDeviceSynchronize` |
+
+Across the 23 checked and release runs: 45 of 48 checks identical in every run and equal to the validator's unfixed release values (`compare_parity.py` against its `relpar-1.log`); the same three deformable checks as on gfx942 vary (bend 0.190478 to 0.190902 rad, load height 0.840338 to 0.84203 m, lowest vertex 3 distinct values). The fence changes no result.
+
+### Owed
+- **CUDA compile check at the new head**: the delta is preprocessor-guarded (`__HIP_PLATFORM_AMD__`), the HIP branch of the CMake, and the HIP-only compatibility header, so nvcc's input is unchanged; it still needs the nvcc build on the mi355 host before the round is presented.
+- Review of the delta, then revalidation on linux-gfx942 (head moved) and linux-gfx1201.
+- Run `agent_space/repro` (copied into the issue draft) on gfx942 to say in the issue whether CDNA3 is affected.
+
+### Issue draft for Jeff (ROCm/rocm-systems; labels `bug`, `project: clr`; nothing posted)
+
+**Title:** `[CLR] hipMemcpyDtoHAsync <= 16 KiB not host-visible before later stream work`
+
+**Body:**
+
+On gfx1201, an async device-to-host copy of 16 KiB or less followed on the same stream by work that signals the host (a kernel storing to mapped host memory, or `hipStreamWriteValue32`) lets the host observe the signal before the copied bytes. With `hipStreamWriteValue32` the host sees the flag before the copy's data in over 99% of iterations; with a one-thread kernel store, in about 1 of every 10,000 to 17,000. CUDA's stream order guarantees the copy has landed in host memory before the next operation on the stream runs, and applications rely on it (NVIDIA PhysX's GPU read-back spins on a mapped flag written by a kernel after its device-to-host copies, then reads the copied data; on gfx1201 it reads stale results and simulation goes wrong).
+
+Cause as far as I can tell from the source: copies of at most `GPU_FORCE_BLIT_COPY_SIZE` (16 KiB) with a host-memory endpoint use the shader copy path (`KernelBlitManager::useShaderCopyBufferPath`), and for an async copy `KernelBlitManager::copyBuffer` adds no system scope ("For non blocking rely on the release scope issued by synchronization packet", `rocblit.cpp`), so the copy kernel's writes can remain in L2 after the copy is complete for the stream. `submitBatchMemoryOperation` describes the same hazard and relies on a system-scope acquire on the later packet, which does not write back the earlier dispatch's dirty lines. Forcing SDMA (`GPU_FORCE_BLIT_COPY_SIZE=0`), copies above 16 KiB, a `hipEventRecord` between the copy and the signal, or `__threadfence_system()` in the signalling kernel all make the problem disappear. The host-memory coherence flag does not matter (fails with `hipHostMallocDefault`, `Coherent`, `NonCoherent`, `Portable`, `WriteCombined`).
+
+Reproducer (`hipcc -O2 --offload-arch=gfx1201 d2h_visibility.cpp -o d2h_visibility`):
+```cpp
+// hipMemcpyDtoHAsync (<= 16 KiB) followed on the same stream by a host-visible signal:
+// the host can observe the signal before the copied bytes.
+// usage: d2h_visibility <kernel|writevalue> [bytes=512] [iters=100000]
+#include <hip/hip_runtime.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+
+#define CHECK(x) do { hipError_t e_ = (x); if (e_ != hipSuccess) { \
+  std::printf("%s failed: %s\n", #x, hipGetErrorString(e_)); std::exit(2); } } while (0)
+
+__global__ void fill(unsigned* d, unsigned n, unsigned v) {
+  unsigned i = blockIdx.x * blockDim.x + threadIdx.x;
+  if (i < n) d[i] = v;
+}
+__global__ void signal(unsigned* flag) { *flag = 1; }
+
+int main(int argc, char** argv) {
+  const bool writeValue = argc > 1 && !std::strcmp(argv[1], "writevalue");
+  const size_t bytes = argc > 2 ? std::strtoull(argv[2], nullptr, 0) : 512;
+  const int iters = argc > 3 ? std::atoi(argv[3]) : 100000;
+  const unsigned n = unsigned(bytes / 4);
+
+  hipStream_t s;
+  CHECK(hipStreamCreateWithFlags(&s, hipStreamNonBlocking));
+  unsigned *d, *h, *flag, *dflag;
+  CHECK(hipMalloc((void**)&d, bytes));
+  CHECK(hipHostMalloc((void**)&h, bytes, hipHostMallocDefault));
+  CHECK(hipHostMalloc((void**)&flag, 4, hipHostMallocMapped));
+  CHECK(hipHostGetDevicePointer((void**)&dflag, flag, 0));
+  std::memset(h, 0xff, bytes);
+
+  int stale = 0;
+  for (int it = 1; it <= iters; ++it) {
+    *(volatile unsigned*)flag = 0;
+    fill<<<(n + 255) / 256, 256, 0, s>>>(d, n, unsigned(it));
+    CHECK(hipMemcpyDtoHAsync(h, d, bytes, s));
+    if (writeValue) CHECK(hipStreamWriteValue32(s, dflag, 1, 0));
+    else signal<<<1, 1, 0, s>>>(dflag);
+    (void)hipStreamQuery(s);  // submit the work, as the application does
+    while (*(volatile unsigned*)flag == 0) {}
+    if (((volatile unsigned*)h)[0] != unsigned(it) || ((volatile unsigned*)h)[n - 1] != unsigned(it)) ++stale;
+  }
+  CHECK(hipStreamSynchronize(s));
+  std::printf("%s bytes=%zu iters=%d stale=%d\n", writeValue ? "writevalue" : "kernel", bytes, iters, stale);
+  return stale != 0;
+}
+```
+Output on the R9700 (200,000 iterations each):
+```
+kernel bytes=512 iters=200000 stale=23
+kernel bytes=4096 iters=200000 stale=12
+writevalue bytes=512 iters=200000 stale=199296
+kernel bytes=65536 iters=200000 stale=0
+writevalue bytes=65536 iters=200000 stale=0
+GPU_FORCE_BLIT_COPY_SIZE=0: writevalue bytes=512 iters=200000 stale=0
+```
+
+Expected: `stale=0` in every case (as with copies above 16 KiB, or with `GPU_FORCE_BLIT_COPY_SIZE=0`).
+
+Environment: Radeon AI PRO R9700 (gfx1201), TheRock ROCm 10.2.0 wheels `10.2.0a20261022` (rocm-systems `1a455a9b`), HIP 7.17.26422, amdgpu 6.19.14.31400100, Linux 6.11.0-26, Ubuntu 24.04 userspace. The copy-path code is unchanged on `develop` as of 2026-11-24 (`985bf6ca`).
+
+### Content checks
+- `jargon.py -C projects/PhysX/src --diff 7d6f6ac8..moat-port` and `--commits 7d6f6ac8..moat-port`: clean. `jargon.py --port PhysX`: the 14 known hits in upstream's ovphysx text (Question A of the first porter round), none in our delta. `prose.py` on the three commit messages: clean.
+- Integrity: `git -C projects/PhysX/src status --porcelain` shows only untracked build output; the diagnostic patch (`agent_space/diag-stale.patch`) was reverted before the commits.
