@@ -54,3 +54,4 @@
 {"kind":"phase","ts":"2026-11-24T12:05:46Z","phase":"test","seconds":191.235,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300c-20261124-031719-fix4-autoware-cuda-prompt/scripts/test_ws.sh"}
 {"kind":"session","ts":"2026-11-24T12:08:45Z","epoch":1795522125.817986,"event":"end","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-11-24T12:08:51Z","epoch":1795522131.82934,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-24T12:16:42Z","epoch":1795522602.718184,"event":"end","platform":"linux-gfx942"}
