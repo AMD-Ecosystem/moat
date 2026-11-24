@@ -277,3 +277,17 @@
 {"kind":"phase","ts":"2026-11-24T02:57:32Z","phase":"test","seconds":18.665,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/gfx1201-20261123-183558-validator-prompt/val/runsuite.sh matmul2 /var/lib/jenkins/fleet/jobs/gfx1201-20261123-183558-validator-prompt/val/cache_matmul2 -s autodetect -p test_tile_matmul.py"}
 {"kind":"phase","ts":"2026-11-24T02:57:51Z","phase":"test","seconds":18.676,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/gfx1201-20261123-183558-validator-prompt/val/runsuite.sh matmul3 /var/lib/jenkins/fleet/jobs/gfx1201-20261123-183558-validator-prompt/val/cache_matmul3 -s autodetect -p test_tile_matmul.py"}
 {"kind":"session","ts":"2026-11-24T02:58:42Z","epoch":1795489122.136227,"event":"end","platform":"linux-gfx1201"}
+{"kind":"session","ts":"2026-11-24T02:39:31Z","epoch":1795487971.917516,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-24T02:40:25Z","phase":"compile","seconds":48.666,"exit":0,"cmd":"agent_space/v/build.sh /var/lib/jenkins/fleet/jobs/mi300-20261123-183539-validator-prompt/moat/projects/warp-1.14/src 112 /var/lib/jenkins/fleet/jobs/mi300-20261123-183539-validator-prompt/wheel"}
+{"kind":"phase","ts":"2026-11-24T02:52:53Z","phase":"test","seconds":728.092,"exit":5,"cmd":"agent_space/v/run.sh full1 -s autodetect"}
+{"kind":"phase","ts":"2026-11-24T02:53:21Z","phase":"test","seconds":3.685,"exit":0,"cmd":"agent_space/v/run.sh alone_am_NoGrad_NoGraph_AccessDstSrc -s autodetect -p test_async.py -k test_copy_s2c_d2d_SrcPoolOn_DstPoolOff_NoStream_NoGrad_NoGraph_AccessDstSrc"}
+{"kind":"phase","ts":"2026-11-24T02:53:25Z","phase":"test","seconds":3.717,"exit":0,"cmd":"agent_space/v/run.sh alone_eam0_NoGrad_Graph_AccessSrcDst -s autodetect -p test_async.py -k test_copy_s2c_d2d_SrcPoolOn_DstPoolOff_Stream0_NoGrad_Graph_AccessSrcDst"}
+{"kind":"phase","ts":"2026-11-24T02:53:27Z","phase":"test","seconds":2.438,"exit":0,"cmd":"agent_space/v/run.sh alone_m0_NoGrad_NoGraph_AccessSrcDst -s autodetect -p test_async.py -k test_copy_s2c_d2d_SrcPoolOn_DstPoolOff_Stream0_NoGrad_NoGraph_AccessSrcDst"}
+{"kind":"phase","ts":"2026-11-24T02:53:31Z","phase":"test","seconds":3.243,"exit":0,"cmd":"agent_space/v/run.sh alone_tream0_NoGrad_Graph_AccessBoth -s autodetect -p test_async.py -k test_copy_s2f_d2d_SrcPoolOff_DstPoolOff_Stream0_NoGrad_Graph_AccessBoth"}
+{"kind":"phase","ts":"2026-11-24T02:53:34Z","phase":"test","seconds":2.81,"exit":0,"cmd":"agent_space/v/run.sh alone_tream0_NoGrad_Graph_AccessNone -s autodetect -p test_async.py -k test_copy_s2f_d2d_SrcPoolOff_DstPoolOff_Stream0_NoGrad_Graph_AccessNone"}
+{"kind":"phase","ts":"2026-11-24T02:54:50Z","phase":"test","seconds":76.476,"exit":0,"cmd":"agent_space/v/run.sh async_file -s autodetect -p test_async.py"}
+{"kind":"phase","ts":"2026-11-24T02:59:02Z","phase":"test","seconds":244.687,"exit":0,"cmd":"agent_space/v/run.sh tile_debug -s autodetect --warp-debug -p test_tile*.py"}
+{"kind":"phase","ts":"2026-11-24T02:59:27Z","phase":"test","seconds":20.352,"exit":0,"cmd":"agent_space/v/run.sh matmul1 -s autodetect -p test_tile_matmul.py"}
+{"kind":"phase","ts":"2026-11-24T02:59:49Z","phase":"test","seconds":20.985,"exit":0,"cmd":"agent_space/v/run.sh matmul2 -s autodetect -p test_tile_matmul.py"}
+{"kind":"phase","ts":"2026-11-24T03:00:10Z","phase":"test","seconds":21.507,"exit":0,"cmd":"agent_space/v/run.sh matmul3 -s autodetect -p test_tile_matmul.py"}
+{"kind":"session","ts":"2026-11-24T03:01:04Z","epoch":1795489264.959219,"event":"end","platform":"linux-gfx942"}
