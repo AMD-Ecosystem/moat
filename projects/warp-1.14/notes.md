@@ -8889,3 +8889,7 @@ Question: the coordinator summary of 2026-11-24 (porting session 33, the per-arc
 ## Ruling (Jeff Daily, 2026-11-24): gfx908 intermittent error 700
 
 Question: the coordinator note on gfx908 (MI100) at 4e0d02ab; options (a) ship gfx908 in the wheel, listed as built but not validated with the known issue; (b) investigate first (minimal non-Warp HIP program on the same nodes, node names recorded, bisect to the first faulting kernel); (c) drop gfx908 from the release targets. Jeff: "Start with (b), but if we can't figure it out, then (a)."
+
+## Ruling (Jeff Daily, 2026-11-24): gfx1250 before release
+
+Question: release-notes wording for gfx1250/gfx1250-strict given the a0 evidence session's three translator-related failures (two probably fixed since by 4e0d02ab and the contraction ruling, not rerun); options (a) "built, not validated on hardware", (b) the same plus a known-issue line, (c) hold the release until the gfx1250 host is ours again for one rerun at the final head, including strict mode. Jeff: "(c) Hold the release until the host is ours again for one rerun at the final head." Consequence: the release waits for jeff to say the gfx1250 host is ours again; nothing is dispatched there before that. The deferred translator report (`rocm-gfx1250-a0-translator-failures`) stays pending until that rerun.
