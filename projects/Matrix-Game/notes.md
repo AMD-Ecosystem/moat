@@ -521,3 +521,150 @@ The client is a script, not a browser. It does what the page does through the se
 ## Lesson for cuda-to-rocm: headless EGL on an Instinct host lists every GPU before the software device
 
 For `linux-host-setup.md` (or wherever headless rendering next to GPU compute is covered). A CUDA project that renders offscreen through `EGL_EXT_platform_device` (enumerate with `eglQueryDevicesEXT`, take the first device that `eglInitialize` accepts) assumes the NVIDIA EGL device is the GL device. On a Linux host with AMD Instinct GPUs (gfx942, gfx950), Mesa lists one EGL device per DRM node, including the per-partition XCP nodes, so a host with 8 GPUs can expose dozens, and the software (llvmpipe) device comes last. Instinct parts have no graphics pipeline, so radeonsi rejects each of them, and a loop capped at 16 devices never reaches llvmpipe and fails with "no EGL device initialized". The same loop also opens the DRM nodes of GPUs that belong to other jobs. To get llvmpipe without editing the project, run only the rendering process with an `LD_PRELOAD` shim that returns 0 from `drmGetDevices2` (and, as a guard, refuses opens under `/dev/dri`). Mesa then offers exactly one device, `EGL_MESA_device_software`. Neither `LIBGL_ALWAYS_SOFTWARE=1` nor `EGL_PLATFORM=surfaceless` changes the device list (Mesa 25.2). Do not apply the shim to the compute process: HIP needs its render node.
+
+## Validation 2026-11-24 (validator, linux-gfx942, job mi300b-20261123-191444)
+
+Head `6d94b2fb5ccdd1351b3ce5b5242cadda5f367f70`, AMD Instinct MI300X (gfx942, `gfx942:sramecc+:xnack-`), four GPUs (`HIP_VISIBLE_DEVICES=4,5,6,7`, the dispatcher's pin; single-GPU runs on one of them), `ulimit -c 0`, `timeout` on every GPU run, `OMP_NUM_THREADS` 8 (MG-3) or 16 (MG-4). First run of the port on gfx942. Recipe of the gfx950 section, rebuilt in this job's directory.
+
+### Environment
+
+- `$FLEET_VENV` (Python 3.11) with `$FLEET_VENV/bin` first on PATH: `pip install --index-url https://nightly.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple 'torch[device-gfx942]==2.12.0+rocm10.2.0a20261015' 'torchvision==0.27.0+rocm10.2.0a20261015' 'triton==3.8.0+git669b31ac.rocm10.2.0a20261015' 'rocm[devel]==10.2.0a20261015'`. HIP 7.17.26412, RCCL 2.32.3 (`torch.cuda.nccl.version()`). `torch`, `triton` and `rocm_sdk` resolve inside the venv, shadowing the image's ROCm 10.1 base links (checked).
+- MG-4 `pip install -e '.[inference,server,download,test]'` (transformers 5.17.0); MG-3 extras `easydict decord opencv-python==4.10.0.84 trimesh pandas==2.2.3`. MG-3 on torch 2.12, not its pinned 2.10 (same deviation as gfx950).
+- flash-attention `v2.8.3.post2` (`49774b31`):
+  - CK: `BUILD_TARGET=rocm GPU_ARCHS=gfx942 OPT_DIM=128 ROCM_HOME=$(rocm-sdk path --root) pip wheel --no-build-isolation --no-deps .` with MAX_JOBS=64, 704/704 objects, 305 s.
+  - Triton backend: `FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE`, pure-Python wheel.
+  - Each was installed with `pip install --target` into its own directory and put on `PYTHONPATH` only for the runs that use it, so MG-4's SDPA runs could not pick it up. MG-4 imports flash-attn whenever it is importable.
+  - Check against SDPA (bf16, H 24, D 128): CK varlen 1000+777 max abs err 2.0e-3, causal S 1560 7.8e-3; Triton 2.0e-3 and 3.9e-3.
+- Weights in the job directory (2.7 TB free before download): MG-4 `Skywork/Matrix-Game-4.0` at `2c53100457da7abcf0e966f75637c644d3423a63`, ancient-egypt, models plus game-assets manifests, every file SHA256-verified by `matrix-game download` (23 GB plus 23 GB HF cache); MG-3 `Skywork/Matrix-Game-3.0` at `d4c84ef2b8e9028a00a5d58b6be2df04f1cb6042` (53 GB).
+
+### Non-GPU tests
+
+`python -m unittest discover -s tests -p 'test_*.py'` in Matrix-Game-4: **81 tests OK** on `moat-port`, 81 OK on upstream `51913b2` (worktree, `PYTHONPATH` pointing at it). No regression.
+
+### CUDA gate
+
+Not rerun: recorded at this head in the review (Triton NVIDIA backend, PTX/cubin/SASS byte-identical 15/15). No CUDA C++ in the change.
+
+### gfx942 FP8 path, layer level
+
+- Selectors: `e4m3_format() == (torch.float8_e4m3fnuz, 240.0)`. `mxfp8_supported() == False`, so `build_linear("mxfp8")` returns `_Fused(fp8=False)`: the MXFP8 role runs in BF16.
+- `FP8Linear` (rtx5090) and `PaddedFP8Linear` (rtx5080): K/N in {3072/3072, 3072/14336, 14336/3072}, M in {1, 37, 405, 4096}, inputs with 20x outlier columns (`fp8_probe.py`).
+  - Activations quantize to FNUZ with max |q| = 240, and every output is finite.
+  - Rel err against the BF16 `nn.Linear`: 0.034 to 0.038.
+  - Against an exact emulation of the intended function (dequantized FNUZ operands times scales, FP32 matmul, plus bias): rel 1.6e-3 to 1.7e-3, max abs 0.03 (0.06 once). That is BF16 output rounding.
+  - The padded variant matches the plain one to 3e-5.
+- FNUZ/240 against OCP e4m3fn/448 with the same per-tensor scaling, in software on the same tensors (`fnuz_vs_fn.py`): activation and weight qdq rel 0.0265 / 0.0264, GEMM rel against FP32 0.0375 / 0.0374 for both formats. So the FNUZ branch loses nothing to the OCP format the NVIDIA and gfx950 paths use.
+
+### MG-4 end to end (gfx942, one GPU)
+
+- Command: `matrix-game render --scene ancient-egypt --resources <res> --input egypt-pan-120.mp4 --prompt-mode fixed --seed 42 --preset <p> [--dit-runtime native --no-vae-graph]`.
+  - Run through a wrapper that prints `torch.cuda.max_memory_allocated`/`reserved` at exit.
+  - With `MG_DET=1`, the wrapper also sets `torch.backends.cudnn.deterministic = True`. This is a harness setting; the source is not edited.
+- Input: 120-frame lossless (libx264rgb crf 0) 864x480 pan/zoom over `models/ancient-egypt/sink.png` (sha256 `94e03c1a...45f6`); clip sha256 `e44b5daf...bc7c`. It is a different clip from the other hosts', so PSNR compares runs on this host only.
+- Reference: upstream's release gate, bf16 `native` (`--preset realtime --dit-runtime native --no-vae-graph`: TAEHV, one step, SDPA) on the same GPU.
+  - With no `--preset`, the render CLI resolves to the Wan-VAE two-step path. My first "native" run was that path and is listed below as `quality`.
+
+**Run-to-run nondeterminism on gfx942 (found here, absent on gfx950/gfx1100).** With PyTorch defaults, two identical `native` runs differ: 34.2 dB mean, from frame 0. Two `realtime` runs differ the same way (34.5 dB).
+- The Wan-VAE paths (`quality`, and realtime with `--vae-backend wan`) are bit-identical run to run, and so are TAEHV encode and one-shot decode standalone.
+- The source is TAEHV's streaming decode. A forward-hook diff of two decodes of the same latents puts the first divergence at `core.decoder.4.conv.0`: bf16 `Conv2d` 512->256, 3x3, input `(1, 512, 30, 54)`, max diff 0.0039.
+- Standalone, that conv differs on 19 of 19 repeated calls at batch 1, and never at batch 12, with a 1x1 kernel, or with `torch.backends.cudnn.deterministic = True`.
+- MIOpen logging shows the default pick is `ConvAsmImplicitGemmGTCDynamicFwdXdlopsNHWC`; deterministic mode picks `GemmFwdRest`.
+- With deterministic mode, `native` and `realtime` each repeat bit-exactly, at the same speed (native 25.7 against 24.6 FPS).
+- So this is MIOpen's default non-deterministic solver choice, not the port and not upstream code. The table below uses deterministic mode, so its noise floor is zero.
+
+| run (SDPA unless noted; cudnn deterministic) | rc | render wall s | FPS at frame 101 | peak alloc GiB (reserved) | PSNR vs native mean / min dB | first10 / last10 dB |
+|---|---|---|---|---|---|---|
+| native (reference) | 0 | 80 | 25.7 | 20.21 (20.26) | -- (repeat bit-identical) | -- |
+| realtime (ring-fused, VAE graph) | 0 | 84 | 26.7 | 20.21 (20.26) | 33.47 / 25.49 (repeat bit-identical) | 38.3 / 27.9 |
+| rtx5090 (FP8 FNUZ) | 0 | 100 | 44.2 | 15.65 (18.09) | 28.86 / 23.62 | 34.3 / 24.9 |
+| rtx5080 (FP8 FNUZ, padded/transposed) | 0 | 88 | 50.2 | 10.90 (10.93) | 29.04 / 23.45 | 32.7 / 24.8 |
+| rtx5070ti (INT8, `cross_q` MXFP8 role in BF16) | 0 | 80 | 45.4 | 10.90 (10.93) | 31.79 / 25.54 | 36.0 / 27.7 |
+| native, FA2 CK | 0 | 80 | 21.7 | 20.21 | 33.44 / 25.69 | 37.2 / 28.2 |
+| realtime, FA2 CK | 0 | 81 | 25.9 | 20.21 | 33.69 / 26.07 (32.97 vs native-CK) | 38.0 / 28.8 |
+
+Against bf16 realtime instead: rtx5090 29.14, rtx5080 29.25, rtx5070ti 32.07 dB mean.
+
+The same presets with PyTorch defaults (non-deterministic conv) all completed too: native, realtime, rtx5090, rtx5080 and rtx5070ti each rc 0, 120/120 frames.
+- FPS: 24.6 / 26.5 / 45.3 / 49.2 / 46.7.
+- PSNR against that run's native: 33.7 / 28.9 / 28.5 / 30.0 dB.
+- `realtime` with FA2 CK, run twice: 36.7 dB from each other (that is the conv noise).
+- `quality` (Wan VAE, native DiT, two steps): rc 0, 42.05 GiB peak (55 reserved), bit-identical across two runs. 3.3 FPS on its first run (MIOpen first-use tuning, as gfx1100 saw), 12.3 FPS afterwards.
+
+Reading:
+- Every run: rc 0, 120/120 frames at 864x480, no NaN in the logs, per-frame std 46 or more (input 47).
+- The FP8 presets run the FNUZ branch on gfx942 and are the fastest presets here, up to 1.9x realtime's FPS at about half its memory.
+- They sit about 4.5 dB below bf16 realtime against native. rtx5070ti, which here runs INT8 plus BF16 like gfx1100, sits 1.7 dB below.
+- The layer checks above show the FP8 GEMM computes the intended FNUZ function to BF16 rounding, with the same quantization error as e4m3fn/448. So the gap is quantization cost on this clip, not an FNUZ defect.
+- The dB gaps between quantized and bf16 presets are not comparable across hosts: the clips differ, and gfx950's realtime itself sat at 22 dB from its native.
+- Contact sheet `out/montage-mg4.png` (job directory, not durable): input, native, realtime, rtx5090, rtx5080 and rtx5070ti at frames 0/40/80/119. All coherent and following the pan, with no corruption or colour faults; runs differ only in transient effects.
+- The `-sage` presets were not run here (not in this job's request).
+
+### MG-3 distributed (gfx942, 2 and 4 GPUs)
+
+Common arguments, as in the gfx950 runs: `generate.py --size 704*1280 --ckpt_dir Matrix-Game-3.0 --use_int8 --num_iterations 4 --num_inference_steps 3 --image demo_images/001/image.png --prompt "A colorful, animated cityscape with a gas station and various buildings." --seed 42 --vae_type mg_lightvae --lightvae_pruning_rate 0.5 --fa_version 2`, with FA2 CK.
+- Multi-GPU runs use `torchrun --nnodes 1 --nproc_per_node N --rdzv-backend static --master-addr 127.0.0.1 --master-port <p> --local-addr 127.0.0.1`. The static rendezvous on 127.0.0.1 was used as asked; the container hostname did resolve here (to 127.0.1.1).
+- The port does not touch Matrix-Game-3, so upstream `51913b2` is the code under test.
+- Every run produces 177 frames at 1280x704. RCCL smoke test first (`all_to_all_single`, `all_gather`, `all_reduce`, as Ulysses and FSDP use them): correct on 2 and 4 ranks.
+
+**Upstream as shipped cannot run multi-GPU, on any GPU.** There are two upstream bugs, both already reported upstream by others, neither in the port or the environment:
+
+1. `--ulysses_size > 1` (test.sh's form, and the only way FSDP is ever enabled, because `_validate_args` turns `--dit_fsdp/--t5_fsdp` off when `ulysses_size <= 1`). Every rank fails in the first DiT block:
+   - Error: `TypeError: attention() got an unexpected keyword argument 'fa_version'` at `wan/distributed/ulysses.py:63`. `distributed_attention` passes `fa_version=` and `attention()` takes `version=`.
+   - Seen on 2 GPUs (`--dit_fsdp --t5_fsdp --ulysses_size 2`, rc 1, 94 s) and 4 GPUs (rc 1, 95 s).
+   - Upstream issue SkyworkAI/Matrix-Game#80 (open, no comments); the one-word fix is open PR SkyworkAI/Matrix-Game#61 (mergeable, not merged).
+2. The README's own command, `torchrun --nproc_per_node=$NUM_GPUS generate.py ... --dit_fsdp --t5_fsdp` with no `--ulysses_size`:
+   - FSDP is silently disabled and every rank runs the whole job.
+   - The DiT then keys its distributed behaviour on `world_size > 1`, not on whether sequence parallelism is on. It returns a Python list (`wan/modules/model.py` end of `forward`), and the scheduler fails with `TypeError: only integer tensors of a single element can be converted to an index` at `wan/utils/fm_solvers_unipc.py:323`.
+   - Every rank fails this way, on 2 GPUs (rc 1, 103 s) and 4 GPUs (rc 1, 102 s).
+   - Upstream issue SkyworkAI/Matrix-Game#68 reports exactly this from an NVIDIA run (6 GPUs, FA3).
+
+**With PR #61's one-word fix, the distributed layer works on ROCm.**
+- Setup: a throwaway worktree at `51913b2` (outside the fork checkout, which stays clean) with PR #61's diff applied, which changes `fa_version=` to `version=` in `ulysses.py`.
+- Single-GPU from that tree is bit-identical to single-GPU from the port, so the fix does not touch the 1-GPU path.
+
+| run | GPUs | rc | wall s | DiT steps it/s | PSNR vs single-GPU FA2 CK mean / min dB | first10 / last10 dB |
+|---|---|---|---|---|---|---|
+| single, FA2 CK (reference) | 1 | 0 | 290 cold, 110 repeat | 1.01 | -- (repeat bit-identical) | -- |
+| single, FA2 Triton (yardstick: two correct backends) | 1 | 0 | 118 | 0.67 | 26.68 / 17.58 | 33.8 / 17.8 |
+| FSDP + Ulysses 2 (`--dit_fsdp --t5_fsdp --ulysses_size 2`) | 2 | 0 | 115 | 1.30 | 27.88 / 19.54 (repeat bit-identical) | 35.7 / 19.6 |
+| FSDP + Ulysses 4 | 4 | 0 | 116 | 2.25 | 28.30 / 18.50 (repeat bit-identical) | 35.5 / 19.1 |
+| FSDP + Ulysses 3 + `--use_async_vae --async_vae_warmup_iters 1`, VAE worker on the 4th GPU (test.sh's pattern; 40 heads padded to 42) | 3+1 | 0 | 120 | 1.47 | 27.26 / 18.63 | 35.7 / 18.7 |
+
+Reading:
+- Each distributed run is deterministic: its repeat is bit-identical.
+- Each one differs from single-GPU by a deterministic numerical difference. Frame 0 is at 39.6 dB in every case, and the gap grows through the 4 autoregressive iterations.
+- That gap is no larger than the one between two correct single-GPU attention backends (FA2 CK against FA2 Triton: 26.7 dB mean), and SP2 against SP4 is 28.0 dB. So the distributed output matches single-GPU to the level independent correct paths agree.
+- DiT denoising scales from 1.01 it/s (1 GPU) to 1.30 (2) and 2.25 (4). End-to-end wall stays about 115 s at this length, because model load and rank 0's serial VAE decode dominate 4 iterations.
+- Contact sheet `out/montage-mg3.png` (single CK, single Triton, SP2, SP4, SP3+async VAE): same scene and camera path in all, with late frames differing only in detail.
+
+Surface entry `model:mg3-distributed`: covered. Real 2- and 4-GPU FSDP+Ulysses runs over RCCL completed and matched single-GPU at the same seed, with the caveat that they needed upstream's open one-word PR #61. Without it, upstream's multi-GPU paths fail on every platform with the two upstream bugs above.
+
+### Not run, and why
+
+- The `-sage` presets, MG-4's racing scene, PR #67/AITER and MG-3 `--compile_vae` were not in this job's request.
+- The documented `download.pytorch.org/whl/rocm7.2` install line was not used: the job was told to use the TheRock 10.2 wheels.
+
+### Questions for Jeff (nothing assumed)
+
+1. **MG-3 multi-GPU in the port.** Upstream's multi-GPU MG-3 does not run as shipped on any GPU (issues #80 and #68 above). The port does not touch MG-3. Options:
+   - (a) leave it to upstream: PR #61 is open and fixes #80; #68 has no fix;
+   - (b) a porter round carrying PR #61's one-word fix in the port, a scope addition for you to rule;
+   - (c) a results-only comment on PR #61 or issue #80 saying the fix was exercised on MI300X with 2 and 4 GPUs. That is a GitHub post, so it needs your approval of a draft first; none is drafted here.
+2. **MIOpen non-deterministic conv.** On gfx942, TAEHV's streaming decode is not bit-reproducible run to run under PyTorch defaults. Measured effect: about 34 dB between two identical 120-frame renders.
+   - Cause: MIOpen's default solver `ConvAsmImplicitGemmGTCDynamicFwdXdlopsNHWC` for a batch-1 bf16 3x3 conv. `torch.backends.cudnn.deterministic = True` removes it at no measured cost.
+   - It is permitted behaviour (cuDNN makes the same no-determinism promise), so I registered nothing. Whether it deserves an MIOpen report is your call.
+
+Verdict for linux-gfx942: **pass**.
+- Unit tests 81/81, no regression.
+- realtime, rtx5090 and rtx5080 (FP8 FNUZ branch) and rtx5070ti (INT8 plus BF16 MXFP8 fallback) render end to end. Layer-level FP8 matches an exact FNUZ emulation to BF16 rounding.
+- MG-3 runs single-GPU, and 2- and 4-GPU FSDP+Ulysses with PR #61's fix.
+- The tree is clean at `6d94b2f`, and `jargon.py --port Matrix-Game` is clean.
+
+## Lesson for cuda-to-rocm: tell MIOpen's non-deterministic conv solvers from a real fault before comparing runs
+
+For `diagnosis.md` (or wherever run-to-run reproducibility checks are covered).
+- What happened: a video model that repeats bit-exactly on gfx950 and gfx1100 gave a different output on every run on gfx942 (about 34 dB PSNR between identical runs). Without a known noise floor, every A/B comparison on that host was ambiguous.
+- Cause: MIOpen (PyTorch's `cudnn` backend on ROCm) picks `ConvAsmImplicitGemmGTCDynamicFwdXdlopsNHWC` for some bf16 convolutions on gfx942. It is not bit-reproducible: a batch-1 3x3 512->256 conv gave a different result on every call, up to one bf16 ulp. The same conv at batch 12, or as 1x1, was exact.
+- How to find it: register forward hooks on every leaf module, run the same input twice in one process, and report the first module whose output differs. That names the layer in one run. Then repeat that layer alone at the observed shape. `MIOPEN_ENABLE_LOGGING=1 MIOPEN_LOG_LEVEL=6` prints the chosen solver.
+- Fix for comparisons: `torch.backends.cudnn.deterministic = True` makes MIOpen choose a deterministic solver (`GemmFwdRest` here), with no measurable cost in this model.
+- Set it for A/B validation, and establish the noise floor (run the reference twice) before reading any difference between two code paths as real.

@@ -275,6 +275,10 @@
   {
    "id": "server:matrix_game.server",
    "evidence": "real sessions on gfx950 at moat-port 6d94b2f: matrix-game serve (scripts/serve.sh, --preset realtime, ancient-egypt) with the model on the GPU, upstream-built CastleReferenceServer on llvmpipe (--allow-software-rendering), GStreamer x264 sidecar, MediaMTX v1.21.4; scripted client over /api/start + controller WebSocket; reference, dual-view and plain model sessions (765 to 1233 frames each, 0 dropped), the published stream read back over RTSP and decoded; browser WHEP media leg, hardware GL and audio not exercised; validator linux-gfx950 2026-11-24; notes.md 'Server session (validator, linux-gfx950, 2026-11-24)'"
+  },
+  {
+   "id": "model:mg3-distributed",
+   "evidence": "torchrun FSDP+Ulysses over RCCL on 2 and 4 MI300X (and Ulysses 3 + async VAE on a 4th GPU): rc 0, deterministic, output matches single-GPU at seed 42 as closely as two correct attention backends do (27.9/28.3 dB vs 26.7 dB CK-vs-Triton). Needs upstream's open one-word PR SkyworkAI/Matrix-Game#61; without it upstream fails on every platform (issues #80, #68). validator linux-gfx942 2026-11-24 at moat-port 6d94b2f; notes.md 'Validation 2026-11-24 (validator, linux-gfx942, job mi300b-20261123-191444)'"
   }
  ],
  "scoped_out": [
@@ -379,11 +383,6 @@
    "reason": "Jeff Daily ruling 2026-11-23 (Q2 = B): the three -sage presets need SageAttention 2.2's CUDA kernels (sm89 PTX mma, wgmma), which have no ROCm build; scoped out with deferral matrix-game-sageattention-rocm (projects/Matrix-Game/deferred.json). On ROCm they fail at their existing sageattention import with upstream's own message."
   }
  ],
- "owed": [
-  {
-   "id": "model:mg3-distributed",
-   "reason": "not run: torchrun FSDP/Ulysses needs several GPUs and this job was pinned to one. NCCL->RCCL is transparent in torch; run on a host that can give the job several GPUs without disturbing others."
-  }
- ],
+ "owed": [],
  "removed_from_floor": []
 }

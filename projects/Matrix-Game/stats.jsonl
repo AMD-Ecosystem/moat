@@ -59,3 +59,16 @@
 {"kind":"phase","ts":"2026-11-24T02:01:14Z","phase":"test","seconds":130.409,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/rx7900-20261123-164859-val-matrix-game-w32-prompt/work/scripts/mg3_run.sh fa2-triton-wa /var/lib/jenkins/fleet/jobs/rx7900-20261123-164859-val-matrix-game-w32-prompt/work/upstream-51913b2 --fa_version 2"}
 {"kind":"phase","ts":"2026-11-24T02:02:58Z","phase":"test","seconds":92.376,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/rx7900-20261123-164859-val-matrix-game-w32-prompt/work/scripts/mg3_run.sh fa2-triton-352 /var/lib/jenkins/fleet/jobs/rx7900-20261123-164859-val-matrix-game-w32-prompt/work/upstream-51913b2 --fa_version 2 --size 352*640"}
 {"kind":"session","ts":"2026-11-24T02:05:33Z","epoch":1795485933.626216,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-11-24T03:18:02Z","epoch":1795490282.597801,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-24T03:24:48Z","phase":"test","seconds":7.445,"exit":0,"cmd":"bash -c cd projects/Matrix-Game/src/Matrix-Game-4 && HIP_VISIBLE_DEVICES=4 timeout 1200 python -m unittest discover -s tests -p 'test_*.py'"}
+{"kind":"phase","ts":"2026-11-24T03:29:38Z","phase":"compile","seconds":305.185,"exit":0,"cmd":"timeout 7000 /var/lib/jenkins/fleet/jobs/mi300b-20261123-191444-val-matrix-game-dist-prompt/build_fa.sh"}
+{"kind":"phase","ts":"2026-11-24T03:35:46Z","phase":"test","seconds":556.17,"exit":0,"cmd":"../scripts/batch1.sh"}
+{"kind":"phase","ts":"2026-11-24T03:38:41Z","phase":"test","seconds":494.399,"exit":0,"cmd":"../scripts/batch3a.sh"}
+{"kind":"phase","ts":"2026-11-24T03:39:59Z","phase":"test","seconds":658.537,"exit":0,"cmd":"../scripts/batch2.sh"}
+{"kind":"phase","ts":"2026-11-24T03:45:34Z","phase":"test","seconds":834.897,"exit":0,"cmd":"../scripts/batch4.sh"}
+{"kind":"phase","ts":"2026-11-24T03:47:48Z","phase":"test","seconds":463.184,"exit":0,"cmd":"../scripts/batch5.sh"}
+{"kind":"phase","ts":"2026-11-24T03:49:51Z","phase":"test","seconds":118.29,"exit":0,"cmd":"../scripts/batch7.sh"}
+{"kind":"phase","ts":"2026-11-24T03:51:09Z","phase":"test","seconds":200.825,"exit":143,"cmd":"../scripts/batch6.sh"}
+{"kind":"phase","ts":"2026-11-24T04:00:18Z","phase":"test","seconds":548.753,"exit":0,"cmd":"../scripts/batch6.sh"}
+{"kind":"phase","ts":"2026-11-24T04:12:56Z","phase":"test","seconds":1253.336,"exit":0,"cmd":"../scripts/batch8.sh"}
+{"kind":"session","ts":"2026-11-24T04:16:12Z","epoch":1795493772.520905,"event":"end","platform":"linux-gfx942"}
