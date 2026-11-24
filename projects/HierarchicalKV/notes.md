@@ -347,3 +347,100 @@ Deferral registered: `hkv-tlpv2-max-score-locked-bucket-spin`. In `tlp_v2_upsert
 ### Open for a person
 
 - The history decision under "Review 2026-11-24 / Decision for a person (history)" is still open. This round added commits only, so 8740206's `-O0` body and the 8f10a46/815cfdc pair stand as described there.
+
+## Review 2026-11-24 (round 2, linux-gfx942 MI300X, reviewer role, fork head 592f800)
+
+### Summary
+
+Delta `815cfdc..592f800` (5 commits) reviewed in the context of the full port (`451f240..592f800`). The three pipeline update retry stages now take, copy and release a slot in one pass, and the loop exit is wavefront-uniform. The hang the round-1 review reproduced is gone for `assign`, `assign_scores` and `assign_values`. The new test fails rather than hangs on the old headers. Findings 2 and 3 are fixed. Finding 4 is fixed in `notes.md`, with one leftover in `plan.md` (N2). No blocking problem, so the verdict is **review-passed**. The non-blocking items are below. Review done inline: this harness cannot dispatch child agents. Each item was re-read in the source before it was recorded.
+
+**The CUDA compile check was not run here (this host has no nvcc); it runs elsewhere.** It should compile the three changed update headers and `tests/repeated_key_test.cc.cu`. A PTX diff of the update kernels against 815cfdc would confirm the source reading below.
+
+### Non-blocking findings
+
+- **N1. A lesson overstates one of its fixes (`notes.md:155`, "Lesson for cuda-to-rocm: a lock-retry loop deadlocks ...").** The lesson offers "Alternatively never wait on a held slot: when choosing an eviction victim, skip locked slots" as an equal fix. It gives no caveat, but this port reverted exactly that fix (8f10a46 -> 815cfdc): skipping changes which key is evicted under same-bucket contention, so a bucket no longer keeps exactly its top scores (Porter 2026-11-23, "Faults found and fixed", item 3). Before promotion, add that skipping is acceptable only where the kernel already tolerates inexact eviction, and otherwise prefer the publish-in-pass / uniform-exit fix. Severity: low. The lesson is promoted after this review, so the trunk session should apply this.
+- **N2. `plan.md:51` still says CMake's HIP Debug flags are `-O0 -g`.** Round-1 finding 4 named only the notes lines, and those are corrected. The plan has the same error. The real flags are `-g -O` (`build-hip/CMakeCache.txt`). Severity: records only.
+- **N3. Bisect wording in two commit bodies.** The Test Plan of `37516a1` says the repeated-key test is "added in the next commit". The source arrives in `02ff9c1`, but its CMake target arrives only in `b4b770f`. `02ff9c1`'s own Test Plan (`cmake --build build --target repeated_key_test`) fails at that commit, because the target does not exist yet. This affects history only and belongs with the open history decision (option (b) would fold it in). Severity: low.
+
+### Verification of round-1 findings
+
+1. **Pipeline update retry hang: fixed.**
+   - Source: `include/merlin/core_kernels/update.cuh:546-611`, `update_score.cuh:531-590`, `update_values.cuh:551-613`.
+   - Under `kRetryLockedAtCaller`:
+     - the latch is `warp_any(active_warp_mask, retry_mask != 0)`, and finished groups `continue` to it;
+     - the bucket scan is one pass, and a key not found in a bucket that has a LOCKED slot is kept for the next pass;
+     - the CAS is tried once, and on failure the position is kept in `pending_pos`, as CUDA's spin keeps `retry_pos`;
+     - the copy, score update and release-store run in the pass that took the slot, before the latch.
+   - Why it cannot hang: no group spins inside a pass. Groups at `key_idx_base >= n` return before the loop and hold no lock. The pipeline stage before the loop releases every slot it took (CAS in step 3, release in step 4 or the emptying steps) and never waits. Two groups racing for one slot make progress, because one CAS wins each pass.
+   - Duplicate handling: every copy sees the same key at the same position, so all copies are applied in sequence, as on CUDA. The argument does not depend on the wavefront width.
+   - CUDA path (source reading):
+     - `kRetryLockedAtCaller` is `constexpr false` (`kernel_utils.cuh:49-53`), so the ternary reduces to the original `retry_mask != 0`.
+     - The added `if (k && ...) continue;` lines are dead.
+     - Both inner do-whiles keep their original conditions (`!k && ...`).
+     - `if (acquired == 0)` follows a loop that exits only when `acquired != 0`, so it is unreachable, and `pending_pos` stays -1. `retry_pos` is therefore `sm_position[...]` as before.
+     - The CUDA semantics are unchanged.
+2. **`CUDA_ERROR_CHECK`: fixed.** `CMakeLists.txt:87-92` (define at :88, CUDA-only `-lineinfo` at :90): the define is set for both toolkits in Debug, and only `-lineinfo` stays CUDA-only. Against upstream, the CUDA lines are unchanged apart from the added `if(NOT HKV_USE_HIP)`/`endif()` brackets. The porter's Debug-build evidence (`find_with_missed_keys_test` gives the same 4 R-role `FAIL`s as a CUDA Debug build) is consistent with `tests/find_with_missed_keys_test.cc.cu` branching on the macro.
+3. **Dead Bazel define: fixed.** `-DUSE_HIP=1` is gone from `build_deps/gpus/rocm/build_defs.bzl.tpl`. `git grep 'USE_HIP\b'`, excluding `HKV_USE_HIP`, finds nothing at 592f800.
+4. **Records: fixed in `notes.md`.** The leftover is in `plan.md` (N2). The `8740206` body stays with the history decision.
+
+### GPU evidence (this review; gfx942, TheRock ROCm 10.2 SDK from the job venv, `ulimit -c 0`, HIP_VISIBLE_DEVICES as dispatched)
+
+**Probe.**
+- Source: `agent_space/review2/probe.cc.cu`, not committed.
+- Compiled with the prescribed clang++ line, against the 592f800 headers and, for a negative control, against `git archive 815cfdc include tests/hip_compat`.
+- Setup:
+  - `HashTable<uint64_t, float, uint64_t, kLru>` with capacity 128Ki, 128-slot buckets and dim 64;
+  - prefill keys `1..P`, with P = 32Ki (the round-1 setup) and P = 96Ki (75%, which selects the pipeline kernel for `assign_scores`);
+  - a 1024-key batch of distinct present keys, with key 7 at index `16*g` (g < copies) of every 128-key block, and copies 0 meaning the unique control.
+- After the call, `find` checks that every batch key is present and holds the expected value.
+- Each run was under `timeout 120`.
+- `AMD_LOG_LEVEL=3` confirmed which kernel each case dispatches:
+  - `assign` -> `pipeline_update_kernel_with_io`;
+  - `assign_values` -> `pipeline_update_values_kernel_with_io`;
+  - `assign_scores` at 96Ki -> `pipeline_update_score_kernel`;
+  - `assign_scores` at 32Ki -> `tlp_update_score_kernel`.
+
+| Headers | Op | Prefill | copies 0 (control) | 1 | 2 | 3 | 4 |
+|---|---|---|---|---|---|---|---|
+| 592f800 | assign | 32Ki | ok | ok | ok | ok | ok |
+| 592f800 | assign_scores (TLP) | 32Ki | ok | ok | ok | ok | ok |
+| 592f800 | assign_values | 32Ki | ok | ok | ok | ok | ok |
+| 592f800 | assign | 96Ki | ok | ok | ok | ok | ok |
+| 592f800 | assign_scores (pipeline) | 96Ki | ok | ok | ok | ok | ok |
+| 592f800 | assign_values | 96Ki | ok | ok | ok | ok | ok |
+| 815cfdc | assign | 32Ki | rc 0 | - | hang (rc 124) | - | - |
+| 815cfdc | assign_scores (pipeline) | 96Ki | - | - | hang (rc 124) | - | - |
+| 815cfdc | assign_values | 32Ki | - | - | hang (rc 124) | - | - |
+
+"ok" means the run completed with `bad=0` (every batch key found, every value as expected) and `size` equal to the prefill.
+
+**`build-hip/repeated_key_test`.**
+- The binary is current at 592f800: `ninja -C build-hip -n` reports "no work to do", and `git status` shows no modified tracked files.
+- `timeout 600`: 9/9 passed in 932 ms, rc 0.
+- Regression check: the same test source was built against the 815cfdc headers (`agent_space/review2/rk_test_815cfdc`, linked with `build-hip/lib/libgtest{_main,}.a`). It printed `FAILED: assign with 2 copies of a key did not finish within 120 s` and exited rc 1. The watchdog therefore turns a regression into a failure, not a hang.
+
+### Checked without findings
+
+- **Test `tests/repeated_key_test.cc.cu`.**
+  - The batch is built from keys a `find` showed present, and the repeated key is distinct from the rest of the batch.
+  - Every copy writes the same value and score, so the exact check is deterministic.
+  - Both expected cases are correct: an untouched score stays 100 (prefill) for `assign_values`, and untouched values stay 0 for `assign_scores`.
+  - The watchdog joins the worker before reading `err`.
+  - The comment's warp arithmetic is right: indices 0/16/32/48 are in one wave64 wavefront, and on wave32 2 copies share one wavefront.
+  - CMake target: added beside the other tests, and the HIP `*.cc.cu` glob marks it `LANGUAGE HIP`.
+- **Commit messages of the 5 new commits.**
+  - Titles are 48-61 characters.
+  - `[ROCm]` appears on the three HIP-specific commits. The test and CMake-target commits are shared and carry no prefix.
+  - Each body discloses the AI agent and has a fenced Test Plan.
+  - No Co-Authored-By or noreply trailer.
+  - `python3 utils/jargon.py --port HierarchicalKV`: clean.
+- **Hunt verdicts, spot-checked in the source.**
+  - `gpu_select_kvm_kernel`: its spin is at `array_kernels.cuh:90`, and its only caller `gpu_boolean_mask` has no caller anywhere in the tree.
+  - `rehash_kernel_for_fast_mode`: each tile locks only `locks[t / TILE_SIZE]`, its own bucket, and `move_key_to_new_bucket` is a bounded loop (`core_kernels.cuh:537-597`).
+  - TLPv2 digest CAS loops: bounded by `cmp_result`.
+  - Pipeline upsert eviction: bounded by `remaining_candidates` (`upsert.cuh:799-850`).
+  - The `hkv-tlpv2-max-score-locked-bucket-spin` deferral is accurate. With `score == MAX_SCORE` and every slot LOCKED, `min_pos` stays -1 and `score < min_score` is false, so the thread `continue`s indefinitely (`upsert.cuh:427-432`). The holders release only after the `__syncthreads` at `upsert.cuh:470`, so the same block deadlocks on CUDA as well.
+
+### Decisions for a person
+
+- The round-1 history decision (squash 8f10a46 into 815cfdc and fix the `8740206` body, or fix the wording only in the upstream PR body) is still open. N3 adds the `37516a1`/`02ff9c1` Test Plan wording to the same question. Reviewer suggestion unchanged: (a), unless upstream merges with merge commits.

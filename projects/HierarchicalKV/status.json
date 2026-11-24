@@ -6,16 +6,12 @@
   "fork_default_branch": "master",
   "priority": 0.0,
   "ext_type": "cmake",
-  "stage": "reviewing",
+  "stage": "review-passed",
   "adopted_at": "2026-11-11T15:46:07Z",
-  "updated_at": "2026-11-24T04:32:21Z",
+  "updated_at": "2026-11-24T04:50:20Z",
   "head_sha": "592f800828c2d8e3e7b1f58aae4736c2f4459097",
   "depends_on": [],
-  "porting": {
-    "arch": "linux-gfx942",
-    "since": "2026-11-24T04:32:21Z",
-    "holder": "3d83cc725d95"
-  },
+  "porting": null,
   "waivers": {},
   "platforms": {
     "windows-gfx1151": {
@@ -48,7 +44,7 @@
       "failed_sha": null,
       "started_at": "2026-11-23T19:04:37Z",
       "completed_at": null,
-      "updated_at": "2026-11-24T04:32:21Z",
+      "updated_at": "2026-11-24T04:50:20Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -84,13 +80,14 @@
   },
   "porting_released": {
     "arch": "linux-gfx942",
-    "since": "2026-11-24T03:43:27Z",
-    "at": "2026-11-24T04:31:51Z"
+    "since": "2026-11-24T04:32:21Z",
+    "at": "2026-11-24T04:50:20Z"
   },
   "base_branch_ruling": {
     "branch": "master",
     "previous": "main",
     "by": "jeffdaily",
     "at": "2026-11-23T19:02:22Z"
-  }
+  },
+  "reviewed_sha": "592f800828c2d8e3e7b1f58aae4736c2f4459097"
 }
