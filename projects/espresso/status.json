@@ -7,8 +7,8 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T04:43:45Z",
-  "updated_at": "2026-11-24T01:46:20Z",
-  "head_sha": "bbe25fdf81b58c9605f7cfc93030fdc56e104b99",
+  "updated_at": "2026-11-24T18:17:26Z",
+  "head_sha": "50561a2c852ec80a82ffea6a997b44268e45a046",
   "depends_on": [],
   "waivers": {
     "windows": {
@@ -60,11 +60,11 @@
     "linux-gfx942": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "bbe25fdf81b58c9605f7cfc93030fdc56e104b99",
+      "validated_sha": "50561a2c852ec80a82ffea6a997b44268e45a046",
       "failed_sha": null,
       "started_at": "2026-11-19T04:05:53Z",
       "completed_at": "2026-11-24T00:10:08Z",
-      "updated_at": "2026-11-24T00:10:08Z",
+      "updated_at": "2026-11-24T18:17:26Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -81,11 +81,18 @@
       "last_agent": "validator",
       "state": "completed",
       "validated_prior": [
-        "01090739cf852d70549a5699c5984b0f17414214",
         "4861f483930b774eccb14a26125de323d1a33851",
         "bc8d73dd948fc2e1f93756c648529d6d1510b41c",
-        "917d6f70715158d1b8be1a961595073dcc3c597c"
-      ]
+        "917d6f70715158d1b8be1a961595073dcc3c597c",
+        "bbe25fdf81b58c9605f7cfc93030fdc56e104b99"
+      ],
+      "carry_forward": {
+        "from": "bbe25fdf81b58c9605f7cfc93030fdc56e104b99",
+        "to": "50561a2c852ec80a82ffea6a997b44268e45a046",
+        "method": "squash",
+        "detail": "tree-identical squash of the validated head",
+        "at": "2026-11-24T18:17:26Z"
+      }
     },
     "windows-gfx1101": {
       "blocked": true,
@@ -212,11 +219,11 @@
     "linux-gfx1201": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "bbe25fdf81b58c9605f7cfc93030fdc56e104b99",
+      "validated_sha": "50561a2c852ec80a82ffea6a997b44268e45a046",
       "failed_sha": null,
       "started_at": null,
       "completed_at": "2026-11-24T01:46:20Z",
-      "updated_at": "2026-11-24T01:46:20Z",
+      "updated_at": "2026-11-24T18:17:26Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -232,11 +239,18 @@
       },
       "state": "completed",
       "validated_prior": [
-        "01090739cf852d70549a5699c5984b0f17414214",
         "4861f483930b774eccb14a26125de323d1a33851",
         "bc8d73dd948fc2e1f93756c648529d6d1510b41c",
-        "917d6f70715158d1b8be1a961595073dcc3c597c"
-      ]
+        "917d6f70715158d1b8be1a961595073dcc3c597c",
+        "bbe25fdf81b58c9605f7cfc93030fdc56e104b99"
+      ],
+      "carry_forward": {
+        "from": "bbe25fdf81b58c9605f7cfc93030fdc56e104b99",
+        "to": "50561a2c852ec80a82ffea6a997b44268e45a046",
+        "method": "squash",
+        "detail": "tree-identical squash of the validated head",
+        "at": "2026-11-24T18:17:26Z"
+      }
     }
   },
   "porting_released": {
@@ -244,7 +258,7 @@
     "since": "2026-11-23T23:25:20Z",
     "at": "2026-11-23T23:26:31Z"
   },
-  "reviewed_sha": "bbe25fdf81b58c9605f7cfc93030fdc56e104b99",
+  "reviewed_sha": "50561a2c852ec80a82ffea6a997b44268e45a046",
   "review_pr": "https://github.com/AMD-Ecosystem/espresso/pull/1",
   "porting": null
 }
