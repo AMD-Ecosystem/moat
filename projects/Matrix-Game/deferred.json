@@ -15,6 +15,19 @@
       "upstream_issue": null,
       "created_at": "2026-11-23T20:55:24Z",
       "decided": null
+    },
+    {
+      "id": "pytorch-rocm-sdpa-gfx1100-headdim-257-512",
+      "kind": "rocm-bug-report",
+      "component": "pytorch-aotriton",
+      "summary": "PyTorch ROCm SDPA on gfx1100 (torch 2.12.0+rocm10.2.0a20261015, TheRock): the FLASH_ATTENTION and EFFICIENT_ATTENTION backends (AOTriton) accept head dims 257..512 and then fail at launch with 'torch.AcceleratorError: CUDA error: profiler is not initialized' (hipErrorProfilerNotInitialized, a misleading code); sticky, so the process is lost. Seen at head dims 288/320/384/512, any length (64..3520), bf16/fp16/fp32, B=1. Head dims <=256 work (max err vs MATH <=1e-3); 1024 correctly says 'No available kernel' and the default path falls back to MATH. Expected: report no kernel so the dispatcher falls back. Hits Matrix-Game-3's Wan2.2 VAE AttentionBlock (single head, head_dim 512 decoder / 640 encoder) on RDNA3, so upstream MG-3 cannot decode on gfx1100 at all. Repro: scaled_dot_product_attention(q,k,v) with q=k=v=randn(1,1,3520,384,bf16) on gfx1100. Not yet checked on a newer torch or on gfx12/CDNA.",
+      "refs": [
+        "projects/Matrix-Game/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-24T02:03:58Z",
+      "decided": null
     }
   ]
 }

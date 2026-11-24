@@ -360,3 +360,109 @@ Verdict for linux-gfx950: **pass**. Unit tests 81/81. All six generic and RTX pr
 ## Lesson for cuda-to-rocm: building AITER from source replaces the environment's Triton
 
 For `libraries.md` (or wherever AITER is covered). ROCm/aiter's `setup.py` (seen at v0.1.30, torch 2.9.1 or newer) uninstalls whatever Triton is installed (`triton`, `pytorch-triton-rocm`, `triton-rocm`, ...) and installs its own pin from pypi.amd.com, even under `pip wheel --no-deps`. A ROCm environment whose PyTorch was built against a specific Triton then silently runs on a different one. Here, flash-attention's Triton AMD backend broke at import (`ValueError: key contains names that are not kernel arguments`). Set `AITER_USE_SYSTEM_TRITON=1` when building AITER to keep the installed Triton. Then check `python -c "import triton; print(triton.__version__, triton.__file__)"` before trusting any later run.
+
+## Validation 2026-11-24 (validator, linux-gfx1100, job rx7900-20261123-164859)
+
+Head `6d94b2fb5ccdd1351b3ce5b5242cadda5f367f70`, AMD Radeon Pro W7800 48GB (gfx1100, wave32; 44.98 GiB visible to torch), one GPU (`HIP_VISIBLE_DEVICES=1`, the dispatcher's pin), `ulimit -c 0`, `timeout` on every GPU run. Recipe of the gfx950 validation above, rebuilt from scratch in this job's directory.
+
+### Environment
+
+- `$FLEET_VENV` (Python 3.11): `torch 2.12.0+rocm10.2.0a20261015` (the same build as gfx950), torchvision 0.27.0, `triton 3.8.0+git669b31ac.rocm10.2.0a20261015`, `rocm[devel]==10.2.0a20261015`, installed with `pip install --pre --index-url https://nightly.repo.amd.com/rocm/whl-next/ 'torch[device-gfx1100]==2.12.0+rocm10.2.0a20261015' torchvision==0.27.0 'rocm[devel]==10.2.0a20261015'`. HIP 7.17.26412. These shadow the image's ROCm 10.1 base links; `torch`, `triton` and `rocm_sdk` all resolve inside the venv (checked).
+- MG-4: `pip install -e '.[inference,server,download,test]'` (transformers 5.17.0). MG-3 extras: `easydict decord opencv-python==4.10.0.84 trimesh pandas==2.2.3`. MG-3 again on torch 2.12 instead of its pinned 2.10 (same deviation as gfx950).
+- flash-attention `v2.8.3.post2` (`49774b31`), Triton AMD backend only (the RDNA route; the CK build's `setup.py` allows only gfx90a, gfx942 and gfx950): `FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE pip wheel --no-build-isolation --no-deps .`, and the same variable at run time. Standalone check against SDPA (bf16, H 24, D 128): varlen 1000+777 max abs err 2.0e-3, causal S 1560 3.9e-3.
+- AITER and PR #67 were not built or run here (see "Not run").
+- Weights in the job directory (2.3 TB free before download): MG-4 `Skywork/Matrix-Game-4.0` revision `2c53100457da7abcf0e966f75637c644d3423a63`, ancient-egypt, models plus game-assets manifests, every file SHA256-verified by `matrix-game download` (23 GB plus 23 GB HF cache); MG-3 `Skywork/Matrix-Game-3.0` at `d4c84ef2b8e9028a00a5d58b6be2df04f1cb6042` (53 GB).
+
+### What gfx1100 can multiply
+
+Probe in the installed torch: per-tensor `torch._scaled_mm` with `float8_e4m3fn` and with `float8_e4m3fnuz`, and `F.scaled_mm(..., ScalingType.BlockWise1x32, NO_SWIZZLE)`, all refuse with `torch._scaled_mm is only supported on CUDA devices with compute capability >= 9.0 or 8.9, or ROCm MI300+` (RuntimeError for per-tensor, NotImplementedError for block-wise). The port's selectors answer `e4m3_format() == (float8_e4m3fn, 448.0)` and `mxfp8_supported() == False` here, as the review predicted.
+
+Per-layer check of the rtx5070ti linears (`check_linears.py`, D 3072, FFN 14336, inputs with 20x outlier columns, rel err against the BF16 `nn.Linear`): `Int8Linear` fused qkv 0.046 to 0.048, INT8 tanh-GELU `ffn_in` 0.047 to 0.050, INT8 K=14336 0.058 to 0.061, at M = 1, 37, 405, 4096, all finite; the `mxfp8` role builds `_Fused(fp8=False)` (plain BF16), rel err 0. The INT8 Triton GEMM (upstream's NVIDIA tile configs, up to 64x256x64 with 3 stages) compiles and runs on gfx1100 and matches an exact emulation of the same function (quantized operands, float64 integer accumulation, scales, bias, GELU) to BF16 output rounding: rel 1.6e-3 to 2.5e-3, max one BF16 ulp per element (`int8_emul.py`); the row quantizer differs from a torch reference by at most one code (rounding ties). So the 0.05 above is INT8 quantization error, not a kernel or wave32 fault. The plan's LDS risk for these tiles does not occur on gfx1100.
+
+### Non-GPU tests
+
+`python -m unittest discover -s tests -p 'test_*.py'` in Matrix-Game-4: **81 tests OK** on `moat-port` and 81 OK on upstream `51913b2` (worktree, `PYTHONPATH` pointing at it). No regression.
+
+### CUDA gate
+
+Not rerun: recorded at this head in the review (Triton NVIDIA backend, PTX/cubin/SASS byte-identical 15/15). No CUDA C++ in the change.
+
+### MG-4 end to end (gfx1100)
+
+- Command: `matrix-game render --scene ancient-egypt --resources <res> --input egypt-pan-120.mp4 --prompt-mode fixed --seed 42 --preset <p> [--dit-runtime native --no-vae-graph]`, through a wrapper that prints `torch.cuda.max_memory_allocated`/`reserved` at exit.
+- Input: 120-frame lossless (libx264rgb crf 0) pan/zoom over `models/ancient-egypt/sink.png` (sha256 `94e03c1a...45f6`, the same image as gfx950), 864x480 at 30 fps; clip sha256 `869278df...121b`. The generator differs from gfx950's, so PSNR values compare runs on this host only, not across hosts.
+- FPS is the CLI's "processing FPS" at frame 101. "Render s" is `render.json` `seconds` for the 120 frames (4 s of video).
+- Reference as on gfx950: upstream's release gate, bf16 `native` with SDPA on the same GPU. Run-to-run noise is zero: native twice and realtime twice are each bit-identical. So every PSNR below is a real numerical difference between paths.
+
+| preset (SDPA unless noted) | result | FPS | render s | peak alloc GiB (reserved) | PSNR vs native mean / min dB | first10 / last10 dB |
+|---|---|---|---|---|---|---|
+| native (reference) | 120/120 | 10.1 | 12.8 | 20.21 (20.26) | -- | -- |
+| realtime (ring-fused, VAE graph) | 120/120 | 10.1 (repeat 10.6) | 12.7 | 20.21 (20.26) | 34.40 / 26.90 | 37.8 / 31.1 |
+| quality (Wan VAE, two steps) | 120/120 | 0.84 | 129.3 | 28.41 (29.84) | 19.28 / 16.71 | 21.6 / 16.9 |
+| baseline | 120/120 | 2.78 | 44.6 | 20.21 (21.21) | bit-identical to quality | |
+| rtx5070ti (INT8 plus BF16) | 120/120 | 15.1 | 8.5 | 10.90 (10.93) | 31.20 / 21.97 | 34.5 / 28.7 |
+| rtx5090 | exit 1, no output, after 78 s | -- | -- | 15.65 (18.09) at failure | -- | -- |
+| rtx5080 | exit 1, no output, after 69 s | -- | -- | 10.90 (10.93) at failure | -- | -- |
+| rtx5090-sage / rtx5080-sage / rtx5070ti-sage | exit 1, no output, after 26 / 67 / 64 s | -- | -- | -- | -- | -- |
+| native, FA2 Triton | 120/120 | 2.83 | -- | 20.21 | 33.69 / 27.49 | 37.4 / 30.9 |
+| realtime, FA2 Triton | 120/120 | 11.4 | -- | 20.21 | 33.36 / 29.01 (33.65 vs native-FA2) | 37.5 / 29.5 |
+| quality, FA2 Triton | 120/120 | 2.50 | -- | 20.21 (21.21) | 33.05 / 26.77 vs quality-SDPA | 38.4 / 27.3 |
+| rtx5070ti, FA2 Triton installed | 120/120 | 13.7 | -- | 10.90 | bit-identical to rtx5070ti SDPA | |
+
+Every completed run: rc 0, `render.json` status complete, 120 frames at 864x480, no NaN in the logs, per-frame std 45.7 or more (input 47.3). rtx5070ti against bf16 realtime: 30.96 / 21.92 dB.
+
+What each preset does on this GPU:
+- **Generic presets.** `realtime`, `native`, `quality` and `baseline` all fit in 48 GB and render all 120 frames. Peak use is 20.2 GiB for realtime and native, and up to 28.4 GiB for quality.
+- **`quality` vs `baseline`.** In the render CLI the two resolve to identical settings (`scenes.resolve_model_arguments`: Wan VAE, native DiT, steps 1000,500), so the bit-identical output is expected. gfx950 measured 21.8 dB between them, which these runs do not explain. `quality`'s 129 s against `baseline`'s 45 s, and its higher reserved peak, come from MIOpen's first-use tuning of the Wan VAE convolutions: its find-db `gfx110046.HIP.3_6_2_3dc098eb.ufdb.txt` was written at 01:09:02, inside the quality run (01:07:28 to 01:09:47).
+- **`rtx5070ti` runs its INT8 plus BF16 path** (INT8 Triton GEMMs, `cross_q` in BF16 because `mxfp8_supported()` is False). It is the fastest preset on this card: 15.1 FPS against 10.1 for realtime/native, at 10.9 GiB. So wave32 does have a fitting fast preset. It sits 3.2 dB below bf16 realtime against native, the cost of INT8 (gfx950 saw 2 to 3 dB for the quantized presets). None of the presets reaches the clip's 30 fps on this card.
+- **`rtx5090` and `rtx5080` fail the way the README says** ("need a GPU with FP8 matrix multiplication"). Each loads and quantizes the DiT, then exits 1 with no output at the first FP8 GEMM while refreshing the text K/V: `RuntimeError: torch._scaled_mm is only supported on CUDA devices with compute capability >= 9.0 or 8.9, or ROCm MI300+`. For rtx5090 the call is `rtx5090/fp8_linear.py:150 _gemm`; for rtx5080 it is `rtx5080/linears.py:90 _padded_gemms`. The message is PyTorch's own and names no preset. A user gets a traceback rather than a Matrix-Game message, which matches what the README promises but is not friendly.
+- **The three `-sage` presets exit 1 with upstream's message** `ImportError: this runtime requires SageAttention 2.2 built with matrix_game/inference/rtx5090_sage/sageattention.patch` (cause `ModuleNotFoundError: No module named 'sageattention'`). rtx5090-sage fails at transformer load (26 s); rtx5080-sage and rtx5070ti-sage fail after the DiT load (67 s, 64 s; rtx5070ti-sage at `init_kv_cache`). This matches gfx950 and the review.
+- **FA2 Triton.** Correct under every runtime, with the same 33 to 34 dB from native as SDPA paths show among themselves. It is slow under `native` (2.8 FPS against 10.1 with SDPA) and slightly faster under `realtime` (11.4). The rtx5070ti runtime does not call flash-attn: its output is bit-identical with or without it installed.
+- **Contact sheets** (`montage-mg4-sdpa.png`, `montage-mg4-fa.png`, job directory): every completed run gives a coherent scene that follows the input pan and zoom. There is no corruption, smearing or colour fault, and runs differ only in transient projectile effects.
+- **CUDA graphs.** Capture works (realtime and rtx5070ti run with VAE graph and DiT graphs).
+
+### MG-3 end to end (gfx1100): does not run on this card
+
+`generate.py --size 704*1280 --ckpt_dir Matrix-Game-3.0 --use_int8 --num_iterations 4 --num_inference_steps 3 --image demo_images/001/image.png --prompt "A colorful, animated cityscape with a gas station and various buildings." --seed 42 --vae_type mg_lightvae --lightvae_pruning_rate 0.5`, upstream `51913b2` (the port does not touch Matrix-Game-3). `704*1280` is the only size `generate.py` accepts (`wan/configs MAX_AREA_CONFIGS`).
+
+| run | result | wall | peak alloc GiB |
+|---|---|---|---|
+| `--fa_version 0`, flash-attn not importable | `AssertionError` at `wan/modules/attention.py:114` (porter question 2 reproduced on gfx1100) | 78 s | 27.17 |
+| `--fa_version 2`, FA2 Triton | DiT denoising of iteration 1 completes (3/3 steps, INT8 GEMMs JIT fine); VAE decode fails: `Error in stream_decode: CUDA error: profiler is not initialized`, then `AttributeError: 'NoneType' object has no attribute 'cpu'` at `pipeline/inference_pipeline.py:652` | 157 s | 27.72 |
+| same, `--compile_vae` | same failure | 126 s | 27.72 |
+| FA2 Triton, VAE attention forced to the MATH SDPA backend (harness wrapper, no source edit) | decode OOM: `CUDA out of memory. Tried to allocate 18.85 GiB ... total capacity of 44.98 GiB of which 16.45 GiB is free` | 156 s | 27.72 |
+| same, attention also chunked over frames; then every Conv3d input and 5-D pad output made `channels_last_3d` | same 18.85 GiB OOM each time | 95 to 150 s | 28.22 |
+
+Two separate obstacles, neither in the port and neither specific to MG-3's attention backend:
+
+1. **PyTorch ROCm SDPA fault on gfx1100.** The decode error comes from the plain `F.scaled_dot_product_attention` in the Wan2.2 VAE `AttentionBlock` (`wan/modules/vae2_2.py:420`). That block is single-head, with head dim 512 in the MG-LightVAE decoder and 640 in the teacher encoder, over 44x80 = 3520 tokens. Standalone (`sdpa_hd.py`, `sdpa_one.py`, fresh process per case), both fused backends, `FLASH_ATTENTION` and `EFFICIENT_ATTENTION`, accept head dims 288, 320, 384 and 512 and then fail at launch with that misleading error. It happens at any length (64, 1024, 3520) and in bf16, fp16 and fp32, and it is sticky, so the process is lost. Head dims 64 to 256 work (max err against MATH up to 9.8e-4). At 1024 both fused backends correctly say "No available kernel" and the default falls back to MATH. MATH works at every size. Registered as deferral `pytorch-rocm-sdpa-gfx1100-headdim-257-512`. Not checked on a newer torch: the job is limited to its one venv.
+2. **Memory.** With the attention routed to MATH, the decoder's upsample `CausalConv3d` (input `(1, 512, 13, 176, 320)` bf16, weight `(256, 512, 3, 3, 3)`, `vae2_2.py:207`) asks for 18.85 GiB. That is exactly an im2col buffer (512x27 x 13x176x320 x 2 bytes), on top of 26.7 GiB already allocated. Standalone (`conv3d_ws.py`), the same conv through MIOpen with NCDHW input takes 19.20 GiB beyond its inputs at T=13 (5.91 GiB at T=4); PyTorch's native conv with cudnn off takes 19.28 GiB. With `channels_last_3d` input it takes only 2.32 GiB (0.87 at T=4). Forcing channels-last inside the model did not change the request, so the in-model call still takes the large path, for a reason not found here. Stopped after these attempts (stop discipline). MG-3's decode at its only resolution does not fit this 48 GB card with the stock conv path. gfx950 (288 GB) never sees this.
+
+So MG-3 on gfx1100: denoising runs, decode does not, and no video is produced.
+
+### Not run, and why
+
+- PR #67 / AITER: not built. The request named flash-attention's Triton backend as the RDNA route, and AITER's source build replaces the environment's Triton (lesson above). MG-3 cannot decode here regardless of the attention backend, so a PR #67 run could not produce a video.
+- The documented install line (`download.pytorch.org/whl/rocm7.2`) was not installed: this job was told to use the TheRock 10.2 wheels.
+- No kernel trace (rocprofv3) on this host. That rtx5070ti takes the BF16 path for `cross_q` is shown by `build_linear` returning `_Fused` and by `mxfp8_supported() == False`, not by a trace.
+
+### Questions for Jeff (nothing assumed)
+
+1. **MG-3 on RDNA3.** Upstream Matrix-Game-3 does not produce a video on a 48 GB gfx1100. The VAE decode first hits the PyTorch SDPA fault (head dim 512), then needs 18.85 GiB more than the card has. The port does not touch MG-3, so this validation records it and passes the platform on the MG-4 evidence. Options:
+   - (a) leave MG-3 as an RDNA3 gap, documented here;
+   - (b) a porter round adding a ROCm workaround in MG-3's VAE (route head dims over 256 to MATH, and a lower-memory decode), which is a scope addition you would rule;
+   - (c) take the SDPA defect upstream to PyTorch (deferral registered; filing is your call).
+2. Porter questions 1 (PR #67 comment) and 2 (`--fa_version 0` upstream bug) are still open. Nothing from this run changes the drafts; the `--fa_version 0` assert reproduces on gfx1100 too.
+
+Verdict for linux-gfx1100: **pass** (wave32 gate).
+- Unit tests 81/81, with no regression against upstream.
+- `realtime`, `native`, `quality` and `baseline` fit and render all frames with SDPA and FA2 Triton.
+- `rtx5070ti` runs INT8 plus BF16 and is the fastest preset on the card.
+- `rtx5090` and `rtx5080` refuse with PyTorch's FP8 `_scaled_mm` message, as the README says.
+- The three `-sage` presets exit with upstream's SageAttention message.
+- MG-3 does not run on this card (above).
+- The tree is clean at `6d94b2f`, and `jargon.py --port Matrix-Game` is clean.
+
+## Lesson for cuda-to-rocm: ROCm fused SDPA on gfx1100 fails at head dims 257..512 with a bogus HIP error
+
+For `diagnosis.md` (or wherever attention backends are covered). On gfx1100 with torch 2.12 (TheRock ROCm 10.2), `F.scaled_dot_product_attention` takes the AOTriton flash or memory-efficient kernel for head dims 257 to 512. The launch then fails with `CUDA error: profiler is not initialized` (`hipErrorProfilerNotInitialized`), a code that says nothing about attention, and the context is unusable afterwards. Head dims up to 256 and above 512 are fine; above 512 the dispatcher reports no kernel and falls back to MATH. VAEs with single-head spatial attention over the full channel count (Wan2.x VAE, head dim 512 or 640) hit it. To tell it from a real fault, rerun the call under `with sdpa_kernel([SDPBackend.MATH])`. Work around by routing such calls to MATH, chunked if the [L, L] matrix is large.
