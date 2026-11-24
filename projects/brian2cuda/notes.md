@@ -1635,7 +1635,7 @@ Not covered: the wave32 and Windows platforms still have to be re-tested at 77e0
 
 ## Upstream reply
 
-The HIP backend could not compile models that use a TimedArray, `poisson()` with a per-neuron lambda, or a BinomialFunction: the generated function code selects its device branch with `__CUDA_ARCH__`, which hipcc never defines. With the HIP backend active, the code generator now also accepts hipcc's device pass (`__HIP_DEVICE_COMPILE__`) at that one point; the code generated for nvcc is unchanged. Tested on an AMD Instinct MI250X and an AMD Radeon AI PRO R9700: TimedArray values and per-neuron Poisson and binomial samples check out on the GPU, the TimedArray and Poisson tests in `run_test_suite.py` now pass with the HIP backend, and the earlier LIF, delayed-synapse and recurrent-network runs still pass. Binomial and PoissonInput still stop in `BinomialFunction.__init__` with Brian 2.10.1, because brian2cuda's binomial code generator returns three values and that release unpacks two; that happens with CUDA as well.
+The HIP backend could not compile models that use a TimedArray, `poisson()` with a per-neuron lambda, or a BinomialFunction: the generated function code selects its device branch with `__CUDA_ARCH__`, which hipcc never defines. With the HIP backend active, the code generator now also accepts hipcc's device pass (`__HIP_DEVICE_COMPILE__`) at that one point; the code generated for nvcc is unchanged. Tested on an AMD Instinct MI250X and an AMD Radeon AI PRO R9700: TimedArray values and per-neuron Poisson and binomial samples check out on the GPU, the TimedArray and Poisson tests in `run_test_suite.py` now pass with the HIP backend, and the earlier LIF, delayed-synapse and recurrent-network runs still pass. Binomial and PoissonInput models still fail with Brian 2.10.1 on every backend, CUDA included; that is #346.
 
 ## Notes for our eyes (fix round 2026-11-23)
 
@@ -1747,3 +1747,8 @@ runpy.run_path(script, run_name='__main__')
 ```
 
 </details>
+
+
+## Ruling 2026-11-24 (recorded by the checkup session)
+
+jeff approved filing the `BinomialFunction` regression separately; filed as https://github.com/brian-team/brian2cuda/issues/346 (cause: upstream #332, f1e14b31, made the CUDA binomial generator return three values; Brian2 2.10.1 unpacks two). The 2026-11-23 round's `## Upstream reply` now points to #346 instead of explaining it. The fix review page for that round must carry the updated reply.
