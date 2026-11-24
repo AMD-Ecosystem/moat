@@ -1568,6 +1568,138 @@ CUDA compile check: no CUDA toolkit on this host (`/opt/conda/envs` and `/usr/lo
 
 Recorded: `set-state anari-visionaray linux-gfx90a completed` at fd2375aa. wave64 is satisfied at this head. Still open at fd2375aa: linux-gfx1201 (validation-failed, raycast lit-surface hang, not reproducible on gfx90a; R9700 next steps above), linux-gfx1100 and windows-gfx1201 GPU runs.
 
+## Fix round moat-fix-10 2026-11-24 round 6 (linux-gfx1201, porter) -- fd2375aa -> d7d363b9: raycast lit-surface hang is an AMDGPU compiler defect (long branch through the return address); worked around by inlining sampleLight on HIP
+
+Requested by jeff after the gfx90a round could not reproduce the hang. Lock taken with `set-state anari-visionaray linux-gfx1201 porting` (nobody held it). Fork clone at projects/anari-visionaray/src on moat-fix-10, protect-fork hook installed. GPU: AMD Radeon AI PRO R9700 (gfx1201), HIP_VISIBLE_DEVICES=3 (dispatcher pin, kept), ROCm 10.1.0 pip SDK (`rocm-sdk path --root`), AMD clang 24.0.0git (ROCm/llvm-project d6f6cb69), gcc 13.3. Everything under `ulimit -c 0`, one GPU process at a time, every GPU run under the harness's `timeout -s TERM -k 120 90` (or `timeout -s TERM -k 120 60` for the standalone programs), smoke kernel (`timeout -s TERM -k 120 60 ./smoke` -> `AMD Radeon AI PRO R9700 gfx1201 h[63]=126`) before the first run and after every hang: it passed every time (00:25:40, 00:31:41, 00:42:48, 01:22:05 UTC). No process was killed by hand; every timed-out run ended on TERM within seconds. The card stayed healthy throughout.
+
+Deps: ANARI-SDK next_release @ 47b22af and visionaray master @ 99d4829c + the hip_bvh.h assign_indices patch, both installs copied into this job dir from the round-4 job dir on this host (same recipe, built for gfx1201; no absolute paths into the old dir). Fork build: the porter section's recipe (gfx1201, NanoVDB ON) with `-j6`, wrapped in `utils/timeit.sh anari-visionaray compile`, 0 errors. At fd2375aa the pathtrace surface sanity run matched every earlier record (HIP 10584 / 10168, CPU 10581 / 10151, diff 0.469).
+
+### Runs (6 of the 8 permitted hang-prone runs used here, 1 more in the validation below)
+
+Harness: projects/anari-visionaray/gpu_tests/ as committed, `RUNS=1 TIMEOUT=90 KILL_AFTER=120 SCENES=surface RENDERERS=raycast bash projects/anari-visionaray/gpu_tests/run_all.sh $J/deps/anari-install <build>/install projects/anari-visionaray/src <out>` plus the switch named per row.
+
+| # | build / switch | question | result |
+|---|---|---|---|
+| 1 | fd2375aa, `NO_LIGHT=1` | does the hang need the light? | PASS 0.1 s, HIP 10585 / 10112 = CPU, diff 0.000: needs the light |
+| 2 | fd2375aa, `MODE=Ng` (light on) | light loop + evalMaterial, or intersectLights / intersectVolumeBounds? | PASS, 10585 / 3 = CPU: intersectLights and intersectVolumeBounds are fine; the hang is in the light loop body |
+| 3 | fd2375aa, no switch | does the hang reproduce on this card (HIP device 3)? | FAIL, no frame in 90 s; TERM ended it; smoke PASS |
+| 4 | fd2375aa + revert of fd2375a (hipMalloc DeviceArray) + `group.lights` copied to the host with hipMemcpy in VisionarayScene::commit (scratch worktree, never committed) | is pinned host memory involved? | FAIL, no frame in 90 s; smoke PASS: **pinned memory ruled out** |
+| 5 | d7d363b9 (the fix below) | does keeping sampleLight out of a separate function end the hang? | **PASS 0.1 s, HIP 10585 / 10577 = CPU 10585 / 10577, diff 0.000** (identical to gfx90a's raycast lit surface) |
+| 6 | standalone reproducer `lbra` (below) | does the compiler defect alone hang the GPU? | hangs: no exit in 60 s, TERM (rc 124); the control `lbra_small` (same program, short arm, no long branch) prints `out[63]=126`, rc 0; smoke PASS |
+
+### Root cause: long branch through s[30:31] in a leaf function (AMDGPU backend)
+
+Static work between runs 3 and 5 (device assembly, `--cuda-device-only -S` of renderer/Raycast_impl.hip with the build's exact command line, for gfx1201 and gfx90a):
+- sampleLight is not inlined into renderSample in the raycast TU; it is a separate device function (~108k instructions on gfx1201) that calls nothing. The light loop of renderSample calls it once per light; the volume path calls it too (no lights in those scenes, so never reached). In the path tracer TU it is inlined into `shade`, which is why pathtrace with the same light works.
+- Its first branches (the `light.type` chain: `v_cmpx_lt_i32 2, v81` etc.) jump more than 128 KiB, so branch relaxation expands them as `s_getpc_b64 s[30:31]; s_add_co_u32 s30, s30, lo; s_add_co_ci_u32 s31, s31, hi; s_setpc_b64 s[30:31]` -- 5 such long branches, all through **s[30:31]**, the return address. Nothing in the function saves s[30:31] (no writelane/readlane, no scratch store of it; v40-v47, v56-v63, v72-v79 and v88 are the only callee-saved registers it spills), and it returns with `s_setpc_b64 s[30:31]`. For a directional light every lane takes the far branch, so s[30:31] ends up pointing at that branch's target and the return jumps back into the function: an infinite loop that a user-mode queue teardown can end (which matches TERM working every time here).
+- The gfx90a build of the same source puts the same 5 long branches through s[84:85]; which pair is picked depends on register allocation, which is why the scene renders on gfx90a. The defect is target-independent (see the reproducer).
+- The remaining long branches of renderSample use s[102:103] and other pairs, never s[30:31]; renderSample is not a leaf and saves s[30:31] in its prologue anyway.
+- Scan of every HIP TU of the library (all 8 `.hip` files, the build's command lines, gfx1201) for a long branch through s[30:31]: at fd2375aa, sampleLight (raycast) and `basic_intersector<default_intersector>::operator()(Ray, dco::ISOSurface)` (raycast and pathtrace, one long branch each); everything else clean. At d7d363b9 only the ISOSurface intersector remains (scan script: `$J/scan_isa.sh`, it compiles each TU with `--cuda-device-only -S` and looks for `s_getpc_b64 s[30:31]` followed by `s_setpc_b64 s[30:31]`).
+
+Why the earlier rounds' leads were wrong: the pinned-memory change (fd2375a) only exposed the defect (before it, any lit world crashed in commit() before a frame, so raycast with a light never ran on HIP); the "wave stuck on memory" lead from round 4 came from a card wedged by overlapping kill -9 runs, not from this loop.
+
+### Fix: d7d363b [ROCm] Inline sampleLight in HIP device code
+
+renderer/common.h: sampleLight is declared `VSNRAY_FORCE_INLINE` (visionaray's `inline __attribute__((always_inline))`) under `__HIP_DEVICE_COMPILE__` and stays `inline` otherwise, with a three-line comment naming the reason, in the same shape as upstream's `#ifdef __CUDACC__ static __noinline__` workaround on getAttribute. CUDA, CPU and the HIP host pass compile exactly as before. Commands:
+```
+git -C projects/anari-visionaray/src commit   # message: see git log d7d363b
+python3 utils/jargon.py --port anari-visionaray   # jargon: clean (after creating a local main tracking origin/main in the fork clone)
+git -C projects/anari-visionaray/src push origin moat-fix-10   # fd2375a..d7d363b, plain push; moat-port untouched at 1b6b35a8
+python3 utils/moatlib.py advance-head anari-visionaray d7d363b99c462653d97ea76a54182e7f58077b38
+```
+Build at d7d363b9: incremental, 0 errors.
+
+Not fixed, recorded: `basic_intersector<ISOSurface>::operator()` (visionaray's template, wrapping this repo's `intersect(Ray, dco::ISOSurface)` in dco/Surface.h) has the same defect on gfx1201 in both renderers. No validated scene has an ISO surface, so it is untested; an ANARI `isosurface` geometry on HIP may hang the same way. Avoiding it in source would mean a custom intersector or an edit in visionaray, which is more than this round should carry; the compiler fix removes it. Compiler options do not help: `-mllvm -amdgpu-long-branch-factor=2` and `=10` leave s[30:31]; `=0` moves the long branches to unsaved callee-saved s[40:45] (a different clobber); -O1 and -O2 keep s[30:31] in the reproducer.
+
+Registered: deferral `amdgpu-long-branch-clobbers-return-address` (rocm-bug-report, component llvm-project-amdgpu) on this project.
+
+### Standalone reproducer (for jeff; not filed)
+
+`lbra.hip` (kept in the job dir as `$J/repro/lbra.hip`). Every lane takes the two-instruction `type == 0` arm; the kernel never finishes because the function's long branches, needed only to jump over the large `type == 8` arm, go through the unsaved return address.
+```cpp
+// Leaf device function whose branches need long-branch expansion.
+#include <hip/hip_runtime.h>
+#include <cstdio>
+
+#define S r = __builtin_fmaf(r, tab[__COUNTER__ & 255], x + (float)__COUNTER__);
+#define S10 S S S S S S S S S S
+#define S100 S10 S10 S10 S10 S10 S10 S10 S10 S10 S10
+#define S1K S100 S100 S100 S100 S100 S100 S100 S100 S100 S100
+#define S10K S1K S1K S1K S1K S1K S1K S1K S1K S1K S1K
+
+__device__ __noinline__ float leaf(int type, float x, const float *tab, const int *u)
+{
+  int s[28];
+#pragma unroll
+  for (int i = 0; i < 28; ++i) s[i] = __builtin_amdgcn_readfirstlane(u[i]);
+  float r = 0.f;
+  if (type == 0) { r = x * 2.f; }
+  else if (type == 1) { S10 }
+  else if (type == 2) { S10 }
+  else if (type == 3) { S10 }
+  else if (type == 4) { S10 }
+  else if (type == 5) { S10 }
+  else if (type == 6) { S10 }
+  else if (type == 7) { S10 }
+  else if (type == 8) { S10K S10K S10K }
+  int acc = 0;
+#pragma unroll
+  for (int i = 0; i < 28; ++i) acc += s[i] * (i + 1);
+  return r + float(acc);
+}
+
+__global__ void k(float *out, const float *tab, const int *u)
+{
+  // u[] is all zero: every lane takes type 0
+  out[threadIdx.x] = leaf(u[64 + threadIdx.x], float(threadIdx.x), tab, u);
+}
+
+int main()
+{
+  float *out, *tab, h[64] = {};
+  int *u;
+  (void)hipMalloc(&out, 64 * sizeof(float));
+  (void)hipMalloc(&tab, 256 * sizeof(float));
+  (void)hipMalloc(&u, 128 * sizeof(int));
+  (void)hipMemset(tab, 0, 256 * sizeof(float));
+  (void)hipMemset(u, 0, 128 * sizeof(int));
+  k<<<1, 64>>>(out, tab, u);
+  hipError_t e = hipDeviceSynchronize();
+  if (e == hipSuccess) e = hipMemcpy(h, out, sizeof(h), hipMemcpyDeviceToHost);
+  printf("%s out[63]=%g (expect 126)\n", hipGetErrorString(e), h[63]);
+  return 0;
+}
+```
+```
+hipcc -O3 --offload-arch=gfx1201 lbra.hip -o lbra            # ~2 min
+hipcc -O3 --offload-arch=gfx1201 --cuda-device-only -S lbra.hip -o lbra.s
+awk '/^_Z4leaf/{p=1} p&&/s_getpc_b64/{print $2} /^.Lfunc_end/{p=0}' lbra.s | sort | uniq -c   # 5 s[30:31]
+timeout -s TERM -k 120 60 ./lbra    # never prints; rc 124 (R9700, gfx1201)
+```
+The control (`type == 8` arm shrunk to `S10`, no long branch) prints `no error out[63]=126 (expect 126)`. Static result of the same file for other targets (same compiler): gfx90a, gfx942, gfx1030, gfx1100, gfx1151, gfx1200 and gfx1201 all put the 5 long branches through s[30:31] with no save; only gfx1201 was run.
+
+### Draft issue (for jeff to review and file; nothing posted)
+
+Repository: ROCm/llvm-project (AMDGPU backend).
+
+Title: AMDGPU: long branch in leaf function clobbers return address s[30:31]
+
+Body:
+
+With AMD clang 24.0.0git (ROCm 10.1.0, ROCm/llvm-project d6f6cb691863), a non-kernel device function that makes no calls and is large enough to need long branches gets those branches expanded through s[30:31], the return address register, without saving it. The function's final `s_setpc_b64 s[30:31]` then jumps to the last long-branch target instead of returning, and the kernel never finishes.
+
+The reproducer below keeps 28 uniform values in low SGPRs and has one arm (`type == 8`) of about 30k instructions; every lane takes the short `type == 0` arm. `hipcc -O3 --offload-arch=gfx1201 --cuda-device-only -S lbra.hip` shows five `s_getpc_b64 s[30:31]` / `s_setpc_b64 s[30:31]` long-branch sequences in `leaf` and no save or restore of s30/s31; the program hangs on a Radeon AI PRO R9700 (gfx1201) and prints the right result when the large arm is shrunk so that no long branch is needed. The same assembly comes out for gfx90a, gfx942, gfx1030, gfx1100, gfx1151 and gfx1200. It also hits real code: the raycast renderer of anari-visionaray hangs on gfx1201 for any scene with a light, in a 108k-instruction out-of-line light-sampling function.
+
+`-mllvm -amdgpu-long-branch-factor=0` avoids s[30:31] but puts the long branches through s[40:45], which are callee-saved and also not saved, so it is not a workaround. Forcing the function inline works.
+
+(reproducer source as above, plus the three commands)
+
+Labels: none known for ROCm/llvm-project; check `gh label list --repo ROCm/llvm-project` before filing.
+
+### Handoff
+
+`set-state anari-visionaray linux-gfx1201 delta-ported` (releases the lock, hands d7d363b9 to the reviewer). Every validated platform owes a run at d7d363b9 (the delta changes device code on every HIP target): linux-gfx90a, linux-gfx1100, windows-gfx1201; linux-gfx1201 is validated below in this job.
+
 ## Fix review PR draft
 
 Title: Merge upstream main into the HIP device PR (#10)

@@ -40,6 +40,19 @@
       "upstream_issue": null,
       "created_at": "2026-11-23T21:24:42Z",
       "decided": null
+    },
+    {
+      "id": "amdgpu-long-branch-clobbers-return-address",
+      "kind": "rocm-bug-report",
+      "component": "llvm-project-amdgpu",
+      "summary": "AMD clang 24.0.0git (ROCm 10.1): in a leaf device function large enough to need long branches, AMDGPU branch relaxation expands them through s[30:31] (the return address) without saving it, so s_setpc_b64 s[30:31] at return jumps back into the function and the kernel never finishes. Seen for gfx1201 sampleLight in the raycast renderer (worked around by forcing it inline on HIP) and still present, unexercised, in basic_intersector<ISOSurface>::operator() on gfx1201; standalone reproducer miscompiles on gfx90a, gfx942, gfx1030, gfx1100, gfx1151, gfx1200, gfx1201. Reproducer and draft issue in notes.md.",
+      "refs": [
+        "projects/anari-visionaray/notes.md#fix-round-moat-fix-10-2026-11-24-round-6"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-24T01:26:35Z",
+      "decided": null
     }
   ]
 }
