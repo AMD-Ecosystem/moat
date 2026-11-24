@@ -2361,3 +2361,51 @@ GPU: AMD Instinct MI250X / MI250 gfx90a, TheRock ROCm SDK 10.1, `HIP_VISIBLE_DEV
 - **Windows (gfx1151 laptop, or gfx1201/gfx1101):** a full run is still owed, as listed under "Owed at 183c2a45" (`TIGRE_BACKEND=hip`, and `build_ext -j 8` should print the one-at-a-time message). codeobj_diff cannot judge PE binaries, so no carry-forward exists there.
 - gfx942: still blocked (texture API). linux-gfx1201 and linux-gfx90a: done at 719b396f.
 - For jeff: when the 12.8 check passes, the retest paragraph's CUDA sentence can say that every CUDA kernel matches master 6beb8c38. The reply makes no CUDA claim and needs no change. The pre-existing `cuda_to_hip.h` comment item is under "Review 2026-11-24 (... 183c2a45..719b396f ...)".
+
+## CUDA compile check (nvcc 12.8) at 719b396f
+
+Compile-only helper run (fleet job on the mi355 host: CUDA 12.8 toolkit, no NVIDIA GPU; nothing run on any GPU), requested by jeff. No platform state changed. Answers "nvcc 12.8 compile check (mi355 host)" under "Owed at 719b396f". Result: **the CUDA build passes at 719b396f: rc 0, 8/8 extensions, 833 ptxas entry functions, the same as upstream master 6beb8c38. nvcc and host warnings are identical per compile; the port adds no error and no warning. Every CUDA kernel's SASS is identical to master's on all 17 targets, `kernelPixelDetector<0/1>` included on sm_50 to sm_90. The only difference is the anonymous-namespace kernel-name hash in GD_AwTV and PICCS. The `.nv_fatbin` section of ray_interpolated_projection.o is byte-identical to master's.** The difference recorded at 183c2a45 is gone, so this round did what it set out to do.
+
+Toolchain: as at 183c2a45. nvcc `release 12.8, V12.8.93`, gcc 13.3.0, Python 3.11.17, numpy 1.26.4, Cython 3.3.1 (pip-installed into the job venv), setuptools 79.0.1, 17 `-gencode` pairs per `.cu` (sm_50 to sm_120). `nvdisasm` 12.8.90 is the job-local `dpkg -x` copy from the 183c2a45 check, copied under this job's directory and found through `NVDISASM_PATH`/PATH, not installed.
+
+Commands: `head` is a fresh clone of AMD-Ecosystem/TIGRE detached at 719b396fed5a5be993c96aa9a48d3a8d75943eb9 (fetched from `moat-fix-747`). `base` is a local clone detached at 6beb8c38029d2fd87f27a13ec98157c6e04121d7. The two built one after the other at `-j 16` each (host cap 16), not wrapped in `timeit.sh`. TIGRE_BACKEND, TIGRE_CUDA_ARCH and MAX_JOBS were unset, and both logs print `TIGRE: building the cuda backend (CUDA_HOME is set).`
+```
+export CUDA_HOME=/usr/local/cuda-12.8 PATH=/usr/local/cuda-12.8/bin:$PATH
+cd base && $FLEET_VENV/bin/python setup.py build_ext --inplace -j 16 > ../base.log 2>&1   # rc=0
+cd head && $FLEET_VENV/bin/python setup.py build_ext --inplace -j 16 > ../head.log 2>&1   # rc=0
+```
+
+| tree | rc | extensions built | nvcc compiles | `-std` on nvcc lines | ptxas entry functions | error diagnostics |
+|---|---|---|---|---|---|---|
+| base 6beb8c38 | 0 | 8/8 | 21 (13 unique `.cu`) | 21x `-std=c++11` | 833 | 0 |
+| head 719b396f | 0 | 8/8 | 22 (13 unique `.cu`) | 22x `-std=c++11` | 833 | 0 |
+
+- Both trees build the same extensions: `_Atb _AwminTV _Ax _RandomNumberGenerator _gpuUtils _minPICCS _minTV _tv_proximal`. The extra nvcc compile is `gpuUtils.cu` (8x vs 7x), which the port adds to `_Ax`. The `_Ax` link line differs only by `gpuUtils.o`, and the two trees run the same 14 distinct nvcc command lines.
+- Every compiler warning, by tree (base / head), identical per compile:
+  - nvcc `#550-D` (`err` set but never used) in gpuUtils.cu: 238 / 272 lines, i.e. 17 per compile at each of two lines x 7 / 8 compiles. The lines are 37/58 in base and 156/177 in head, moved by the port's code above them. The `-diag-suppress` remark follows each: 119 / 136.
+  - nvcc driver: `architectures prior to '<compute/sm/lto>_75' will be removed`, once per compile, 21 / 22.
+  - g++: GpuIds.cpp `malloc` result ignored (7 / 7), TIGRE_common.cpp zero-length gnu_printf format (7 / 7), `_randomNumberGenerator.cpp` unused `__pyx_v_imgsize` (2 / 2), and NumPy deprecated API `#warning` (8 / 8).
+  - Neither log contains `hipcc`, `USE_HIP`, `c++14`, `offload-arch` or "AMD GPU".
+- After dropping ptxas resource lines, copy/create lines, blank lines and the repeated warning text, the sorted unique logs differ in two lines only: one Cython include line number (`_Ax.cpp:1326` vs `:1327`) and the `_Ax` link line.
+
+Device code, per object. `cuobjdump -sass` of each `.o` was parsed per (arch, kernel) and compared instruction by instruction, ignoring encodings, addresses and padding. `.nv_fatbin` sections were also extracted (`objcopy --only-section=.nv_fatbin`) and compared byte for byte:
+
+| object | kernel images (base = head) | SASS | `.nv_fatbin` |
+|---|---|---|---|
+| GD_AwTV | 17 | identical; name hash only (`_GLOBAL__N__82eb3377` vs `__feb121b5`) | byte-identical once the 8-hex-digit hash is substituted (216 occurrences, same length) |
+| GD_TV | 102 | identical | byte-identical |
+| PICCS | 17 | identical; name hash only (`_GLOBAL__N__de3a1e03` vs `__f09d04d3`) | byte-identical once the hash is substituted (216 occurrences) |
+| RandomNumberGenerator | 51 | identical | byte-identical |
+| Siddon_projection | 68 | identical | byte-identical |
+| Siddon_projection_parallel | 68 | identical | byte-identical |
+| ray_interpolated_projection | 51 | **identical**, `kernelPixelDetector<0/1>` on all 17 targets (e.g. sm_80 448 = 448, sm_50 462 = 462 instructions) | **byte-identical** |
+| ray_interpolated_projection_parallel | 34 | identical | byte-identical |
+| tv_proximal | 51 | identical | byte-identical |
+| voxel_backprojection | 68 | identical | byte-identical |
+| voxel_backprojection2 | 85 | identical | byte-identical |
+| voxel_backprojection_parallel | 17 | identical | byte-identical |
+| gpuUtils | 0 (no kernels) | -- | byte-identical |
+
+GpuIds, TIGRE_common and projection have no device code (`cuobjdump`: "does not contain device code"). Apart from the two allowed name hashes, nothing differs, so no file needed the rebuild-twice test for run-to-run variation. The fatbins also embed the PTX, which is therefore identical too, and this agrees with the porter's nvcc 13.5 PTX check.
+
+The CUDA compile gate is satisfied at 719b396f. No CUDA runtime behavior is claimed (no NVIDIA GPU). For jeff, the retest paragraph's CUDA sentence: "nvcc 12.8: all 8 extensions build with the same warnings per compile as master 6beb8c38, and every CUDA kernel compiles to the same instructions as master on all 17 targets."
