@@ -569,3 +569,36 @@ Job dir `/var/lib/jenkins/fleet/jobs/mi300c-20261124-112348-fix4-wenet-prompt`. 
 - `dfbc15f`: its runtime README said "set `ROCM_PATH`", which reads as a CMake option; only the exported environment variable works (22ca0ec).
 
 `python3 utils/jargon.py --port wenet`: clean. `utils/prose.py` on the message: clean. ASCII only in the message.
+
+## Review 2026-11-24 (round 5: linux-gfx942 fleet job, reviewer, delta dfbc15f..22ca0ec)
+
+Verdict: **changes requested** (2 findings plus one wording slip; none in the fork code that 22ca0ec changed, and nothing regressed). Per jeff's ruling after review round 4, the findings are recorded and the job stops here. No validation was run or recorded; Jeff decides next. The same job wrote the delta as porter, so an independent child agent reviewed it first (report `agent_space/review-child/findings-22ca0ec.md`, reproductions in `review-child/p5`, `review-child/x3c`). Each point below was then re-checked by hand, and finding 1 was reproduced again in `agent_space/review-mine`.
+
+Checked and clean:
+- **The five round-4 findings are fixed as stated.**
+  1. README EN `:83-84` and CN `:46` say to export the environment variable; the 7.2.4 wheel's `LoadHIP.cmake:8-25` reads only `$ENV{ROCM_PATH}`.
+  2. The corrections are recorded. The real-tree `plain-1.unset-cache` and `link-1.unset-cache` have 0 lines naming the wheel, and `extra-entries.txt` holds 80 HIP/ROCm entries (about half are `-ADVANCED` internals).
+  3. `QUIET` is dropped (`libtorch.cmake:65`) and the error text is at `:70-73`. The child reran P5 on CMake 3.31.6 and 3.14.4. `FindPackageHandleStandardArgs.cmake:259-263` only reads `<Pkg>_NOT_FOUND_MESSAGE`, never sets it, so the reason for not appending it holds.
+  4. `CAFFE2_NVRTC_LIBRARY` is added. The seven names match the 2.8 TorchConfig (lines 70/125/130/137/147) and the 2.2.0 one (142/159/170) for a shared LibTorch.
+  5. L2b and L5b are `local1` in both result tables, and the tables are identical.
+- **The download branch is upstream's bytes.** `git diff be6ad97 22ca0ec` shows only the declaration, the new branch, and `if(NOT IOS)` -> `elseif(NOT IOS)`.
+- **The real-tree evidence is consistent.** The tree copy is byte-identical to 22ca0ec for the three files; the b5/b6 base-file runs match the body; `decoder_main` NEEDs `libtorch_hip.so`; the five binaries and the `test/` executables exist.
+- **The commit message follows the rules.** Title 67 chars, AI disclosure, no trailer, ASCII; `jargon.py --port wenet` is clean.
+
+1. **The stuck build directory after a local LibTorch that fails fatally is fixable inside the ruling, contrary to the porter's note, and until it is fixed `runtime/libtorch/README.md:79-80` (and CN) is wrong for that case.** The symptom is as Porter round 5 recorded it, at dfbc15f and at 22ca0ec. With the wheel's `share/` but no libraries, `Caffe2Targets.cmake:150` stops configure inside `find_package`. `Torch_DIR` and `Caffe2_DIR` stay cached pointing at the broken copy, and `-DLIBTORCH_PATH=` (or `-ULIBTORCH_PATH`) then fails the same way. That contradicts the README's "set `-DLIBTORCH_PATH=` to go back to the download". A damaged or partial LibTorch is the realistic failure on the ROCm route.
+
+   The porter's premise ("a fix would have to act in the download branch") is false. CMake still writes the cache when configure stops on an error, so a marker survives the failure. The fix touches only the option's own code:
+   - right before the option's `find_package`, `set(_LIBTORCH_PATH_LOADING ON CACHE INTERNAL "")`;
+   - after the second cleanup loop, `unset(_LIBTORCH_PATH_LOADING CACHE)`;
+   - before the `if(NOT IOS AND LIBTORCH_PATH)` branch, when `NOT LIBTORCH_PATH AND _LIBTORCH_PATH_LOADING`, unset the seven entries and the marker.
+
+   Reproduced on a tree copy (`agent_space/review-mine`, real tree, ROCm 7.2.4 prefix): 22ca0ec, broken then `-DLIBTORCH_PATH=`, gives rc 1 then rc 1; with the marker, rc 1 then rc 0 and `Found Torch: <fc_base>/libtorch-src/lib/libtorch.so`. The download lines are unchanged. The child reproduced the same with a stand-in whose `Caffe2Config.cmake` calls `FATAL_ERROR`.
+
+   Fix: add the marker. Add the case (a broken LibTorch, then `-DLIBTORCH_PATH=`, `-ULIBTORCH_PATH`, and a corrected value) to the simulation and the real tree on both CMake versions, re-run all cases, and drop the "One case still needs a fresh build directory" paragraph from the next commit's body. Record the 22ca0ec body correction, and correct the "Found this round" item in Porter round 5. If jeff prefers to ship 22ca0ec as is, the README needs a sentence that a build directory where a broken `LIBTORCH_PATH` failed must be deleted before downloading.
+2. **Lesson "a local-package option must be a variable only the user sets" (`notes.md:373`): "so the user needs a fresh build directory in that case" overstates.** It is avoidable with the marker of finding 1. Before promotion, replace the clause with that technique: cache an INTERNAL marker before loading, clear it after the cleanup, and at the top clear the package's entries when the marker is set and the variable is empty.
+
+Wording slip (fix in the next commit's Test Plan, not a separate finding): 22ca0ec's Test Plan reads "plus two local stand-in LibTorch directories, one without a config file, and one with a config file but no libraries". The simulation has four local directories: two good stand-ins (local1, local2), one without a config file, and one with a config but no libraries.
+
+Not a finding: the INTERNAL `FIND_PACKAGE_MESSAGE_DETAILS_Torch` left naming the wheel after a failed download is harmless, and the commit body describes it.
+
+Still owed elsewhere regardless: the CUDA configure/build check of the option (this host has no nvcc). Files the delta since be6ad97 touches, for that recheck: `runtime/core/cmake/libtorch.cmake`, `runtime/libtorch/README.md`, `runtime/libtorch/README_CN.md` (22ca0ec), plus the earlier `README.md`, `docs/python_package.md`, `runtime/gpu/README.md`, `wenet/bin/export_onnx_gpu.py`, `wenet/bin/recognize_onnx_gpu.py`.
