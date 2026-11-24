@@ -717,3 +717,33 @@ flash-attn >= 2.8.4 also supports gfx11/gfx12 in its default composable_kernel b
 ## Lesson for cuda-to-rocm: flash-attn main's Triton backend cannot be imported without a GPU (aiter before b1cdc19eb)
 
 Belongs in libraries.md (FlashAttention on ROCm). flash-attn's main branch takes its Triton AMD backend from ROCm/aiter (submodule `third_party/aiter`). With the aiter it pinned as of 2026-11 (`f0966b0a`), importing flash-attn in a process that sees no GPU fails: aiter's `arch_info.py` queries Triton's active driver at import (`RuntimeError: 0 active drivers`) and falls back to importing jax. Anything that imports flash-attn indirectly breaks too, for example diffusers, so a CPU-only test job of a project that depends on diffusers fails at collection. Unsetting `FLASH_ATTENTION_TRITON_AMD_ENABLE` does not avoid it, because flash-attn main falls back to the Triton backend when its compiled CK module is missing. aiter fixed it in `b1cdc19eb` (2026-10-08). Until flash-attn bumps its submodule, run GPU-less jobs without flash-attn main installed, or install a newer aiter with `FLASH_ATTENTION_USE_SYSTEM_AITER=TRUE`. (ColossalAI)
+
+## CUDA recheck at 632c6026 2026-11-24 (linux-gfx950 fleet job with NVIDIA nvcc 12.8, no GPU used, fork `moat-port` at `632c6026`, compared with `e2b767e8`)
+
+Verdict: **pass, no CUDA regression; no rebuild needed.** `git diff --stat e2b767e8..632c6026` in a fresh clone of the fork (two commits, `f780f7ea` and `632c6026`) touches only `colossalai/kernel/kernel_loader.py` (+26/-1), `tests/test_shardformer/test_layer/test_attention_backends.py` (+54/-1), `README.md` (+11) and `docs/source/en/get_started/installation.md` (+11). None of them is compiled by the CUDA extension build (nothing under `extensions/`, no `setup.py`), so the nvcc result of "CUDA compile check 2026-11-24" at `e2b767e8` stands. On a CUDA torch, attention backend selection is identical to `e2b767e8` in every case tried, and the new flash-attn >= 2.8.4 gate never runs. No GPU was touched (`CUDA_VISIBLE_DEVICES=`, `HIP_VISIBLE_DEVICES=`, `ROCR_VISIBLE_DEVICES=` for every run). Nothing in the fork was changed or pushed; stage and lock untouched.
+
+Static reading: the only caller of the new `_rocm_flash_attention_triton_support()` is `_rocm_flash_attention_support(q)`, and only on its Triton-arch branch; that function is called from `_flash_attention_support` only under `if torch.version.hip is not None:`, which is False on a CUDA build. The new `PackageNotFoundError` import is used only inside the new function.
+
+Environment: job venv, Python 3.11.17, `torch==2.11.0+cu128` (`torch.version.cuda` 12.8, `torch.version.hip` None) installed with `pip install "torch==2.11.0+cu128" --index-url https://download.pytorch.org/whl/cu128 --extra-index-url https://pypi.org/simple`, then `pip install -c constraints.txt -r requirements/requirements.txt pytest` (constraint `torch==2.11.0+cu128`; brings transformers 5.17.0, peft 0.21.2, diffusers 0.35.2) so that `colossalai.shardformer.layer.attn` imports. No real flash-attn installed. Two detached worktrees of the fork clone, `e2b767e8` and `632c6026`, each imported from its own path (`python -I`, checkout first on `sys.path`, asserted via `kernel_loader.__file__`).
+
+How the device and packages were faked:
+
+- Device: `ColoAttention._select_backend` was called with a stand-in Q/V object carrying `device=torch.device("cuda", 0)`, `dtype` and `shape` (no tensor is allocated), with `torch.cuda.get_device_capability` patched to return SM 7.5, 8.0, 8.9, 9.0, 10.0 or 12.0 and `torch.cuda.get_device_properties` patched to raise (it is the ROCm path's arch query; it was never called). `_rocm_flash_attention_support` was wrapped with a call counter.
+- flash-attn: a throwaway directory put first on `sys.path` holding `flash_attn-<ver>.dist-info/METADATA` (`Name: flash_attn`, `Version: <ver>`, the layout of NVIDIA's wheel) and a `flash_attn/__init__.py` that raises on import, so `find_spec("flash_attn")` and `importlib.metadata.version("flash-attn")` see the version and any real import would fail loudly (none happened; selection never loads the backend). Versions: none, 2.0.9 (below the existing 2.1 floor), 2.8.3, 2.8.3.post2, 2.8.4, 2.9.0, and 2.8.3.post2 plus a `flash_attn_3` package stub.
+- Requests: fp16 head dim 64 non-causal, and bf16 head dim 128 causal lower-right with dropout 0.1; backends `auto`, `fa2`, `fa3`, `sdpa`; each with `FLASH_ATTENTION_TRITON_AMD_ENABLE` unset and `=TRUE`. 96 cases per run, 7 package scenarios, base and head.
+
+Results (`agent_space` probe `select_probe.py`, outputs diffed as JSON):
+
+| flash-attn present | base vs head | `auto` at SM 7.5 / 8.0 / 9.0 / 12.0 (fp16 d64) | warnings (head) |
+|---|---|---|---|
+| none | identical (96/96) | sdpa / sdpa / sdpa / sdpa | 0 |
+| 2.0.9 | identical | sdpa everywhere (existing 2.1 floor) | 0 |
+| 2.8.3 | identical | sdpa / fa2 / fa2 / fa2 | 0 |
+| **2.8.3.post2** | identical | sdpa / fa2 / fa2 / fa2 | 0 |
+| 2.8.4 | identical | sdpa / fa2 / fa2 / fa2 | 0 |
+| 2.9.0 | identical | sdpa / fa2 / fa2 / fa2 | 0 |
+| 2.8.3.post2 + flash_attn_3 | identical | sdpa / fa2 / **fa3** / fa2 | 0 |
+
+Strict `fa2` returns fa2 at SM >= 8.0 and raises "requires an Ampere or newer GPU" at 7.5; strict `fa3` returns fa3 only at SM 9.0; both identical in base and head. `FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE` changes no CUDA selection. In every head run `_rocm_flash_attention_support` was called 0 times and the new gate's `lru_cache` reported `hits=0, misses=0`: the version gate did not fire for NVIDIA's flash-attn 2.8.3.post2 or any other version. Positive control: calling head's `_rocm_flash_attention_triton_support()` directly with the faked 2.8.3.post2 metadata returns the "requires flash-attn >= 2.8.4 ..." reason with one warning, and with 2.8.4 returns None, so the fake metadata is what the gate reads.
+
+CPU tests under the CUDA torch, no flash-attn installed: `python -m pytest -q -p no:cacheprovider tests/test_shardformer/test_layer/test_attention_backends.py -k 'not gpu'`: base `e2b767e8` 87 passed, 568 deselected; head `632c6026` 94 passed, 568 deselected (the 7 extra are the new tests from the two commits).
