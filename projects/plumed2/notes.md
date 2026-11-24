@@ -1423,6 +1423,21 @@ git fetch --depth=50 upstream b2f31c27c48c318afd9bca6d56651b42c3396089 && git ch
 ./configure --prefix=<job>/deps/plumed CXX=mpicxx CC=mpicc
 make -j64 && make install
 export PATH=<plumed>/bin:<mpich>/bin:$PATH PLUMED_KERNEL=<plumed>/lib/libplumedKernel.so LD_LIBRARY_PATH=<plumed>/lib:<mpich>/lib:$LD_LIBRARY_PATH
+## Maintainer pull request 1677 checked on linux-gfx1201 (2026-11-24)
+
+Evidence for a reply, not a pipeline round: no stage, platform record or lock changed, nothing pushed to the fork, `moat-fix-1648` untouched, no GitHub write (read-only `gh pr view`/`gh pr checks` only).
+
+What was checked: https://github.com/plumed/plumed2/pull/1677 "HIP build of cudaCoord (supersedes #1648)", branch `hip-cudacoord`, head `b2f31c27c48c318afd9bca6d56651b42c3396089` (open, mergeStateStatus CLEAN, MERGEABLE when checked). Base `723df462c` (on upstream master). It carries our `106a94ce2` and `e1650140b` and his `ad078d2d9`, `64a64132c`, `74f8a93a1`, `56f3b0080`, `b2f31c27c`. His CI on that head: `cudaCoord-hip (6.2.4)` pass, `cudaCoord-hip (7.2.4)` pass, `cudaCoord` (nvcc) pass. Against our staging tip `43ff1a58e`, in plugins/ the only differences are his commits; his `56f3b0080` carries the same `HIP_VISIBLE_DEVICES=-1` line as our `43ff1a58e`, with a shorter comment.
+
+Host: AMD Radeon AI PRO R9700 (gfx1201, wavefront size 32 per rocminfo). The dispatcher pinned `HIP_VISIBLE_DEVICES=1,2`; every GPU command was given `HIP_VISIBLE_DEVICES=1,2` explicitly and ran under `ulimit -c 0`, so two GPUs were visible (devices 0 and 1 to the programs). Toolchain as in our earlier gfx1201 runs: ROCm 10.1 Python wheels (HIP 7.16.26385, AMD clang 24.0.0git), g++ 13.3.0, MPICH 4.2.3 built from source in the job directory (`--disable-fortran --with-device=ch3 --enable-fast=O2`).
+
+### Build, as the plugin README at b2f31c27c says
+
+Scratch clone of plumed/plumed2, detached at `b2f31c27c`. PLUMED from that same tree (the README says to build from the plugin directory of a PLUMED source tree):
+```bash
+./configure --prefix=<job>/deps/plumed CXX=mpicxx CC=mpicc
+make -j12 && make install
+export PATH=<plumed>/bin:<mpich>/bin:$PATH LD_LIBRARY_PATH=<plumed>/lib:<mpich>/lib:$LD_LIBRARY_PATH
 cd plugins/cudaCoord
 USE_HIP=1 ./configure.sh
 make USE_HIP=1
@@ -1494,4 +1509,59 @@ Artifacts (job directory, not committed): logs of every command above, the launc
 
 ====
 I ran your branch at b2f31c27 on a node with two MI300X GPUs (gfx942), building PLUMED with MPI and the plugin exactly as the README says (`USE_HIP=1 ./configure.sh`, `make USE_HIP=1`): `make USE_HIP=1 check` passes all 35 tests, `make USE_HIP=1 check-nogpu` passes, and `make USE_HIP=1 check-gpu` passes in both follow and md mode, with a kernel trace confirming the kernels run on the caller's GPU (follow) or on GPU 0 (md). The device rule of ad078d2d works as described: follow mode now also passes with `SLURM_LOCALID=0` or `OMPI_COMM_WORLD_LOCAL_RANK=0` set, where #1648 merged with master picked GPU 0 from the rank and failed. One small correction: the warp-sync builtins stay opt-in through ROCm 6.4 and are enabled by default only from ROCm 7.0, so the comment in cuda_to_hip.cuh should say 7.0 instead of 6.3 (the code is fine, since the macro is always defined).
+- The README's HIP lines work as written, with one gap that is upstream's and older than the HIP work: `configure.sh` needs `PLUMED_KERNEL` set, and the README does not say so ("With a ready to run plumed in your path"). With it unset, `USE_HIP=1 ./configure.sh` prints "configure.sh can work only if "PLUMED_KERNEL" is defined" but exits 0 and writes `PLUMED_KERNEL= -Xlinker -rpath=.` into Makefile.conf. With `PLUMED_KERNEL=<plumed>/lib/libplumedKernel.so` (as our recipe always set it) configure.sh rc 0, and it adds `CPPFLAGS+=-I<mpich>/include` from the mpi.h probe.
+- `make USE_HIP=1`: rc 0, 8 s. 88 warnings, the known set (84 nodiscard `hipError_t` -Wunused-value, 4 -Wreorder-ctor). NEEDED libamdhip64.so.7 and libplumedKernel.so (plus PLUMED's zlib/FFTW/LAPACK/BLAS), SONAME CudaCoordination.so, FLAGS_1 NODELETE.
+- Differences from our validations: no `HIP_ARCHITECTURES`, so `--offload-arch=native`. `amdgpu-arch` listed gfx1201 four times (it enumerates through HSA and ignores the HIP pin; it returned at once, no hang). The bundle holds only `hip-amdgcn-amd-amdhsa--gfx1201`. PLUMED was built from the PR tree (base `723df462c`) rather than from `b930e84be`; `src/core/GpuDevice.{h,cpp}` are identical in the two.
+- Device code: the gfx1201 code object of this build and of our staging tip `43ff1a58e` (scratch worktree, same PLUMED install, same command) is byte-identical (sha256 `038135e6eae4...`, 24 kernels). So `64a64132c` (the warp-sync define) and the rename change no device code on this toolchain, and the THREADS=32 and debug-assertion (`__hip_check_mask`) runs recorded for `43ff1a58e` on this platform describe these kernels too.
+
+### Tests
+
+```bash
+HIP_VISIBLE_DEVICES=1,2 make USE_HIP=1 check
+HIP_VISIBLE_DEVICES=1,2 make USE_HIP=1 check-nogpu
+HIP_VISIBLE_DEVICES=1,2 make USE_HIP=1 check-gpu
+```
+
+| | b2f31c27c (this run, 2 GPUs) | 43ff1a58e on this platform (validation above, 1 GPU) |
+|---|---|---|
+| `make USE_HIP=1 check` | rc 0, "35 tests performed, 0 tests not applicable, 0 errors found", checkfail the same; cudatest 13, cudatestPair 8, cudatestWB 12 (rt-double-orthopbc-mpi "Running over 2 nodes"), nogpu 2 (rt-no-gpu: 5x "stopped with an error" with HIP_VISIBLE_DEVICES set) | the same 35, 0 errors |
+| `make USE_HIP=1 check-nogpu` | rc 0, "+ the tests that do not need a GPU passed" | the same |
+| `check-gpu` follow | 17/17 OK, "follow: 0 failure(s)", caller on GPU 1, log "c runs on GPU 1 (the GPU the MD code is using)" | 17/17 OK with one GPU (caller on GPU 0) |
+| `check-gpu` md | 17/17 OK, "md: 0 failure(s)", caller on GPU 1, `setGpuDeviceId 0`, log "c runs on GPU 0 (assigned by the MD code)" | SKIP, one GPU |
+
+Wall time of `check`: 23 s. Every regtest log line reads "runs on GPU 0 (the GPU the MD code is using)" (153 lines): with `plumed driver` nothing selects a device, so `hipGetDevice()` gives 0 and rule 2 applies.
+
+### ad078d2d9: does the device rule behave as the commit and README say
+
+Claim: with HIP, `chooseGPU` takes `hipGetDevice()` as the caller's GPU (rule 2), so the rank rule is never used, and without an MD code every process uses the first GPU unless `HIP_VISIBLE_DEVICES` separates them.
+
+Measured with gpucheck `device_check` (one process; it calls `hipSetDevice(1)`, the last visible GPU, and allocates there before PLUMED and the plugin are created), `HIP_VISIBLE_DEVICES=1,2`, `PLUMED_KERNEL=<plumed>/lib/libplumedKernel.so PLUMED_LOAD_NAMESPACE=GLOBAL ./device_check <mode> <plugin>`, with and without the launcher variables that trigger the rank rule. For the comparison the same was run with the plugin and device_check built from our staging tip `43ff1a58e` (same PLUMED):
+
+| environment | mode | b2f31c27c | 43ff1a58e |
+|---|---|---|---|
+| none | follow | pass, "c runs on GPU 1 (the GPU the MD code is using)" | pass, "c runs on GPU 1 (the default)" |
+| none | md | pass, GPU 0 (assigned by the MD code) | pass, same |
+| `SLURM_LOCALID=0` | follow | pass, GPU 1 (the GPU the MD code is using) | FAIL (1 failure), "c runs on GPU 0 (process 0 of the node, from SLURM_LOCALID, with 2 GPUs)" |
+| `SLURM_LOCALID=0` | md | pass, GPU 0 (assigned) | pass |
+| `OMPI_COMM_WORLD_LOCAL_RANK=0` | follow | pass, GPU 1 (the GPU the MD code is using) | FAIL, "process 0 of the node, from OMPI_COMM_WORLD_LOCAL_RANK" |
+| `OMPI_COMM_WORLD_LOCAL_RANK=0` | md | pass, GPU 0 (assigned) | pass |
+| `PMI_LOCAL_RANK=0` | follow / md | pass / pass (GPU 1 / GPU 0) | not run |
+
+Verdict: on this host `ad078d2d9` behaves as its message and README say. A non-zero device set by the caller before the plugin is created is followed, also when a launcher's local-rank variable is set, and `setGpuDeviceId` still wins. It fixes the multi-GPU launcher case our review of the fix round raised (option (c) there; the maintainer chose to do it in the plugin, not in core). Consequence, as his message says: on HIP the cudaCoord rules 3 to 5 (environment, local rank, default) are never reached, because `hipGetDevice()` always returns a device. Not measured: several `mpirun` ranks of `plumed driver` on several GPUs (the README says they all use GPU 0; with MPI only the first rank uses the GPU anyway).
+
+### pr-review, AMD-specific only, of ad078d2d9, 64a64132c, 56f3b0080, b2f31c27c
+
+Checked and nothing to report: wave32/wave64 (`warpMask()` and the width-32 shuffles are ours, unchanged; `__shfl_down_sync` gets a 64-bit mask as ROCm 6.2's sync shuffles require); the warp-sync define sits before the first `hip/hip_runtime.h` in every translation unit (Coordination.cu includes only PLUMED headers before cudaHelpers.cuh, device_check.cpp only Plumed.h; hipcc pre-includes only `__clang_hip_runtime_wrapper.h`, which does not include hip_runtime.h), and his 6.2.4 CI job compiles it; header rename: no `cuda_to_hip.h` left anywhere in the tree (`grep -rn 'cuda_to_hip\.h\b'` empty), include guards renamed consistently, gpucheck's `-I.../cudaCoord/src` still finds it.
+
+Findings (report only, not fixed):
+1. The HIP CI job compiles only wave64 targets (`HIP_ARCHITECTURES: "gfx90a gfx942"`, `.github/workflows/gpuPluginsWF.yml`). The wave32 instantiation (RDNA, gfx1100/gfx1201, where hipCUB/rocPRIM take different code paths) is never compiled in CI. Adding `gfx1100` to the list would cover it at compile cost only. Low severity: the wave32 build passes here.
+2. README test text for HIP: the HIP paragraph names `make USE_HIP=1 check` and `make USE_HIP=1 check-gpu` but not `make USE_HIP=1 check-nogpu`, and "How to tests" lists plain `make check-nogpu`, which on a tree without a built plugin compiles with nvcc. His CI uses the right `make USE_HIP=1 check-nogpu`. Docs only (the same point our fix-round review made as option (a)).
+3. Minor wording, `regtest/nogpu/rt-no-gpu/config`: his comment "hidden with CUDA_VISIBLE_DEVICES (HIP_VISIBLE_DEVICES for the HIP build)" drops why both are set (HIP honours `CUDA_VISIBLE_DEVICES` too, but ignores it when `HIP_VISIBLE_DEVICES` is set), and the sentence is broken across lines oddly. Behaviour is correct (5/5 "stopped with an error" here with `HIP_VISIBLE_DEVICES=1,2` in the environment).
+
+Not tested here: ROCm 6.2 (no install on this host; his CI compiles with 6.2.4 and 7.2.4 and passes), and the CUDA path (no nvcc here; his `cudaCoord` nvcc job passes, and `ad078d2d9` leaves the CUDA branch of `chooseGPU` as it was).
+
+### Draft reply for #1677 (for jeff to approve and post; nothing was posted)
+
+====
+I built this branch (b2f31c27) on an AMD Radeon AI PRO R9700 (gfx1201, RDNA4, 32-wide wavefronts) with ROCm 10.1, following the README (`USE_HIP=1 ./configure.sh`, `make USE_HIP=1`), and with two GPUs visible `make USE_HIP=1 check` passes all 35 tests, `make USE_HIP=1 check-nogpu` passes, and `make USE_HIP=1 check-gpu` passes in both follow and md mode. I also checked the device rule from ad078d2d: with the caller on GPU 1 and SLURM_LOCALID or OMPI_COMM_WORLD_LOCAL_RANK set, the action now runs on GPU 1 ("the GPU the MD code is using"), where #1648 picked GPU 0 from the rank and failed follow mode. One small suggestion: the HIP CI job compiles only for gfx90a and gfx942 (64-wide wavefronts), so adding a 32-wide target such as gfx1100 to `HIP_ARCHITECTURES` would also cover the RDNA build.
 ====
