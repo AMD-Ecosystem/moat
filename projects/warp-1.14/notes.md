@@ -7344,3 +7344,11 @@ Runs: `TREE=<tree> r.sh <tag> twice.py <out.json> [nofuse]`, `r.sh <tag> user2.p
 ### Next step
 
 jeff rules among section 4's options (and, before that, the coordinator's NVIDIA run of `twice.py`/`hel.py`/`user2.py` and a winding-number timing on another arch would inform it). Then a porter applies the ruled change (the patch above, or the option string), runs this session's test table and the full suite on gfx90a, commits with the usual rules, and `advance-head`s; gfx90a revalidates. The work lock is held by this job (stage `porting`) and is released by that round's `ported` transition; the next porter resumes it per the rule for a stopped holder.
+
+## Coordinator note (2026-11-24): the twice-evaluated inconsistency does not appear on CUDA; evidence jobs dispatched
+
+Follows "Porting session 33". jeff is away; nothing here is a ruling.
+
+- NVIDIA check (Tesla V100-SXM2-32GB, driver 575.57.08, upstream `warp-lang==1.14.0` from PyPI, usd-core, one bounded `srun`): session 33's `user2.py` gives 0 of 4,194,304 for `box_d2`, `det2` and `dot`, default and `nofuse`. `sn.py` (coordinator script: `mesh_query_point_sign_normal` out-parameter form then struct form in one kernel with an eval and a store between, on a 24x24x24 grid cube surface, 232,768 points, leaf 1/2/4 x sah/median/lbvh; and `intersect_tri_tri` twice on 232,768 random triangle pairs, 55,961 hits) gives 0 of 2,094,912 and 0 of 232,768, default and `nofuse`. Upstream `test_mesh_query_point.py`: 9 OK. So in every case measured, the inconsistency session 33 found on gfx90a is HIP-only; session 33's hypothesis about NVVM's fusion heuristic is consistent with this but the cause on the NVIDIA side was not examined.
+- Dispatched, evidence only (no fork commit, no state change): the same consistency checks, session 33's `twice.py` and `perf2.py`, the example benchmarks and a full suite on a scratch tree with hipRTC `-ffp-contract=on`, against 4e0d02ab, on gfx942, gfx950, gfx1100 and gfx1201; and on gfx90a the example benchmarks and full suite under `on`. The gfx950 turn also gives the first suite result on gfx950 at 4e0d02ab (the validator job there failed at fleet setup).
+- The stage stays `porting` with the gfx90a porter job holding the lock until jeff rules on session 33's options.
