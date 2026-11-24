@@ -9184,3 +9184,99 @@ nvcc check (both commits): `cuda_pp.sh` (nvcc 12.8) of `b51b1987` against `2ce30
 - Coordinator: re-run `test_tile_matmul.py` on the V100 with libmathdx (expected: block_dim 32, 48, 64, 96 for the three float fragment tests; bf16 skipped there).
 - Jeff: question 13 (fast_math, session 29) and closing deferred item `warp-hip-gfx1250-fp32-wmma`.
 - Validators revalidate at `2ce30148`.
+
+## Review 2026-11-23, third round (linux-gfx950 MI355X, reviewer): `3c6714b8..2ce30148`
+
+Scope: porting sessions 29 and 30 on `release/1.14.0.amd0` (`b51b1987` RUNPATH option, `e9644bf1` gfx1250 fp32 WMMA, `2ce30148` fragment test block sizes on non-HIP devices), reviewed with the pr-review skill, plus the three items jeff has ruled the porter still owes. Every finding below was checked again against the code or a compiler run. Lock taken with `set-state warp-1.14 linux-gfx950 reviewing` from `ported`. Tools: ROCm 10.2 clang and hipRTC (AMD clang 24.0.0git, `bdc35841`) from the porter job's `_rocm_sdk_devel`/`_rocm_sdk_core`, used read-only. Fresh fork clone at `2ce30148`, built with that SDK (`build_lib.py --rocm-path <root>`). One `ctypes` load ran with the GPU pin `HIP_VISIBLE_DEVICES=1` and `ulimit -c 0`. No kernel ran on the GPU.
+
+### Summary
+
+The three commits are correct, and the second round's finding is fixed. Verdict: **Request Changes**. The changes are the three items jeff has ruled (findings 1 to 3) and one gap found next to item 1 (finding 4). Route for this round: reviewer -> `changes-requested` -> porter. The porter enters with `set-state warp-1.14 <platform> porting` from `changes-requested`. Session 30 used `port-lock --take` because `ported -> porting` is not a legal transition; that command belongs to a person and must not be used again.
+
+### Second-round finding 1 (RUNPATH): fixed (verified)
+
+- Default build at `2ce30148` (`build_lib.py --rocm-path <rocm-sdk root> --hip-arch gfx950`): RUNPATH `[$ORIGIN:<root>/lib]`. `ldd` with `LD_LIBRARY_PATH` empty resolves `libamdhip64.so.7` and `libhiprtc.so.7` to `<root>/lib`. `ctypes.CDLL` of `warp.so` from Python with no `rocm_sdk` import loads both from there.
+- Release configuration (`--no-rocm-rpath`, 25 targets): RUNPATH `[$ORIGIN]`.
+- `getattr(args, "rocm_rpath", True)` (`warp/_src/build_dll.py:936`) keeps the rpath for callers whose namespace lacks the option. The other caller, `build_llvm.py:468`, links no ROCm. `is_rocm_sdk_root` has no remaining user.
+
+### Changes requested (jeff's rulings; not open for re-litigation)
+
+1. **`warp/native/warp.cu:4567-4571`: commit the `fast_math` patch ("Ruling on session 29's question 13").** The patch recorded under session 29 item 2 applies cleanly at `2ce30148` (`git apply --check`). Commit it as recorded, with the comment it carries. Add the release-notes sentence for option (a), as written in question 13, to the "Differences from Warp's CUDA build" section of the draft (session 26 copy and `agent_space/release_notes_draft.md`). The test plan for the commit: `test_fast_math.py` (14 OK, 1 skipped after, per session 29) and the nvcc check (no CUDA file is touched).
+
+2. **`warp/native/cuda_util.cpp` (HIP section, `cuGraphicsGLRegisterBuffer_f`/`cuGraphicsGLRegisterImage_f`, about line 383): commit the GL fix without `RTLD_NOLOAD` ("Ruling on the GL interop fix", "Rulings on GL interop follow-ups").** Use the diff in the first gfx1201 GL evidence session, with the `dlopen` line `dlopen("libGL.so.1", RTLD_LAZY | RTLD_GLOBAL)`. With that one change it applies cleanly at `2ce30148`. Points for the commit:
+   - The comment must describe the form being committed: load libGL with global scope, because HIP looks up the GLX interop entry points with `dlsym(RTLD_DEFAULT, ...)` and caches a failed lookup. It must not say "an already loaded libGL".
+   - The handle is deliberately never closed. If `libGL.so.1` is absent, `dlopen` returns NULL and HIP fails registration as it does today.
+   - This host cannot test GL at runtime (no display). The commit body cites the measurement: evidence session 2's `fixload` build on gfx1201 under GLX. Buffers under all three flags, three map/unmap cycles, the GLFW-only application and the renderer's `get_pixels` were correct. The headless EGL copy fallback was unchanged.
+   - Compile-check the HIP build with `-Werror` behaviour unchanged, and run the nvcc check (the CUDA section of the file must stay identical).
+   - Add three release-notes lines to "Differences from Warp's CUDA build" or "Known issues":
+     - On Linux, OpenGL interop needs a windowed (GLX) context.
+     - Headless (EGL) rendering copies through the host on ROCm.
+     - `wp.GLTextureResource` is not supported on ROCm in this release.
+
+   Keep the native `Warp CUDA error 1` line printed per failed registration as it is.
+
+3. **gfx1250-strict: the checks pass, so the porter adds the target (jeff's item 3).** Measured here:
+   - **Compiler.** ROCm 10.2 clang lists `gfx1250-strict` (`-mcpu=help`), and `--offload-arch=gfx1250-strict` compiles. Its code object is a separate ISA: ELF flags `0x4eb, gfx1250-strict, sramecc` against `0x449, gfx1250`, and `amdhsa.target amdgpu12.50s-...-gfx1250-strict`. A gfx1250 code object therefore cannot serve a device in strict mode, which confirms the premise. ROCm 10.2's `libhsa-runtime64`, `libamdhip64` and `libamd_comgr` all name the `gfx1250-strict` ISA ("gfx1250 strict mode").
+   - **Macros.** Under strict, Clang defines `__gfx1250_strict__` and **not** `__gfx1250__` (`__amdgcn_processor__` "gfx1250_strict"). `__builtin_amdgcn_wmma_f32_16x16x4_f32` is present, so `e9644bf1`'s selection (`tile_matmul_mma.h:92-94`, `__has_builtin`) covers strict too. No Warp native code tests `__gfx1250__`; the only arch macro is `texture.h:653` `__gfx90a__`.
+   - **Arch names and hipRTC.** Warp takes `gcnArchName` verbatim (`warp.cu:322`). It passes that string to hipRTC as `--offload-arch=` (`warp.cu:4550`) and names the kernel cache file after it with only `:` replaced (`context.py:2895`). The only name comparison is `strncmp(..., "gfx90a", 6)` (`warp.cu:330`). ROCm 10.2 hipRTC through ctypes, compile rc:
+     - `gfx1250-strict`: 0, `0x4eb` object, `__gfx1250_strict__` path taken.
+     - `gfx1250-strict:sramecc+`: 0, `0xceb`.
+     - `gfx1250:sramecc+`: 0.
+     - `gfx1250-strict:sramecc+:xnack-`: 6, because gfx1250 has no XNACK feature. The gfx1250 device in the evidence session reported plain `gfx1250`, and neither form would carry `xnack`.
+   - **Build cost.** Release configuration, `-j 64`, `--no-rocm-rpath`, one run each:
+     - 25 targets: 177 s, `warp.so` 10,951,496 bytes.
+     - 25 targets plus `gfx1250-strict`: 193 s, 10,996,552 bytes, which is +45,056 bytes (+0.41%) and +16 s.
+   - **The code differs from gfx1250.** Each of the 11 HIP sources was recompiled alone for both targets (unbundled) and the disassembly compared, as differing lines out of total:
+
+     | source | differing lines | total |
+     |---|---|---|
+     | sort | 32,599 | 106,564 |
+     | volume_builder | 3,947 | 144,855 |
+     | bvh | 3,429 | 45,105 |
+     | scan | 2,572 | 18,699 |
+     | sparse | 1,571 | 24,214 |
+     | reduce | 464 | 113,379 |
+     | mesh | 96 | 6,803 |
+     | runlength_encode | 24 | 6,494 |
+     | hashgrid, volume, warp | 0 | |
+
+     Strict mode selects `ds_load_b64`/`ds_store_b64`/`ds_store_b128` where gfx1250 uses `ds_load_2addr_b32`/`ds_store_2addr_b32`/`ds_store_2addr_b64`, and the scheduling around them changes. The strict code objects are therefore not validated by the gfx1250 evidence. No device in strict mode has run anything, so this is a gap, not a reason to hold the target.
+   - **Where to add it.** The default target list comes from the SDK's `share/therock/dist_info.json` (`build_dll.py:260-265`), which lists `gfx1250` but not `gfx1250-strict`. The release recipe passes no `--hip-arch`. So the target has to be appended in `get_hip_architectures` when the list read from `dist_info.json` contains `gfx1250`. An explicit `--hip-arch` stays as given. Windows has no gfx1250 in its list and is unaffected.
+   - **Release notes.** The "Supported GPUs" sentence becomes 26 Linux targets including gfx1250-strict. Do not claim a strict-mode run.
+   - Rebuild the wheel afterwards and check that `gfx1250-strict` is in the bundle (`--offload-arch` in the verbose build log).
+
+### Build System
+
+4. **`warp/_src/build_dll.py:593-594`: a `build_lib.py --fast-math` ROCm build still compiles the library with Clang's whole `-ffast-math` (verified).** That includes `-ffinite-math-only`. The CUDA branch passes nvcc `--use_fast_math` (`build_dll.py:651-652`), which keeps NaN and Inf checks. ROCm 10.2 clang, gfx950, `o[0] = isnan(a[0]) + 2 * isinf(a[0])`:
+   - With `-ffast-math`, both tests are folded away: the kernel stores 0, with no `v_cmp`.
+   - With `-fapprox-func -freciprocal-math -fgpu-flush-denormals-to-zero`, both stay (`v_cmp_u_f32`, `v_cmp_class_f32`), as with no flags.
+
+   This is the library-side twin of item 1, and the same ruling principle applies (match what CUDA's fast-math does). Fix: pass the same three flags here in place of `-ffast-math`, in the same commit as item 1 or next to it. It is not a release-build setting (the recipe does not pass `--fast-math`), so a compile check of the option is enough.
+
+### Checked, not findings
+
+- `e9644bf1`. The new `__has_builtin(__builtin_amdgcn_wmma_f32_16x16x4_f32)` alternative selects the 32-lane family only on gfx1250 and gfx1250-strict. gfx9 still takes the MFMA branch first. On gfx1250 only `op<float32>` is defined in the family; `op<half>`/`op<bfloat16>` stay `available = false` because their builtins are gfx11- or gfx12-only. Session 30's hipRTC object comparison shows exactly that. The whole header is inside `__HIP_DEVICE_COMPILE__`, so the CUDA path is untouched. The `WP_TILE_WMMA` override has no other reference.
+- `2ce30148`. `Device.is_hip` exists on every device in this fork (`context.py:3895` CPU, `:3925` CUDA). The fragment tests are registered only on CUDA devices, and the CPU reference still runs at every block size the GPU runs.
+- Commit hygiene:
+  - Titles are 69, 47 and 64 characters, with `[ROCm]` on `b51b1987` and `e9644bf1` and none on the shared test commit `2ce30148`.
+  - Every commit has the AI disclosure and a Test Plan, with no Co-Authored-By trailer and no non-ASCII characters in the messages or added lines.
+  - `jargon.py --port warp-1.14`: clean.
+  - The branch is 0 commits behind `release-1.14`.
+- The host warnings in the HIP build (`hipError_t` nodiscard, `warp.cu:594`, `:767` and others) come from before this delta and are the same in session 30's release log.
+
+### For the coordinator (not a fork defect)
+
+The planned V100 confirmation (upstream `warp-lang==1.14.0` from PyPI with the fork's `test_tile_matmul.py` copied over) cannot work at `2ce30148`. The new helper calls `device.is_hip` (`test_tile_matmul.py:393`), and upstream's `Device` has no such attribute (`git show origin/release-1.14:warp/_src/context.py`: 0 matches). Every fragment test would end in `AttributeError`. The confirmation needs a CUDA build of the fork with libmathdx, or a local edit of the copied file that is not committed.
+
+### Commands (scripts were in this job's `agent_space/strict/`)
+
+```bash
+R=<porter job venv>/lib/python3.11/site-packages/_rocm_sdk_devel; B=$R/lib/llvm/bin
+$B/clang --target=amdgcn-amd-amdhsa -mcpu=help 2>&1 | grep gfx125
+$B/clang -x hip --offload-arch=gfx1250-strict --cuda-device-only -E -dM /dev/null | grep -E 'gfx1250|amdgcn_(processor|target_id)'
+$B/clang -x hip --rocm-path=$R --offload-arch=gfx1250-strict --cuda-device-only --no-gpu-bundle-output -O3 k.hip -o k.co && $B/llvm-readelf -h k.co | grep Flags
+# hipRTC: hiprtcCreateProgram + hiprtcCompileProgram with the single option --offload-arch=<target>, through ctypes on _rocm_sdk_core/lib/libhiprtc.so.7
+python build_lib.py --rocm-path $R --hip-arch <25 dist_info targets>[,gfx1250-strict] -j 64 --no-rocm-rpath
+# per source: the build log's clang++ command with --offload-arch/--offload-compress/--offload-jobs/-o removed, plus
+#   --offload-arch=<t> --cuda-device-only --no-gpu-bundle-output -o <src>_<t>.o ; then llvm-objdump -d --no-show-raw-insn and diff
+```
