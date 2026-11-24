@@ -9033,3 +9033,7 @@ Checks (each passed):
 - **Commit hygiene.** The title is 58 characters, and `[ROCm]` is correct because the line sits in the HIP-only branch. The body has one-line paragraphs, the "Authored with Claude." disclosure, a fenced Test Plan with literal commands and no MOAT vocabulary, and `Signed-off-by`. There is no Co-Authored-By. The message is ASCII only (grep for non-ASCII bytes: none). The author and committer match the other 96 port commits. `jargon.py --port warp-1.14`: clean. `moatlib.py audit-commits warp-1.14`: OK. The fork clone has no modified tracked files.
 
 Validation is owed separately, as session 35 recorded: the Linux platforms are `completed` at `1c94e68b`, not at `66ba4ffb`, and the classifier refused `source-class` carry-forward (`mixed`).
+
+## Ruling (Jeff Daily, 2026-11-24): reply to AMD's Warp maintainer sent; 1.13 issues after the 1.14 release
+
+Jeff sent the Teams reply (coordinator scratch `p6ev/teams-warp-maintainer-reply-v2.txt`): no PR against amd-integration for now; release lines published on AMD-Ecosystem/warp, one per upstream release; the two 1.13 issues (`amd-warp-113-cross-stream-free-late-writes`, `amd-warp-113-tile-solve-race`) filed on AMD-Ecosystem/warp after the 1.14 release, each draft shown to jeff first; open to contributing back after the releases. This settles decision 8 of the morning report as (a)/(b): file after the 1.14 release.
