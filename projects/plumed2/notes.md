@@ -1156,3 +1156,76 @@ Expect: both trees build 3/3 plus device_check; `make -B -n` lines identical onc
 ====
 I merged the current master into this branch to clear the conflict; the only clash was an include line in cudaHelpers.cuh, and nothing in the HIP part had to change. The one addition is in the new rt-no-gpu test: it now sets HIP_VISIBLE_DEVICES=-1 next to CUDA_VISIBLE_DEVICES=-1, because the HIP runtime ignores CUDA_VISIBLE_DEVICES when HIP_VISIBLE_DEVICES is set.
 ====
+
+## Review 2026-11-24 (fix round moat-fix-1648, merge of upstream master)
+
+Reviewer (linux-gfx942), pr-review skill, local-branch mode. Scope: the delta `2571dcde4...43ff1a58e` (merge `2641e3218` of upstream master `b930e84be`, plus `43ff1a58e`), and the tip against upstream master. Three independent child reviews (merge fidelity, HIP correctness of upstream's new code, test commit and commit hygiene), each finding re-checked against the code.
+
+Verdict: **review-passed** at `43ff1a58e9eb9d5c3a28d8579624e0e5a6938669`. The merge resolution is correct. There is one open question for jeff (below). It comes from upstream's new GPU-choice design, not from the merge, and needs a person's choice before the fix review is approved.
+
+### Diff of the staging tip against upstream master vs the PR's current diff
+
+`git diff upstream/master 43ff1a58e` compared with `git diff 422109dc3 2571dcde4`, with hunk positions and `index` lines stripped:
+- Every added and removed line in the PR's 9 files is the same in both diffs (+175/-8 each; sorted `^[-+]` lines identical).
+- Context-only differences:
+  - README.md: around our `check-gpu` line, upstream reworded the surrounding GPU-choice paragraph ("... with the rule that was applied ..."). Our line is unchanged.
+  - Coordination.cu / cudaHelpers.cuh: `#include "plumed/core/GpuDevice.h"` now sits next to our include edit; this was the one textual conflict, and both includes are kept.
+- The only extra difference is `43ff1a58e`, `plugins/cudaCoord/regtest/nogpu/rt-no-gpu/config`. It adds a two-line comment and `HIP_VISIBLE_DEVICES=-1` next to `CUDA_VISIBLE_DEVICES=-1`.
+- `git diff upstream/master 43ff1a58e -- . ':!plugins/cudaCoord' ':!plugins/openaccPTM/gpucheck'` is empty.
+- The merge parents are `2571dcde4` (first) and `b930e84be`; `git merge-tree 2571dcde4 b930e84be` reports the conflict only in cudaHelpers.cuh.
+
+### Checked and holding
+
+- **CUDA path is upstream's.** Without USE_HIP or `__HIP__`, the only differences are the PR's own edits:
+  - the `HOST_COMPILER = -ccbin $(CXX)` variable;
+  - the `#ifndef __HIP__` include guards;
+  - `cuda_to_hip.h`, which is `<cuda_runtime.h>` plus `warpMask()` returning `0xffffffffu`;
+  - width 32 in the shuffles, which is CUDA's warpSize.
+- **Upstream's new code needs no new mapping.** It adds `cudaStreamSynchronize` in `cancelLaunch()`/`calculate()` and `cudaGetDeviceCount`/`cudaGetDevice` in `chooseGPU`; all are mapped.
+- **No new device code.** Upstream's cudaCoord changes since 422109dc3 are host-only: no new kernel, intrinsic, warp literal, cub use or block size. The gfx942 code object is byte-identical to the published head's, per the porter section.
+- **The rt-no-gpu claim is true.** A child review called `hipGetDeviceCount` through ctypes on libamdhip64:
+  - `CUDA_VISIBLE_DEVICES=-1` alone gives `hipErrorNoDevice`;
+  - with `HIP_VISIBLE_DEVICES` set, HIP ignores `CUDA_VISIBLE_DEVICES`;
+  - both set to -1 gives 0 devices.
+  The CUDA runtime ignores `HIP_VISIBLE_DEVICES`, and the test's other checks (rc != 0, rc < 128, the message) are unchanged.
+- **Commit messages are clean.**
+  - Titles: 56 chars (merge, no prefix) and 63 chars (`[ROCm]`; it names HIP).
+  - AI disclosure is in prose, with no trailer, and each has a fenced Test Plan.
+  - `jargon.py --port plumed2` is clean, and `prose.py` is clean on both bodies.
+  - The merge message's claims hold: the only conflict was the include block, and the +/- lines are the same as before.
+
+### Open question for jeff: GPU choice of a HIP build after upstream 80018229f (not a defect of the merge; needs a decision)
+
+Upstream's `chooseGPU` now asks core `PLMD::GpuDevice` to choose, in this order (`src/core/GpuDevice.cpp:84-97`):
+1. MD-assigned GPU;
+2. the caller's GPU, from `callerCudaDevice()`;
+3. a user choice;
+4. local MPI rank % n, when there is more than one GPU;
+5. the runtime's current device.
+
+`callerCudaDevice()` reads the CUDA driver (`dlopen("libcuda.so.1", RTLD_NOLOAD)` + `cuCtxGetCurrent`), so it is always -1 in a HIP build and rule 2 never applies. In a HIP build, the caller's device is visible only through `hipGetDevice` (libamdhip64 is shared), and that value feeds rule 5 only.
+
+Consequence: on a node with more than one AMD GPU, under any launcher that sets a local-rank variable (`OMPI_COMM_WORLD_LOCAL_RANK`, `SLURM_LOCALID` (set in every Slurm step), `PMI_LOCAL_RANK`, ...), and with no `setGpuDeviceId` from the MD code, CUDACOORDINATION runs on GPU rank % n instead of the MD code's GPU. Results stay correct (`deviceGuard` restores the caller's device). `make USE_HIP=1 check-gpu` `follow` mode then fails.
+
+A child review checked this with the built HIP `device_check follow` and `HIP_VISIBLE_DEVICES=0,1`:
+- no launcher variable: pass ("c runs on GPU 1 (the default)");
+- `SLURM_LOCALID=0`: FAIL ("c runs on GPU 0 (process 0 of the node, from SLURM_LOCALID, with 2 GPUs)");
+- `OMPI_COMM_WORLD_LOCAL_RANK=0`: FAIL, the same way.
+
+That run used GPUs 0 and 1 for a few seconds, outside this job's pin (HIP_VISIBLE_DEVICES=3); the child agent chose to do it. Nothing else of mine ran outside the pin.
+
+Before the merge, our HIP `chooseGPU` always followed the current device. With CUDA, rule 2 finds the caller's context. Upstream's header says rule 2 applies "when the plugin can tell", so a HIP build that cannot tell is within upstream's contract. Even so, the README presents `make USE_HIP=1 check-gpu` as checking this behaviour.
+
+Is there a clean HIP probe? Probed on this host, one GPU, in scratch:
+- `hipDevicePrimaryCtxGetState` reports `active=0` in a fresh process after `hipGetDeviceCount`, and `active=1` after the caller's `hipSetDevice(0)`. `hipCtxGetCurrent` is non-null in every case, so it is useless here.
+- "the current device, if its primary context is active" would work for the first action. It is process-wide, though, not per thread, and the plugin's own `deviceGuard` restore (`hipSetDevice(previous)`) activates the previous device's context.
+- So a second action in the same process could choose differently from the first (for example, `mpirun plumed driver` on 2 GPUs: rank 1 gets GPU 1 for the first action and GPU 0 for later ones). It is a heuristic with a known failure, not an equivalent of the CUDA query.
+
+Options, for jeff to choose (nothing changed in this round):
+- (a) Leave the code as upstream wrote it. Add one sentence to the HIP paragraph of the README: with HIP, the GPU of the MD code is not detected, so give it with `setGpuDeviceId` (or let the rank rule apply). Note that `check-gpu` `follow` expects no launcher variables. This is a docs-only delta, inert for validation.
+- (b) A HIP-only `callerDevice` probe in `chooseGPU`, with the primary-context-active heuristic above and its known inconsistency.
+- (c) Raise it with the maintainers on the PR, since a HIP path for rule 2 belongs in core `GpuDevice.cpp`, outside the plugin.
+
+Reviewer's recommendation: (a), possibly with (c) as one sentence in the PR comment.
+
+Also non-blocking, same docs delta if (a) is chosen: the HIP paragraph lists `make USE_HIP=1 check` and `make USE_HIP=1 check-gpu` but not upstream's new `make USE_HIP=1 check-nogpu`. On a fresh tree, `make check-nogpu` without USE_HIP would build with nvcc.

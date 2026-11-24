@@ -7,14 +7,10 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:16:31Z",
-  "updated_at": "2026-11-24T03:30:22Z",
+  "updated_at": "2026-11-24T03:34:13Z",
   "head_sha": "43ff1a58e9eb9d5c3a28d8579624e0e5a6938669",
   "depends_on": [],
-  "porting": {
-    "arch": "linux-gfx942",
-    "since": "2026-11-24T03:30:22Z",
-    "holder": "62cbf2b121fe"
-  },
+  "porting": null,
   "waivers": {
     "windows": {
       "reason": "PLUMED's build system for the GPU plugin is Linux-only, so the obstacle is the platform rather than the GPU. It requires autotools (autoconf/automake, absent on the Windows host) and emits POSIX shared objects loaded via dlopen; configure.ac detects only .so and .dylib and has no Windows .dll / LoadLibrary path. Making PLUMED's plugin mechanism work on Windows is upstream build-system work, far outside this port's minimal footprint. Confirmed on windows-gfx1101 and windows-gfx1201. NOTE for the approver: approving this alone does NOT make plumed2 PR-ready -- wave32 is also unsatisfied at head and still needs a gfx1100 run. Because plumed2 cannot build on Windows at all, the wave32 gate cannot be carried by this Windows host and must come from a Linux RDNA machine.",
@@ -31,7 +27,7 @@
   },
   "license_spdx": "LGPL-3.0",
   "upstream_repo_id": 9942565,
-  "stage": "reviewing",
+  "stage": "review-passed",
   "platforms": {
     "windows-gfx1101": {
       "blocked": true,
@@ -128,7 +124,7 @@
       "failed_sha": null,
       "started_at": "2026-11-19T04:03:01Z",
       "completed_at": "2026-11-19T06:30:00Z",
-      "updated_at": "2026-11-24T03:30:22Z",
+      "updated_at": "2026-11-24T03:34:13Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -193,10 +189,10 @@
   },
   "porting_released": {
     "arch": "linux-gfx942",
-    "since": "2026-11-24T03:18:44Z",
-    "at": "2026-11-24T03:30:10Z"
+    "since": "2026-11-24T03:30:22Z",
+    "at": "2026-11-24T03:34:13Z"
   },
-  "reviewed_sha": "2571dcde419e5fcbac2844d5c2967fff44ce6ec9",
+  "reviewed_sha": "43ff1a58e9eb9d5c3a28d8579624e0e5a6938669",
   "review_pr": "https://github.com/AMD-Ecosystem/plumed2/pull/1",
   "pr_approval": {
     "approved_by": "jeffdaily",
