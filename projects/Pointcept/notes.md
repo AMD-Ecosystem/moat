@@ -1599,4 +1599,7 @@ Possible extension, not taken (for jeff): adding dW `64/64/64 w4 s3` and `256/16
 - jeff approves the title, body and patch, creates the spconv-triton fork, and opens the pull request himself. Pointcept's pull request stays held until spconv-triton releases the setting (his ruling). After that, Pointcept's README ROCm section can name the switch.
 
 ## Lesson for cuda-to-rocm: editing lines above a Triton kernel invalidates its compile cache
+
+Promoted to cuda-to-rocm/references/strategy-b-torch.md in 926f6138.
+
 Triton (seen with 3.9) appends a `@triton.jit` function's starting line number to its cache key (`runtime/jit.py`: `self.hash = dependencies_finder.ret + str(self.starting_line_number)`). Any change that adds or removes lines above a kernel in its source file, even a comment, makes every user recompile that kernel and re-run its autotune sweep on upgrade. Where the cold compile takes hours (fp32 autotune sweeps on RDNA), a port or fix that must not cost users their cache should put new helpers in another module, or below the kernels, and keep the kernel file's line count above each kernel unchanged. To verify, run the suite against a copy of a cache filled by the previous version and count new top-level cache directories (spconv-triton's `SPCONV_TEST_EXPECT_WARM=1` guard does exactly that). Seen in Pointcept's spconv-triton dependency, 2026-11-23: about 900 recompiles from a 32-line insertion, zero after moving the code. Belongs in `diagnosis.md` or the Triton section of the build reference.
