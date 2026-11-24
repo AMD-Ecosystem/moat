@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T04:43:45Z",
-  "updated_at": "2026-11-24T18:57:37Z",
+  "updated_at": "2026-11-24T18:57:50Z",
   "head_sha": "50561a2c852ec80a82ffea6a997b44268e45a046",
   "depends_on": [],
   "waivers": {
@@ -267,5 +267,10 @@
     "head_sha": "50561a2c852ec80a82ffea6a997b44268e45a046",
     "content_sha256": "9a05096587a55698f8bae2c0ff522daf7898e26dc05872cc67f64df1b885c45d",
     "review_pr": "https://github.com/AMD-Ecosystem/espresso/pull/1"
-  }
+  },
+  "pr_url": "https://github.com/espressomd/espresso/pull/5477",
+  "pr_number": 5477,
+  "pr_opened_at": "2026-11-24T18:57:50Z",
+  "pr_state": "open",
+  "published_sha": "50561a2c852ec80a82ffea6a997b44268e45a046"
 }
