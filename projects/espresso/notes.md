@@ -1318,3 +1318,55 @@ Reviewer on the MI300X host, pr-review skill, fork `moat-port` at bbe25fdf8 (3d1
 - **Docs.** The rendered `installation.html` (sphinx `-W` passed) shows the single-option command, and the option list says the HIP option implies `ESPRESSO_BUILD_WITH_CUDA`. Other mentions of the two-flag form exist only in commit-message Test Plans and the review page body (listed in the porter section, drafts there).
 - **Commit hygiene.** Four `[ROCm]` titles of 55-66 characters (every change names HIP). Bodies are ASCII, one line per paragraph, with the AI-assistance sentence and fenced Test Plans, and no Co-Authored-By. `jargon.py --port espresso` is clean. The fold dry run reproduces the head tree exactly, and its two trivial conflicts are written down for jeff.
 - **Scope.** The round touches only the two ruled points. No source compiled into the GPU libraries changes. The only compiled change is `cuda_test.cu`, a test.
+
+## Validation 2026-11-24 (linux-gfx942, MI300X wave64, fix round head bbe25fdf8)
+
+Validator on the MI300X host: AMD Instinct MI300X (gfx942), `HIP_VISIBLE_DEVICES=0` (pinned by the dispatcher), `ulimit -c 0`, `MAX_JOBS=37`. Toolchain and venv as in "Porter 2026-11-23". Source: `projects/espresso/src` at bbe25fdf8 (= `origin/moat-port`), clean tree. The method and counts follow "Validation 2026-11-20 (linux-gfx942 ...)", with one difference: the configure is the newly documented **single-option** command (`agent_space/cmpcfg.sh <build> hip1`, i.e. the porter's waLBerla-ON recipe with `-DESPRESSO_BUILD_WITH_HIP=ON` and without `-DESPRESSO_BUILD_WITH_CUDA=ON`). Its build files are identical to the two-option command's (porter section). Each build is in a **new** directory, and the whole run is `agent_space/validate.sh`:
+
+```
+cmake -S <src> -B <build> -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_COMPILER=/usr/bin/gcc -DCMAKE_CXX_COMPILER=/usr/bin/g++ \
+  -DESPRESSO_BUILD_WITH_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 \
+  -DCMAKE_HIP_COMPILER=$ROCM_SDK/llvm/bin/clang++ -DCMAKE_PREFIX_PATH="$ROCM_SDK" \
+  -DPython_EXECUTABLE=$FLEET_VENV/py312/bin/python \
+  -DESPRESSO_BUILD_WITH_WALBERLA=ON -DESPRESSO_BUILD_WITH_HDF5=OFF \
+  -DESPRESSO_BUILD_WITH_SCAFACOS=OFF -DESPRESSO_BUILD_WITH_STOKESIAN_DYNAMICS=OFF \
+  -DESPRESSO_BUILD_WITH_GSL=OFF -DESPRESSO_BUILD_WITH_NLOPT=OFF \
+  -DESPRESSO_BUILD_WITH_CALIPER=OFF -DESPRESSO_BUILD_WITH_FFTW=ON \
+  -DESPRESSO_BUILD_WITH_PYTHON=ON -DESPRESSO_BUILD_TESTS=ON \
+  [-DESPRESSO_MYCONFIG_FILE=<src>/maintainer/configs/maxset.hpp]
+cmake --build <build> -j 37 -- -k 0
+cmake --build <build> -j 37 --target python_test_data cuda_test local_samples local_benchmarks
+cmake --build <build> -j 37 --target check_unit_tests
+cmake --build <build> -j 37 --target local_samples local_benchmarks   # before every ctest run
+ctest --test-dir <build> -L gpu --timeout 1200 -j 8 -V
+ctest --test-dir <build> -LE gpu --timeout 1200 -j 16                   # default build only
+```
+
+### Default myconfig (`agent_space/val/build-hip`)
+
+- Build: **0 FAILED**. Only warnings: 28 known `-Wunused-value` (`nodiscard hipError_t`), as at 917d6f707. Cache: `ESPRESSO_BUILD_WITH_HIP=ON`, `ESPRESSO_BUILD_WITH_CUDA=OFF` (the user's value; the build is a GPU build through the implication), `WALBERLA_BUILD_WITH_HIP=on`, `WALBERLA_BUILD_WITH_CUDA=OFF`, `Heffte_ENABLE_ROCM=ON`, `Heffte_ENABLE_CUDA=OFF`. `llvm-objdump --offloading espresso_walberla.so`: **58 gfx942 code objects** (as at 917d6f707).
+- `check_unit_tests`: **152/152 passed** (164 s). Run directly with `--log_level=test_suite`: `PoissonSolver_test_cuda`: `ek_poisson_solver_fft_cuda<float>` 1.11 s, `<double>` 1.12 s, `ek_poisson_solver_none_cuda` 0.18 s. `LBWalberlaImpl_field_accessors_tests_cuda`: `macroscopic_accessors<float>` 0.53 s, `<double>` 0.43 s. Both print "No errors detected". The timings show the GPU cases ran.
+- `ctest -L gpu --timeout 1200 -j 8 -V`: **74/74 passed** (547 s; the usual 3 ctest Skipped `sample_p3m_with_gpu`, `benchmark_p3m_with_gpu`, `benchmark_lb_with_gpu`). `agent_space/parse_gpu.py`: **243 GPU-class cases ok, 1 skipped, 0 FAIL/ERROR; 214 ok in 33 LB/EK/lattice scripts**; 71 unittest `OK`, 0 `FAILED`; 0 "compiled without CUDA support". The skip is the test's own filter (`TestLBMomentumConservationRegularSinglePrecisionWalberlaGPU`, "LB with regular decomposition already tested with 2 MPI ranks"). These are the 917d6f707 counts exactly.
+- Non-GPU suite `ctest -LE gpu -j 16` (419 tests, 380 s): **391 passed, 28 failed**: 26 `tutorial_*` Not Run, `test_convert` (`ModuleNotFoundError: No module named 'nbformat'`), `test_install`. This is the same environmental set as every earlier run. No regression.
+
+### Maxset myconfig (`agent_space/val/build-max`)
+
+- Build: **0 FAILED**. Only warnings: 30 known `-Wunused-value`. `myconfig-final.hpp` carries `LB_ELECTROHYDRODYNAMICS` (absent from the default build's), so maxset was in effect.
+- `check_unit_tests`: **152/152 passed**.
+- `ctest -L gpu --timeout 1200 -j 8 -V`: **74/74 passed** (547 s). **243 GPU-class ok, 1 skipped (the same filter), 0 FAIL/ERROR, 214 ok in the LB/EK/lattice scripts, 0 "compiled without CUDA support"**. `lb_electrohydrodynamics` passed (skipped in the default build for the missing feature).
+
+No tolerance was changed, and no test missed.
+
+### Gates
+
+- CUDA no-regression compile at this head: done in "Porter 2026-11-23" at the tree of bbe25fdf8 (nvcc 12.8, `cuda12-maxset`, 690/690, 0 warnings under -Werror, `cuda_test` compiled by nvcc and expecting "not permitted"). It runs once per head and is not repeated here.
+- `python3 utils/jargon.py --port espresso`: clean.
+- Docs: "AMD GPU acceleration" in `doc/sphinx/installation.rst` shows the single-option command, the options list describes `ESPRESSO_BUILD_WITH_HIP` as implying `ESPRESSO_BUILD_WITH_CUDA`, and the `sphinx` target builds with `-W` (porter section).
+- Integrity: `git -C projects/espresso/src status --porcelain` is empty at bbe25fdf8. The validator edited and pushed nothing in the fork.
+
+## Owed next (2026-11-24, after the fix round at bbe25fdf8)
+
+- **wave32 (linux-gfx1201)**: the gate is unsatisfied at bbe25fdf8 (validated 917d6f707). The delta is CMake (no compiled-output change for the two-flag command; the build files are identical) plus `cuda_test.cu`, a test-only source. A carry-forward needs `binary-equiv --host-checked` from builds of both shas on that host, or a full run. Use the single-option configure in a new build directory.
+- linux-gfx950 reads `revalidate` (extra wave64 evidence, gates nothing). Windows is waived.
+- For jeff: fold the four commits into the five (table, conflict resolutions and new stats in "Porter 2026-11-23"). Update bc8d73dd9's body sentences (option "together with `ESPRESSO_BUILD_WITH_CUDA=ON`"; the `cuda_test.cu` bullet) and the reviewer's wording point. Apply the drafted review-page lines. The review page (AMD-Ecosystem/espresso#1) now shows bbe25fdf8 as its head. No upstream PR is open.

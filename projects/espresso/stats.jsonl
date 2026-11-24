@@ -156,3 +156,16 @@
 {"kind":"phase","ts":"2026-11-23T23:22:08Z","phase":"compile","seconds":282.476,"exit":0,"cmd":"agent_space/cuda-build.sh /var/lib/jenkins/fleet/jobs/mi300-20261123-144239-espresso-roles3-prompt/moat/projects/espresso/src /var/lib/jenkins/fleet/jobs/mi300-20261123-144239-espresso-roles3-prompt/moat/agent_space/build-cuda"}
 {"kind":"session","ts":"2026-11-23T23:25:20Z","epoch":1795476320.804418,"event":"start","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-11-23T23:26:31Z","epoch":1795476391.747534,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-23T23:26:57Z","epoch":1795476417.31891,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-23T23:28:24Z","phase":"compile","seconds":87.287,"exit":0,"cmd":"agent_space/cmpcfg.sh agent_space/val/build-hip hip1"}
+{"kind":"phase","ts":"2026-11-23T23:30:25Z","phase":"compile","seconds":120.496,"exit":0,"cmd":"cmake --build agent_space/val/build-hip -j 37 -- -k 0"}
+{"kind":"phase","ts":"2026-11-23T23:30:29Z","phase":"compile","seconds":3.978,"exit":0,"cmd":"cmake --build agent_space/val/build-hip -j 37 --target python_test_data cuda_test local_samples local_benchmarks"}
+{"kind":"phase","ts":"2026-11-23T23:35:48Z","phase":"test","seconds":318.991,"exit":0,"cmd":"cmake --build agent_space/val/build-hip -j 37 --target check_unit_tests"}
+{"kind":"phase","ts":"2026-11-23T23:44:56Z","phase":"test","seconds":546.892,"exit":0,"cmd":"ctest --test-dir agent_space/val/build-hip -L gpu --timeout 1200 -j 8 -V"}
+{"kind":"phase","ts":"2026-11-23T23:51:16Z","phase":"test","seconds":379.638,"exit":8,"cmd":"ctest --test-dir agent_space/val/build-hip -LE gpu --timeout 1200 -j 16"}
+{"kind":"phase","ts":"2026-11-23T23:52:41Z","phase":"compile","seconds":85.525,"exit":0,"cmd":"agent_space/cmpcfg.sh agent_space/val/build-max hip1 -DESPRESSO_MYCONFIG_FILE=/var/lib/jenkins/fleet/jobs/mi300-20261123-144239-espresso-roles3-prompt/moat/projects/espresso/src/maintainer/configs/maxset.hpp"}
+{"kind":"phase","ts":"2026-11-23T23:54:41Z","phase":"compile","seconds":119.21,"exit":0,"cmd":"cmake --build agent_space/val/build-max -j 37 -- -k 0"}
+{"kind":"phase","ts":"2026-11-23T23:54:45Z","phase":"compile","seconds":4.684,"exit":0,"cmd":"cmake --build agent_space/val/build-max -j 37 --target python_test_data cuda_test local_samples local_benchmarks"}
+{"kind":"phase","ts":"2026-11-24T00:00:05Z","phase":"test","seconds":319.629,"exit":0,"cmd":"cmake --build agent_space/val/build-max -j 37 --target check_unit_tests"}
+{"kind":"phase","ts":"2026-11-24T00:09:12Z","phase":"test","seconds":546.748,"exit":0,"cmd":"ctest --test-dir agent_space/val/build-max -L gpu --timeout 1200 -j 8 -V"}
+{"kind":"session","ts":"2026-11-24T00:10:08Z","epoch":1795479008.65786,"event":"end","platform":"linux-gfx942"}
