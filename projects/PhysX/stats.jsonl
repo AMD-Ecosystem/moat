@@ -18,3 +18,11 @@
 {"kind":"phase","ts":"2026-11-24T11:48:40Z","phase":"compile","seconds":1.953,"exit":0,"cmd":"cmake -S agent_space/wt-radixfix/physx -B agent_space/build-radixfix -G Ninja -DPHYSX_PRESET=linux-gcc -DPX_USE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_BUILD_TYPE=release -DPX_BUILDSNIPPETS=OFF"}
 {"kind":"phase","ts":"2026-11-24T11:48:55Z","phase":"compile","seconds":8.749,"exit":0,"cmd":"cmake --build agent_space/build-radixfix -j48 --target PhysXGpu"}
 {"kind":"session","ts":"2026-11-24T11:52:15Z","epoch":1795521135.576256,"event":"end","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-24T12:01:20Z","phase":"compile","seconds":0.003,"exit":2,"cmd":"make -j64"}
+{"kind":"phase","ts":"2026-11-24T12:01:52Z","phase":"compile","seconds":20.822,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi300c-20261124-035623-fix-physx-prompt/wt-base/physx/compiler/linux-gcc-rocm-release -j64"}
+{"kind":"phase","ts":"2026-11-24T12:04:17Z","phase":"compile","seconds":24.416,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi300c-20261124-035623-fix-physx-prompt/wt-dev/physx/compiler/linux-gcc-rocm-release -j64 PhysXGpu PhysX PhysXExtensions PhysXPvdSDK PhysXCommon PhysXFoundation"}
+{"kind":"phase","ts":"2026-11-24T12:17:05Z","phase":"compile","seconds":4.079,"exit":2,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi300c-20261124-035623-fix-physx-prompt/wt-amd/physx/compiler/linux-gcc-amdtest-release -j64"}
+{"kind":"phase","ts":"2026-11-24T12:17:37Z","phase":"compile","seconds":16.532,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi300c-20261124-035623-fix-physx-prompt/wt-amd/physx/compiler/linux-gcc-amdtest-release -j64"}
+{"kind":"phase","ts":"2026-11-24T12:26:29Z","phase":"compile","seconds":23.039,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi300c-20261124-035623-fix-physx-prompt/moat/projects/PhysX/src/physx/compiler/linux-gcc-rocm-release -j64"}
+{"kind":"phase","ts":"2026-11-24T12:36:50Z","phase":"compile","seconds":22.154,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi300c-20261124-035623-fix-physx-prompt/moat/projects/PhysX/src/physx/compiler/linux-gcc-rocm-release -j64"}
+{"kind":"phase","ts":"2026-11-24T12:37:38Z","phase":"compile","seconds":47.539,"exit":0,"cmd":"make -C /var/lib/jenkins/fleet/jobs/mi300c-20261124-035623-fix-physx-prompt/moat/projects/PhysX/src/physx/compiler/linux-gcc-rocm-checked -j64"}

@@ -298,3 +298,97 @@ cuobjdump -sass -arch sm_90 <obj>.cu.o   # nvdisasm 12.8.90 on PATH
 ```
 
 Comparison scripts (job-local, not kept): `<job>/nvcc/scripts/cmpcmds.py` (compile commands), `sasscmp.py` (per-kernel SASS, 8 targets), `cubincmp.py` (cubin sections), `fdiff.sh`/`opdiff.py` (one kernel's SASS and opcode counts).
+
+## Porter round 2026-11-24, review fixes (linux-gfx942, MI300X, headless fleet job mi300c-20261124-035623)
+
+Answers "Review 2026-11-24" (eight findings) and finding 1 of the CUDA compile check. Fork `moat-port` 4764ca13 -> **064e809b**, ten new commits on top (plain push, `GIT_LFS_SKIP_PUSH=1`; no amend, rebase or force push of anything published). One local correction before the push: the harness commit was first written with a 74-character title; that unpushed commit was soft-reset and recommitted with a 69-character title and an identical tree (checked with `git rev-parse HEAD^{tree}`), because the commit gate refuses titles over 72 characters.
+
+### Toolchain (this job)
+- `$FLEET_VENV/bin/python -m pip install --index-url https://nightly.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple "rocm[libraries,devel]==10.2.0a20261022" "rocm-sdk-device-gfx942==10.2.0a20261022"`; `rocm-sdk path --root` = `<job>/venv/lib/python3.11/site-packages/_rocm_sdk_devel`, `.info/version` 10.2.0.
+- Compiler the builds invoked: `CMAKE_HIP_COMPILER=<root>/lib/llvm/bin/amdclang++` (AMD clang 24.0.0git `2792f8ceeb5a`), taken from `CMakeCache.txt` of the preset build and auto-discovered through `rocm-sdk`; host `/usr/bin/c++` (gcc 13.3). `ldd libPhysXGpu_64.so` resolves `libamdhip64.so.7` from the same root. The image's ROCm 10.1 was not on the compile path.
+- `$FLEET_VENV/bin` first on PATH, `MAX_JOBS=64`, `HIP_VISIBLE_DEVICES=1` (the dispatcher's pin), `ulimit -c 0`, `timeout` around every GPU run. Snippet dependencies (freeglut, GLU, libglvnd prefix and packman cache) copied from the porter job directory.
+
+### Commits (oldest first)
+1. `e1080687` [ROCm] Compile GPU code without strict aliasing or noundef arguments (finding 2)
+2. `3ebaa20c` [ROCm] Guard the bucket shifts of the single-warp radix sort (finding 1)
+3. `a2667442` Build lane masks from counts that can reach 32 without a shift by 32 (finding 3; shared code, no prefix)
+4. `2935dab2` [ROCm] Keep the public CUDA types header free of internal includes (finding 4)
+5. `638c5b36` [ROCm] Keep the caller's CMAKE_HIP_FLAGS and find amdhip64 once (finding 5)
+6. `51d7478b` [ROCm] Drop the untested TheRock configuration branch (finding 5)
+7. `8f41fd34` [ROCm] Remove the root .gitignore added with the ROCm port (finding 6)
+8. `31e8c427` [ROCm] Correct comments in the HIP compatibility code (finding 7)
+9. `0b3fd207` Restore upstream's CUDA handling of a null module table entry (CUDA compile check, finding 1)
+10. `064e809b` Add mesh, aggregate, large-face and slab scenes to the parity snippet (finding 8)
+
+### Finding 2: root cause (every primitive falls through a static triangle mesh)
+
+Two independent miscompilations by clang of upstream code that nvcc compiles as intended. Neither is a `bar.sync` mapping, narrowphase-algorithm or post-process defect. **Introduced by the AMD enablement commit `d09e2532`**, which compiles the GPU code with amdclang++ without either flag. Not by this round's commits.
+
+How it was narrowed:
+1. Reproduced at 4764ca13 with the reviewer's `MeshCheck.cpp`, unchanged: all 12 cases at y = -19.16 to -19.38 (CPU 0.2500), with the touch-event warning.
+2. Attribution: `d09e2532` plus only what is needed to run the GPU at all (cherry-picked loader `332132c7`, registration visibility `58229d69`, radix `d1714e8e`, the `compiler/public` CUDA-language skip from `0af51c4c`, offload arch `2039a7d8`; built through a temporary `linux-gcc` + `PX_USE_HIP` preset) fails the same way (-19.28 to -19.60 m). With the two flags below it passes 12/12. Only ROCm 10.2 was available here; the AMD commit says it used ROCm 10.0.
+3. Minimal repro: one sphere (or box) on a two-triangle mesh. A device `printf` at the end of `midphaseCore` made the sphere rest correctly, a heisenbug. Printfs in the narrowphase, correlate and finish kernels did not. So the midphase output was suspect, and printing changes code generation.
+4. Host readback instead of device printf: after the midphase launch, `streamSynchronize` plus `memcpyDtoH` of the `ConvexMeshPair` array and the pair stack (scratch tree only, under an env variable). Pair counts and triangle pairs were right, but **`aToB` was all zeros** (p = 0, q = (0,0,0,0)), and correct (p = (0.1, 0.287, 0.1), q = identity) whenever the device printf was compiled in. `ConvexMeshPair_WriteWarp` stores the register struct `pairInfo` by reading it back as `uint` (`reinterpret_cast<const uint*>(&inp)[laneIdx]`). Under clang's TBAA the float stores to `pairInfo.aToB` are dead, so they are dropped. The int fields survive because int and unsigned may alias. `-fno-strict-aliasing` on the HIP objects: the sphere and capsule rest. The upstream GCC host build already uses `-fno-strict-aliasing` (`source/compiler/cmake/linux/CMakeLists.txt:105`).
+5. The box and convex then froze in mid-air at y = 0.2867, the height at first touch, while the CPU settled at 0.25. Finish-kernel contacts had `pA = (0,0,0)` and `pen = 0`. Host readback after `convexTrimeshNarrowphase`: the temporary-contact counter was 256 for 3 + 5 real contacts (32x), and the first stored contact was garbage `(0, 1, nan)`. Device asm of `convexTrimeshNarrowphase` (`--offload-device-only -S`): the atomic-optimizer loop before `global_atomic_add` sums `nbOutputContacts` over the whole `exec` mask, and there is no `s_and_saveexec` for `if (threadIdx.x == 0)`. Cause: `PxU32 startIndex;` in `convexTriangleContactGen` (`convexTriangle.cuh:1873`) is assigned only on lane 0 and then passed to `__shfl_sync`. Clang marks arguments `noundef`, so the undefined incoming value on the else edge lets LLVM delete that edge. Every lane then runs the atomic and the `cvxTriContacts[...].index` store. Initialising `startIndex = 0` restores the guard (`s_and_saveexec s[20:21], s[0:1]` before the loop), and so does `-Xclang -no-enable-noundef-analysis` with the code unchanged.
+6. Flag matrix, all GPU targets, sphere / box after 40 frames: none: -2.24 / frozen; `-fno-strict-aliasing` only: 0.2500 / 0.2867 frozen; noundef opt-out only: -2.16 / -1.89; both: 0.2500 / 0.2500.
+
+Fix (commit 1): `ADD_COMPILE_OPTIONS("$<$<COMPILE_LANGUAGE:HIP>:-fno-strict-aliasing;SHELL:-Xclang -no-enable-noundef-analysis>")` once in the HIP section of `cmakegpu/linux/CMakeLists.txt`. Verified in `compile_commands.json`: 61/61 `.cu` carry both, 0 host `.cpp`. Chosen over patching the two sites, because the GPU code reinterprets structures through other types throughout (`*_ReadWarp`/`*_WriteWarp`, shape copies) and the lane-0-assign-then-broadcast pattern recurs, so a site fix would leave the same class elsewhere. CUDA is untouched (HIP-only CMake).
+
+### Findings 1 and 3, and the second sweep
+- Finding 1: the eight `accum0..3` shifts in `radixSortPassSingleWarp` and `radixSortPassSingleWarpKeysOnly` now go through `radixShiftLeft` (plain shift on CUDA). The guarded shifts below them, and `:221`/`:337` (under `threadIndexInWarp < 2` / `< 4`), were checked and are bounded.
+- Finding 3: `n < 32 ? (1 << n) - 1 : -1` (`0xffffffff` for unsigned), no HIP guard, same value on NVIDIA: solver `maskHigh` (both solvers), `cudaGJKEPA.cu` polyClip vertex masks (`vertMask0/1`, 3 uses), `:483`, `:2997`, `convexTriangle.cuh:1003`, `:1855`. **Two more sites the review did not list:** `cudaGJKEPA.cu:950` and `:984` (`int mask = (1 << nbContacts) - 1` after `polyClip` in the convex-convex stage-2 kernel), where `polyClip` returns the raw `addContacts` count, which can exceed 32.
+- **Sweep method** (`agent_space/scratch/shiftsweep.py`, job-local): strip comments and strings from every `.cu`/`.cuh` and GPU header under `physx/source/gpu*` and `cudamanager`, find every `<<`/`>>`, take the right operand up to the first lower-precedence operator, and keep each one whose count is not an integer literal. That gives 280 sites, 52 of them shifting by a `& 31` lane id. Each of the other 228 was classified by the range of its count. The first sweep grepped for masks named after counts or lanes, which is why it missed shifts of a data value or of a count that can reach the word width. The 41 shifts by bare `threadIdx.x`/`tI` were also checked against their kernels' launch blockDim.x (sub-agent, read-only, 41/41 SAFE: blockDim.x 32 on every launch, or guarded by `warpIndex == 0` in the 1024-thread `triangleTriangleCollision`, or by `threadIdx.x < 4` in `sbClothCollision`). Everything else is bounded below 32: enum and bit-field constants, `% 32`/`& 31`, loop indices below 32, 64-bit articulation bit indices, and `in1 << nbVerts1` in polyClip, which ORs a value with itself when the count is 32 and so gives the same result on both vendors. The `1 << minIndex(...)` and `1 << lowestSetIndex(...)` family in the contact reductions shifts by -1 only on an empty mask. The callers keep the mask non-empty (cluster picks are guarded by `if (cluster)`, and the fill loop runs only when the input has more than TMaxPoints bits). `gjk.cuh:207` would shift by -1 only for a NaN support distance, which is broken on both vendors.
+- Face vertex count 32 is legal but not reached: cooking a 31- or 32-sided prism gives a largest face of 31 (confirmed again in the harness). The vertex-count masks are fixed by inspection.
+
+### Findings 4 to 7 and the CUDA module-load loop
+- 4: `PxCudaTypes.h` restored byte-for-byte to upstream 7d6f6ac8. `cuda_to_hip.h` defines `CUDA_VERSION`, so every force-included GPU TU takes upstream's `#else` branch, and HIP's `hipHostMalloc{Portable,Mapped,WriteCombined}` = 1/2/4 satisfy its compile-time asserts. `cuda_to_hip.h` now includes `foundation/PxSimpleTypes.h`, which the skipped branch used to provide. Consumer check: `#include <hip/hip_runtime.h>` then `PxPhysicsAPI.h`, `amdclang++ -D__HIP_PLATFORM_AMD__ -I<rocm>/include -I physx/include -c`, and the same file as `-x hip --offload-arch=gfx942`. Both compile at 064e809b; at 4764ca13 the first fails with `'cuda_to_hip.h' file not found`.
+- 5: the `CMAKE_HIP_FLAGS` FORCE was replaced by prepending the ROCm path flags to the caller's value, before `enable_language(HIP)`. Checked with `-DCMAKE_HIP_FLAGS=-DPX_EXTRA_FLAG_CHECK`: 61/61 HIP commands carry it and `--rocm-path`, the cache keeps the user's value, and a reconfigure leaves it unchanged. amdhip64 is now located once (`cmakegpu/linux/PhysXGpu.cmake`); the `find_library` block in `physx/CMakeLists.txt` was removed. `PX_THEROCK` was configured once before being dropped: `-DPX_THEROCK=ON -DCMAKE_HIP_COMPILER=<root>/lib/llvm/bin/amdclang++ -DCMAKE_PREFIX_PATH=<root>` configures, but `--target PhysXGpu` fails with `cuda_to_hip.h:71: hip/hip_runtime.h: No such file or directory` (the HIP include path only reaches PhysXGpu through `hip::host`). The branch was removed; the standalone path accepts a caller-supplied `CMAKE_HIP_COMPILER`.
+- 6: root `.gitignore` removed. Untracked build output under `physx/lib/` and `physx/bin/` now shows in `git status`, as it does upstream.
+- 7: corrected the SDF-texture, vector-operator, `hipModuleLoadDataEx` and "gfx942" comments. The `#define __HIP_USE_NATIVE_VECTOR__ 0` was dead: HIP's `amd_hip_vector_types.h:25` redefines it to 1, and it only selects how HIP implements its operators. Removing it took `-Wmacro-redefined` from 198 to 0 in the release build. Other warnings are unchanged by category (1049 deprecated-declarations, 732 unused-value, 342 unused-result, 312 attributes, 48 invalid-offsetof, 30 cuda-compat, 6 parentheses), plus 4 `-Wdangling-else` reported in upstream `convexMesh.cu:357/571`, which this round does not touch.
+- CUDA compile check finding 1: `if (!moduleTable[i]) continue;` moved inside the HIP branch, and upstream's CUDA code restored verbatim in the `#else`.
+
+### Finding 8: harness scenes and teeth
+New scenes in `SnippetGpuParity` (all compared with the CPU): **primitives on mesh** (box, convex cube, sphere, capsule on an 8x8 static grid mesh: position difference and rest height); **aggregate pile** (the reviewer's 12 staggered 0.5 m boxes dropped into one self-colliding aggregate: lowest box against the CPU, on the ground, below start). A first version with an initially stacked, touching column passed at 4764ca13, so it was replaced; a tall column sways a few millimetres either way, so the positions are not compared. **large-face convex** (31-vertex-cap prism on a box, a second prism turned half a step on top). **many slabs** (dynamic 8x0.2x8 m plate carrying 13x13 boxes, more than 128 partitions on one body).
+
+Teeth, all release, MI300X. The harness binary is the 064e809b one in every run; only `libPhysXGpu_64.so` differs.
+
+| GPU library | Result |
+|---|---|
+| 064e809b | 47 checks, 0 failed (also checked build: 47/0) |
+| 4764ca13 | 13 failed: all 8 primitives-on-mesh checks (15.7 to 19.6 m off), aggregate pile lowest box -43.66 m (2 checks), large-face convex 0.0215 m, many slabs 0.200 m, plus "PhysX errors reported" (the touch-event warning) |
+| 064e809b without the compiler flags | 9 failed: the 8 primitives-on-mesh checks and the touch-event error |
+| 064e809b without the radix fix | 2 failed: aggregate pile (lowest box -43.66 m) |
+| 064e809b without the mask fix | 2 failed: large-face convex 0.0215 m, many slabs 0.200 m |
+
+The solver more-than-16-slabs case was built in reasonable size (170 bodies, 120 frames) and has teeth.
+
+### Builds at 064e809b (all exit 0)
+- `./generate_projects.sh linux-gcc-rocm`, `make -C compiler/linux-gcc-rocm-{release,checked}` from scratch: 61 HIP objects each.
+- Direct configure from INSTALL_ROCm.md with `ROCM_PATH`/`HIP_PATH` unset, `CMAKE_HIP_ARCHITECTURES="gfx942;gfx1100"`: 61 gfx942 + 61 gfx1100 code objects (`llvm-objdump --offloading`), `libamdhip64.so.7` linked.
+- Standalone GPU configure from INSTALL_ROCm.md (`cmake -S physx/source/compiler/cmakegpu ...`, `--target PhysXGpu`).
+- `PX_GENERATE_GPU_STATIC_LIBRARIES=ON PX_GENERATE_STATIC_LIBRARIES=OFF` (`libPhysXGpu_static_64.a`).
+- CPU-only preset with `PATH=/usr/bin:/bin`.
+- Reviewer's MeshCheck at 064e809b: 12/12 at y = 0.2500, no touch-event warning.
+- `jargon.py -C projects/PhysX/src --diff 4764ca13..moat-port` and `--commits 4764ca13..moat-port`: clean. `jargon.py --port PhysX` still reports only upstream ovphysx text, because the fork's `main` mirror is at 5.10 (Question A of the previous porter round, still open).
+
+### Shared (non-HIP-guarded) source lines changed this pass, for the nvcc compile check
+Line numbers are at 064e809b:
+- `physx/source/gpucommon/src/CUDA/RadixSort.cuh:513-516, 639-642`: calls to `radixShiftLeft`, a plain shift on CUDA. Expect identical SASS in the four including TUs.
+- `physx/source/gpusolver/src/CUDA/solverMultiBlock.cu:720-722` and `solverMultiBlockTGS.cu:325-327`: `highShift`/`maskHigh` select. Same value for every count; SASS will differ by a compare and select.
+- `physx/source/gpunarrowphase/src/CUDA/cudaGJKEPA.cu:130-134` (vertMask0/1 and use), `:156-157`, `:483`, `:950`, `:984`, `:2997`: mask selects, same values on NVIDIA.
+- `physx/source/gpunarrowphase/src/CUDA/convexTriangle.cuh:1003`, `:1855`: mask selects.
+- `physx/source/cudamanager/src/CudaContextManager.cpp:521-536` (the `#else` CUDA branch, restored to upstream's text) and `:474-477` (the `continue` moved under the HIP guard). Expect `CudaContextManager.cpp.o` to match upstream again apart from `__LINE__` immediates.
+- `physx/include/cudamanager/PxCudaTypes.h`: now identical to upstream 7d6f6ac8.
+- `physx/snippets/snippetgpuparity/SnippetGpuParity.cpp:601-758`, `:844-885`: new scenes and checks (fork-only file).
+- HIP-only, which nvcc never sees: `cuda_to_hip.h`, `cmakegpu/linux/CMakeLists.txt` and `PhysXGpu.cmake` (inside `IF(PX_USE_HIP)`). Comment-only: `CudaKernelWrangler.cpp`. `physx/CMakeLists.txt` lost only the `PX_USE_HIP` amdhip64 block; the CUDA linking block is unchanged.
+
+## Lesson for cuda-to-rocm: clang's strict aliasing and noundef rules miscompile CUDA code that nvcc accepts
+
+Belongs in `references/faults-numerics.md` (or a compiler-semantics entry in `diagnosis.md`), with a pointer from the symptom index ("works with printf", "kernel output silently zero"). CUDA code compiled by nvcc often relies on two things clang's HIP front end does not guarantee:
+1. **Type punning.** Code reads a struct as `uint` words to copy it lane by lane (`reinterpret_cast<const uint*>(&s)[lane]`). With type-based alias analysis, clang may treat the float stores into that struct as dead, so the copy writes zeros or garbage. In PhysX the triangle-mesh midphase emitted an all-zero transform, and every sphere and capsule fell through meshes.
+2. **Undefined values passed to calls.** The pattern `T x; if (lane == 0) x = atomicAdd(...); x = __shfl_sync(mask, x, 0);` leaves `x` undefined on the other lanes. Clang marks call arguments `noundef`, so LLVM may delete the branch edge that carries the undefined value: the lane-0-only atomic then runs on every lane. In PhysX the contact counter advanced 32 times too fast.
+Signs: the result changes when a `printf` is added in the kernel, and the device asm lacks the `s_and_saveexec` guard around a lane-0 atomic. Test with `-fno-strict-aliasing` and `-Xclang -no-enable-noundef-analysis` on the HIP sources. When the codebase uses either pattern widely, add both flags to the HIP compile (HIP sources only) rather than patching sites. To find the culprit, read device buffers back on the host instead of printing on the device, which perturbs code generation.
+
+## Lesson for cuda-to-rocm: addendum to "masks and counters that rely on a 32-bit shift by 32 being 0"
+
+As the reviewer asked: the first sweep in this port grepped for mask expressions and missed sites in the same file (`RadixSort.cuh`, eight more shifts) and elsewhere. The best examples of form (2) are the solver's last-sub-warp mask `(1 << ((subWarpIndex + 1) * numThreadsPerBody)) - 1`, whose count is exactly 32 on every launch (it breaks bodies with more than 16 slabs), and contact-count masks after polygon clipping, where the count can exceed 32 because the clipper keeps counting past its buffer. A sweep that would have caught them: list every shift whose count is not a literal, then classify each count's range. A script that strips comments and takes the right operand up to the first lower-precedence operator is enough; PhysX had 280 such sites.
