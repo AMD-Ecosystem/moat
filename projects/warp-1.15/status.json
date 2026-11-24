@@ -6,16 +6,39 @@
   "fork_default_branch": "release-1.15",
   "priority": 0.0,
   "ext_type": "python-build-nvrtc",
-  "stage": "unclaimed",
+  "stage": "screened",
   "adopted_at": "2026-11-24T19:54:09Z",
-  "updated_at": "2026-11-24T19:55:27Z",
+  "updated_at": "2026-11-24T19:55:54Z",
   "head_sha": null,
   "depends_on": [
     "warp-1.14"
   ],
   "porting": null,
   "waivers": {},
-  "platforms": {},
+  "platforms": {
+    "linux-gfx950": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-24T19:55:53Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
   "fork_branch": "release/1.15.0.amd0",
   "fork_branch_ruling": {
     "branch": "release/1.15.0.amd0",
