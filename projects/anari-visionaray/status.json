@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-23T14:02:30Z",
-  "updated_at": "2026-11-24T01:29:48Z",
+  "updated_at": "2026-11-24T01:55:31Z",
   "head_sha": "d7d363b99c462653d97ea76a54182e7f58077b38",
   "depends_on": [
     "visionaray"
@@ -84,10 +84,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "fd2375aa32bff0c6103f79ba5bb1ab4cff15840a",
+      "validated_sha": "d7d363b99c462653d97ea76a54182e7f58077b38",
       "started_at": "2026-06-24T00:23:42Z",
-      "completed_at": "2026-11-24T00:20:41Z",
-      "updated_at": "2026-11-24T00:20:41Z",
+      "completed_at": "2026-11-24T01:55:31Z",
+      "updated_at": "2026-11-24T01:55:31Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -104,7 +104,8 @@
       "last_agent": "reviewer",
       "validated_prior": [
         "1b6b35a8115e27f1facba0e5db6b1c061086590c",
-        "6f1e7937b823184cbc34a3296a65ca273a249861"
+        "6f1e7937b823184cbc34a3296a65ca273a249861",
+        "fd2375aa32bff0c6103f79ba5bb1ab4cff15840a"
       ]
     },
     "linux-gfx1201": {
