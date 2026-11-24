@@ -532,9 +532,9 @@ All within the bound. Packed next-layer activations: at most 2 nibbles differ pe
 ### What remains before `ported` (stage stays `porting`)
 
 - gfx12 proof: **done** (surface `kernel:stage2-rdna-wmma-gfx12` moved from owed to covered).
-- **gfx942 rerun** of 8aa04e7's shared-code change and **gfx90a run** of the MFMA path (RDNA round list, unchanged).
-- **FP4** on gfx950/gfx1250 (question 1) and **CDNA f16/bf16 MFMA** (question 2): not written, waiting on jeff.
-- **nvcc compile** of 8aa04e7 on the mi355 host before anything goes to jeff (the recorded nvcc check was at 5c32be5).
+- Done by the parallel jobs recorded above, merged while this round ran: the gfx942 rerun of 8aa04e7, the gfx90a MFMA run, and the nvcc compile of 8aa04e7 (all pass).
+- **FP4** on gfx950/gfx1250 (question 1) and **CDNA f16/bf16 MFMA** (question 2): not written, waiting on jeff. These two answers, and whatever work they add, are the only porter items left from the RDNA round's list.
+- The gfx942 and gfx90a evidence runs report HIP 7.17.26434 from `hipcc --version`, which does not show which devel tree torch compiled with (the venv trap above); if their `ROCM_HOME` was the image's, their results are still evidence for the same source, since here the 10.1 and 10.2 builds gave identical outputs.
 - Windows gfx1151 last, per the standing ruling.
 - Optional, for future RDNA validators: a build switch that turns off only the f16/bf16 WMMA would let the iu4 bit-identity check run on the current head instead of 5c32be5. Not added (the round's scope was proof only).
 
