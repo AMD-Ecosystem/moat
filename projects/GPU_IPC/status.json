@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:23:54Z",
-  "updated_at": "2026-11-24T00:04:46Z",
+  "updated_at": "2026-11-24T00:05:13Z",
   "head_sha": "940bdae9cd1cc684f1c7c904468e00d262610ff3",
   "depends_on": [],
   "waivers": {
@@ -210,5 +210,10 @@
     "head_sha": "940bdae9cd1cc684f1c7c904468e00d262610ff3",
     "content_sha256": "7ff66661138845f576ca4a45fa132da8f75959d2497c8394cc475d0d5c625405",
     "review_pr": "https://github.com/AMD-Ecosystem/GPU_IPC/pull/1"
-  }
+  },
+  "pr_url": "https://github.com/KemengHuang/GPU_IPC/pull/4",
+  "pr_number": 4,
+  "pr_opened_at": "2026-11-24T00:05:13Z",
+  "pr_state": "open",
+  "published_sha": "940bdae9cd1cc684f1c7c904468e00d262610ff3"
 }
