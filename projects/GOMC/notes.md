@@ -707,7 +707,7 @@ Retested at 25ba089d:
 - Radeon Pro W7800 (gfx1100, Linux): fresh build from the README recipe, then GPU vs CPU runs of the same build on GEMC AR_KR 3000 steps, GEMC ISOPEN_NEOPEN 3000 and 30000 (MEMC), GCMC PEN_HEX 200 and 2000 (Ewald), single-box NVT and NPT AR_KR 1000, plus Base/K_1/K_N checkpoint restarts for AR_KR and ISOPEN_NEOPEN. 9/9 pass, GPU energies and acceptance rates identical to CPU.
 - Instinct MI300X (gfx942, Linux): the same build recipe and the same 9 runs, 9/9 pass with GPU identical to CPU and every result identical to the W7800.
 - CUDA 12.8 compile (nvcc 12.8.93): all 8 executables build, 0 warnings. Compile only.
-- Radeon 8060S (gfx1151, Windows 11): the same 7 single-run and NPT cases' Windows subset (GEMC AR_KR and ISOPEN_NEOPEN 3000, GCMC PEN_HEX 200, NVT and NPT AR_KR 1000) plus the AR_KR and ISOPEN_NEOPEN Base/K_1/K_N checkpoint chains, all GPU identical to CPU. The checkpoint chains now run on Windows because #560 is in `development`.
+- Radeon 8060S (gfx1151, Windows 11): GEMC AR_KR and ISOPEN_NEOPEN 3000, GCMC PEN_HEX 200, NVT and NPT AR_KR 1000, plus the AR_KR and ISOPEN_NEOPEN Base/K_1/K_N checkpoint restarts. 7/7 pass, GPU identical to CPU. The checkpoint restarts now run on Windows because #560 is in `development`.
 
 One result changed, and upstream's code causes it: NPT volume acceptance is now 100% (it was 50%) on GPU and CPU alike. Upstream's own CPU-only build moves the same way between 09ec304e and 411b8a73, and restoring only the old CellList files brings back 50%. With `dimensions` now a reference, `CellList::GridBox(newDim, ...)` in `VolumeTransfer::CalcEn` copies the trial box into the system box, so the acceptance ratio in `GetCoeff` is always 1 and rejected moves are not undone. This affects every input with volume moves (NPT, and NVT-GEMC volume transfer). The port keeps upstream's code unchanged.
 
@@ -720,7 +720,6 @@ While retesting, NPT runs changed after #561: volume moves are now always accept
 ## Notes for jeff (not posted)
 
 - The reply names the W7800, the MI300X and the Radeon 8060S (Windows), all completed at 25ba089d. jeff ruled on 2026-11-24 to report the volume-move regression in this reply instead of a separate issue.
-- The second paragraph of the reply reports an upstream bug the maintainer did not ask about. Cut it if you would rather file a separate issue, or not raise it at all.
 - The fork's `development` mirror is still at 09ec304e (not touched here). Until it is fast-forwarded to 411b8a73, `audit-commits` and a fresh clone's `jargon.py --port` count upstream's three new commits as ours (set a local `development` to `upstream/development` first).
 
 ## CUDA compile check 2026-11-23 (mi355 host, nvcc 12.8.93): moat-fix-562 head 25ba089d vs upstream 411b8a73
