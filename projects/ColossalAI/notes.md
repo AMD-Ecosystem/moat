@@ -665,3 +665,55 @@ Files the delta `e2b767e8..632c6026` touches (for the CUDA recheck): still only 
 ## Review 2026-11-24 (linux-gfx1100 fleet job, reviewer role, delta `f780f7ea...632c6026` and the whole `e2b767e8...632c6026`, pr-review skill)
 
 Verdict: **review-passed** at `632c6026`. All three findings of the previous review are closed: the warning is guarded by `torch.compiler.is_compiling()` (`colossalai/kernel/kernel_loader.py:159`), available on every torch the package allows (`torch>=2.5`, the API exists from 2.3); `test_attention_rocm_fa2_triton_version_compiled` fails with the guard disabled (`Unsupported` at 2.8.3.post2) and passes with it, and tracing leaves the eager cache empty; the `clear_rocm_fa2_triton_cache` fixture covers all three version-dependent tests; the docs paragraph (`README.md:554`, `docs/source/en/get_started/installation.md:82`, identical) now states the backend Colossal-AI uses per GPU family, consistent with `_ROCM_FA2_CK_ARCHS`/`_ROCM_FA2_TRITON_ARCHS`. Whole delta: ASCII, titles 55 and 70 characters with a correct `[ROCm]` prefix, prose AI disclosure, no internal vocabulary (`jargon.py --port ColossalAI` clean), fork checkout clean at `632c6026`. CPU: `-k 'not gpu'` 94 passed. One nit in these notes (a wrong source for the torch floor in "Porting round 3") was corrected in place. The open question for Jeff about CK on RDNA with flash-attn >= 2.8.4 stands.
+
+## Validation 2026-11-24 (linux-gfx1100 fleet job, validator role, fork `moat-port` at `632c6026`)
+
+Verdict: **completed** for linux-gfx1100 (wave32). Every 1-GPU batch ran as in the previous gfx1100 validation; all pass except the two registered upstream fragilities, which are not this port's and do not gate. Strict fa2 against flash-attn main: **185 of 185**, no scratch patch.
+
+### Environment
+
+- One AMD Radeon PRO W7800 48GB (gfx1100, wave32), `HIP_VISIBLE_DEVICES=0` pinned by the dispatcher and kept; `torch.cuda.device_count()` 1.
+- Job venv as in "Porting round 2": TheRock `10.2.0a20261022`, torch `2.13.0+rocm10.2.0a20261022` with **both** `amd-torch-device-gfx1100` and `amd-torch-device-gfx110x`, triton `3.8.0+git66b3f9ff.rocm10.2.0a20261022`, Python 3.11, amdsmi `.pth`. Extensions built (editable install, so Python changes are live) during porter round 2 in this same checkout; no compiled source changed between `e2b767e8` and `632c6026`, so they are the head's kernels: `BUILD_EXT=1 PYTORCH_ROCM_ARCH=gfx1100 MAX_JOBS=32 pip install --no-build-isolation --no-deps -v -e <abs path to src>` (17 gfx1100 compiles).
+- flash-attn for the GPU batches: main `b038b497` (aiter submodule `f0966b0a`), installed with the documented command (`FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE AITER_USE_SYSTEM_TRITON=1 pip install --no-build-isolation .`); reports `flash_attn 2.8.4`. `FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE` set for every run.
+- All runs: `ulimit -c 0`, `timeout --kill-after=60`, upstream's pytest flags (`-v -s -ra --tb=short --maxfail=10 --durations=20`), `FAST_TEST=1`, file lists from `.github/scripts/ci/run_colossalai_batch.sh`, pytest called directly, job-local `HOME`, Triton and inductor caches.
+
+### Results at `632c6026` (one gfx1100 GPU)
+
+| batch | result | skips / notes |
+|---|---|---|
+| new `tests/test_kernels` | 155 passed | none |
+| 2 single-GPU core | 23 passed, 2 skipped | upstream HF5 guards |
+| 3 adam kernels | 61 passed, **1 failed** | `test_cpu_adam_kernel[p_dtype2-g_dtype2-0.0-True]` (fp16/fp16, CPU kernel): the registered unseeded fragility `colossalai-cpu-adam-fp16-test-unseeded`. One element 0.5900 vs 0.5884 at rtol/atol 1e-3. Run alone twice (`-k cpu_adam`): 12 passed, then 1 failed/11 passed. Not gated |
+| 4a fp8 | 1 passed, 21 skipped | "Test requires an fp8 GEMM": gfx11 has none (expected) |
+| 4b inference CUDA kernels | 60 passed, 108 skipped | upstream's unconditional `test_convert_fp8.py` skip |
+| 4c Triton kernels | 372 passed, 65 skipped | 64 Alibi kcache layout, 1 unconditional "cuda error" (upstream) |
+| 4d smoothquant | 4 skipped | modules upstream removed |
+| 4e flash decoding | 1391 passed, 193 skipped, 0 failed | 144 "requires vllm", 49 "Required GPU memory is larger than capacity" (measured in the previous gfx1100 validation) |
+| attention `COLOSSALAI_TEST_ATTENTION_BACKEND=sdpa -k gpu` | 198 passed, 370 skipped, 94 deselected | other backends' variants |
+| attention `=fa2 -k gpu`, flash-attn main 2.8.4 | **185 passed**, 383 skipped, 94 deselected | `PYTHONPATH` = the fork checkout only, no scratch flash-attn |
+| 4f strict fa3 (`=fa3 -k gpu`) | 10 failed, 19 skipped (maxfail) | all `ModuleNotFoundError: No module named 'flash_attn_3'`; fa3 is `scoped_out` (Q2 ruling) |
+| 1 CPU core, `CUDA_VISIBLE_DEVICES= HIP_VISIBLE_DEVICES=` (device count 0), flash-attn 2.8.3.post2 (see below) | 364 passed, **1 failed**, 599 skipped | the failure is `test_gemma4_cpu_ddp_equivalence[1-e2b]`, registered `colossalai-gemma4-cpu-ddp-equivalence-host-dependent`: identical numbers to the previous run (149/150 aligned, `model.layers.1.mlp.up_proj.weight` 3.75e-08 vs 6.11e-07, ratio 16.30). +7 passed versus the previous run are the new attention CPU tests. 706 s |
+| runtime (JIT) path: worktree at `632c6026`, `PYTHONPATH` = worktree (imports confirmed from it), fresh `HOME`; `tests/test_kernels`, adam kernels, rms_layernorm, silu_and_mul, kv_cache_memcpy | 270 passed, 1 failed | all seven extensions built at first use into `$HOME/.cache/colossalai/torch_extensions`; the failure is the same cpu_adam fp16 fragility (`[p_dtype2-g_dtype2-0.0-False]`) |
+
+Selection checks (from the porter rounds, same tree): with flash-attn 2.8.3.post2, auto selects sdpa with one warning and strict fa2 raises the reason; the sdpa batch passes 198/198 with 2.8.3.post2.
+
+Not run here (one GPU in this job): batch 5 (2 GPUs), batch 11 (2 GPUs, apex), batches 6, 7, 8, 9, 9q (4 GPUs); a later four-GPU job on this host runs them. Batch 10 (8 GPUs) is wave64-only. `tests:distributed` and `tests:apex-gemini` stay `owed`.
+
+### CPU batch and flash-attn main: aiter needs a GPU at import
+
+With flash-attn main installed, the CPU batch (GPUs hidden) failed at collection (3 errors: `test_request_tracer.py`, `test_gemma4.py`, `test_gemma4_moe.py`): `colossalai.inference` and `tests/kit/model_zoo/diffusers` import diffusers, which imports flash-attn, which imports `aiter.ops.triton._triton_kernels.flash_attn_triton_amd`; at aiter `f0966b0a`, `aiter/ops/triton/utils/_triton/arch_info.py` runs `triton.runtime.driver.active.get_current_target()` at import, which raises `RuntimeError: 0 active drivers` with no GPU and then falls back to `from jax._src.lib import gpu_triton` (`No module named 'jax'`). Unsetting `FLASH_ATTENTION_TRITON_AMD_ENABLE` does not help, since flash-attn main falls back to the Triton backend when `flash_attn_2_cuda` is missing. aiter fixed it in `b1cdc19eb` (2026-10-08, the probe moved to first use, with a comment naming exactly this case); flash-attn main still pins the older `f0966b0a` (2026-09-19). Not this port's code and no report needed (fixed upstream, awaiting flash-attn's submodule bump). The CPU batch was therefore run with flash-attn 2.8.3.post2 installed, as in the previous gfx1100 validation; it exercises no fa2 kernel.
+
+### Gates
+
+- Integrity: `git -C projects/ColossalAI/src status --porcelain` empty at `632c6026`; the JIT worktree was removed.
+- `python3 utils/jargon.py --port ColossalAI`: clean. Docs: the ROCm install section in README.md and docs/source/en/get_started/installation.md carries the flash-attn build for RDNA.
+- CUDA no-regression: not run here (no nvcc in this job). **Owed on another host at `632c6026`.** The delta since the last CUDA compile (`e2b767e8`) touches only `colossalai/kernel/kernel_loader.py`, `tests/test_shardformer/test_layer/test_attention_backends.py`, `README.md`, `docs/source/en/get_started/installation.md`: no compiled file, so that job needs only an import of `colossalai.kernel.kernel_loader` and `pytest tests/test_shardformer/test_layer/test_attention_backends.py -k 'not gpu'` under a CUDA torch (the extension compile is unchanged from `e2b767e8`).
+- linux-gfx942 was validated at `e2b767e8` and now reads `revalidate`; the delta changes no line the CK path executes beyond one False condition (see "Porting round 2"), so a carry-forward over this Python-only delta is that host's call.
+
+### Open for Jeff
+
+flash-attn >= 2.8.4 also supports gfx11/gfx12 in its default composable_kernel backend (`5301a359`). ColossalAI still refuses CK on RDNA (silent SDPA when `FLASH_ATTENTION_TRITON_AMD_ENABLE` is unset), per the Q2 ruling. Whether to admit CK on RDNA for flash-attn >= 2.8.4 is his decision; nothing was changed for it.
+
+## Lesson for cuda-to-rocm: flash-attn main's Triton backend cannot be imported without a GPU (aiter before b1cdc19eb)
+
+Belongs in libraries.md (FlashAttention on ROCm). flash-attn's main branch takes its Triton AMD backend from ROCm/aiter (submodule `third_party/aiter`). With the aiter it pinned as of 2026-11 (`f0966b0a`), importing flash-attn in a process that sees no GPU fails: aiter's `arch_info.py` queries Triton's active driver at import (`RuntimeError: 0 active drivers`) and falls back to importing jax. Anything that imports flash-attn indirectly breaks too, for example diffusers, so a CPU-only test job of a project that depends on diffusers fails at collection. Unsetting `FLASH_ATTENTION_TRITON_AMD_ENABLE` does not avoid it, because flash-attn main falls back to the Triton backend when its compiled CK module is missing. aiter fixed it in `b1cdc19eb` (2026-10-08). Until flash-attn bumps its submodule, run GPU-less jobs without flash-attn main installed, or install a newer aiter with `FLASH_ATTENTION_USE_SYSTEM_AITER=TRUE`. (ColossalAI)
