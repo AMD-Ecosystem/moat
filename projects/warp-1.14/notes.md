@@ -8881,3 +8881,7 @@ Head `4e0d02ab`, stage `porting`, lock held by the gfx90a porter job; gfx90a `va
 - G against the bar "consistent, suite passes, winding-number query no slower than the faster of FAST and ON": met on gfx942, gfx950, gfx1100, gfx1201; on gfx90a G is 4.0 to 4.6% slower than ON on that query (and 4.5x faster than FAST, the committed head).
 - Still open for the porter round if jeff picks ON or G: the precompiled library's device code is compiled with Clang's HIP default (cross-statement contraction; session 22), which the hipRTC option does not change; the fp16 `FP_CONTRACT OFF` region in builtin.h becomes unnecessary under ON; the comment above the option string must be rewritten; gfx950 full suite on G; nvcc check; delta review; revalidation on all five Linux platforms.
 - The gfx1250 "wrong `mesh_query_point` results" (translator evidence session) were not re-examined; the host is not ours to use at present.
+
+## Ruling (Jeff Daily, 2026-11-24): contraction, option (a), candidate G
+
+Question: the coordinator summary of 2026-11-24 (porting session 33, the per-arch contraction and candidate G evidence sessions). Options put: (a) candidate G (hipRTC `-ffp-contract=on`, plus `#pragma clang fp contract(fast)` in `evaluate_node_solid_angle` only, guarded so it applies only when `fuse_fp` is on); (b) plain `-ffp-contract=on`; (c) keep `fast-honor-pragmas` and add a pragma region around the box-distance functions only. Jeff: "I choose a." This supersedes the 2026-11-20 ruling (b) `fast-honor-pragmas` for hipRTC kernels.
