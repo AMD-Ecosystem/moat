@@ -342,7 +342,7 @@ The last-10-frame PSNR between any two backends is 14 to 16 dB. That is autoregr
 
 ### Questions for Jeff (nothing assumed)
 
-The porter's three questions (comment on PR #67, the `--fa_version 0` upstream bug, the windows waiver record) are still open. One correction to the PR #67 draft follows from the runs above. Point 2 says the banner prints `Actual: None (SDPA)` while AITER is in use. That is true only when flash-attn is absent; with flash-attn also installed it prints `Actual: Flash Attention 2` while AITER runs. Revised draft (options as before: post as drafted, post a shorter results-only version, or post nothing yet; NOT posted):
+The porter's questions 1 (comment on PR #67) and 2 (the `--fa_version 0` upstream bug) are still open; question 3 (the windows waiver) was answered in commit `3c6aa9eb`. One correction to the PR #67 draft follows from the runs above. Point 2 says the banner prints `Actual: None (SDPA)` while AITER is in use. That is true only when flash-attn is absent; with flash-attn also installed it prints `Actual: Flash Attention 2` while AITER runs. Revised draft (options as before: post as drafted, post a shorter results-only version, or post nothing yet; NOT posted):
 
 ====
 My agent came up with this analysis, but I've read and approved it.
