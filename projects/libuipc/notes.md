@@ -106,3 +106,9 @@ Large but mechanical. Strategy A (CMake HIP language with a compat header, sourc
 1. `python/LICENSE` (GPL-3.0 text vs Apache classifier): raise upstream or ignore? Does not block the CUDA-backend port.
 2. Scope: CMake only, or CMake plus the xmake build? The README documents both.
 3. StiffGIPC (https://github.com/KemengHuang/Stiff-GIPC, MPL-2.0, "email the authors for commercial use") was also mentioned by the author; not screened here. libuipc is the one he called more popular and asked for.
+
+## Rulings by jeff 2026-11-24 (recorded by the checkup session)
+
+- Fork requested: libuipc is in the admin fork request batch (with Stiff-GIPC); port libuipc first.
+- Build systems: port the CMake build only. The PR body says xmake is not covered, so upstream can mirror the CMake changes if they want it.
+- `python/LICENSE` (GPL-3.0 text while the package metadata says Apache-2.0): not raised separately; one line in the PR body only if the port touches the Python packaging.
