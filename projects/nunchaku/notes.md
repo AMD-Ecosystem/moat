@@ -473,3 +473,79 @@ Not a porter round: no work lock taken, stage untouched, nothing changed in or p
 ### What this leaves
 
 The gfx90a item and the CDNA rerun are done on this arch. Still owed from the RDNA round's list: the gfx12 proof, FP4 and CDNA f16/bf16 MFMA (questions 1 and 2), Windows gfx1151 last.
+## Porter round 2026-11-24, gfx12 proof (porter, linux-gfx1201 fleet job, for jeff)
+
+Scope from jeff's dispatch: the "gfx12 proof" item of the RDNA round's list only (gfx12 operand and result layouts of `gemm_w4a4_block_wmma` iu4 and `mma_rocm::wmma_m16n16k16_f32` f16/bf16). No FP4, no CDNA f16/bf16 MFMA. Stage left at `porting`.
+
+**Result: both gfx12 layouts are right. No fork change; head stays 8aa04e7.** No line that gfx11 or CDNA compiles was touched.
+
+### Environment
+
+- Host gfx1201 (AMD Radeon AI PRO R9700, 32 GB), `HIP_VISIBLE_DEVICES=0` as pinned, `ulimit -c 0`, every GPU run under `timeout`, MAX_JOBS 24 in total across concurrent builds.
+- Job venv: `$FLEET_VENV/bin/python -m pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple "rocm[libraries,devel,device-gfx1201]==10.2.0" "torch==2.14.0+rocm10.2.0" "torchvision==0.29.0+rocm10.2.0" "amd-torch-device-gfx1201==2.14.0+rocm10.2.0"`, then **`amd-torch-device-gfx12-0==2.14.0+rocm10.2.0`** (the gfx12 family wheel, same index), then the test dependencies of the earlier rounds (accelerate 1.9, diffusers 0.36.0, transformers 4.55.2, peft 0.17, datasets 3.6, torchmetrics 1.8, huggingface-hub 0.34, controlnet-aux 0.0.10, image-gen-aux e08ae3d, opencv-python 4.11.0.86, pytest 8.4.2, numpy 2.4.6, pandas 3.1.1, matplotlib) and `--upgrade scikit-image scikit-learn scipy matplotlib PyWavelets` (the venv's copied scikit-image 0.2x was a numpy-1 build: `numpy.dtype size changed` at `controlnet_aux` import; now scikit-image 0.26.0, scikit-learn 1.9.1, scipy 1.17.1).
+- **torch SDPA: the family wheel fixes it, no workaround needed.** With only the chip wheel `amd-torch-device-gfx1201`, `scaled_dot_product_attention` fails exactly as on gfx1100 (flash and memory-efficient backends, fp16/bf16/fp32: `CUDA error: device kernel image is invalid`; math works; `torch/lib` has `libaotriton_v2.so` but no `aotriton.images`). Installing `amd-torch-device-gfx12-0` adds `torch/lib/aotriton.images`, after which flash fp16/bf16 and memory-efficient fp16/bf16/fp32 all work (max error vs float64 0.0016 / 0.014 / 3.5e-6; flash has no fp32 kernel at all, "No available kernel", which is normal and the dispatcher falls through). The end-to-end runs below used no `sitecustomize`. The index lists `amd-torch-device-{gfx110x,gfx115x,gfx12-0}` family wheels; the gfx1100 round's workaround should be replaced by `amd-torch-device-gfx110x` there.
+- **Trap: the first three extension builds used the image's ROCm 10.1 compiler, not 10.2.** The fleet venv reaches the image's `_rocm_sdk_core`, `_rocm_sdk_devel` and `_rocm_sdk_libraries` through `venv-base-links` on `sys.path`. pip installed the 10.2 `rocm-sdk-core`/`-libraries` payloads into the venv, but the 10.2 `rocm-sdk-devel` wheel ships its payload as `rocm_sdk_devel/_devel.tar` and expands it only when something asks for the devel root; until then `import _rocm_sdk_devel` finds the image's 10.1 copy, so `torch.utils.cpp_extension.ROCM_HOME` was `/opt/python-3.11-venv/.../_rocm_sdk_devel` and every compile ran its `bin/hipcc` (HIP 7.16.26385, AMD clang d6f6cb69). `$FLEET_VENV/bin/hipcc --version` printed 10.2 (HIP 7.17.26434, clang bdc35841) throughout, because that launcher comes from `rocm_sdk_core`, so it does not reveal the problem. Running `rocm-sdk path --root` expanded the tarball into the venv's `_rocm_sdk_devel` and `ROCM_HOME` moved there. Check with `python -c "import torch.utils.cpp_extension as c; print(c.ROCM_HOME)"` before building. The earlier gfx942 and gfx1100 rounds used the same venv recipe and may have built with 10.1 too (not checked from here). Everything below is reported for both compilers; they produce identical results.
+
+### Builds (`PYTORCH_ROCM_ARCH=gfx1201`, `python setup.py build_ext --inplace` unless stated, separate trees)
+
+| tree | compiler | flags | result |
+|---|---|---|---|
+| default 8aa04e7 | 10.1 | | exit 0, 277 s (8 jobs) |
+| default 8aa04e7, documented `pip install -e . --no-build-isolation -v` | 10.1 | | exit 0, 273 s |
+| reference 8aa04e7 | 10.1 | `NUNCHAKU_ROCM_MMA_REFERENCE=1` | exit 0, **4334 s** (16 jobs; the bf16 INT4 launch file alone took most of it in `ld.lld` LTO device code generation, 1.3 GB RSS) |
+| default 8aa04e7, documented `pip install -e . --no-build-isolation -v` (installed build for every test below) | 10.2 | | exit 0, 286 s, `nunchaku-1.3.0.dev20261124+rocm10.2torch2.14`, 17 compiles through the venv's 10.2 `hipcc`, none through the image's |
+| default 5c32be5 (iu4 WMMA, f16 still lane-gather) | 10.2 | | exit 0, 181 s |
+| reference 8aa04e7 | 10.2 | `NUNCHAKU_ROCM_MMA_REFERENCE=1` | exit 0, **5903 s** (14 jobs; same long last file), no matrix instruction in the code objects |
+
+The reference build was run detached (`setsid nohup <script> &`, a script that runs the build under `utils/timeit.sh` and appends `EXIT <code> <seconds>` to its log), because a harness background command is stopped at two hours. Code objects (`llvm-objcopy --dump-section=.hip_fatbin`, `clang-offload-bundler --unbundle`, `llvm-objdump -d --mcpu=gfx1201`): default 8aa04e7 has 21504 `v_wmma_i32_16x16x16_iu4` in each INT4 launch file plus `v_wmma_f32_16x16x16_f16` (fp16 INT4 launch 3888, attention 64, fasteri2f 64, AWQ 72) and `..._bf16` (bf16 INT4 launch 4064, AWQ 72); 5c32be5 has the 21504 iu4 and no f16/bf16 WMMA; the reference build has no matrix instruction at all.
+
+### 1. f16/bf16 primitive test (`test.hip` from `notes-rdna-scripts.md`, unchanged)
+
+Compiled with the venv's 10.2 `hipcc` exactly as `build.sh` does (`--offload-arch=gfx1201`, includes from the hipified `common_hip.h`/`utils_hip.cuh` of a built tree); the binary has 2 `v_wmma_f32_16x16x16_f16` and 1 `..._bf16`. `timeout 300 ./test_gfx1201` -> **PASS**: no output over the bound, against both the lane-gather reference and float64, in all 9 runs (3 modes x 3 scales, 2000 problems each). Max |err| / sum |terms|: f32-accumulator f16 WMMA 1.3e-7 to 1.7e-7 (reference 2.3e-7 to 3.0e-7); bf16 WMMA 1.1e-7 to 1.5e-7 (reference 1.2e-7 to 1.3e-7); f16 accumulator 99.97% of outputs bitwise equal to the reference, max error identical (4.6e-4, the f16 output rounding). **Exact small-integer problem: WMMA exact (0/256 inexact in every run)**, where gfx1100 gave 16/256 one fp32 ulp off. So the gfx12 float accumulator behaves like round-to-nearest on this case (the C-outside design is kept; it costs nothing on gfx12).
+
+### 2. INT4 iu4 path (`gemm_w4a4_block_wmma`, gfx12 operand split and `row = v + 8 * half`): bit-identical
+
+- `mma_dump.py compare` reference (10.1) vs default **5c32be5** (10.2): **34 cases, 10 outputs differ, exactly the fp32 `lora_act_out` tensors** (the 8 fused `[3]` and the 2 quantize `[2]`). Two runs of the reference build against each other differ in the same 10 (bytes of the same order, e.g. 5430/32768 vs 6381/32768). Every GEMM output, packed next-layer activation and output scale is bit-identical.
+- Same with every build on ROCm 10.2: reference (10.2) vs default 5c32be5 (10.2): 34 cases, only the same 10 `lora_act_out` tensors differ. The 10.1 and 10.2 reference builds agree on everything except those 10, as do the 10.1 and 10.2 default builds of 8aa04e7.
+- Note for whoever reruns this on another RDNA chip: `mma_dump.py compare` reference vs default **8aa04e7** is no longer bit-identical in the 16-bit GEMM outputs (here: 53 outputs differ, from 2 to 1043 bytes of up to 6.3 M, plus 1 to 2 packed nibbles in some fused cases), because 8aa04e7 also routes the LoRA-up and LoRA-down epilogues of these same cases through the f16/bf16 WMMA. Those are rounding flips covered by section 3, not iu4 layout errors (a wrong D layout puts whole columns in the wrong place). Bit identity of the iu4 path needs a build with the f16 WMMA off, which today means building 5c32be5. On CDNA, where there is no f16 WMMA, reference vs default 8aa04e7 should still be bit-identical. The RDNA round's instruction "only `lora_act_out` may differ" therefore applies to 5c32be5, not to 8aa04e7.
+
+### 3. f16/bf16 path in the ops (`f16_dump.py` / `reldiff.py`, unchanged): within the recorded tolerance
+
+Reference vs default 8aa04e7, for the pairs reference 10.1 / default 10.2, reference 10.1 / default 10.1 and reference 10.2 / default 10.2: the same numbers to every printed digit (only the fp32 `lora_act_out` maxima move, in the 7th digit, by run-to-run noise). Tolerance from the RDNA round: max |new - ref| / max |output| <= 2 units of roundoff of the output type (9.8e-4 float16, 7.8e-3 bfloat16). Worst per output kind:
+
+| output | float16 | bfloat16 |
+|---|---|---|
+| W4A4 GEMM out (`gemm[0]`) | 3.05e-4 | 2.44e-3 |
+| fused GEMM out (`fused[0]`) | 1.77e-4 | 3.26e-4 |
+| fused output scales (`fused[2]`) | 1.15e-4 | identical |
+| attention_fp16 | 5.98e-4 (4608 tokens) | 4.03e-3 (512 tokens, 500 valid) |
+| AWQ GEMM | 5.18e-4 (1024x1024x4096) | 4.00e-3 (512x4096x4096) |
+
+All within the bound. Packed next-layer activations: at most 2 nibbles differ per case, by one step. Quantize kernel outputs and scales: identical. fp32 `lora_act_out` of the fused cases: max rel 1.4e-4 (gfx1100: 1.4e-4), quantize `lora_act_out` 2.6e-7 (run-to-run noise 2.9e-7). Each build's own error against float64 is identical to three significant digits in every attention and AWQ case (e.g. attention fp16 4608 tokens 0.00239 both, AWQ bf16 512x4096x4096 0.00304 both). Determinism: two runs of the default 8aa04e7 build differ only in the 10 `lora_act_out` tensors (max rel 2.9e-7), with either compiler; the 10.1 and 10.2 default builds give identical outputs apart from those 10.
+
+### 4. Tests on the installed 8aa04e7 build (10.2)
+
+- `PYTHONPATH=. python -m pytest -q tests/ops` -> **38 passed** (also 38 with the 10.1 build).
+- `HF_HOME=<job>/hf NUNCHAKU_TEST_CACHE_ROOT=<job>/test_cache python -m pytest -v -s tests/v1/sdxl/test_sdxl.py::test_sdxl_lpips tests/v1/sdxl/test_sdxl_turbo.py::test_sdxl_turbo_lpips tests/sana tests/v1/z_image` -> **10 passed** in 581 s, no SDPA workaround: SDXL LPIPS 0.156 (expected 0.25), SDXL-Turbo 0.231 (0.25), Z-Image Turbo rank 32/128/256 0.386/0.387/0.364 (expected int4-bf16 0.40/0.38/0.37, limit x1.15), both Sana example scripts (`sana1.6b-int4.png` inspected: correct ink-drawing panda). The cached INT4 SDXL images of the 10.1 run were moved aside first, so this build generated its own; the 16-bit SDXL and Z-Image reference images were generated on this host by the tests (`test_cache/fp16`, `test_cache/z-image-turbo/bf16`). The same set on the 10.1 build: 10 passed in 1227 s (including downloads), SDXL 0.151, SDXL-Turbo 0.224, Z-Image 0.386/0.363/0.358.
+- Speed (recorded, not gated), R9700, ms, installed 10.2 build (`speed.py`): W4A4 GEMM 4096x3072x3072 with LoRA bf16 3.53 (rank 32) / 3.92 (rank 128), fp16 6.60 / 7.07; AWQ GEMM 512x4096x4096 fp16 2.66, bf16 2.89; attention_fp16 24 heads x 4608 tokens 53.7. The fp16 W4A4 GEMM is 1.9x slower than bf16 here (gfx1100: 1.5x), the register-pressure item the RDNA round recorded.
+
+### What remains before `ported` (stage stays `porting`)
+
+- gfx12 proof: **done** (surface `kernel:stage2-rdna-wmma-gfx12` moved from owed to covered).
+- **gfx942 rerun** of 8aa04e7's shared-code change and **gfx90a run** of the MFMA path (RDNA round list, unchanged).
+- **FP4** on gfx950/gfx1250 (question 1) and **CDNA f16/bf16 MFMA** (question 2): not written, waiting on jeff.
+- **nvcc compile** of 8aa04e7 on the mi355 host before anything goes to jeff (the recorded nvcc check was at 5c32be5).
+- Windows gfx1151 last, per the standing ruling.
+- Optional, for future RDNA validators: a build switch that turns off only the f16/bf16 WMMA would let the iu4 bit-identity check run on the current head instead of 5c32be5. Not added (the round's scope was proof only).
+
+## Lesson for cuda-to-rocm: TheRock torch needs the GPU family wheel for flash and memory-efficient SDPA
+
+(For `diagnosis.md` or the Linux host setup reference; corrects the gfx1100 lesson above, which stops at a workaround.) With `torch==2.14.0+rocm10.2.0` from `stable.repo.amd.com/rocm/whl-next` and only the per-chip wheel (`amd-torch-device-gfx1100`, `amd-torch-device-gfx1201`), `scaled_dot_product_attention` fails on the flash and memory-efficient backends with `hipErrorInvalidImage` ("device kernel image is invalid") because `torch/lib/aotriton.images` is missing. The AOTriton kernel images come in the GPU family wheel of the same version: `amd-torch-device-gfx110x` (RDNA3), `amd-torch-device-gfx115x`, `amd-torch-device-gfx12-0` (RDNA4). Installing it adds `aotriton.images` and both backends work (checked on gfx1201: flash fp16/bf16, memory-efficient fp16/bf16/fp32). Install the family wheel next to the chip wheel instead of disabling SDPA backends. Seen 2026-11-24 (nunchaku).
+
+## Lesson for cuda-to-rocm: gfx12 WMMA f32 accumulation was exact where gfx11 was one ulp off
+
+(For `faults-numerics.md`, next to the gfx11 WMMA accumulator note.) The same 16x16x16 `v_wmma_f32_16x16x16_{f16,bf16}` test with exactly representable small-integer data and a nonzero C gave 16/256 outputs one fp32 ulp off on gfx1100 and 0/256 on gfx1201 (nine runs, f16 and bf16), and on random data the gfx1201 WMMA error was at or below a lane-by-lane fp32 FMA chain (1.1e-7 to 1.7e-7 of sum |a*b|). Code that keeps C outside the gfx11 WMMA to avoid its accumulator bias can keep doing so on gfx12 at no accuracy cost, but gfx12 does not need it. Seen 2026-11-24 (nunchaku), ROCm 10.2.
+
+## Lesson for moat-porting: in a fleet job venv, torch builds with the image's ROCm until the devel wheel is expanded
+
+(For the fleet build recipes.) The job venv reaches the image's `_rocm_sdk_core`, `_rocm_sdk_devel` and `_rocm_sdk_libraries` through `venv-base-links`. Installing `rocm[devel]==<newer>` puts the newer core and libraries in the venv, but `rocm-sdk-devel` ships its payload as `rocm_sdk_devel/_devel.tar` and expands it only on first request, so until then `torch.utils.cpp_extension.ROCM_HOME` is the image's `_rocm_sdk_devel` and every extension compile uses the image's hipcc and headers, while `$FLEET_VENV/bin/hipcc --version` (a `rocm_sdk_core` launcher) still prints the newer version. Run `rocm-sdk path --root` once after installing (it expands the tarball into the venv), then check `python -c "import torch.utils.cpp_extension as c; print(c.ROCM_HOME)"` points into `$FLEET_VENV` before building. Seen 2026-11-24 (nunchaku gfx1201 job: three builds with the image's ROCm 10.1 before noticing).

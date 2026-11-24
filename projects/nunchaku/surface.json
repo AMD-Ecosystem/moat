@@ -405,6 +405,10 @@
   {
    "id": "kernel:stage2-rdna-wmma-f16",
    "note": "mma_m16n16k16_* on v_wmma_f32_16x16x16_{f16,bf16} (fork 8aa04e7) for the LoRA epilogues, attention_fp16 and the AWQ GEMM; gfx1100: primitive test vs reference and float64, op outputs within 2 units of roundoff of the reference build, tests/ops and end-to-end pass (notes); gfx12 owed (kernel:stage2-rdna-wmma-gfx12)"
+  },
+  {
+   "id": "kernel:stage2-rdna-wmma-gfx12",
+   "note": "gfx1201 (fork 8aa04e7, notes gfx12 proof round 2026-11-24): iu4 path bit-identical to the NUNCHAKU_ROCM_MMA_REFERENCE=1 build (5c32be5 default vs reference, only fp32 lora_act_out differs, as between two reference runs); f16/bf16 primitive test PASS; op outputs within 2 units of roundoff of the reference build; tests/ops 38 passed; end-to-end set 10 passed"
   }
  ],
  "scoped_out": [
@@ -445,10 +449,6 @@
   {
    "id": "example:examples",
    "reason": "SANA examples pass; the FLUX examples need the gated FLUX.1 pipeline."
-  },
-  {
-   "id": "kernel:stage2-rdna-wmma-gfx12",
-   "reason": "Compiled for gfx1201 (fork 8aa04e7: v_wmma iu4, f16 and bf16 present in the code objects) but never run: needs a gfx1201 host to run the reference-build comparison (mma_dump.py and f16_dump.py in notes), the primitive test and tests/ops."
   }
  ],
  "removed_from_floor": []
