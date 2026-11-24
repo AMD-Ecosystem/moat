@@ -1052,3 +1052,107 @@ CUDA gate: not rerun; already recorded at this head_sha (linux-gfx942 validation
 Content checks: `python3 utils/jargon.py --port plumed2` clean (local `master`/`moat-port` refs created from origin); the HIP build and `make USE_HIP=1 check` / `check-gpu` are documented in plugins/cudaCoord/README.md next to the nvcc build.
 
 Gates at head after this run: wave64 by linux-gfx942, wave32 by this platform, windows waived. No upstream PR is open; nothing was pushed to the fork.
+
+## Fix round moat-fix-1648 2026-11-24 (porter, linux-gfx942): merge upstream master to clear the conflict
+
+Why: upstream PR https://github.com/plumed/plumed2/pull/1648 (published head `2571dcde4`, base `master`) read CONFLICTING. No maintainer asked for anything; the round only makes the PR mergeable. The PR is open, so `moat-port` is frozen: `moatlib.py set-state plumed2 linux-gfx942 porting`, then `moatlib.py fix-branch plumed2` (staging branch `moat-fix-1648`, base `2571dcde4`). `moat-port` was not pushed.
+
+### What was done
+
+- Upstream merged: plumed/plumed2 `master` at `b930e84be7d5f63762e705dd810d0066f5a0e016` (merge base with the PR was `422109dc3`; 121 commits in between).
+- `2641e3218` "Merge upstream master into the HIP support of cudaCoord": a merge commit (`git merge --no-ff upstream/master`), not a rebase; `2571dcde4` stays its first parent.
+- `43ff1a58e` "[ROCm] cudaCoord: hide the GPUs from HIP too in the no-GPU test" (see below).
+- Pushed `moat-fix-1648` only (new branch, plain push). `advance-head plumed2 43ff1a58e9eb9d5c3a28d8579624e0e5a6938669`.
+- The fork's `master` mirror is still at `422109dc3` (not fast-forwarded: this job may write only `moat-fix-1648` and the MOAT branch). My local `master` was set to upstream master for the jargon scan. The fix review PR (`moat-fix-1648` -> `moat-port`) will show upstream's 121 commits plus the two above; that is expected for a merge round.
+
+### What upstream changed in plugins/cudaCoord since 422109dc3, commit by commit
+
+None of it is HIP or portability work; nothing overlaps or supersedes our change. Upstream did not touch `src/cuda_to_hip.h`, `src/Coordination.cuh`, or `plugins/openaccPTM/gpucheck/` (our check-gpu files).
+
+1. `01755c14b` cudaCoord: choose the GPU after the whole input has been read. Moves `chooseGPU`/`deviceGuard` and the switching-function stretch kernel from the start of the constructor to after `checkRead()`, so input errors are reported on machines without a GPU. Moves `regtest/cudatest/rt-input-errors` to `regtest/nogpu/`. Host-only reorder; for us it only means the first HIP call happens later in the constructor (still before any allocation, so the old gfx1100 runtime-init concern stays settled).
+2. `317317233` configure.sh: strips a `ccache` launcher from `CXX=` in Makefile.conf, because nvcc `-ccbin` takes a compiler only. Inside upstream's nvcc block; our HIP branch is before it and exits early, and hipcc does not use `CXX` (our `HOST_COMPILER` is empty under USE_HIP). Our mpi.h probe runs `$CXX -E -H`, which works through ccache too. No change needed.
+3. `6c14ae547` CI: compile cudaCoord and run the tests that do not need a GPU. New `make check-nogpu` target and `regtest checknogpu`; new `regtest/nogpu/rt-no-gpu` (hides GPUs with `CUDA_VISIBLE_DEVICES=-1`, expects "no GPU available"); rt-input-errors grows from 6 to 15 cases (also CUDACOORDINATIONFLOAT); `regtest/scripts` is now a checked-in symlink (so the README's old `ln -s` step is gone; our README text never had it). New `.github/workflows/gpuPluginsWF.yml` (nvcc 12.9/13.5, check-nogpu). The rt-no-gpu test needed our follow-up commit (below).
+4. `0a3717f45` Consolidate module configuration in YAML: `conda.mk` deleted, its content moved into `plugin.yml` (`conda:` block). Packaging only; the ROCm conda variant stays deferred (`plumed2-cudacoord-conda-rocm`).
+5. `809a00563` module metadata review: reformats the `plugin.yml` conda block. Packaging only.
+6. `5318f5b79` cudaCoord: queue the work of the step in launch(). Splits `calculate()` into an enqueue part and the wait, adds `cancelLaunch()` (stream sync + rebuild lists) and `setLaunchable(true)`. Same runtime calls as before (`cudaMemcpyAsync`, kernels, `cudaStreamSynchronize`), all already mapped.
+7. `8b05aa58b` Launch hooks: removes `enqueueStep()`, `launch()` is the enqueue function; `setLaunchable()` takes no argument. Host-only.
+8. `80018229f` openaccPTM, cudaCoord: the GPU is chosen by `PLMD::GpuDevice` (core `src/core/GpuDevice.{h,cpp}`). `chooseGPU(const Action&)` now fills a `GpuDevice::Runtime` (`cudaGetDeviceCount`, `cudaGetDevice`, and `GpuDevice::callerCudaDevice()`) and the core picks: MD-assigned GPU, else the caller's CUDA context device, else a user choice, else local MPI rank modulo GPUs (with >1 GPU), else the runtime's current device. Adds `#include "plumed/core/GpuDevice.h"` to cudaHelpers.cuh: the one textual conflict. The log line is now e.g. "gpu runs on GPU 0 (the default)".
+9. `61cf7c600` merge of PR #1653 (the YAML work above).
+
+The diffs to `Makefile` (check-nogpu target) and `README.md` (test section, GPU choice text) merged cleanly next to our hunks.
+
+### How the merge was resolved
+
+One conflict, `plugins/cudaCoord/src/cudaHelpers.cuh` include block: ours added `#include "cuda_to_hip.h"` + blank line, upstream added `#include "plumed/core/GpuDevice.h"` at the same spot. Kept both, ours first (the compat header must come before anything that names CUDA types). All other files auto-merged.
+
+Check: the lines added and removed by `git diff upstream/master 2641e3218` are exactly the lines added and removed by the PR's current diff `git diff 422109dc3 2571dcde4` (diff of the `^[-+]` lines: empty; only hunk positions moved, in README.md and cudaHelpers.cuh). CUDA path: every CUDA-side line is upstream's own; our edits to the CUDA path are the same as in the PR (the `HOST_COMPILER` variable for `-ccbin $(CXX)`, the `#ifndef __HIP__` guards, `warpMask()`/width 32 in the shuffles, which are `0xffffffffu` and a width of 32 under nvcc).
+
+Mapping check: every `cuda[A-Z]*` identifier in `plugins/cudaCoord/src/*.cu*` and in `gpucheck/device_check.cpp` after the merge is mapped in `cuda_to_hip.h` (the only unmapped hits are `cudaCheck`, `cudaHelpers`, `cudaOnPlumed`, `cudaCoord`, which are not runtime names). No new warp intrinsic, `warpSize`, or `cub::` use beyond the reviewed ones (`cudaHelpers.cuh:248`, `Coordination.cu:264-266`, `cub::BlockReduce` at `cudaHelpers.cuh:277`).
+
+### The one thing upstream's changes broke for HIP: rt-no-gpu under HIP_VISIBLE_DEVICES
+
+`make USE_HIP=1 check` on the merge commit `2641e3218`: "35 tests performed, 0 tests not applicable, 1 errors found", the error in `nogpu/rt-no-gpu`: all five inputs "DID NOT STOP PROPERLY (exit code 0)"; they ran on the GPU ("gpu runs on GPU 0 (the default)"). Cause, measured with `plumed driver` on the test's input:
+
+| environment | result |
+|---|---|
+| `HIP_VISIBLE_DEVICES=3 CUDA_VISIBLE_DEVICES=-1` (this job's pin) | rc 0, runs on GPU 0 |
+| `HIP_VISIBLE_DEVICES` unset, `CUDA_VISIBLE_DEVICES=-1` | rc 1, "no GPU available" |
+| `HIP_VISIBLE_DEVICES` unset, `CUDA_VISIBLE_DEVICES=` (empty) | rc 1, "no GPU available" |
+| `HIP_VISIBLE_DEVICES` unset, `ROCR_VISIBLE_DEVICES=3 CUDA_VISIBLE_DEVICES=-1` | rc 1, "no GPU available" |
+| `HIP_VISIBLE_DEVICES=-1` | rc 1, "no GPU available" |
+
+So HIP honours `CUDA_VISIBLE_DEVICES` only when `HIP_VISIBLE_DEVICES` is not set, and upstream's test fails for a HIP build whenever it is (every fleet pin, and common on AMD clusters). Fix `43ff1a58e`: `CUDA_VISIBLE_DEVICES=-1 HIP_VISIBLE_DEVICES=-1 $plumed driver ...` plus a two-line comment in `regtest/nogpu/rt-no-gpu/config`. CUDA ignores the extra variable. This is a change to an upstream test file, outside the files the PR touched before; it is a separate commit so jeff can drop it if he prefers to leave the test alone (then `make USE_HIP=1 check` needs `HIP_VISIBLE_DEVICES` unset).
+
+### Build and tests (porter's run, gfx942)
+
+Host: AMD Instinct MI300X (gfx942, wave64), HIP_VISIBLE_DEVICES=3 as the dispatcher pinned (one GPU). ROCm 10.1 Python wheels (HIP 7.16.26385, AMD clang 24.0.0git), g++ 13.3.0, MPICH 4.2.3 built from source into the job directory (`./configure --disable-fortran --with-device=ch3 --enable-fast=O2`; the image's /usr/bin/mpicxx is Open MPI 4.1.6, not used, to match the earlier runs), PLUMED from `git archive b930e84be` (upstream master, identical to the staging tip outside plugins/) with `./configure --prefix=<job>/deps/plumed CXX=mpicxx CC=mpicc`, `make -j48 && make install`. CXXFLAGS `-O3 -fPIC -Wall -pedantic -Wno-unknown-pragmas -std=c++17 -fno-gnu-unique -fopenmp`, `-D__PLUMED_HAS_MPI=1`. All GPU runs under `ulimit -c 0`.
+
+```bash
+export PATH=<plumed>/bin:<mpich>/bin:$PATH PLUMED_KERNEL=<plumed>/lib/libplumedKernel.so LD_LIBRARY_PATH=<plumed>/lib:<mpich>/lib:$LD_LIBRARY_PATH
+cd plugins/cudaCoord
+USE_HIP=1 ./configure.sh
+make USE_HIP=1 HIP_ARCHITECTURES=gfx942
+make USE_HIP=1 HIP_ARCHITECTURES=gfx942 check
+make USE_HIP=1 HIP_ARCHITECTURES=gfx942 check-nogpu
+make USE_HIP=1 HIP_ARCHITECTURES=gfx942 check-gpu
+```
+
+- Build: rc 0; 88 warnings, the known harmless set (84 nodiscard `hipError_t` -Wunused-value in upstream code, 4 -Wreorder-ctor). NEEDED libamdhip64.so.7, libplumedKernel.so, no libomp; SONAME CudaCoordination.so; FLAGS_1 NODELETE.
+- `check` at `43ff1a58e`: "35 tests performed, 0 tests not applicable, 0 errors found", checkfail the same. cudatest 13 (was 14: rt-input-errors moved out), cudatestPair 8, cudatestWB 12 (rt-double-orthopbc-mpi on 2 ranks), nogpu 2 (rt-input-errors, now 15 cases, and the new rt-no-gpu). Compared with the earlier 34: one new test (rt-no-gpu), one moved (rt-input-errors, with more cases); the GPU tests are the same 33.
+- `check-nogpu`: "+ the tests that do not need a GPU passed".
+- `check-gpu`: rc 0; gpucheck compiled with `hipcc -x hip --offload-host-only ...`, the 2 known nodiscard warnings (device_check.cpp:103, :182). `follow`: 17/17 OK, "follow: 0 failure(s)". `md`: "SKIP md mode needs at least 2 GPUs" (this job is pinned to one GPU and the pin was kept; md passed at `b0e0fb6d1` with two GPUs, and the device-selection code it exercises changed upstream in `80018229f`, see the question below).
+
+Device code unchanged: the gfx942 code object of the plugin built from the published head `2571dcde4` and from `43ff1a58e` (same tree path, same PLUMED install, `llvm-objcopy --dump-section=.hip_fatbin`, `clang-offload-bundler --unbundle`) is byte-identical (sha256 `56fd8af4adec...`, 24 kernels, 14773 lines of ISA, `diff` empty). `codeobj_diff.py` says `differ` only because of new exported host symbols (`launch`, `cancelLaunch`), as expected from upstream's host changes. So the wave64 shuffle-mask evidence (THREADS=32 debug-assertion runs) recorded for the earlier heads still describes the kernels at this tip.
+
+### Observation for jeff: GPU choice on HIP after 80018229f (no change made)
+
+`GpuDevice::callerCudaDevice()` asks `libcuda.so.1` (`dlopen` with `RTLD_NOLOAD`), so on AMD it always returns -1 and rule 2 ("the GPU the MD code is using") never applies to a HIP build. What applies instead is rule 5, `hipGetDevice()`, and since libamdhip64 is one shared library per process, that already is the caller's current device (the check-gpu `follow` mode passes). The visible difference from CUDA is only when rule 4 comes first: more than one visible GPU, launched by an MPI launcher that sets a local-rank variable, and the MD code did not call `setGpuDeviceId`; then a HIP build uses local-rank modulo GPUs where a CUDA build would follow the caller's context. Making rule 2 work on HIP would need a HIP probe in core `GpuDevice.cpp` (outside the plugin), and HIP has no clean "is a context current" query (the current device always defaults to 0). Left as upstream wrote it; mention it only if a maintainer asks about AMD multi-GPU behaviour.
+
+### CUDA compile: not done here (no nvcc on this host)
+
+Commands for the mi355 session (real nvcc), same recipe as the 2026-11-19 checks, on fresh clones of the fork at `43ff1a58e9eb9d5c3a28d8579624e0e5a6938669` (port) and plumed/plumed2 at `b930e84be7d5f63762e705dd810d0066f5a0e016` (base):
+
+```bash
+cd $J/<t>
+./configure --prefix=$J/install-<t>
+make -j64 && make install
+export PATH=$J/install-<t>/bin:/usr/local/cuda/bin:$PATH
+export PLUMED_KERNEL=$J/install-<t>/lib/libplumedKernel.so
+export LD_LIBRARY_PATH=$J/install-<t>/lib
+cd plugins/cudaCoord
+./configure.sh
+make
+make -B NVCCCFLAGS="-dc -dlto --gpu-architecture=sm_80" NVCCLDFLAGS="-shared -dlto --gpu-architecture=sm_80"
+make -C ../openaccPTM/gpucheck device_check
+make check-nogpu
+plumed --load $PWD/CudaCoordination.so manual --action CUDACOORDINATION
+make -B -n > ../../../make-n-<t>.txt; make -B -n -C ../openaccPTM/gpucheck device_check >> ../../../make-n-<t>.txt
+```
+
+Expect: both trees build 3/3 plus device_check; `make -B -n` lines identical once tree paths are masked; `make check-nogpu` passes in both (it hides the GPUs, so it runs on a GPU-less host: this is the CI job upstream added, and it exercises our rt-no-gpu edit under CUDA, where `HIP_VISIBLE_DEVICES` must be ignored); per-kernel SASS of the sm_80 cubins identical after label normalization (`nvdisasm -c`).
+
+### Draft comment for the upstream PR (for jeff to approve and post)
+
+====
+I merged the current master into this branch to clear the conflict; the only clash was an include line in cudaHelpers.cuh, and nothing in the HIP part had to change. The one addition is in the new rt-no-gpu test: it now sets HIP_VISIBLE_DEVICES=-1 next to CUDA_VISIBLE_DEVICES=-1, because the HIP runtime ignores CUDA_VISIBLE_DEVICES when HIP_VISIBLE_DEVICES is set.
+====
