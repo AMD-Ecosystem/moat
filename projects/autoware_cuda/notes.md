@@ -772,3 +772,105 @@ Checked here without nvcc: `g++ -E -P` of `tensorrt_common.cpp`, `tensorrt_commo
 ### Open for a person (carried, unchanged)
 
 Round-2 open items 1 (custom-op plugins do not reach MIGraphX's ONNX parser) and 2 (zero-length coverage), with deferrals `migraphx-onnx-custom-op-unresolved` and `migraphx-empty-reduce-compile`. Also still open: DCO sign-off (00693fb has no `Signed-off-by` either), the copyright holder line, the upstream defects, cspell, the 2290174/0842236 reword question, and per-frame variable shapes.
+
+## Review 2026-11-24c (reviewer, linux-gfx942 fleet job mi300c-20261124-031719-fix4, delta a2c82de...00693fb)
+
+Scope: `git diff a2c82de...00693fb` on `moat-port`, plus closure of "Review 2026-11-24b" findings 1-10.
+
+The porter of 00693fb and this reviewer are the same job. pr-review skill, with three independent child agents that had no part in writing the delta:
+
+- (a) the backend, `migraphx_common.cpp`, against MIGraphX f0239c965 source;
+- (b) headers, CMake, README and commit text, against real TensorRT 10.13 headers and the autoware_universe 6cea1ac census;
+- (c) tests, generator, plugin and lessons.
+
+The reviewer re-ran or re-read every finding below; each says how.
+
+Mechanical checks, all clean:
+
+- `moat-port` is 0 commits behind the fork's `main`.
+- The title is 65 characters, and `[ROCm]` is earned.
+- AI assistance is disclosed in prose, with no trailer.
+- `utils/jargon.py --port autoware_cuda`: clean.
+- The CUDA path is unchanged: the CMake change is inside the HIP branch, and the header blocks are inert without `AUTOWARE_TENSORRT_COMMON_MIGRAPHX`.
+- The generator reproduces every committed binary byte for byte.
+
+**Verdict: changes requested.** This was the third and last review cycle of round 2 by Jeff Daily's instruction, so no further porter pass was started and the validator was not run. Jeff decides next.
+
+Closure of 2026-11-24b:
+
+- **Closed:** 1, 3, 5, 6, 7 and 8.
+- **Partly closed:**
+  - 2: the code is fixed, but its regression test is weak when run alone (B below).
+  - 9: item 2 of the lesson is fixed, but the reworded item 3 overstates (E below).
+  - 10: `utils.hpp` is guarded, but `logger.hpp` and `profiler.hpp` are not, and the README overclaims (F below).
+- **Not closed:** 4 (A below).
+
+### Findings (open)
+
+A. **A sampled "constant" output dim can be wrong, and the correction comes after the run that needed it: setup failure, or a device write past the consumer's buffer.** Code: `src/migraphx_common.cpp`, `resolveOutputDims` (about l.183-265), `forgetDimsThatDiffer` (about l.429-449), and the `enqueueV3` compile-then-run (about l.1130-1175).
+
+- **Why:** a dim equal at the samples 2, 3, 64 and 255 is reported as known. `describeProgram` now checks programs only against the declared dims, so a program that contradicts the reported value is accepted and run in the same call. The reported value is changed only afterwards.
+- **Reproduced by the reviewer** (child probe `agent_space/review-backend/probe_dims.cpp`, re-run on GPU 3) with `pool_network.onnx`, where `sparse` height = (H-1)/300+1, and profile min 2 / opt 250 / max 900:
+  - NetworkIO `sparse` [1,2,-1,8], as TensorRT reports it: `setup()` returns false ("Invalid tensor ... Cached engine: sparse {[1, 2, 1, 8]}").
+  - NetworkIO [1,2,1,8]: setup succeeds and `getTensorShape("sparse")` = [1,2,1,8]. A run at H=600 then returns true and overwrites 16 of 16 guard floats past a one-row buffer. Only after that does it report [1,2,-1,8].
+- **The committed test passes only because** its opt (600) happens to expose the dim.
+- **Comments overclaim:** the `kDimensionSamples` and `resolveOutputDims` comments ("corrected when a program is compiled") and the README line ("a program compiled later ... makes it -1") claim more than the code guarantees.
+- **Fix options:**
+  - (i) refuse a program whose output lens contradict a reported known dim, before binding, and reconsider the report;
+  - (ii) report -1 for any dim the file leaves symbolic when any input is dynamic (TensorRT parity is lost only for dims that do not depend on the dynamic ones, the earlier finding-2 case);
+  - (iii) resolve only by a proof stronger than sampling.
+
+  Option (i) at least removes the out-of-bounds write.
+
+B. **`Fp16ExclusionsDoNotSerializeTheWeights` is order-dependent and loose when run alone; it also needs `/proc/self/clear_refs` without saying so** (`test/migraphx_common_test.cpp`).
+
+- **Reproduced:** run alone, `without` = 595 MiB (it includes about 310 MiB of one-time MIGraphX/HIP initialization) and `with` = 282 MiB. In the full suite the porter measured 287 and 282.
+- **Consequence:** alone, the bound `without + 2 * weights` is about 720 MiB, so a regression of up to about 7x the weights passes. The comment "takes little more memory than building without" holds only for the full-suite order.
+- **Fix:** do an unmeasured warm-up build first (or measure `without` again after `with` and take the smaller), and `GTEST_SKIP` with a reason when `clear_refs` cannot be written.
+
+C. **`operationNames` swaps `std::cout`'s buffer process-wide** (`src/migraphx_common.cpp`, about l.315-330).
+
+- **Why it is a defect:** the mutex serializes only this function. Another thread writing `std::cout` meanwhile races with `rdbuf()`, which is a data race on one stream object, i.e. undefined behaviour, not merely "lost output" as the comment says.
+- **When it happens:** on every fp16 build with exclusions, including the per-shape compiles inside `enqueueV3()` while a node runs.
+- **How verified:** read; MIGraphX `api.cpp:513` prints with `std::cout << p`, and the C API has no instruction iterator, so print is the only public route.
+- **Fix:** keep the print route but run it where no other thread can be inside the process's `std::cout` use, for example once at `setup()` before inference starts, with per-shape compiles reusing that name set. The name set may be a superset: extra names select nothing. The comment must state the real constraint.
+
+D. **Construction prints a MIGraphX error to stderr for models that need the fallback parse, and parses up to 9 times** (`initialize()`, about l.532-546).
+
+- **Why:** the default-length attempt fails first, and the MIGraphX C API itself prints `migraphx_parse_onnx: Error: ... POOLING: not enough padding ...` on every construction, though a sample length then succeeds. Seen in the reviewer's probe output and the porter's test logs.
+- **Cost:** a dynamic-input model is parsed up to 1+4 times for the check, plus 4 times in `resolveOutputDims`, each reading all the weights.
+- **Fix:** reuse the successful sample parses between the two (parse once per sample length), and log that a first failure at length 1 is expected, or try the sample lengths first.
+
+E. **Lesson item 3 overstates and names the wrong mechanism** (notes, "Lesson for cuda-to-rocm: MIGraphX ONNX parsing ignores registered custom ops; fp16 op lists and empty tensors").
+
+- **Why:** the empty output is replaced by `undefined` in the ONNX parser, not at compile. `parse_generic_op.cpp:90-102` does this for ops on its generic list whose inputs are all empty: unary ops plus Concat, Gather, GatherND, Flatten, Identity and LRN.
+- **Reproduced:** `migraphx-driver read rows_scaled.onnx --input-dim @x 0 4` already shows `@3 = undefined`.
+- **Not "pointwise compiles":** `Add(x, x)` at [0, 4] fails at compile ("No valid tuned compilation for pointwise"), and `Transpose(x)` fails ("... for hip::copy"). Both were reproduced with `migraphx-driver compile --gpu`.
+- **Fix:** reword item 3 before promotion.
+
+F. **`logger.hpp` and `profiler.hpp` have no backend guard, and the README sentence overclaims** (`README.md:74`, "A package that links the `autoware_tensorrt_common` target and reaches the real TensorRT headers before these stops with a compile error").
+
+- **Reproduced:** with `-DAUTOWARE_TENSORRT_COMMON_MIGRAPHX=1` and real TensorRT 10.13 first, a TU including only `logger.hpp`, `profiler.hpp` or `conv_profiler.hpp` compiles (rc 0).
+- **Impact:** `Profiler` derives `nvinfer1::IProfiler` and is implemented in the library (`src/profiler.cpp`, built against the stand-in), so such a TU compiles a different base class than the library's. No autoware_universe 6cea1ac file includes only these headers. The commit body's "the case no check can see" is likewise inexact.
+- **Fix:** the same three-line `#error` block in `logger.hpp` and `profiler.hpp` (`conv_profiler.hpp` includes `profiler.hpp` first), or reword the README to name the headers that check.
+
+G. **Custom-op comments generalize to all GPU operators** (`test/custom_op_plugin.cpp:31-32`, generator comment above `custom`).
+
+- **Why:** "a MIGraphX operator that runs on the GPU gets no output allocation" and "Like every MIGraphX operator that runs on the GPU ..." are false for built-in ops, which get an allocation from lowering (`lowering.cpp:232-236`, `insert_precompile_op`). Only custom ops are passed through unchanged (`insert_custom_op`, l.224-229), and a custom op may also be a view of input 0 (`test/api/test_custom_op_gpu.cpp`).
+- **What the model's comment should add:** the `buffer` graph input exists only because nothing in an ONNX graph can supply an allocation. A TensorRT plugin model has no such input, so stage 3 must not copy it as a model shape.
+- **Fix:** say "a custom operator" in both places.
+
+H. **`emptyOutputs` can flag a non-empty output as empty** (low confidence, read only; the formula predates 00693fb, but 00693fb relies on it per output; about l.303).
+
+- **Why:** `at_two*3 == at_three*2` also matches a dim `max(N, 1)` (2, then 3), which is 1 at N=0.
+- **When it matters:** if MIGraphX also refuses the zero-length compile and every output is flagged, the skip path returns true and leaves that output unwritten, where TensorRT writes it.
+- **Fix:** add a third sample (e.g. 5) and require exact proportionality.
+
+Low-confidence note, not a finding: the fp16 names come from a copy that went through normalize, optimize, a no-op truncate and a second optimize. The real `truncate_float_pass` sees the program after the first optimize only. `optimize_module` is not a fixed point (`repeat_while_changes(2, ...)`), so an op kind present only between the two optimizes would stay fp32. No case was found.
+
+### What is open (for Jeff; the job stops here as instructed)
+
+1. Findings A-H above. A is the blocking one: a device-side out-of-bounds write is possible for a model whose output dim follows a dynamic dim by a division the samples do not expose. B, C, E, F and G are wording or robustness issues of the same kind the last two reviews found. D and H are minor.
+2. Validation of linux-gfx942 at 00693fb was not run, since the review did not pass. The porter's own run at 00693fb (empty workspace build, 132 tests, 0 failures, 30 skipped cppcheck; MIGraphX test 20/20, tensorrt_common_test 13/13, cuda_utils 17/17) is porter evidence, not a validation record.
+3. CUDA + TensorRT nvcc recheck of 00693fb on the nvcc host. The files the delta touches that a CUDA/TensorRT build compiles are `autoware_tensorrt_common/include/autoware/tensorrt_common/utils.hpp` and `.../tensorrt_common.hpp` only, through `src/tensorrt_common.cpp`, `src/tensorrt_common_io.cpp`, `src/profiler.cpp`, `test/tensorrt_common_test.cpp` and consumers. Details are in "Porter round 2 fixes, second pass".
+4. Carried: round-2 open items 1-2 (custom-op parser route, zero-length coverage), DCO sign-off, copyright holder line, upstream defects, cspell, the reword question, per-frame variable shapes. Also, the autoware_universe census has no line for the streampetr `NV_TENSORRT_*` requirement; that belongs on that project's branch, not here.
