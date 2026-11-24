@@ -236,6 +236,20 @@ static std::vector<PointTypeStruct> to_host(const cuda_blackboard::CudaPointClou
 
 int main(int argc, char ** argv)
 {
+  // `dump <seed> <file>`: write the scene (PointTypeStruct records) followed by the CPU reference
+  // label of each point (int8: 1 ground, 0 non-ground, -1 box-filtered), for the node probe.
+  if (argc > 3 && std::string(argv[1]) == "dump") {
+    const FilterParameters prm = make_params();
+    auto pts = make_scene(std::atoi(argv[2]), prm);
+    auto ref = cpu_reference(pts, prm);
+    FILE * f = std::fopen(argv[3], "wb");
+    if (!f) return 1;
+    std::fwrite(pts.data(), sizeof(PointTypeStruct), pts.size(), f);
+    for (int v : ref) { const int8_t b = static_cast<int8_t>(v); std::fwrite(&b, 1, 1, f); }
+    std::fclose(f);
+    std::printf("dumped %zu points\n", pts.size());
+    return 0;
+  }
   const int runs = argc > 1 ? std::atoi(argv[1]) : 20;
   const uint32_t seed = argc > 2 ? std::atoi(argv[2]) : 7;
   const FilterParameters prm = make_params();
