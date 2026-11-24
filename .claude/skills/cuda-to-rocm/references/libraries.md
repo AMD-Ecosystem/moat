@@ -27,7 +27,7 @@ exists. A row marked "not verified" states what the library is, not what a port 
 |---|---|---|---|
 | cuBLAS | hipBLAS (rocBLAS underneath) | yes | handle types; the v2 enums change a few signatures; 16-bit GEMM accuracy (faults-numerics.md) |
 | cuBLASLt | hipBLASLt | mostly | epilogues, compute types, the ReLU aux format ("BLAS, hipBLASLt and Composable Kernel" below) |
-| cuFFT | hipFFT (rocFFT) | yes | plan creation during graph capture (faults-memory-streams.md) |
+| cuFFT | hipFFT (rocFFT) | yes | plan creation during graph capture (faults-memory-streams.md); hipFFT complex types under heFFTe (below) |
 | cuRAND | hipRAND (rocRAND) | yes | device generator state internals; C++14 from ROCm 10.1 |
 | cuSPARSE | hipSPARSE (rocSPARSE) | yes | half-precision SpMM, zero workspace sizes, graph capture ("hipSPARSE" below) |
 | cuSOLVER | hipSOLVER (rocSOLVER) | partly; not verified | hipSOLVER has a cuSOLVER-style dense API (`hipsolverDn*`). None of the ports behind this file exercised more than handle creation, so check every routine you call against hipSOLVER's function list, and its workspace-size and `info` conventions, before assuming a rename is enough. One gap is known: the low-level sparse factorization interface (`cusolverSpXcsrqr*` and `csrchol*`, with analysis, setup, factor and solve as separate calls), `csrlsvluHost` and `csrsymrcm` have no hipSOLVER counterpart (requested in ROCm/hipSOLVER issue 443), and cuDSS has none either; a sparse direct solve needs another library (RXMesh) |
@@ -64,6 +64,16 @@ For hipBLAS the equivalent verified trigger is a GEMM with negative extents:
 touches no device memory, so it is safe to fire from a probe. More generally, before
 concluding a port hangs, reproduce the hang in a few-line program that includes none of the
 project's headers: that separates a library bug from your change. (TurboFNO)
+
+**heFFTe's rocFFT backend does not accept hipFFT complex types.** heFFTe's cuFFT backend
+recognizes `cufftComplex`/`cufftDoubleComplex`, but its rocFFT backend registers no hipFFT
+type. A CUDA code that keeps its FFT buffers as `cufftComplex` and maps the name to
+`hipfftComplex` (which is `HIP_vector_type<float,2>`) fails to compile with `static assertion
+... check_types<rocfft, float, HIP_vector_type<float, 2>>: Using either an unknown complex
+type`. heFFTe documents `heffte::is_ccomplex<T>` and `is_zcomplex<T>` as the specialization
+point for custom complex types: specialize them for `hipfftComplex` and
+`hipfftDoubleComplex` in the HIP branch, with no patch to heFFTe. heFFTe then reinterprets
+the buffers as `std::complex`, whose layout they share. (ESPResSo)
 
 **Choosing the NVIDIA or AMD build of a library at run time.** A runtime with both a CUDA and a
 HIP backend must pick per device, from the device's own backend, and never by enumerating or
@@ -323,8 +333,13 @@ naming `index_elementwise_kernel`) only when the stale slot happens to hold an o
 so the failure looks intermittent. Diagnose by checking the sort output right after the sort for
 duplicates (`bincount(idx).max() > 1`), not only for range. Fix on the caller's side: never sort
 uninitialized data (zero-fill the buffer or sort only the valid prefix). Observed on the ROCm 10.1
-pip SDK (rocPRIM 4.6.0, hipCUB 4.7.0) on gfx90a (wave64) and gfx1201 (wave32); other ROCm versions
-not checked. Exact duplicate and missing counts vary run to run. (LiteGS)
+pip SDK (rocPRIM 4.6.0, hipCUB 4.7.0) on gfx90a, gfx942 and gfx1201, and unchanged on
+10.3.0a20261119 (rocPRIM 5.1.0); CUDA 12.9 sorts the same keys correctly. It affects float and
+double keys, pairs and keys-only, for 1025 to 1,048,576 elements: in that range rocPRIM merges
+radix-sorted 1024-item tiles with a comparator that adds zero to each key to fold -0.0, which
+quiets signaling NaNs, so the merge order disagrees with the tile order. Sizes outside the range
+take other paths and pass. Reported as ROCm/rocm-libraries#16364. Exact duplicate and missing
+counts vary run to run. (LiteGS)
 
 **rocPRIM radix sort of 64-bit keys is wrong when `end_bit` is 64 and `begin_bit` is not 0.** With
 rocPRIM 4.8 (ROCm 10.2), `hipcub::DeviceRadixSort::SortKeys` on 64-bit keys returns keys not ordered

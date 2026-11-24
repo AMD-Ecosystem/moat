@@ -88,7 +88,7 @@ AMD-native target is not the same verdict as "no target exists"; say which.
 | numbers that differ from CUDA or the CPU: FMA contraction, rounding, `min`/`max`, half-precision GEMM, big-integer arithmetic | `references/faults-numerics.md` |
 | a compile error, or code silently skipped: macros HIP does not define, includes, `__CUDA_ARCH__`, `helper_math.h`, C++23 | `references/build-headers-macros.md` (C++23: `assets/HipCxx23Shim.cmake`) |
 | CMake, link or load errors: `LANGUAGE HIP`, `-fgpu-rdc`, OpenMP, RUNPATH, LibTorch, installed packages, submodules | `references/build-cmake-link.md` |
-| anything on Windows: SDK install, clang drivers, CRT and link errors, DLL loading, Windows-only wrong results, debugging | `references/windows.md` (link wrapper: `assets/hip_link_win.py`) |
+| anything on Windows: SDK install, clang drivers, CRT and link errors, DLL loading, Windows-only wrong results, debugging | `references/windows.md` (link wrapper for a clang-cl host with `-fgpu-rdc`: `assets/hip_link_win.py`) |
 | a CUDA library to replace, or a missing routine or mode: cuBLAS, cuSOLVER, cuDNN, cuSPARSE, Thrust/CUB, cuRAND, NCCL, RAPIDS, nvJPEG, NVDEC, NVML | `references/libraries.md` |
 | a device query that answers differently, `clock64`, occupancy, kernels compiled at run time (PTX, NVRTC), an integrated APU | `references/platform-limits.md` |
 | a failure you cannot place yet, or a suspected ROCm bug | `references/diagnosis.md` |
@@ -274,6 +274,7 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - An uninitialised header-only submodule fails as a HIP error, not as a missing file
 - clang checks kernel bodies in the HIP host pass; nvcc does not
 - The CUDA Samples `helper_math.h` makes vector arithmetic ambiguous under HIP
+- HIP's `blockIdx`/`threadIdx` do not convert to `uint3`, and a `uint3` does not convert to ...
 - A helper whose name the standard library also declares must NOT be guarded on ...
 - Extend a CUDA guard for HIP; never re-key it
 - A ROCm-only branch inside a shared template still COMPILES on the CUDA path
@@ -301,7 +302,7 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - One OpenMP runtime per binary; which one follows from who compiles the files that use ...
 - OpenMP in a mixed g++/HIP library: one runtime only
 - CMake `LANGUAGE HIP` on host `.cpp` files drops OpenMP
-- A HIP-linked shared library gets no RUNPATH to the ROCm lib dir
+- A HIP-linked shared library, or a host-linked executable, gets no RUNPATH to the ROCm lib ...
 - With the ROCm clang as the host compiler, a found system libunwind links but does not load
 - LibTorch's CMake package adds `-D__HIP_NO_HALF_OPERATORS__=1 ...
 - On a multi-GPU host a rapids-cmake HIP dependency fails configure with `mismatch between ...
@@ -319,14 +320,16 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - Use TheRock ROCm, not the Windows HIP SDK
 - TheRock's devel wheel can ship with hipCUB/rocThrust headers missing
 - A torch wheel needs the matching `[device-<gfx>]` extra
+- On Windows, Triton comes from the `triton-windows` package
 - A dev package neither TheRock nor vcpkg ships
 - An all-clang Windows HIP build hides three CMake/export faults that MSVC builds never hit
 - CMake's HIP language on Windows needs ONE clang driver for every language, and ROCm's ...
 - Keep one clang driver across every CMake language, and check the CMake version
+- `find_package(Torch)` in a CMake HIP project needs the architecture and the ROCm root
 - CRT flags, compiler-rt builtins and Git Bash flag mangling in a CMake HIP build
 - Bundled third-party libraries that break under the clang toolchain: take them from vcpkg
 - TheRock clang 23 can hang in x86 register allocation
-- CMake's HIP link rule mangles MSVC-style flags and paths
+- Linking HIP through CMake: what each compiler arrangement needs
 - A ROCm library linked by name may have no `.lib`
 - A fetched ROCm-DS dependency has to be built static
 - A C++ LibTorch consumer must force the torch_hip.dll import
@@ -348,6 +351,7 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - Library swaps
 - Negative entries for that table
 - A swapped library may be less defensive about bad arguments than the CUDA one
+- heFFTe's rocFFT backend does not accept hipFFT complex types
 - Choosing the NVIDIA or AMD build of a library at run time
 - A scalar's WIDTH follows the compute/scale type, not the matrix type
 - hipBLASLt epilogues are not cuBLASLt's, per type and per format
@@ -429,6 +433,7 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - A fault inside a vendored JIT entry point: rebuild-with-a-forced-throw beats a debugger
 - scikit-learn's KMeans can crash a Python test on a machine with very many cores
 - Failures that appear only when the whole suite runs in one process
+- A sync-bound GPU test that passes alone can time out under `ctest -jN`
 - A free-memory leak check measures the whole GPU, not your process
 - A free-memory-delta test can fail once per process on gfx90a
 - Two GPUs visible to one process can crash the runtime

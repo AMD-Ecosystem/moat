@@ -70,16 +70,23 @@ what passes and what does not).
 - `cant-port` means "no AMD-native target exists", not "hipify will not do it". When the
   blocker is CUTLASS or CuTe, the intake recommendation names the reimplementation target
   and a rough cost, and a person decides.
-- FlashKDA, NATTEN, mirage and spconv are recorded `cant-port` on CUTLASS/CuTe grounds from
-  before FlyDSL was available. Revisiting them is a person's call, not an agent's.
+- NATTEN and mirage are recorded `cant-port` on CUTLASS/CuTe grounds from before FlyDSL was
+  available. Revisiting them is a person's call, not an agent's. (This line used to name
+  FlashKDA and spconv too, which was never their disposition. Read
+  `data/dispositions.json`, not a list in prose.)
 - MOAT ported OpenCV's CUDA modules (opencv/opencv_contrib#4147). A project blocked on
   "OpenCV CUDA has no ROCm build" records `depends_on: [opencv_contrib]` rather than a
   decline.
 - A dependency that already has a ROCm port (`spconv-triton`, pyg-rocm-build wheels,
   `amd_gsplat`) is consumed through the `_deps/` mechanism as environment, not adopted as a
-  deliverable. (This list used to name `spconv_rocm`; the GitHub repository of that name
-  is empty, checked 2026-11 by the Pointcept port. `cuda-to-rocm`'s strategy-b-torch.md
-  has the details.)
+  deliverable. `ZJLi2013/spconv_rocm` is not in that list on purpose: its default branch
+  is an unmodified spconv mirror and the work is on branch `rocm` (as is its cumm
+  counterpart `ZJLi2013/cumm-rocm`), a FlyDSL rewrite for gfx942 inference, not a ROCm
+  build of spconv as published. It can serve as environment where that is enough; it does
+  not make spconv or cumm `already-supported`, and MOAT's own cumm and spconv ports
+  proceed independently of it (recorded in the cumm notes). The repository that is empty
+  is the unrelated `jiaqiwang969/spconv-rocm`. `cuda-to-rocm`'s strategy-b-torch.md has
+  the details.
 - Generated CUDA belongs to its generator. colmap vendors Caspar kernels that SymForce
   generates; a colmap deferral placed the fix in colmap's `caspar_generate.py`, which
   contains no CUDA, while the templates and runtime were already ported in MOAT's own
@@ -317,6 +324,12 @@ This is a docs, diff, and review checkout, not a build checkout -- a compile nee
 
 ## Fleet hosts
 
+- A fleet worker's background shell command is stopped at 2 hours, whatever `timeout` it
+  asked for. A cold Triton run was killed that way at 120 of its 150 allowed minutes. For
+  a GPU run that may go longer, start it with `setsid nohup <wrapper> &`, have the wrapper
+  write an exit marker, and wait on the marker in foreground polls of under 10 minutes.
+  Keep whatever makes the work resumable outside the process (there, a persistent
+  `TRITON_CACHE_DIR`, so the killed run's compiles were not lost). (Pointcept)
 - Host and toolchain diagnostics specific to MOAT's machines (the gfx1151 laptop's System32
   runtime, TheRock layouts per host) belong in project notes or memory, not in
   `cuda-to-rocm`. Its `windows.md`, `linux-host-setup.md` and `platform-limits.md` are
@@ -328,5 +341,6 @@ This is a docs, diff, and review checkout, not a build checkout -- a compile nee
   them. Each fork MUST vendor its own copy (conventionally `cmake/hip_link_win.py`), copied
   in and never symlinked or downloaded, because the work is meant to be upstreamed and a
   pull request cannot depend on a file that lives only in this repository. The asset's own
-  docstring says none of this, since the vendored copy ships upstream. Known consumers of
-  `hip_link_win.py`: AMD-Ecosystem/alien (its origin) and LichtFeld-Studio.
+  docstring says none of this, since the vendored copy ships upstream. The only fork that
+  carries `hip_link_win.py` is AMD-Ecosystem/alien (its origin): it is needed only with a
+  clang-cl host and `-fgpu-rdc`, not by a port that uses the GNU-style clang++ throughout.
