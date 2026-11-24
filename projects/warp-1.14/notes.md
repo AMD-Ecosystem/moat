@@ -8991,3 +8991,7 @@ For a report: title along the lines of "gfx1250 code-object translation fails on
 - Open: the device-level 719 that breaks the full suite's process pool on this device in both modes (item 4).
 
 Commands not given above: `suite.sh default` (= `suite2.sh` with the earlier per-PID occupancy log), `one.sh <tag> <file> [HSA_DISABLE_GFX12_STRICT=0]` for each rerun, `dev.sh <tag> [env]` for the selection checks, `SRC=<scratch worktree> one.sh ...` for the negative control and the regex fix, `python3 fnsize.py <llvm-objdump> <objects>` for the `s_set_pc_i64` survey.
+
+## Ruling (Jeff Daily, 2026-11-24): strict-mode diagnostics test fix
+
+Question: the gfx1250 final-head evidence session found one port defect in strict mode, `test_diagnostics.test_print_diagnostics_cuda_device_structure`, whose arch regex (from the port's `bf6bd5ba`) rejects `gfx1250-strict`; options (a) commit the one-line regex fix now, carry the Linux validations forward (test-only, arch-independent delta) and run a delta review; (b) leave it and note it in the release notes. Jeff: "a".

@@ -375,8 +375,8 @@
       "refs": [
         "notes.md Evidence session 2 (2026-11-23, linux-gfx1201) item 5"
       ],
-      "status": "open",
-      "upstream_issue": null,
+      "status": "filed",
+      "upstream_issue": "https://github.com/ROCm/rocm-systems/issues/15971#issuecomment-7143959160",
       "created_at": "2026-11-23T23:03:58Z",
       "decided": {
         "choice": "now",
@@ -393,7 +393,7 @@
       "refs": [
         "notes.md Review 2026-11-24, fourth round, changes requested 2; rocprim/common.hpp ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR"
       ],
-      "status": "open",
+      "status": "not-applicable",
       "upstream_issue": null,
       "created_at": "2026-11-24T01:24:37Z",
       "decided": {
@@ -401,6 +401,12 @@
         "by": "jeffdaily",
         "at": "2026-11-24T19:25:18Z",
         "note": "file now (2026-11-24, decision 4 (a)); draft shown before posting"
+      },
+      "closed": {
+        "as": "not-applicable",
+        "reason": "CUB on CUDA behaves the same (V100, CUDA 12.9: a leftover runtime error makes the next SortPairs write nothing and return cudaSuccess); the HIP-only part was the port's driver-API mapping, fixed in 4e0d02ab. Jeff 2026-11-24: close as not applicable.",
+        "by": "jeffdaily",
+        "at": "2026-11-24T19:50:35Z"
       }
     }
   ]
