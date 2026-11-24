@@ -6110,3 +6110,75 @@ Also run on an AMD Instinct MI300X (gfx942) with the same ROCm, packages, build 
 ```
 
 **For jeff:** the paragraph replaces the `[PLACEHOLDER, MI300X, ...]` block; the V100 placeholder is untouched. Nothing else in the draft changes.
+## ROCm 10.2 check of the README known issue, 2026-11-24 (fleet job, linux-gfx942 MI300X, upstream master c9eea22a; not a pipeline round) -- STOPPED before the README rewrite: ROCm 10.2 still miscompiles gpu4pyscf
+
+Requested by jeff: confirm by running that ROCm 10.2 fixes the 10.1 miscompile, instead of the README saying "not yet confirmed by a run on these GPUs". No stage, platform record, lock, `moat-port` or `pr-1054-readme-rocm-10-1` touched. **Result: ROCm 10.2.0 fixes the 10.1 d-shell fault, but it has a second miscompile: without `-disable-machine-licm`, nuclear-gradient J/K comes out silently wrong (NaN, 1e102). The 10.3 nightly compiler fixes that. Per the request ("if the 10.2 build still faults, stop and record it: that changes the README"), no README branch was cut or pushed; a draft is below for jeff.**
+
+### Environment
+MI300X (`gfx942:sramecc+:xnack-`), `HIP_VISIBLE_DEVICES=6` from the dispatcher, every GPU run under `ulimit -c 0` and `timeout`. Job-private venvs created with `/usr/bin/python3.11 -m venv` under `$FLEET_VENV/v102` and `$FLEET_VENV/v103` (the job venv's own ROCm 10.1 packages are symlinks into the image's shared `/opt/python-3.11-venv`, so upgrading in place would have deleted shared files).
+- **ROCm 10.2.0** from the stable index (`pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ 'rocm[libraries,devel,device-gfx942]==10.2.*'`, a release, not an RC): rocm, rocm-sdk-core, -devel, -libraries, -device-gfx942 all 10.2.0. HIP 7.17.26434. `clang --version`: `AMD clang version 24.0.0git (https://github.com/ROCm/llvm-project.git bdc35841c97ff51400273b91d7bc05c96e19c2d9)`. **It contains LLVM 8c6e07731faf** ("[CodeGen][RegCoalescer] Preserve valid lanes when keeping IMPLICIT_DEF (#215272)"): `gh api repos/ROCm/llvm-project/compare/8c6e07731faf...bdc35841` gives status `ahead`, behind_by 0, merge base 8c6e0773. Same query for 10.1's d6f6cb69: `diverged` (lacks it).
+- **ROCm 10.3.0a20261124** from the nightly index (`--pre 'rocm[libraries,devel,device-gfx942]==10.3.0a20261124'`): HIP 7.18.26470, AMD clang 24.0.0git 424729dba65359a5e521ab2e729af131c8a5b0d4.
+- Python 3.11.17, numpy 2.2.6, scipy 1.17.1, cupy-rocm-7-0 14.2.0, pyscf 2.14.0, pyscf-dispersion 1.7.0, geometric 1.1.1, MCFun 0.2.6, pytest 9.2.0, pytest-timeout 2.4.0, cmake 3.31.6 (pinned to the earlier README job's versions). CuPy has no ROCm-10.2-specific build; the `cupy-rocm-7-0` wheel runs on whatever HIP runtime `LD_LIBRARY_PATH` names. **Full 10.2 stack**: with `LD_LIBRARY_PATH=<10.2 root>/lib`, `/proc/self/maps` during an RHF run lists libamdhip64.so.7, libhsa-runtime64, libamd_comgr, libhiprtc, librocblas, libhipblas, libhipblaslt, librocsolver, libhipsolver all from the 10.2 SDK.
+- As in the earlier job, pip's build of setup.py cannot run the cmake Python shim, so `agent_space/bin/cmake` (symlink to the wheel's real 3.31.6 binary) was first on PATH. `ROCM_PATH=<SDK root>` and `<SDK root>/bin` on PATH; no other ROCm on PATH.
+
+### Build with the 10.2 compiler (README command, no LICM flag)
+`GPU4PYSCF_BACKEND=hip CMAKE_BUILD_ARGS=--verbose pip install -v --no-deps <clone>` (the README command plus logging only), exit 0 in 124 s, 11 libraries. Configure line `-DCMAKE_HIP_COMPILER=<10.2 SDK>/llvm/bin/clang++`; `The HIP compiler identification is Clang 24.0.0`; **96/96 HIP compile lines and 11/11 `--hip-link` lines use the 10.2 clang++**, `--offload-arch=gfx942` only, 0 occurrences of `licm`. Producer strings: the gfx942 code object unbundled from `.hip_fatbin` of **all 11 installed libraries** has `.comment` `AMD clang version 24.0.0git (https://github.com/ROCm/llvm-project.git bdc35841...)`, and libgvhf_rys also `Linker: AMD LLD 24.0.0 (... bdc35841...)`.
+- Side observation, not a README matter: the package is named `gpu4pyscf-rocm3x` here (10.1 gave `rocm7x`). With pip-installed ROCm, `hipconfig` on PATH is a Python entry point that fails inside pip's build environment (`from rocm_sdk_core._cli import hipconfig` ImportError, in the build log), so `get_rocm_version()` falls back to a regex over the ROCm path and matches the `3` of `python3.11`.
+
+### Static check (the 10.1 defect)
+A scratch script (agent_space, not kept): parse `llvm-objdump -d` of one kernel, build the CFG from branch targets, and from the work-queue `global_atomic_add` (returning form, `atomicAdd(head, 1)`) walk back to every write that can reach its offset VGPR, following copies and scratch spill/reload slots. Validated on the bug: a standalone device compile (`-fno-gpu-rdc --cuda-device-only -c -save-temps`, the build's own -D/-I/-include/-O3 flags) with the **10.1** compiler reports for `rys_jk_kernel` the offset v20 reached by `v_mov 0` **and six in-loop `global_load_dwordx2 v[20:21]`**, and for `rys_k_kernel` (rys_contract_k.cu) v20 reached by four such loads: the recorded defect. **10.2**, same compile: only the zero reaches (`rys_jk_kernel` v51, `rys_k_kernel` v1). **10.2 installed build** (gfx942 object of libgvhf_rys.so): `rys_jk_kernel` offset v51 is set by `v_mov_b32 v51, 0` and reloaded from scratch slot 0 in one place; tracing the slot, every origin is the zero. `rys_k_kernel` offset v1: only the zero. The same trace over all 151 functions of that object (every kernel with a work-queue atomic: rys_j/k/jk, the unrolled rys_k_*/rys_jk_*, vjk_ip1, ejk_ip1, ejk_ip2, int3c2e, int4c2e): origins `ZERO` in every one. So the 10.1 register clobber is gone in 10.2.
+
+### Runs with the 10.2 build
+- RHF water/def2-svp (#1055's one-liner), full 10.2 stack: **-75.96097516696523**, CPU PySCF -75.96097516698244 (1.7e-11), 46 s, rc 0. No fault.
+- scf and dft, CI marker selection, exactly as the earlier job: one pytest process per file, `--import-mode=importlib` from an empty directory (checked `gpu4pyscf.__file__` is the installed copy), `-p no:xdist -m 'not slow and not benchmark and not special' -k 'not _high_cost'`, `OMP_NUM_THREADS=4`, four files at a time, `timeout -k 30 1800` per file, 4 min. **339 passed / 9 failed / 23 skipped / 0 errors over 32 files** (scf 203/9/14, dft 136/0/9; the counts here exclude pytest subtests, which the earlier job's 401 seems to include). No fault, no hang. Failures:
+  - **Wrong gradient J/K** (compiler, see below): test_scf_jk.py::test_jk_energy_per_atom (`9.48e+102 < 5e-12`); test_fermi_smearing.py::test_gradient (GPU gradient x components NaN); test_diffuse_orbital.py test_rhf, test_rhf_lowmem, test_rhf_soscf, test_rks_lowmem, test_uhf_solvent (gradients off by 1e-2, one 6.6e+130).
+  - Environment: test_diffuse_orbital.py::test_rhf_df_against_qchem (`BasisNotFoundError: d-aug-cc-pvdz`, not in pyscf 2.14; recorded in earlier rounds).
+  - Varies run to run: test_stability.py::test_stability_rhf_unstable (2e-4 on one eigenvalue); rerun alone 3 times on this build, 1 more failure; 3/3 pass on the flagged build below. Not attributed.
+
+### The 10.2 gradient miscompile: isolation
+`test_jk_energy_per_atom` reproduces in 0.7 s, with different garbage every run (0.70, 0.82, 1.02, 9.5e102). Each variant built from the same master c9eea22a in its own worktree into its own prefix (`pip install --no-deps --no-build-isolation --prefix`), verbose logs checked for compiler path and flag on all 96 compile and 11 link lines:
+
+| build compiler | `-mllvm=-disable-machine-licm` | runtime | test_jk_energy_per_atom |
+|---|---|---|---|
+| 10.2 (bdc35841) | no | 10.2 | fails 3/3 |
+| 10.2 | no | 10.1 | fails 2/2 (so it follows the compiled code, not the runtime) |
+| 10.2 | yes | 10.2 | passes 2/2 |
+| 10.1 (d6f6cb69) | yes | 10.2 | passes 2/2 |
+| 10.3.0a20261124 (424729db) | no | 10.2 | passes 2/2 |
+
+Probe (`agent_space/ip1probe.py`): `_jk_energy_per_atom` on O2 against `int2e_ip1` contracted on the CPU, J and K separately, bases sto-3g, 6-31g, def2-svp, cc-pvtz. 10.2 without the flag: **K wrong in every basis including sto-3g** (atom-0 ratios like 0.897, 0.324, -0.882, 1.6e78), J likewise off its constant ratio. sto-3g only has s and p shells, which take the unrolled `rys_ejk_ip1_*` kernels, so this is not limited to the generic d-shell kernel. 10.2 with the flag and 10.3 without: K matches to 1e-12 (cc-pvtz 6e-11), and J sits at a constant -2.0 ratio in all four bases, which is my J reference's normalization, identical in both good builds. Energies are not affected (RHF energy correct, scf/dft energy tests pass); the gradient J/K (ip1) path is. The atomic-offset clobber is absent from these kernels in 10.2 (trace above), so this is a different defect that machine LICM also triggers. Not narrowed to an instruction. gfx90a and Radeon with 10.2: not checked (no such GPU on this host).
+
+- 10.2 with the flag, full scf/dft run as above: **347 passed / 1 failed / 23 skipped / 0 errors** (scf 211/1/14, dft 136/0/9); the one failure is d-aug-cc-pvdz (environment).
+
+### ROCm 10.3 nightly (10.3.0a20261124)
+- Build without the flag: exit 0 in 133 s; 96/96 compile and 11/11 link lines use the 10.3 clang; libgvhf_rys gfx942 `.comment` names 424729db.
+- **Full 10.3 stack fails before any gpu4pyscf kernel**: CuPy 14.2.0's runtime kernel compilation through the 10.3 hiprtc fails (`HIPRTC_ERROR_COMPILATION`, `HIP_VERSION_MINOR` redefined 17 vs 18, then host libstdc++ `initializer_list` parse errors) on the first elementwise op of the SCF init guess. A CuPy x 10.3 nightly problem, not this compiler question.
+- So per the request, the 10.3-compiled build ran on the **10.2 runtime**: RHF water/def2-svp **-75.96097516696527**, rc 0; ip1 probe correct as above; test_jk_energy_per_atom 2/2 pass; scf/dft full run **347 passed / 1 failed (d-aug) / 23 skipped**, identical to 10.2 with the flag.
+
+### What this means for the README
+"ROCm 10.2 fixes it" would be false: 10.2 fixes the fault but computes wrong gradients with no error, which is worse for users. The workaround (`-mllvm=-disable-machine-licm`) fixes both releases. The fix is not in a release yet (10.3 is a nightly), so the README can't name a fixed release. Draft for jeff, **not committed or pushed** (branch `pr-1054-readme-rocm-10-1-v2` not created):
+
+```
+> [!WARNING]
+> Known issue with ROCm 10.1 and 10.2 on AMD Instinct GPUs: compiler bugs
+> miscompile the Rys J/K kernels. With ROCm 10.1 on MI200 and MI300 series GPUs
+> (gfx90a, gfx942), calculations with d shells (for example RHF/def2-svp) fail
+> with a GPU memory access fault and then hang. With ROCm 10.2 on MI300 series
+> GPUs (gfx942), energies are correct but nuclear gradients are wrong, with no
+> error. Radeon GPUs did not show the ROCm 10.1 fault. With either release, build
+> with machine LICM disabled (see [#1055](https://github.com/pyscf/gpu4pyscf/pull/1055)):
+> ```sh
+> GPU4PYSCF_BACKEND=hip CMAKE_CONFIGURE_ARGS="-DCMAKE_HIP_FLAGS=-mllvm=-disable-machine-licm" pip install .
+> ```
+```
+
+Draft pull request title (69 characters): `Document the ROCm 10.1 and 10.2 miscompiles on Instinct in the README`. The body would replace the first paragraph of the earlier draft with the two defects and add the 10.2 evidence (the table above, condensed: plain 10.2 install gives 9 scf failures, all gradient; with the flag 347 passed / 1 failed for a missing basis). Not written out in full: whether the README names a nightly at all, and whether MI200 is claimed for 10.2 without a run there, are jeff's calls. The #1055 reply draft stays true as written.
+
+### For jeff
+1. ROCm 10.2.0 does not make the workaround unnecessary; it turns the 10.1 crash into silently wrong gradients on MI300X. Decide the README wording (draft above) and whether a gfx90a 10.2 run should come first (a wave64 MI200 host can repeat `test_scf_jk.py -k test_jk_energy_per_atom` with a plain 10.2 install in a few minutes).
+2. The 10.2 defect is fixed in the 10.3 nightly compiler (424729db), so an upstream ROCm report may not be needed; registered as deferred `rocm-10-2-machinelicm-wrong-gradient-jk` for your ruling.
+3. Separate from gpu4pyscf: CuPy 14.2.0 cannot JIT on the ROCm 10.3 nightly runtime (hiprtc errors above).
+
+## Lesson for cuda-to-rocm: confirm a compiler fix with the full test run, not the original symptom
+
+Before dropping a compiler workaround (here `-mllvm -disable-machine-licm`) because a newer ROCm contains the upstream LLVM fix, build without it on the new release and run the whole GPU test selection, not just the reproducer. In gpu4pyscf, ROCm 10.2's compiler contained the fix for the 10.1 register clobber, the original crash was gone and a static check of the kernel was clean, yet the same flag was still needed: 10.2 had a different miscompile that produced wrong nuclear gradients with no error, visible only in the gradient tests. Isolate compiler from runtime by running the new-compiler build on the old runtime and vice versa, and by rebuilding with the workaround flag on the new compiler. (gpu4pyscf)
