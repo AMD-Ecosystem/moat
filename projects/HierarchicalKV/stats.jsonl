@@ -34,3 +34,6 @@
 {"kind":"session","ts":"2026-11-24T08:59:01Z","epoch":1795510741.93101,"event":"end","platform":"linux-gfx942"}
 {"kind":"phase","ts":"2026-11-24T09:09:46Z","phase":"compile","seconds":266.343,"exit":0,"cmd":"bash agent_space/build_cuda.sh /var/lib/jenkins/fleet/jobs/mi355-20261124-010126-nvcc2-hierarchicalkv-prompt/hkv/port"}
 {"kind":"phase","ts":"2026-11-24T09:09:54Z","phase":"compile","seconds":274.648,"exit":0,"cmd":"bash agent_space/build_cuda.sh /var/lib/jenkins/fleet/jobs/mi355-20261124-010126-nvcc2-hierarchicalkv-prompt/hkv/base"}
+{"kind":"phase","ts":"2026-11-24T09:08:35Z","phase":"compile","seconds":172.323,"exit":0,"cmd":"bash -c ninja -C projects/HierarchicalKV/src/build-hip -j 192 find_or_insert_ptr_test merlin_memory_pool_test > agent_space/b592.log 2>&1 & ninja -C agent_space/hkv815/build-hip -j 192 find_or_insert_ptr_test > agent_space/b815.log 2>&1; wait"}
+{"kind":"phase","ts":"2026-11-24T11:32:35Z","phase":"test","seconds":8225.325,"exit":0,"cmd":"agent_space/base/loop.sh 1 15 592"}
+{"kind":"phase","ts":"2026-11-24T11:46:37Z","phase":"test","seconds":9066.233,"exit":0,"cmd":"agent_space/base/loop.sh 2 15 815"}

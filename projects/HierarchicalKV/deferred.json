@@ -52,6 +52,21 @@
       "upstream_issue": null,
       "created_at": "2026-11-24T04:07:25Z",
       "decided": null
+    },
+    {
+      "id": "hkv-hip-event-query-destroyed-stream-uaf",
+      "kind": "rocm-bug-report",
+      "component": "hip-runtime",
+      "summary": "TheRock ROCm 10.2.0 (HIP 7.17.26434, rocm-systems pin 43fa692), Linux, gfx942: the same HIP runtime use-after-free already filed as ROCm/rocm-systems#14755 (LichtFeld-Studio deferral hip-event-query-destroyed-stream-uaf). hipEventRecord stores the recording stream in Event::captureStream_ on every record; hipEventQuery/hipEventSynchronize call checkEventCaptureRestrictions, which reads stream+0x234 (capture status) and locks stream+0x1d0 with no hip::isValid guard. HierarchicalKV's MemoryPool records its ready events on the caller's stream and queries them later from any thread; FindOrInsertPtrTest.test_find_or_insert_multi_threads destroys each worker's stream, so a later hipEventQuery in collect_pending_unsafe reads the freed hip::Stream and, when the heap has reused it, blocks forever in pthread_mutex_lock on a word no thread owns (__owner 0). The hang stack (libamdhip64 +0x1878f2 <- +0x1883f0 <- hipEventQuery+0x1b) is identical frame for frame to a 50-line reproducer that reuses the freed chunk (hangs 3/3 on 10.2.0, returns hipSuccess 3/3 zero-filled). Fixed on rocm-systems develop by #15025 (99ad350, merged 2026-11-18), not in 10.2.0; the reproducer passes 6/6 against the nightly 10.3.0a20261123 runtime (pin 51e17db, contains 99ad350). Nothing new to file: #14755 is open and the fix awaits a release. The port-side workaround is a person's ruling (notes.md, Porter 2026-11-24 round 3).",
+      "refs": [
+        "projects/HierarchicalKV/notes.md",
+        "https://github.com/ROCm/rocm-systems/issues/14755",
+        "https://github.com/ROCm/rocm-systems/pull/15025"
+      ],
+      "status": "filed",
+      "upstream_issue": "https://github.com/ROCm/rocm-systems/issues/14755",
+      "created_at": "2026-11-24T09:26:51Z",
+      "decided": null
     }
   ]
 }

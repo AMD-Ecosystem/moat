@@ -549,3 +549,146 @@ bazel --output_user_root=<job>/bazel/root build --config=cuda \
 ### Nothing to fix
 
 No CUDA break, so there is no fix to propose. The CUDA path of `592f800` is upstream's device code, with the shared Bazel fix on top.
+## Porter 2026-11-24 round 3 (linux-gfx942 MI300X, porter role): diagnosis of the `test_find_or_insert_multi_threads` hang
+
+Requested by Jeff Daily (fleet job): diagnose the intermittent hang from "Validation 2026-11-24" before any fix. TheRock ROCm 10.2.0 wheels installed into the job venv (`rocm[libraries,devel,device-gfx942]==10.2.0`, HIP 7.17.26434, rocm-systems pin 43fa692 per `share/therock/therock_manifest.json`), one pinned GPU, `ulimit -c 0`, a timeout around every GPU run. No fork commit this round.
+
+### Verdict
+
+**HIP runtime defect, already filed and already fixed upstream; not caused by this round's update-kernel change.** It is the use-after-free the LichtFeld-Studio port found (deferral `hip-event-query-destroyed-stream-uaf`, filed by Jeff as https://github.com/ROCm/rocm-systems/issues/14755, open). It is fixed on rocm-systems `develop` by https://github.com/ROCm/rocm-systems/pull/15025 (99ad350, merged 2026-11-18). That fix is not in 10.2.0: the 10.2.0 pin 43fa692 is on a branch that left `develop` at 2026-10-14, and the GitHub compare of 99ad350 against 43fa692 reads "diverged". It hangs at the previous head 815cfdc as well, and a 40-line program reproduces it deterministically. Registered `hkv-hip-event-query-destroyed-stream-uaf` (`rocm-bug-report`, status `filed` against #14755). No new issue to draft (see "Issue" below). A port-side workaround is drafted, not committed, pending Jeff's ruling. **The stage stays `porting`:** its only exits are `ported`/`delta-ported` and nothing was ported. The next porter resumes after the ruling (re-stamping the lock; this job has stopped).
+
+### Mechanism (CLR source at the 10.2.0 pin, matched to the shipped binary)
+
+- `hipEventRecord_common` (`projects/clr/hipamd/src/hip_event.cpp`) runs `e->SetCaptureStream(stream)` on every record, under capture or not. Nothing clears it when that stream is destroyed (`Stream::ResetCaptureStateLocked` clears only events recorded during a capture).
+- `hipEventQuery` -> `ihipEventQuery` -> `checkEventCaptureRestrictions(event)` reads `captureStream_`, then `s->GetCaptureStatus() == hipStreamCaptureStatusActive && s->IsEventCaptured(event)`; `IsEventCaptured` takes the stream's `std::mutex lock_` and hashes into `captureEvents_`. There is no `hip::isValid(stream)` check there, while `hipEventRecord`, `hipEventDestroy` and `hipStreamWaitEvent` all have one. `hipEventSynchronize` takes the same path.
+- Disassembly of `libamdhip64.so.7` (10.2.0): the internal `hipEventQuery` at +0x1883eb calls +0x1878b0 (`checkEventCaptureRestrictions`), which loads `*(event+8)` into r14, compares `0x234(%r14)` with 1 and calls `pthread_mutex_lock(r14+0x1d0)` at +0x1878ed (return +0x1878f2). The bucket walk at +0x18797b (`mov (%rax),%r12`) follows. The exported `hipEventQuery` reaches it through the dispatch table at +0x4a9335 (return `hipEventQuery+0x1b`).
+- HierarchicalKV: `MemoryPool::put_raw` records each ready event on the caller's stream (`memory_pool.cuh:569`), and `collect_pending_unsafe` queries pending events later from whichever thread next needs a buffer (`:453`). Every worker in the test destroys its stream at the end, so later queries run on events whose stored stream is freed. Whether a query hangs, crashes or passes depends on what the heap has put in the freed 776-byte `hip::Stream` chunk. This is the "who holds the mutex" answer: **nobody**. The "mutex" is reused heap memory, so its owner field is garbage, and no thread exited holding a lock.
+
+### Step 1: baseline, 30 runs per head, alternating
+
+Conditions, matched to the validator's diagnostic runs (its `diag.sh`/`diag2.sh` ran one 592f800 and one 815cfdc instance at the same time, stall threshold 900 s, the later ones under rocgdb): two lanes ran concurrently on the one GPU. Lane 1 ran 592, 815, 592, ...; lane 2 ran 815, 592, 815, ... So at every moment one instance of each head was running. 15 iterations per lane gives 30 runs per head. Every run was launched under gdb, because `kernel.yama.ptrace_scope=1` forbids attaching later (the validator's `gdb -p` capture failed the same way). Each run: `timeout --kill-after=30 1500 gdb -batch ... -ex run ... --args <bin> --gtest_filter=FindOrInsertPtrTest.test_find_or_insert_multi_threads`, with a capture at 900 s (wchan, maps, SIGINT, then gdb prints every thread's stack and runs a Python script that reads the waiter's mutex, its `__owner`, and the event and stream registers in the caller frame). Builds: 592f800 is the fork clone `projects/HierarchicalKV/src`; 815cfdc is a clean clone in `agent_space/hkv815`. Both use the recipe above (`cmake -DHKV_USE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942`, `ninja find_or_insert_ptr_test`). Normal run time: 255-300 s.
+
+| Head | Runs | Pass | Hang | Crash in the same HIP frames | Other failure |
+|---|---|---|---|---|---|
+| 592f800 (this round) | 30 | 29 | 0 | 1 (SIGSEGV at +0x18797b, `L2-592-14`) | 0 |
+| 815cfdc (previous head) | 30 | 27 | 1 (`L2-815-13`) | 1 (glibc abort, `L1-815-14`) | 1 (capacity assertion, `L2-815-6`, below) |
+
+Plus 4 plain runs (not under gdb), started before the switch to gdb, 2 per head, all passed. With the validator's runs, the hang-or-crash count is 592f800: 4 in 41, and 815cfdc: 2 in 40. **The defect is present at both heads**, and a difference in the counts would not be significant.
+
+- `L2-815-13`, the hang at 815cfdc, at 900 s: four threads (main joining, two ROCr `kfd_wait_on_events`, one worker in `futex_wait_queue`), the validator's picture exactly. Worker stack: `futex_wait` <- `___pthread_mutex_lock` (pthread_mutex_lock.c:93) <- libamdhip64 `0x7ffff7a538f2` <- `0x7ffff7a543f0` <- `hipEventQuery` `0x7ffff7d7533b` <- `MemoryPool<DeviceAllocator<char>>::collect_pending_unsafe` <- `get_raw` <- `StaticWorkspace` <- `HashTable::find_or_insert` (batch 1). These are the same return addresses as the validator's capture. Mutex `0x7fbe8201aab0`: `__lock` 2, `__count` 32767, `__owner` -341710336, `__nusers` 32767, `__kind` 0. The words are `0x00007fff00000002 0x00007fffeba1ea00 ... 0x000055555750f3a0 0x45 0x00007fffecd385c0`: pointers from another object, not a lock record. The owner is not a live TID. Caller frame: event `0x5555626f54d0`, whose second word (`captureStream_`) is `0x7fbe8201a8e0`, and `0x7fbe8201a8e0 + 0x1d0` is the mutex. The status word at `+0x234` reads 1. The worker's live stream (the `collect_pending_unsafe` argument) is `0x7fbe82024760`, so the event names an earlier, destroyed stream.
+- `L1-815-14` (815cfdc): `Fatal glibc error: pthread_mutex_lock.c:450 (__pthread_mutex_lock_full): assertion failed: e != ESRCH || !robust`, SIGABRT, from `libamdhip64 0x7ffff7a538f2` <- `hipEventQuery` <- `collect_pending_unsafe`. The garbage `__kind` sent glibc down the robust-mutex path.
+- `L2-592-14` (592f800): SIGSEGV at `libamdhip64 0x7ffff7a5397b` (+0x18797b, the `captureEvents_` bucket walk) <- `hipEventQuery` <- `collect_pending_unsafe` <- `find_or_insert` (batch 1).
+- (The loop's `rc` column is gdb's exit status, so outcomes were classified from the logs.)
+
+**Separate, open: `L2-815-6`.** `find_or_insert_ptr_test.cc.cu:3231: Failure`: `table->capacity()` was 67108864 where `MAX_CAPACITY` 134217728 was expected, in the third configuration (16/8/40 threads), 237 s. Not a hang, and not the frames above. It happened once in 30 runs at 815cfdc, never at 592f800, and is absent from the validator's logs. Upstream's auto-rehash (`while (!reach_max_capacity_ && fast_load_factor(n) > max_load_factor) reserve(capacity() * 2)`; `reserve` reads `capacity()` and writes `reach_max_capacity_` before taking its lock) has unlocked check-then-act steps, so one candidate is an upstream race. The other is heap corruption from this defect: when the freed memory reads "capturing" and the bogus event lookup succeeds, `InvalidateCapture` writes into the freed stream. Not diagnosed this round. Recorded so that a recurrence is recognised.
+
+### Step 2: who holds the mutex
+
+Nobody (see Mechanism and `L2-815-13`). `AMD_LOG_LEVEL=4` was not needed: the gdb capture names the lock (the freed stream's `lock_` at `+0x1d0`) and shows its owner field is garbage. The capture was checked against the reproducer first. There, the same script prints `owner=0 lock=2 kind=0`, `event+8 = stream`, `mutex = stream+0x1d0`, `status word 1`.
+
+### Step 3: a small program, run outside the project
+
+`agent_space/uaf/repro.cpp` (container-local; the full source is below). It creates an event, records it on a non-blocking stream, synchronizes, destroys the stream, and mallocs chunks of the stream's `malloc_usable_size` until it gets the freed address back. It fills the chunk with 32-bit 1s (`control`: zeros), then calls `hipEventQuery`. The validator's attempt (record, destroy, query from other threads) ran clean because the next `hipStreamCreate` takes the chunk back with a clean status, which is also what the skill says. The fill makes it deterministic and independent of the object layout.
+
+| Runtime | fill 1s | control (zeros) |
+|---|---|---|
+| 10.2.0 (job venv) | hang 3/3 (rc 124 under `timeout 30`/`60`) | `hipSuccess` 3/3 |
+| nightly 10.3.0a20261123 `rocm-sdk-core` (rocm-systems pin 51e17db, which contains 99ad350; the same object linked with RUNPATH to the extracted wheel, checked with `ldd`) | `hipSuccess` 3/3 | `hipSuccess` 3/3 |
+
+A gdb stack of the 10.2.0 hang has frames identical to the test's: `pthread_mutex_lock` <- `0x7ffff7a538f2` <- `0x7ffff7a543f0` <- `hipEventQuery 0x7ffff7d7533b` <- `main`. The nightly's `hip::Stream` is a different size (792 bytes) and the code no longer has `cmpl $0x1,0x234(...)`, which is why the reproducer fills the whole chunk instead of two words.
+
+```
+#include <hip/hip_runtime.h>
+#include <malloc.h>
+#include <cstdio>
+#include <cstdlib>
+#include <vector>
+#define CK(x) do { hipError_t e_ = (x); if (e_ != hipSuccess) { printf("%s -> %s\n", #x, hipGetErrorString(e_)); return 1; } } while (0)
+int main(int argc, char** argv) {
+  const bool control = argc > 1;
+  hipEvent_t ev; hipStream_t s;
+  CK(hipEventCreateWithFlags(&ev, hipEventDisableTiming));
+  CK(hipStreamCreateWithFlags(&s, hipStreamNonBlocking));
+  const size_t chunk = malloc_usable_size((void*)s);
+  CK(hipEventRecord(ev, s));
+  CK(hipStreamSynchronize(s));
+  CK(hipStreamDestroy(s));  // legal: the event outlives its stream
+  std::vector<void*> held; void* reused = nullptr;
+  for (int i = 0; i < 64 && !reused; ++i) { void* p = malloc(chunk); if (p == (void*)s) reused = p; else held.push_back(p); }
+  printf("destroyed stream %p (%zu bytes) reused: %s\n", (void*)s, chunk, reused ? "yes" : "no");
+  if (!reused) return 2;
+  int* w = static_cast<int*>(reused);
+  for (size_t i = 0; i < chunk / sizeof(int); ++i) w[i] = control ? 0 : 1;
+  printf("hipEventQuery...\n"); fflush(stdout);
+  const hipError_t q = hipEventQuery(ev);  // completed long ago
+  printf("hipEventQuery returned %s\n", hipGetErrorString(q));
+  return q == hipSuccess ? 0 : 1;
+}
+```
+Build and run: `hipcc -O1 -g repro.cpp -o repro && timeout 60 ./repro; timeout 60 ./repro control`.
+
+### Issue
+
+Nothing new to file. #14755 (Jeff, 2026-10-31, "[HIP] hipEventQuery and hipEventSynchronize read the destroyed recording stream (use-after-free)") is this defect, and #15025 fixes it on `develop`. What is missing is a release that carries the fix (10.2.0 does not). If Jeff wants the second affected project on record, a draft comment for #14755 (not posted; it is his to post):
+
+====
+A second project hits this on TheRock 10.2.0 (HIP 7.17.26434, gfx942): NVIDIA-Merlin/HierarchicalKV's memory pool records its ready events on the caller's stream and queries them later from other threads after the caller destroys the stream. Its multi-thread find_or_insert test hangs in `pthread_mutex_lock` <- `hipEventQuery`, or crashes in the same frames, in about 3 of 60 runs. A standalone reproducer (reuse the freed stream chunk, fill it with 32-bit 1s, query) hangs 3/3 on 10.2.0 and returns `hipSuccess` 3/3 with the 10.3.0a20261123 nightly runtime, which contains #15025. Is #15025 going into a 10.2.x patch release?
+====
+
+### Proposed port-side workaround (drafted, NOT committed; needs Jeff's ruling)
+
+The pool is the only place in the library that records or queries an event (`grep cudaEventRecord\|cudaEventQuery\|cudaEventSynchronize\|cudaStreamWaitEvent include/`: one record at `memory_pool.cuh:569`, one query at `:453`). So the smallest complete change is at that one record site, HIP build only: after recording the ready event on the caller's stream, make a pool-owned non-blocking stream wait on it and re-record the event there. The event's stored stream is then one that lives as long as the pool, and the event still completes only after the caller's work. Diff (18 added lines, `include/merlin/memory_pool.cuh`; saved as `agent_space/memory_pool_reanchor.diff`, built in the worktree `agent_space/hkvW`):
+
+```
+@@ MemoryPool(const MemoryPoolOptions& options, BaseAllocator* allocator)
+     pending_.reserve(options_.max_pending);
++
++#ifdef MERLIN_HIP
++    CUDA_CHECK(cudaStreamCreateWithFlags(&event_stream_, cudaStreamNonBlocking));
++#endif
+   }
+@@ ~MemoryPool()
+     deplete_stock();
++
++#ifdef MERLIN_HIP
++    CUDA_CHECK(cudaStreamDestroy(event_stream_));
++#endif
+   }
+@@ put_raw
+         CUDA_CHECK(cudaEventRecord(ready_event, stream));
++#ifdef MERLIN_HIP
++        // HIP's event query reads the stream an event was last recorded on,
++        // even after that stream is destroyed. Move the event onto a stream
++        // the pool owns, ordered after the caller's work.
++        CUDA_CHECK(cudaStreamWaitEvent(event_stream_, ready_event, 0));
++        CUDA_CHECK(cudaEventRecord(ready_event, event_stream_));
++#endif
+         pending_.emplace_back(*first, allocation_size, ready_event);
+@@ members
+   BaseAllocator* allocator_;
++#ifdef MERLIN_HIP
++  cudaStream_t event_stream_{nullptr};
++#endif
+```
+
+What it changes and costs:
+- **When the pool records events (the behaviour change to rule on):** each returned workspace buffer costs one stream-wait marker and one extra event record on the pool's stream (no kernel), so a buffer is ready a few microseconds later than now. No result changes: buffers go back to stock only after the caller's work, as before. Both records happen under the pool mutex, so no query sees the in-between state. `hipStreamWaitEvent` checks `hip::isValid` on the old stream itself.
+- **Resources:** one extra HIP stream per pool. A table has two pools (device and host), so two streams per table, created on the device that is current at construction (the same device as the pool's events, which `hipEventRecord` requires). TheRock 10.1 measured about 8 MiB of host memory per used stream (cuda-to-rocm `faults-memory-streams.md`).
+- **CUDA:** unchanged (`#ifdef MERLIN_HIP`).
+- **Scope:** covers every event the library holds. Events a user records on streams they destroy are the user's own exposure to the HIP bug. The skill's other fix (a compatibility-header stream pool that parks destroyed streams) does not suit a header-only library: the header is included by users, so it would rewrite their own `cudaStreamDestroy` calls.
+- **Evidence so far:** the same re-anchor in the standalone program (`agent_space/uaf/reanchor.cpp`, `REANCHOR=1`: wait plus re-record on a second stream before the destroy) returns `hipSuccess` 3/3 against 3/3 hangs without it on 10.2.0. Built into HierarchicalKV at 592f800 (uncommitted worktree): `merlin_memory_pool_test` 6/6, and `test_find_or_insert_multi_threads` 2/2 run concurrently (268.9 s, 266.8 s; same as unpatched). Two runs cannot show the hang is gone (its rate here is about 1 in 20); a 30-run loop would be the check after a ruling.
+
+Options for Jeff:
+- (a) Commit the workaround (one `[ROCm]` commit on `moat-port`, then review and revalidate) and keep it until a ROCm release with #15025 is the baseline.
+- (b) No port change. Validate against a runtime that has the fix (a 10.3 nightly now, or the first release carrying #15025). The test hits the defect in about 1 in 20 runs on 10.2.0, so a 10.2.0 validation can pass or fail by luck.
+- (c) Both: commit (a) and revisit it when the fix ships.
+
+Porter suggestion: (a). Users on 10.2.0 run this pool in every multi-stream application that destroys streams, and the cost is two API calls per workspace release.
+
+### Lesson for cuda-to-rocm: in a library, re-anchor the event instead of parking streams
+
+Belongs in `references/faults-memory-streams.md`, appended to "Querying an event after its recording stream was destroyed is a use-after-free on HIP".
+
+The stream-pool fix described there fits an application that owns every stream. A header-only or shared library cannot route its users' `cudaStreamDestroy`, and its users include its headers, so a compatibility-header macro would rewrite their calls. When the library's own event holder is a single record site (a workspace or buffer pool that records "ready" events on the caller's stream), fix it at that site instead. Under the HIP build, after `hipEventRecord(ev, callerStream)`, do `hipStreamWaitEvent(ownStream, ev, 0); hipEventRecord(ev, ownStream);` with `ownStream` a non-blocking stream that the holder creates and destroys after its events. The event still completes only after the caller's work, but the stream HIP stores in it now outlives every query. Cost: two API calls per record and one stream per holder. A standalone test that reuses the freed stream chunk (fill with 32-bit 1s) hangs on the query without the re-anchor and returns success with it. The defect is fixed in rocm-systems `develop` by ROCm/rocm-systems#15025 (2026-11-18), after 10.2.0. (HierarchicalKV `MemoryPool`, TheRock 10.2.0, gfx942)
+
+Logs (container-local): `agent_space/base/` (`L<lane>-<head>-<n>.log`, `lane1.out`, `lane2.out`, `L2-815-13.{wchan,maps,smi}`, `plain/`), `agent_space/uaf/`, `agent_space/clr/` (sparse rocm-systems at 43fa692).
