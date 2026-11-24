@@ -169,3 +169,14 @@
 {"kind":"phase","ts":"2026-11-24T00:00:05Z","phase":"test","seconds":319.629,"exit":0,"cmd":"cmake --build agent_space/val/build-max -j 37 --target check_unit_tests"}
 {"kind":"phase","ts":"2026-11-24T00:09:12Z","phase":"test","seconds":546.748,"exit":0,"cmd":"ctest --test-dir agent_space/val/build-max -L gpu --timeout 1200 -j 8 -V"}
 {"kind":"session","ts":"2026-11-24T00:10:08Z","epoch":1795479008.65786,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-24T00:20:20Z","epoch":1795479620.29319,"event":"start","platform":"linux-gfx1201"}
+{"kind":"phase","ts":"2026-11-24T00:29:36Z","phase":"compile","seconds":202.117,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/gfx1201-20261123-161637-espresso-val4-prompt/work/build-hip -j 8 -- -k 0"}
+{"kind":"phase","ts":"2026-11-24T00:29:38Z","phase":"compile","seconds":2.345,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/gfx1201-20261123-161637-espresso-val4-prompt/work/build-hip -j 8 --target python_test_data cuda_test local_samples local_benchmarks"}
+{"kind":"phase","ts":"2026-11-24T00:32:58Z","phase":"compile","seconds":199.367,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/gfx1201-20261123-161637-espresso-val4-prompt/work/build-max -j 8 -- -k 0"}
+{"kind":"phase","ts":"2026-11-24T00:33:00Z","phase":"compile","seconds":2.493,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/gfx1201-20261123-161637-espresso-val4-prompt/work/build-max -j 8 --target python_test_data cuda_test local_samples local_benchmarks"}
+{"kind":"phase","ts":"2026-11-24T00:37:04Z","phase":"test","seconds":225.224,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/gfx1201-20261123-161637-espresso-val4-prompt/work/build-hip -j 8 --target check_unit_tests"}
+{"kind":"phase","ts":"2026-11-24T00:40:55Z","phase":"test","seconds":230.465,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/gfx1201-20261123-161637-espresso-val4-prompt/work/build-max -j 8 --target check_unit_tests"}
+{"kind":"phase","ts":"2026-11-24T01:08:57Z","phase":"test","seconds":1682.25,"exit":0,"cmd":"ctest --test-dir /var/lib/jenkins/fleet/jobs/gfx1201-20261123-161637-espresso-val4-prompt/work/build-hip -L gpu --timeout 1200 -V"}
+{"kind":"phase","ts":"2026-11-24T01:36:17Z","phase":"test","seconds":1639.524,"exit":0,"cmd":"ctest --test-dir /var/lib/jenkins/fleet/jobs/gfx1201-20261123-161637-espresso-val4-prompt/work/build-max -L gpu --timeout 1200 -V"}
+{"kind":"phase","ts":"2026-11-24T01:45:23Z","phase":"test","seconds":545.907,"exit":8,"cmd":"ctest --test-dir /var/lib/jenkins/fleet/jobs/gfx1201-20261123-161637-espresso-val4-prompt/work/build-hip -LE gpu --timeout 1200 -j 8"}
+{"kind":"session","ts":"2026-11-24T01:46:26Z","epoch":1795484786.933166,"event":"end","platform":"linux-gfx1201"}
