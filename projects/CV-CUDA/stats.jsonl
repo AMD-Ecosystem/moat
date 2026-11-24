@@ -134,3 +134,12 @@
 {"kind":"session","ts":"2026-11-24T02:37:08Z","epoch":1795487828.592928,"event":"end","platform":"linux-gfx1201"}
 {"kind":"phase","ts":"2026-11-24T02:33:08Z","phase":"cuda-compile","seconds":202.247,"exit":0,"cmd":"bash -c for t in nvcv_standalone nvcv_standalone_static; do cmake --build $0 -j16 -t $t -- -k 0 || exit 1; done; cmake --build $0 -j16 -- -k 0 /dev/shm/fleet-mi355-20261123-182151-nvcc-cv-cuda-db84-prompt-cvcc/fork/build-cuda"}
 {"kind":"phase","ts":"2026-11-24T02:36:38Z","phase":"cuda-compile","seconds":208.202,"exit":0,"cmd":"bash -c for t in nvcv_standalone nvcv_standalone_static; do cmake --build $0 -j16 -t $t -- -k 0 || exit 1; done; cmake --build $0 -j16 -- -k 0 /dev/shm/fleet-mi355-20261123-182151-nvcc-cv-cuda-db84-prompt-cvcc/up/build-cuda"}
+{"kind":"session","ts":"2026-11-24T03:01:36Z","epoch":1795489296.629001,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-24T03:06:53Z","phase":"compile","seconds":268.841,"exit":0,"cmd":"cmake --build projects/CV-CUDA/src/build-hip -j64"}
+{"kind":"phase","ts":"2026-11-24T03:16:04Z","phase":"compile","seconds":14.293,"exit":0,"cmd":"cmake --build projects/CV-CUDA/src/build-hip -j64"}
+{"kind":"phase","ts":"2026-11-24T03:18:37Z","phase":"compile","seconds":23.973,"exit":0,"cmd":"cmake --build projects/CV-CUDA/src/build-hip -j64"}
+{"kind":"phase","ts":"2026-11-24T03:20:15Z","phase":"compile","seconds":44.127,"exit":0,"cmd":"cmake --build projects/CV-CUDA/src/build-hip -j64"}
+{"kind":"phase","ts":"2026-11-24T03:31:22Z","phase":"compile","seconds":42.885,"exit":0,"cmd":"cmake --build projects/CV-CUDA/src/build-hip -j64"}
+{"kind":"phase","ts":"2026-11-24T03:31:23Z","phase":"test","seconds":1.259,"exit":0,"cmd":"projects/CV-CUDA/src/build-hip/bin/cvcuda_test_unit"}
+{"kind":"phase","ts":"2026-11-24T03:31:25Z","phase":"test","seconds":2.073,"exit":1,"cmd":"projects/CV-CUDA/src/build-hip/bin/nvcv_test_cudatools_system"}
+{"kind":"phase","ts":"2026-11-24T03:41:52Z","phase":"test","seconds":621.139,"exit":1,"cmd":"projects/CV-CUDA/src/build-hip/bin/cvcuda_test_system"}
