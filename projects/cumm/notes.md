@@ -200,6 +200,8 @@ Moved to `projects/spconv/notes.md` (on `port/spconv`) on 2026-11-23, after jeff
 
 ## Lesson for moat-porting: spconv_rocm is not empty; its work is on branch `rocm`
 
+Promoted to moat-porting/SKILL.md in 870ce842.
+
 The Dispositions section says the GitHub repository `spconv_rocm` is empty, as checked
 2026-11 by the Pointcept port. `ZJLi2013/spconv_rocm` is a fork of spconv whose default
 branch `master` is an unmodified upstream mirror, so it looks empty of ROCm work; the
@@ -209,6 +211,8 @@ changed, last 2026-06-18), and its cumm counterpart `ZJLi2013/cumm-rocm` likewis
 it is a FlyDSL rewrite usable as environment, not a ROCm build of spconv as published.
 
 ## Lesson for cuda-to-rocm: list every branch of a fork before calling it empty
+
+Promoted to cuda-to-rocm/references/assess-existing-support.md, cuda-to-rocm/references/strategy-b-torch.md in 926f6138.
 
 For assess-existing-support.md. A fork whose default branch is an untouched upstream
 mirror can hold a complete port on another branch (`rocm`, `hip`, `amd`), and GitHub's
