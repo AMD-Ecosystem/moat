@@ -607,3 +607,65 @@ cuobjdump -xptx all <obj>.cu.o
 ```
 
 Comparison scripts (job-local, not kept): the previous check's `cmpcmds.py`, `sasscmp.py` and `cubincmp.py`, plus `linecheck.py` (host disassembly differences against a source line map), `variant.sh` (one TU recompiled from an edited source copy with the build's exact nvcc command), `sass2.py`, `kdiff.sh`, `semops.py` (per-kernel SASS, opcode and memory/atomic/shuffle deltas) and `ptxdiff.sh`.
+## Validation 2026-11-24 (linux-gfx942, validator, headless fleet job mi300c-20261124-051935)
+
+Fork `moat-port` at **886c3529**, built from scratch in this job (fresh clone, clean tree; only untracked `physx/bin/` and `physx/lib/` build output afterwards). Device: the dispatcher's pin `HIP_VISIBLE_DEVICES=1`, one device visible. **This host is in CPX partition mode: the device is one 38-CU, 24 GiB (24574 MB VRAM) slice of an AMD Instinct MI300X (gfx942), not a whole card** (`amd-smi static`: `ACCELERATOR_PARTITION: CPX`, `NUM_COMPUTE_UNITS: 38`; `rocminfo` lists the slice as gfx942 with 38 CUs; `hipMemGetInfo` total 24.0 GiB).
+
+### Toolchain
+- `$FLEET_VENV/bin/python -m pip install --index-url https://nightly.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple "rocm[libraries,devel]==10.2.0a20261022" "rocm-sdk-device-gfx942==10.2.0a20261022"` into the job venv; `rocm-sdk path --root` (run once) = `<job>/venv/lib/python3.11/site-packages/_rocm_sdk_devel`, `.info/version` 10.2.0, `hipconfig --version` 7.17.26422.
+- **Compiler the builds invoked:** `CMAKE_HIP_COMPILER=<root>/lib/llvm/bin/amdclang++` (AMD clang 24.0.0git, `2792f8ceeb5a`) in both `compiler/linux-gcc-rocm-{release,checked}/CMakeCache.txt`, found through `rocm-sdk` on PATH with `ROCM_PATH`/`HIP_PATH` unset (the image has no `/opt/rocm`); every one of the 61 `.cu` entries in each `compile_commands.json` starts with that path and carries `--offload-arch=gfx942`, `-fno-strict-aliasing` and `-Xclang -no-enable-noundef-analysis`. Host `/usr/bin/c++` (gcc 13.3.0). `ldd libPhysXGpu_64.so` resolves `libamdhip64.so.7` from the same root.
+- `$FLEET_VENV/bin` first on PATH (cmake, rocprofv3, rocm-sdk from the job venv), `MAX_JOBS=96`, `ulimit -c 0`, `timeout` around every GPU run. Snippet dependency prefix (freeglut, GLU, libglvnd) and packman cache copied from job mi300c-20261124-045812 (`.pc` files re-pointed); headless relink scripts as in the first porter round.
+
+### Builds (all exit 0, from scratch)
+```
+cd physx
+./generate_projects.sh linux-gcc-rocm
+make -C compiler/linux-gcc-rocm-release -j96
+make -C compiler/linux-gcc-rocm-checked -j96
+```
+61 HIP objects in each; `llvm-objdump --offloading libPhysXGpu_64.so`: 61 gfx942 code objects; 2522 / 2510 compiler warnings (same classes as recorded before), no errors. Also built with the other INSTALL_ROCm.md commands: the direct configure (`cmake -S physx -B <dir> -DPHYSX_PRESET=linux-gcc -DPX_USE_HIP=ON -DCMAKE_HIP_ARCHITECTURES="gfx942;gfx1100" -DCMAKE_BUILD_TYPE=release`, full build), the standalone GPU library (`cmake -S physx/source/compiler/cmakegpu ... --target PhysXGpu`), and the CPU-only preset (`-DPHYSX_PRESET=linux-gcc-cpu-only` under `env -i PATH=/usr/bin:/bin`, no ROCm or CUDA visible). These three write to `physx/lib/bin/`, separate from the `physx/bin/` the runs below used (checked by timestamps: nothing under `physx/bin/` changed after the snippet relinks).
+
+### Parity harness (SnippetGpuParity, all 48 checks, every scene)
+| Build | Runs | Result |
+|---|---|---|
+| release | 5 | 48 checks, 0 failed, each (about 10 s per run) |
+| checked | 5 | 48 checks, 0 failed, each (about 330 s per run) |
+| release, `LD_PRELOAD=<root>/lib/libamdhip64.so` | 1 | 48 / 0 |
+| release, under `rocprofv3 --kernel-trace` | 1 | 48 / 0, 632,176 kernel dispatches |
+| release, `AMD_SERIALIZE_KERNEL=3 AMD_SERIALIZE_COPY=3` (experiment, below) | 5 | 48 / 0 each |
+
+No skips: the harness has no skip path. 17 runs in all, 17 passes.
+
+### Finding: three deformable checks change from run to run (the other 45 are bit-identical)
+Compared value by value over all 17 runs (`agent_space/compare_parity.py`): 45 of 48 checks print the same value in every run, release and checked alike (free fall, stacks, articulation, all SDF and large-SDF checks, particles on SDF, primitives on mesh, aggregate pile, large-face convex, many slabs, contact overflow 20, PhysX errors 0). Three checks, all in the two deformable-volume scenes, differ in every build type:
+
+| Check | Range over 17 runs | Limit |
+|---|---|---|
+| deformable: lowest vertex height (m) | -6.74481e-08 to -6.74336e-08 (3 distinct values) | > -0.02 |
+| articulation lever: extra bend under deformable load (rad) | 0.190378 to 0.190741 (17 distinct values) | 0.06 to 0.5 |
+| articulation lever: deformable load stays on the arm (m) | 0.840984 to 0.842479 (17 distinct values) | > 0.8 |
+
+The values recorded in earlier rounds (0.190458 rad, 0.842092 m, -6.74481e-08 m) are inside these ranges. Investigation:
+- **Kernel serialization does not remove it.** With `AMD_SERIALIZE_KERNEL=3 AMD_SERIALIZE_COPY=3` (every launch and copy waits for the previous one), 5 release runs still give five different lever values (0.190378 to 0.190741) and two lowest-vertex values; the 45 other checks stay identical to the unserialized runs. So the variation comes from ordering inside kernels, not from a race between kernels, streams or copies, or from host timing.
+- **The deformable path accumulates floats with atomics in upstream code.** Vertex deltas from contacts: `AtomicAdd(outputDeltas[...], delta*invMass...)` in `gpusimulationcontroller/src/CUDA/deformableAndParticleUtils.cuh:110-130`; rigid and articulation coupling: `atomicAdd(&solverBodyDeltaVel[...], ...)`, `atomicAdd(&tempDenom[...], denom)` and `atomicAdd(&artiLinks[...].mDeltaScale[...], denom)` in `rigidDeltaAccum.cu:627-835`; contact slots taken with `atomicAdd(writer.totalContactCount, 1)` in `gpunarrowphase/src/CUDA/softbodyPrimitives.cu`, so the contact order changes too. Float addition is not associative, so the sum depends on the order in which the waves reach the atomic. The port changed none of these lines (`git log 7d6f6ac8..886c3529 -- physx/source/gpusimulationcontroller` touches only the AMD base, the merge, a records cleanup and `96d8827e`, which re-enabled `atomicAddSpatialVector` and `setOverflowError` for HIP; the former's only caller is the latent `..._SECOND_MULTI2` kernel, per the first porter round). The rigid-body pipeline, which uses atomics only for integer counters and orders its contacts by partition, is the part that stays bit-identical.
+- **Why this is not dismissed as noise:** the miscompiles fixed in this port (strict aliasing, noundef, the shifts by 32) produced large errors or crashes that showed in the rigid scenes; nothing like that shows here (the spread is 0.19% of the lever bend and 1.5 mm of the load height, against limits more than 2x away, and every rigid, SDF and mesh check is bit-stable). What is not established: that the CUDA build on NVIDIA varies by the same amount, because this host cannot run it. Upstream documents run-to-run determinism for rigid bodies; I found no statement either way for GPU deformables. **For Jeff:** I recorded the platform as completed on this evidence. Ways to close the question: (1) a CUDA run of these two scenes (5 runs) on an NVIDIA GPU, expected to vary similarly; or (2) rule that order-dependent float accumulation in upstream's deformable solver is accepted. If you rule the other way, set this platform back with `set-state PhysX linux-gfx942 validation-failed`; a code change would then belong to the porter, and none was made here.
+
+### GPU snippets (traced with `rocprofv3 --kernel-trace`, relinked without rendering; 300 s timeout each)
+- Release: HelloGRB 18,153 dispatches, DeformableSurface 33,954, DeformableVolume 93,827, DeformableVolumeAttachment 112,194, DeformableVolumeKinematic 104,145, DeformableSurfaceSkinning 35,359, DeformableVolumeSkinning 94,027, PBF 33,346, PBFMultiMat 28,625, Isosurface 32,113, RBDirectGPUAPI 18,538, DirectGPUAPIArticulation 116,765: **12/12 exit 0 with dispatches**. SDF as shipped: exit 0 with 0 dispatches, expected, because upstream sets `gUseGPU = false`. The local GPU copy (`gUseGPU = true`): exit 0, 53,939 dispatches. OmniPvdMultiGeom is not built in release (upstream drops it there).
+- Checked: the same 12 exit 0 (18,154 to 116,766 dispatches), SDF as shipped exit 0 with 0 dispatches, the SDF GPU copy 53,940 dispatches, OmniPvdMultiGeom (`--omnipvdfile=<path>`) exit 0 with 443,245 dispatches: **14/14 GPU snippets pass** (13 as shipped plus the SDF GPU copy).
+- HelloGRB release with `LD_PRELOAD=<root>/lib/libamdhip64.so`: exit 0 (registration binding, plan Risk 3), along with the preloaded parity run above.
+- No log contains "Failed to load", "Failed to initialize cuda context" or "incompatible".
+
+### Non-GPU regression set
+- Non-GPU snippets, release: **55/56 exit 0**. The seven Vehicle snippets exit 0 with `--vehicleDataPath=physx/snippets/media/vehicledata`; LoadCollection exits 0 after `--generateExampleFiles` on `collection.bin`, `collection.xml`, `collectionA.bin collectionB.bin` and `collectionA.xml collectionB.xml`. **Skipped: SnippetProfilerConverter**, because it only prints its usage without a raw profiler capture (`--srcFile=`) as input; it is a CPU tool the port does not touch. Run without arguments, the Vehicle snippets, LoadCollection and ProfilerConverter exit 1 with usage or data-path messages.
+- pvddom workflow CTest (`cmake -S physx/pvddom/workflow -B <dir> -G Ninja -DCMAKE_BUILD_TYPE=checked -DPX_GENERATE_GPU_PROJECTS=ON -DPX_USE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942`; `ctest -C checked`): **5/5 pass**. `ovd_sdk_gpu_capture` is a real PASS with `-DGPU=ON` ("Independent captures equal, ... GPU=ON"), not the skip.
+- pvddom unit CTest (`cmake -S physx/pvddom -DPVDRUNTIME_ROOT=physx/pvdruntime -DPVDDOM_BUILD_TESTS=ON -DPVDDOM_BUILD_INSPECTION=ON -DPVDDOM_BUILD_TOOLS=ON`): **372/372 pass**.
+- CPU-only preset with no ROCm or CUDA on PATH: configures and builds.
+
+### CUDA gate
+`cuda-not-validated: no CUDA toolkit on this host` (no nvcc, no conda). The nvcc recheck of 886c3529 stays owed on the mi355 host, as listed under "Shared (non-HIP-guarded) source lines changed since 4764ca13".
+
+### Content checks
+- `jargon.py -C projects/PhysX/src --diff 7d6f6ac8..moat-port` and `--commits 7d6f6ac8..moat-port`: clean. `jargon.py --port PhysX` reports 14 hits, all in `ovphysx/` files that are identical to upstream 7d6f6ac8 (checked with `git diff --quiet 7d6f6ac8 886c3529` on the files). They show only because the fork's `main` mirror is at `4f2103c3` (ovphysx 0.5.11), behind upstream; this is Question A of the first porter round, still open.
+- ROCm build documentation: `INSTALL_ROCm.md` (commands above, run as written).
+- Integrity: `git -C projects/PhysX/src status --porcelain` shows only untracked `physx/bin/` and `physx/lib/`.
