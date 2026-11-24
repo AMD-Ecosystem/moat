@@ -14,3 +14,4 @@
 {"kind":"phase","ts":"2026-11-24T00:42:00Z","phase":"test","seconds":43.9,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300b-20261123-154929-fix-autoware-universe-s1-prompt/s1/test_pre.sh"}
 {"kind":"phase","ts":"2026-11-24T00:51:56Z","phase":"test","seconds":590.361,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300b-20261123-154929-fix-autoware-universe-s1-prompt/s1/ogm.sh"}
 {"kind":"phase","ts":"2026-11-24T00:54:37Z","phase":"compile","seconds":99.996,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300b-20261123-154929-fix-autoware-universe-s1-prompt/s1/build.sh"}
+{"kind":"session","ts":"2026-11-24T01:08:00Z","epoch":1795482480.545194,"event":"end","platform":"linux-gfx942"}
