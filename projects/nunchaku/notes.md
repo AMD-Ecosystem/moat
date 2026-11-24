@@ -692,3 +692,161 @@ python setup.py build_ext --inplace -v
 ### CUDA fixes proposed
 
 None needed.
+
+## Evidence run 2026-11-24, gfx942 CDNA f16/bf16 MFMA path at 75e2528 (linux-gfx942 fleet job, for jeff)
+
+Not a porter round: no work lock taken, stage untouched (`porting`), nothing changed in or pushed to the fork. Scope: the gfx942 half of the gfx950 round's first "What remains" item (surface `kernel:stage2-cdna-mfma-f16-runs`), plus the FP4 refusal on a non-FP4 arch. **Result: everything passes. The gfx942 f16/bf16 MFMA path (`v_mfma_f32_16x16x4_4b_{f16,bf16}`) is within the recorded tolerance of stage 1 and deterministic. The gfx942 numbers equal the gfx950 round's to three significant digits in every worst case. The FP4 kernels refuse cleanly. One speed regression (not gated): W4A4 bf16 rank 32, +17%.** gfx90a is still owed (its own encodings, `v_mfma_f32_16x16x4f16` / `..._16x16x4bf16_1k`).
+
+### Environment
+
+- Host gfx942 (MI300X, `gfx942:sramecc+:xnack-`), `HIP_VISIBLE_DEVICES=4` as pinned by the dispatcher (one GPU, kept), `ulimit -c 0`, every GPU run under `timeout`.
+- Job venv: `$FLEET_VENV/bin/python -m pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple "rocm[libraries,devel,device-gfx942]==10.2.0" "torch==2.14.0+rocm10.2.0" "torchvision==0.29.0+rocm10.2.0" "amd-torch-device-gfx942==2.14.0+rocm10.2.0"`. Then `rocm-sdk path --root` once (it printed `$FLEET_VENV/lib/python3.11/site-packages/_rocm_sdk_devel`). `torch.utils.cpp_extension.ROCM_HOME` is that same directory.
+- **Compiler actually invoked**: every device compile line in all three build logs (17 per build) runs `$FLEET_VENV/lib/python3.11/site-packages/_rocm_sdk_devel/bin/hipcc` (HIP 7.17.26434, AMD clang 24.0.0git bdc35841c97f), and none of them names the image's `/opt/python-3.11-venv` ROCm 10.1.
+- Test dependencies as in the earlier rounds: accelerate 1.9.0, diffusers 0.36.0, transformers 4.55.2, peft 0.17.1, datasets 3.6.0, torchmetrics 1.8.2, huggingface-hub 0.34.6, controlnet-aux 0.0.10, image-gen-aux e08ae3d, pytest 8.4.2, numpy 2.4.6, pandas 3.1.1, matplotlib, lpips. scikit-image 0.26.0, scikit-learn, scipy and PyWavelets were upgraded, opencv-python-headless was uninstalled, and opencv-python 4.11.0.86 was force-reinstalled. Models: the first gfx942 round's Hugging Face cache, hard-linked (`HF_HUB_OFFLINE=1`). The 16-bit SDXL references are copied from that round (same host, same torch). The Z-Image references are upstream's. No INT4 images were cached, so this build generated its own.
+- Fork trees: `git clone https://github.com/AMD-Ecosystem/nunchaku`, `git checkout 75e2528` (75e25288499066d5f635aac8500ff955d5da63a5) plus detached worktrees at 75e2528 (reference) and 8aa04e7 (default, the "before" build), with submodules at the recorded commits. `git status --porcelain --untracked-files=no --ignore-submodules=all` is empty in each after every run; scripts ran from outside the trees, and the Sana example and Z-Image test write untracked images.
+- Builds: `PATH=$FLEET_VENV/bin:$PATH PYTORCH_ROCM_ARCH=gfx942 MAX_JOBS=<n> $FLEET_VENV/bin/python setup.py build_ext --inplace -v`, one tree each, all three started together. n = 48 for the reference build (`NUNCHAKU_ROCM_MMA_REFERENCE=1`, the macro on its compile lines only) and 24 for each default build, for 96 in total, the exported MAX_JOBS. They ran detached (`setsid nohup`) under `timeit.sh` (in `stats.jsonl`). Default 75e2528: exit 0, 471 s. Default 8aa04e7: exit 0, 419 s. Reference 75e2528: exit 0, **3479 s**, almost all of it the single-core device link of the bf16 INT4 launch file (ld.lld, 1.5 GB RSS). 0 errors in any log.
+- Code objects (`llvm-objcopy --dump-section=.hip_fatbin`, `clang-offload-bundler --unbundle`, `llvm-objdump -d --mcpu=gfx942`). Default 75e2528, per object:
+  - fp16 INT4 launch: 4672 `v_mfma_f32_16x16x4_4b_f16` + 10752 `v_mfma_i32_32x32x16_i8`.
+  - bf16 INT4 launch: 7104 `..._4b_bf16` + 10752 `..._i8`.
+  - attention: 128 `_4b_f16`.
+  - AWQ: 144 + 144.
+  - bf16 FP4 launch: 128 `_4b_bf16`; fp16 FP4 launch: 128 `_4b_f16` (only the LoRA in the trap kernels).
+
+  These are the gfx942 counts the gfx950 round recorded from its all-target build. Default 8aa04e7: only the 10752 `..._i8` per INT4 launch file. Reference 75e2528: no MFMA or WMMA in any object (2.8M and 7.7M lines of disassembly for the fp16 and bf16 INT4 launch files).
+
+### Results (all on the one gfx942 GPU)
+
+- **Primitive test** (`test_cdna.hip` from `notes-gfx950-scripts.md`, unchanged except that it includes the hipified `mma_rocm_hip.cuh` of the built 75e2528 tree). It was compiled with the venv's 10.2 `hipcc --offload-arch=gfx942` and the build.sh flags, giving 4 `v_mfma_f32_16x16x4_4b_f16` + 2 `..._4b_bf16` in the binary. `timeout 300 ./test_gfx942` -> **PASS**: no output over the bound, against either the lane-gather reference or float64, in all 9 runs (2000 problems each). Max |err| / sum |terms|:
+  - f32-accumulator f16: MFMA 1.31e-7 to 1.48e-7, reference 2.28e-7 to 3.04e-7.
+  - bf16: MFMA 1.12e-7 to 1.20e-7, reference 1.24e-7 to 1.34e-7.
+  - f16 accumulator: 99.96% bitwise equal to the reference (511815/512000), the same max error 4.6e-4.
+  - Exact small-integer problem: **exact, 0/256 inexact** in every run.
+
+  `NANTEST=1` (NaN and infinity in the upper warp's problems only) -> **PASS**: the lower warp's outputs are all within the bound, so there is no cross-warp contamination. These are the gfx950 numbers.
+- **`f16_dump.py compare` / `reldiff.py`, reference 75e2528 vs default 75e2528** (scripts from `notes-rdna-scripts.md`, unchanged). Bit identity is not expected. The tolerance and its justification are the RDNA round's: max |new - ref| / max |output| <= 2 units of roundoff of the output type, 9.8e-4 for float16 and 7.8e-3 for bfloat16. 90 outputs: 21 identical, 69 differ, **all within the bound**. Worst per output kind:
+
+| output | float16 | bfloat16 |
+|---|---|---|
+| W4A4 GEMM out (`gemm[0]`) | 3.05e-4 (4352x256x3072 unsigned) | 2.44e-3 (4352x256x3072 unsigned) |
+| fused GEMM out (`fused[0]`) | 1.77e-4 | 3.26e-4 |
+| fused output scales (`fused[2]`) | 1.15e-4 | identical |
+| attention_fp16 | 5.98e-4 (4608 tokens) | 4.03e-3 (512 tokens, 500 valid) |
+| AWQ GEMM | 5.18e-4 (1024x1024x4096) | 4.00e-3 (512x4096x4096) |
+
+  More detail:
+  - GEMM outputs: max 1 ulp element-wise (3 of 20 identical); fused outputs: up to 8 ulp at a small value.
+  - Packed next-layer activations: at most 2 nibbles differ per case (of 0.8 to 3.1 million), by one step; 7 of 12 identical.
+  - Output scales: max 2 ulp.
+  - Quantize kernel outputs and scales: identical.
+  - fp32 `lora_act_out`: fused cases max rel 1.4e-4 (the LoRA-down goes through the MFMA); quantize cases 2.75e-7 (noise).
+  - Each build's own error against float64 is identical to three digits in all 16 attention and AWQ cases (e.g. attention fp16 4608 tokens 0.00239 both, AWQ bf16 512x4096x4096 0.00304 both).
+
+  As a cross-check, the reference 75e2528 against the default **8aa04e7** build differs only in the 10 fp32 `lora_act_out` tensors (max rel 2.9e-7). So on CDNA the reference build is the 8aa04e7 behavior, and `reldiff` of default 8aa04e7 vs default 75e2528 gives the same table to every printed digit.
+- **Determinism**: two runs of the default 75e2528 build. Under `f16_dump.py`, 80 of 90 outputs are identical and 10 differ, exactly the fp32 `lora_act_out` tensors (8 `fused[3]` + 2 `quantize[2]`, max rel 2.87e-7). `mma_dump.py` gives the same 10 (`34 cases, 10 outputs differ`). Two runs of the reference build also differ in the same 10 (the float-atomic noise every build has). So the MFMA f16 path is deterministic.
+- **`mma_dump.py`, the INT4 GEMM outputs** (script in this file, unchanged):
+  - **Reference 75e2528 vs default 75e2528: `34 cases, 53 outputs differ`** (21 identical). Which ones differ:
+    - 17 of 20 `gemm[0]`, from 2 to 1031 bytes of up to 6.3M; the 3 identical are bf16 256x128x128 (both signs) and bf16 512x384x1024 signed.
+    - all 12 fused GEMM outputs `fused[0]`.
+    - 5 of 12 packed next-layer activations `fused[1]` (1 to 2 nibbles).
+    - 5 of 12 output scales `fused[2]` (1 to 2 ulp).
+    - all 12 fused `lora_act_out` `fused[3]`, including the 4 N=256 cases that are bit-stable run to run.
+    - the 2 quantize `lora_act_out` `quantize[2]` (noise).
+
+    Identical: all `quantize[0]` and `quantize[1]` outputs (no 16-bit product), and the remaining `fused[1]`/`fused[2]`. **This matches the gfx950 round's explanation exactly.** That round also had 53 differing outputs: its 8aa04e7 vs 5db74f4 comparison found GEMM outputs at most 1 ulp, fused up to 8 ulp at a small value, scales 2 ulp and single nibbles. The INT4 main loop is unchanged, but 75e2528 routes the LoRA-up and LoRA-down epilogues of these same GEMMs through the f16/bf16 MFMA. The differences are that path's rounding flips (within the f16 tolerance above), not INT4 errors: a wrong layout would move whole columns.
+  - **Reference 75e2528 vs default 8aa04e7: only the 10 `lora_act_out` tensors differ.** The 8aa04e7 build has the same INT4 MFMA main loop (`v_mfma_i32_32x32x16_i8`, 10752 per INT4 launch file in both builds) with the LoRA epilogues still on stage 1, so this is the INT4 path's bit identity against the 75e2528 reference build. Every GEMM output, packed activation and scale matches.
+- **`pytest tests/ops`**: default 75e2528 **38 passed, 14 skipped** in 10.3 s. The 14 skips are `test_gemm_w4a4_fp4.py`, "the GPU has no NVFP4 kernels". Reference 75e2528: 38 passed, 14 skipped.
+- **FP4 refuses cleanly on gfx942** (`fp4_refuse.py`, below):
+  - `get_precision("auto")` -> `int4`. `check_hardware_compatibility` accepts an int4 config and rejects `fp4_e2m1_all` with `ValueError: "fp4" quantization needs an AMD GPU with FP4 matrix instructions (gfx950, gfx1250); please use "int4" quantization on gfx942.`
+  - A direct FP4 GEMM launch (`svdq_gemm_w4a4_cuda(..., fp4=True)`, 256x256x256 bf16) and a direct FP4 activation quantize (`svdq_quantize_w4a4_act_fuse_lora_cuda(..., fp4=True)`) each print `FP4 is not available on this device`. The queue aborts with `HSA_STATUS_ERROR_EXCEPTION ... code: 0x1016` naming `gemm_w4a4_fp4_kernel` / `quantize_w4a4_fuse_lora_kernel<false, true>`. The next `torch.cuda.synchronize()` raises `torch.AcceleratorError: CUDA error: unspecified launch failure` (0.39 s / 0.25 s after the launch), which Python catches; the process exits in about 6.4 s.
+  - A fresh process uses the GPU normally afterwards. This is the designed trap (`trap_no_fp4`, as upstream on NVIDIA below sm_120); the FP4 launch objects contain only the trap kernels' LoRA MFMA.
+- **End to end on the default 75e2528 build** (in-place build on `PYTHONPATH`): `HF_HOME=<job>/hf NUNCHAKU_TEST_CACHE_ROOT=<job>/test_cache HF_HUB_OFFLINE=1 timeout 7000 python -m pytest -v -s tests/v1/sdxl/test_sdxl.py::test_sdxl_lpips tests/v1/sdxl/test_sdxl_turbo.py::test_sdxl_turbo_lpips tests/sana tests/v1/z_image` -> **10 passed** in 569 s.
+  - SDXL LPIPS 0.150 (expected 0.25).
+  - SDXL-Turbo 0.226 (0.25).
+  - Z-Image Turbo rank 32/128/256: 0.375/0.378/0.373 (expected int4-bf16 0.40/0.38/0.37, limit x1.15). Rank 256 is above the bare value and within the limit, as in earlier gfx942 rounds; the `_turing` variants return early for bf16.
+  - Both Sana example scripts (`sana1.6b-int4.png` inspected: the ink-drawing panda).
+
+  With the 38 of `tests/ops` this is the earlier rounds' 48-test set. Earlier gfx942 numbers: 0.148/0.212/0.371/0.374/0.375 at 5c32be5, 0.153/0.217/0.380/0.371/0.370 at 8aa04e7.
+- Not run, as in the earlier rounds: FLUX.1 and Qwen-Image tests (gated models, no Hugging Face token), `test_device_id.py` (one GPU), speed tests.
+
+### Speed (recorded, not gated)
+
+MI300X, ms, `speed.py` (`notes-rdna-scripts.md`), two alternating runs per build, 8aa04e7 default -> 75e2528 default:
+
+| kernel | 8aa04e7 | 75e2528 |
+|---|---|---|
+| W4A4 GEMM 4096x3072x3072 fp16 LoRA rank 32 | 3.80-3.82 | 3.84 |
+| same, fp16 rank 128 | 6.21-6.22 | 4.21 |
+| same, bf16 rank 32 | 3.56-3.57 | **4.18-4.20 (+17%)** |
+| same, bf16 rank 128 | 6.11-6.17 | 5.11-5.12 |
+| AWQ GEMM 512x4096x4096 fp16 | 6.31-6.32 | 4.97-4.98 |
+| AWQ GEMM 512x4096x4096 bf16 | 6.23-6.24 | 3.81 |
+| attention_fp16 24 heads x 4608 tokens | 60.8-61.2 | 39.9 (1.53x) |
+
+The bf16 rank 32 W4A4 GEMM is slower on gfx942 in both runs, while gfx950 got faster there (2.84-3.05 -> 2.53-2.72). A possibly related observation, not shown to be the cause: across the 112 LoRA-up GEMM kernels in the bf16 INT4 launch object, the per-lane scratch (`.private_segment_fixed_size`) minimum rose from 1256 to 1568 bytes and the total from 182632 to 217704 (+19%). This is the same register-pressure picture the RDNA round recorded for its fp16 slowdown; it is a performance-pass item, and nothing was changed.
+
+### Scripts
+
+`mma_dump.py` is in this file, `f16_dump.py`, `reldiff.py` and `speed.py` are in `notes-rdna-scripts.md`, and `test_cdna.hip` is in `notes-gfx950-scripts.md`, all unchanged. New in this run, `fp4_refuse.py` (from the fork root, `PYTHONPATH=.`; no argument for the Python checks, `gemm` or `quant` for one FP4 launch in its own process):
+
+```python
+"""FP4 on a GPU without NVFP4 kernels: python-level checks, then (argv[1] = gemm|quant) one FP4 kernel launch."""
+import sys, time
+import torch
+from nunchaku.utils import get_precision, check_hardware_compatibility, get_rocm_arch, ROCM_FP4_ARCHS
+
+if len(sys.argv) == 1:
+    print("arch", get_rocm_arch(), "ROCM_FP4_ARCHS", ROCM_FP4_ARCHS)
+    print("get_precision('auto') ->", get_precision("auto"))
+    for dt in ("int4", "fp4_e2m1_all"):
+        try:
+            check_hardware_compatibility({"weight": {"dtype": dt}})
+            print(f"check_hardware_compatibility({dt}) -> accepted")
+        except ValueError as e:
+            print(f"check_hardware_compatibility({dt}) -> ValueError: {e}")
+    sys.exit(0)
+
+from nunchaku.lora.flux.packer import NunchakuWeightPacker
+from nunchaku.ops.gemm import svdq_gemm_w4a4_cuda
+from nunchaku.ops.quantize import svdq_quantize_w4a4_act_fuse_lora_cuda
+from tests.ops.test_gemm_w4a4_fp4 import pack_act_fp4, pack_ascales_fp4, random_scales
+
+dtype, m, n, k = torch.bfloat16, 256, 256, 256
+g = torch.Generator().manual_seed(0)
+packer = NunchakuWeightPacker(bits=4)
+t = time.time()
+if sys.argv[1] == "gemm":
+    out = torch.empty(m, n, dtype=dtype, device="cuda")
+    svdq_gemm_w4a4_cuda(
+        act=pack_act_fp4(torch.randint(0, 16, (m, k), generator=g)).cuda(),
+        wgt=packer.pack_weight(torch.randint(0, 16, (n, k), dtype=torch.int32, generator=g)).cuda(),
+        out=out,
+        ascales=pack_ascales_fp4(random_scales((m, k // 16), g)).cuda(),
+        wscales=packer.pack_scale(random_scales((n, k // 16), g).to(dtype), group_size=16).cuda(),
+        fp4=True, alpha=0.5,
+        wcscales=packer.pack_scale(torch.ones(n, dtype=dtype), group_size=-1).cuda(),
+        lora_act_in=torch.randn(m, 32, device="cuda") * 0.1,
+        lora_up=packer.pack_lowrank_weight((torch.randn(n, 32, generator=g) * 0.1).to(dtype), down=False).cuda(),
+    )
+else:
+    x = torch.randn(m, k, generator=g).to(dtype).cuda()
+    svdq_quantize_w4a4_act_fuse_lora_cuda(
+        x, fp4=True,
+        lora_down=packer.pack_lowrank_weight((torch.randn(32, k, generator=g) * 0.1).to(dtype), down=True).cuda(),
+        smooth=packer.pack_scale((torch.rand(k, generator=g) + 0.5).to(dtype), group_size=-1).cuda(),
+    )
+try:
+    torch.cuda.synchronize()
+    print("RETURNED without error", time.time() - t)
+except Exception as e:
+    print("EXCEPTION", type(e).__name__, str(e).splitlines()[0], f"after {time.time() - t:.2f} s")
+```
+
+### What this leaves
+
+The gfx942 part of `kernel:stage2-cdna-mfma-f16-runs` is done. Still owed from the gfx950 round's list:
+- the gfx90a run of the CDNA f16 MFMA path (its own encodings);
+- the gfx1250 run;
+- the wave32 reruns at 75e2528;
+- Windows gfx1151 last.
+
+The nvcc recheck of 75e2528 was merged while this ran (pass). Surface accounting was not edited here (evidence run, notes only).
