@@ -291,3 +291,12 @@
 {"kind":"phase","ts":"2026-11-24T02:59:49Z","phase":"test","seconds":20.985,"exit":0,"cmd":"agent_space/v/run.sh matmul2 -s autodetect -p test_tile_matmul.py"}
 {"kind":"phase","ts":"2026-11-24T03:00:10Z","phase":"test","seconds":21.507,"exit":0,"cmd":"agent_space/v/run.sh matmul3 -s autodetect -p test_tile_matmul.py"}
 {"kind":"session","ts":"2026-11-24T03:01:04Z","epoch":1795489264.959219,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-24T02:38:10Z","epoch":1795487890.68926,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-24T02:40:33Z","phase":"compile","seconds":40.084,"exit":0,"cmd":"bash -c cd projects/warp-1.14/src && python build_lib.py --rocm-path /var/lib/jenkins/fleet/jobs/rx7900-20261123-183555-validator-prompt/venv/lib/python3.11/site-packages/_rocm_sdk_devel --hip-arch gfx1100 -j 32 > build_gfx1100.log 2>&1"}
+{"kind":"phase","ts":"2026-11-24T02:41:28Z","phase":"compile","seconds":45.085,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/rx7900-20261123-183555-validator-prompt/moat/projects/warp-1.14/src && python build_lib.py --rocm-path /var/lib/jenkins/fleet/jobs/rx7900-20261123-183555-validator-prompt/venv/lib/python3.11/site-packages/_rocm_sdk_devel --hip-arch gfx1100 -j 32 --no-rocm-rpath > build_gfx1100_rel.log 2>&1 && python -m build --wheel -C--build-option=-Plinux-x86_64 -o /var/lib/jenkins/fleet/jobs/rx7900-20261123-183555-validator-prompt/wheel > wheel.log 2>&1"}
+{"kind":"phase","ts":"2026-11-24T02:55:55Z","phase":"test","seconds":840.851,"exit":0,"cmd":"agent_space/wrun.sh full1 -s autodetect"}
+{"kind":"phase","ts":"2026-11-24T03:00:57Z","phase":"test","seconds":280.089,"exit":0,"cmd":"agent_space/wrun.sh tiledbg -s autodetect --warp-debug -p test_tile*.py"}
+{"kind":"phase","ts":"2026-11-24T03:01:31Z","phase":"test","seconds":24.598,"exit":0,"cmd":"agent_space/wrun.sh matmul1 -s autodetect -p test_tile_matmul.py"}
+{"kind":"phase","ts":"2026-11-24T03:01:56Z","phase":"test","seconds":24.676,"exit":0,"cmd":"agent_space/wrun.sh matmul2 -s autodetect -p test_tile_matmul.py"}
+{"kind":"phase","ts":"2026-11-24T03:02:21Z","phase":"test","seconds":24.659,"exit":0,"cmd":"agent_space/wrun.sh matmul3 -s autodetect -p test_tile_matmul.py"}
+{"kind":"session","ts":"2026-11-24T03:03:07Z","epoch":1795489387.805003,"event":"end","platform":"linux-gfx1100"}

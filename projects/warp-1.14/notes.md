@@ -6676,3 +6676,32 @@ The total matches the 2026-11-23 gfx942 evidence session's 113. Debug tiles, 14:
 ### Scripts (`agent_space/v/`, scratch)
 
 `build.sh <tree> <jobs> <wheel dir>`: the two build commands above, logged to `<tree>/build_gfx942.log` and `<tree>/wheel.log`. `run.sh <label> <warp.tests args>`: `ulimit -c 0`, cwd `<job>/run`, `rm -rf` then `WARP_CACHE_PATH=<job>/run/cache_<label>`, the site-packages assertion, then `$FLEET_VENV/bin/python -m warp.tests <args>`, logged to `<job>/run/<label>.log` with load average at start and end.
+## Validation 2026-11-24 (linux-gfx1100, Radeon Pro W7800 48GB, validator): release wheel at `4e0d02ab`
+
+Requested by jeff. **Verdict: pass.** Every run was OK; no failure, no `Warp CUDA error` line in any log, so nothing needed a rerun alone. The CUDA no-regression gate is already recorded at this head (Porting session 32: nvcc 12.8 build of `4e0d02ab` succeeds), so it was not repeated. `jargon.py --port warp-1.14`: clean. ROCm build documented in `docs/user_guide/installation.rst` (source build and the wheel), as for CUDA.
+
+### Host and build
+- Device "AMD Radeon Pro W7800 48GB" (gfx1100, wave32, 64 KiB shared memory per block), dispatcher pin `HIP_VISIBLE_DEVICES=0` (PCI 0x43), every GPU run under `ulimit -c 0`. Other jobs used the other GPUs; host load average 2 to 12 during the runs.
+- Job venv came with TheRock 10.1.0 wheels. Installed into `$FLEET_VENV`, as earlier gfx1100 sessions did: `python -m pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple "rocm[devel,device-gfx1100]==10.2.0" "torch[device-gfx1100]==2.15.0+rocm10.2.0" numpy==1.26.4 usd-core`, then `rocm-sdk init`, `export PATH=$FLEET_VENV/bin:$PATH`. Stale `rocm-sdk-device-gfx*==10.1.0` remain (pip warns only).
+- Fork cloned into `projects/warp-1.14/src`, detached at `4e0d02ab7eeb4af2be6380ff27c54d9bc8d43ef2` (LFS assets present). `git status --porcelain` empty at the end.
+- Source build: `python build_lib.py --rocm-path "$(rocm-sdk path --root)" --hip-arch gfx1100 -j 32` -> "Warp build succeeded" (40 s), 14 HIP compiles, each `--offload-arch=gfx1100` only.
+- Release build for the wheel: same with `--no-rocm-rpath` -> "Warp build succeeded" (RUNPATH `$ORIGIN`), then `python -m build --wheel -C--build-option=-Plinux-x86_64 -o <job>/wheel` -> `warp_lang-1.14.0+rocm10.2.0-py3-none-manylinux_2_28_x86_64.whl`, 32,806,676 bytes, sha256 `0c35693df78d96df66644e554b888193f772ec2a1d34246bb07cbd8a0b7ff9f1` (gfx1100 only, so smaller than the 26-target release wheel). METADATA `Version: 1.14.0+rocm10.2.0`, `Requires-Dist: rocm<10.3,>=10.2`.
+- Installed with `python -m pip install --force-reinstall --no-deps <wheel>` into the job venv: installed size 101,904,385 bytes; installed `warp.so` sha256 `998c5f53...f0b9` equals the build's. Banner from site-packages: "Warp 1.14.0+rocm10.2.0 ... ROCm 10.2, HIP runtime 7.17".
+
+### Runs (installed wheel, cwd `<job>/wheelrun` outside the tree, pinned GPU, fresh `WARP_CACHE_PATH` wiped before each run)
+Runner `agent_space/wrun.sh <label> <args>`: `ulimit -c 0; HIP_VISIBLE_DEVICES=0; rm -rf cache_<label>; WARP_CACHE_PATH=<job>/wheelrun/cache_<label> $FLEET_VENV/bin/python -m warp.tests <args>`, wrapped in `utils/timeit.sh warp-1.14 test`.
+
+| run | command | result |
+|---|---|---|
+| full default suite | `-s autodetect` | **Ran 7610 tests in 832.2 s, OK (skipped=82)** |
+| tile tests, debug | `-s autodetect --warp-debug -p "test_tile*.py"` | **Ran 602 tests in 276.0 s, OK (skipped=15)** |
+| tile_matmul, cold 1 | `-s autodetect -p test_tile_matmul.py` | **Ran 26 tests in 24.1 s, OK** |
+| tile_matmul, cold 2 | same | **Ran 26 tests in 24.2 s, OK** |
+| tile_matmul, cold 3 | same | **Ran 26 tests in 24.2 s, OK** |
+
+- `Warp CUDA error` lines: 0 in every log (no error 700 in any run, including the three cold-cache matmul runs, which on gfx908 had shown it).
+- `test_async`: all pass in the full suite (no pool-off copy failure on this run).
+- Full-suite skips (82): no suitable devices 18, conditional graph nodes 16, not built with MathDx 8, two CUDA devices 7, mempool access 5, peer access 3, insufficient free memory 3 (`test_copy_large_stride_cpu_cpu`, `_cpu_cuda0`, `_cuda0_cpu`: host RAM check, 17 GiB free of 251 GiB at the time, page cache), cuda:0 cannot access CPU memory 2, NVRTC two architectures 2, multi-GPU 2, the 64 KiB shared-memory capability skips 5 (`test_tile_reduce_axis_tier2` 66,816 B, `test_tile_reduce_axis_tier2_single_warp` 66,688 B, `test_tile_assign_2d` 66,688 B, `test_tile_shared_mem_func` and `test_tile_shared_mem_large` 67,584 B), and one each: rmm not installed, no MathDx (tolerance), memory-usage flakiness, devices without peer access, devices without mempool access, peer access + graph module load, mempool access + graph module load, Requires CUDA, NVRTC not available, MathDx is not enabled, HIP stream priority.
+- Debug tile skips (15): MathDx 8 + 1 + 1, and the same five 64 KiB capability skips.
+- Other output, not errors: the known `test_tile_load_scoped` "Failed to configure kernel dynamic shared memory ... 65536 bytes, but maximum available is 65536" UserWarning (once in the full suite, once in debug; the test passes). Three "Warp: Compilation with PCH failed, retrying without precompiled headers" lines in the full suite (CPU kernels: PCH built for target CPU `''` vs `znver3`, and one truncated `/tmp/wp_pch_*/builtin_bd1_tis.pch`, while `test_options_cpu_compiler_flags_generic_cpu` and the parallel workers ran); this is the CPU compiler's PCH fallback shared by the CUDA build, the tests passed, not a HIP finding.
+- The four `test_tile_matmul_fragment_shapes_*` tests ran and passed in each cold run; at 65,536 bytes the guard from `10942265` is expected to skip only the fp64 32x64x32 shape internally (Porting session 32), which this run did not log separately.
