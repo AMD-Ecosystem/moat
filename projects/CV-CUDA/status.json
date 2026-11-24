@@ -7,8 +7,8 @@
   "priority": 6.119,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:03Z",
-  "updated_at": "2026-11-24T04:00:18Z",
-  "head_sha": "4237e85be555bdf6e035702d95fa4867db3b3b82",
+  "updated_at": "2026-11-24T04:09:10Z",
+  "head_sha": "e7a9d2c5b0760640777c2a55e64a5152945392b8",
   "pr_url": "https://github.com/CVCUDA/CV-CUDA/pull/293",
   "pr_number": 293,
   "pr_opened_at": "2026-06-18T21:22:26Z",
@@ -23,7 +23,7 @@
   "pr_state": "open",
   "license_spdx": "Apache-2.0",
   "upstream_repo_id": 527819251,
-  "stage": "porting",
+  "stage": "delta-ported",
   "platforms": {
     "windows-gfx1201": {
       "blocked": true,
@@ -74,7 +74,7 @@
       "validated_sha": "db84d5c56069f2a7d751d7297a6c6db227cb4943",
       "started_at": "2026-05-31T02:22:53Z",
       "completed_at": "2026-11-24T02:20:31Z",
-      "updated_at": "2026-11-24T04:00:18Z",
+      "updated_at": "2026-11-24T04:09:10Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -175,13 +175,9 @@
   },
   "porting_released": {
     "arch": "linux-gfx90a",
-    "since": "2026-11-24T03:58:18Z",
-    "at": "2026-11-24T04:00:18Z"
-  },
-  "porting": {
-    "arch": "linux-gfx90a",
     "since": "2026-11-24T04:00:18Z",
-    "holder": "4a3f4f6c815f"
+    "at": "2026-11-24T04:09:10Z"
   },
+  "porting": null,
   "reviewed_sha": "db84d5c56069f2a7d751d7297a6c6db227cb4943"
 }
