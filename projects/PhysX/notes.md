@@ -221,3 +221,80 @@ Verdict: **changes requested**. Two GPU paths the harness never exercises are br
 - Radix sort fix: correct where applied (a wrapped `(radix - i) << 3` or `<< 4` is never below 32), incomplete in the same file (finding 1); the same assumption survives elsewhere (finding 3). The masks sweep found the rest bounded below 32 (lane ids, `threadIdx.x & 28`, literal or `isValid()`-bounded broadphase shifts, 64-bit articulation bit indices from `__clzll`/`__ffsll`); `algorithms.cu:152` can reach 32 at blockDim 1024 but only feeds a shuffle mask the compatibility header ignores.
 - Wavefront width: the 32-lane logical-warp model holds on wave64 and wave32. No device use of the builtin `warpSize` (every use is a local `= 32` or `WARP_SIZE` shadow); no host query of the device warp size; every launch has blockDim.x a multiple of 32 (2D/3D launches use x = 32, or 128x2), so `threadIdx.x & 31` is the hardware lane within its 32-lane subgroup; HIP's `__shfl` takes `srcLane` modulo width like CUDA; `ballotSync` is zero-extended with subgroup base 0 on wave32. Not a defect today: HIP's `__shfl_xor` with width 32 and a lane mask of 32 or more would let the upper logical warp of a wave64 read the lower one (CUDA returns the caller's value); every PhysX call uses a mask of 16 or less. LDS from the porter's earlier gfx1100 code objects is within 64 KB, the closest being `sb_meshContactGenLaunch` at 64496 bytes; the wave32 validator should confirm on the current head.
 - Lessons in this file: both read correctly against the code (PTX `shl` clamps the count; protected visibility binds the wrappers locally). Lesson 1 should add that the porter's own grep missed sites in the same file, and name the solver and contact-count masks of finding 3, which are its best examples.
+
+## CUDA compile check 2026-11-24 (mi355 fleet host, nvcc 12.8, no GPU used)
+
+Requested by Jeff: compile the CUDA path of fork `4764ca13` with real nvcc and compare it with upstream 5.13 `7d6f6ac8`, which the branch merges. Nothing was run on a GPU (this job had none and used none), nothing in the fork changed, nothing was pushed, and the project's stage and lock were left alone (the review above holds them). Builds lived in the job directory (`<job>/nvcc/`): `up/` at `7d6f6ac8`, `port/` at `4764ca13`, and `same/`, one worktree built at `7d6f6ac8` and then at `4764ca13` in place so that object files can be compared byte for byte (paths, and therefore `__FILE__` strings and debug info, are the same).
+
+Verdict: **no CUDA regression.** Same objects, no errors, no warnings (the build compiles every host file with `-Werror` and every `.cu` with `-Werror=all-warnings`, so any new warning would have failed it), identical compile commands for every shared file, identical SASS on all 8 targets for 59 of the 61 kernel TUs, and the two TUs that differ are explained below and equivalent on NVIDIA hardware. One small CUDA behaviour change in host code (finding 1) is left for a person to judge; it does not break the build or a normal run.
+
+### Toolchain and what was substituted
+
+- nvcc `/usr/local/cuda-12.8/bin/nvcc`, "Cuda compilation tools, release 12.8, V12.8.93"; host gcc 13.3.0; CMake 3.31.6. Upstream pins CUDA 12.8 (`physx/documentation/platformreadme/linux/README_LINUX.md`), so no version substitution.
+- Upstream's Linux build as documented: `cd physx && ./generate_projects.sh linux-gcc` with `PM_CUDA_PATH=/usr/local/cuda-12.8`, `CUDACXX=/usr/local/cuda-12.8/bin/nvcc`, `PM_PACKAGES_ROOT=<job>/nvcc/packman-repo`, then `make -C compiler/linux-gcc-release` (and `-checked`). Packman fetched upstream's public packages (`clang-physxmetadata 4.0.0.32489833_public`, `rapidjson 1.1.0-67fac85-073453e1_public`); CUDA is not a packman package on Linux.
+- The `linux-gcc` preset builds the snippets, whose configure needs GLUT, which the image lacks: built freeglut v3.6.0 from source into `<job>/nvcc/deps/prefix` (`cmake -DFREEGLUT_BUILD_DEMOS=OFF -DFREEGLUT_BUILD_STATIC_LIBS=OFF`) and passed it with `CMAKE_PREFIX_PATH`. Same at both commits.
+- The toolkit has no `nvdisasm`, and the triton wheel's (13.1.80) cannot decode sm_52 or sm_70, so `cuobjdump -sass` used NVIDIA's `cuda_nvdisasm-linux-x86_64-12.8.90-archive.tar.xz` from `developer.download.nvidia.com/compute/cuda/redist`, SHA-256 `8ac63f40...12ae`, matching `redistrib_12.8.1.json`.
+- GPU targets: upstream's full list, SASS for sm_52, 70, 80, 86, 89, 90, 100, 120 plus compute_120 PTX (`PX_GENERATE_GPU_REDUCED_ARCHITECTURES=False`).
+
+### Builds (all at both commits, all exit 0)
+
+| Build | 7d6f6ac8 | 4764ca13 |
+|---|---|---|
+| preset `linux-gcc`, release, full tree (SDK, PhysXGpu, snippets) | 890 objects, 61 `.cu.o` | 892 objects (the two extra are `SnippetGpuParity.cpp.o` and its `ClassicMain.cpp.o`), 61 `.cu.o` |
+| preset `linux-gcc`, checked, full tree | builds, 0 warnings | builds, 0 warnings |
+| direct configure `cmake -S physx -B build-top -G Ninja -DPHYSX_PRESET=linux-gcc -DCMAKE_BUILD_TYPE=release`, build and `cmake --install` | 632/632 steps | 632/632 steps |
+
+- Compile commands (`compile_commands.json`, paths normalized): preset release 734 shared files and direct configure 590 files, **0 differ** in flags, defines or include paths. No CUDA command carries `-include cuda_to_hip.h`, `PX_USE_HIP` or a `hip_compat` path, and none of the 961 dependency files of the 4764ca13 build names `cuda_to_hip.h`, `hip_compat/` or `PxgSdfLinearGrid.h`: the HIP compatibility layer never reaches nvcc or the CUDA host build.
+- `libPhysXGpu_64.so`: same 210 exported dynamic symbols at both commits, no `__hipRegister*` symbol, `NEEDED` only libstdc++/libm/libc (libcuda is opened at run time by the loader, as upstream).
+- Installed `lib/cmake/PhysX/PhysXConfig.cmake` from the direct configure: the condition becomes `if((ON OR OFF) AND NOT "OFF")`, which CMake evaluates true (checked with `cmake -P`), so a CUDA build's package still does `find_dependency(CUDAToolkit REQUIRED)` as upstream's does.
+
+### Object comparison (same-path builds)
+
+- 825 objects byte-identical, among them every host `.cpp` that includes the edited public headers (`PxPreprocessor.h`, `PxCudaTypes.h`, `PxParticleGpu.h`) and the two snippet renderers with the new `#ifndef USE_CUDA_INTEROP`.
+- 67 differ: 61 kernel TUs rebuilt, 57 of them differ in bytes; 4 host objects of the GPU library; the 2 new parity-snippet objects.
+- Host objects: `PxgGeometryManager.cpp.o`, `CudaKernelWrangler.cpp.o` and `PxPhysXGpuModuleLoader.cpp.o` differ only in `mov $imm` operands that are `__LINE__` values passed to the error reporters (the inserted HIP blocks move later lines; `objdump -dr` shows no other difference). So the CUDA `createTextureObject`/`removeGeometry` (texture objects, `cuArrayDestroy`), the CUDA kernel lookup by `moduleIndex` with the cudart registration stubs, and the `libcuda.so.1` preload in the loader all compile exactly as upstream. `CudaContextManager.cpp.o` also differs in code: finding 1.
+- Kernels, compared per function and per target with `cuobjdump -sass` (whitespace-normalized, encodings included): **55 of the 57 differing TUs have identical SASS in every kernel on all 8 targets**. Comparing every section of their 8 cubins shows the bytes differ only in `.debug_line`, `.debug_str`, `.nv_debug_line_sass`, `.nv_debug_ptx_txt` and their relocations (the edited headers gained lines, `-lineinfo` records them), and in `.symtab`/`.strtab`, where the tables made `static __constant__` (`cudaNpCommon.h`, `epa.cuh`, `vector.cuh`, `marchingCubesTables.cuh`) get a TU-internal mangled name (`_ZN5physx32local_invalidateThresholdsConvexE` becomes `_ZN41_INTERNAL_..._cudaBox_cu_...5physx32local_invalidateThresholdsConvexE`), same section, already `LOCAL` in the cubin. No `.text`, `.nv.constant*`, `.nv.info` (registers, shared memory, stack) or global data differs. PhysX never looks a device variable up by name (no `cuModuleGetGlobal`/`cudaMemcpyToSymbol` in `physx/source`), so the rename has no effect.
+
+The shared-source changes Jeff asked about, each confirmed to take its original code on CUDA:
+
+- **Radix sort shift fix** (`RadixSort.cuh`, `radixShiftLeft`/`radixShiftRight` under `__HIP_PLATFORM_AMD__`): all 4 TUs that include it (`radixSortImpl`, `aggregate`, `convexMeshPostProcess`, `accumulateThresholdStream`) have identical SASS. The reviewer's finding 1 fix (the 8 single-warp sites through `radixShiftLeft`) keeps this property, since the helper is a plain shift on CUDA.
+- **Re-enabled atomics**: `PxRedAddGlobal` (`atomic.cuh`, HIP branch first, then upstream's `__CUDA_ARCH__ >= 350` `red.global.add.f32`), `setOverflowError` (`cudaNpCommon.h`) and `atomicAddSpatialVector` (`PxgArticulationBlockData.h`): every including TU (11, 23 and 44 TUs) has identical SASS, `rigidDeltaAccum` included.
+- **`__syncwarp` mapping**: lives only in `cuda_to_hip.h`, which no CUDA compile includes (above); upstream's `__syncwarp` reaches nvcc unchanged.
+- **SDF sampler**: `pxgSampleSdfTexture3D` is `tex3D<float>` on CUDA. The 4 TUs that include `sdfCollision.cuh` keep identical SASS in every SDF kernel and the same texture instruction counts on sm_90 (`TEX*`: `convexMeshMidphase` 399, `particleSystemMeshMidphase` 120, `femClothPrimitives` 90, `softbodySoftbodyMidPhase` 93, at both commits).
+- **Loader and registration**: see the host objects above; the HIP loader branch is behind `PX_USE_HIP`, which the CUDA build never defines, and the protected `__hipRegister*` wrappers and module scan are behind `__HIP_PLATFORM_AMD__ && !__HIPCC__`.
+- `warpHelpers.cuh` (PTX `shfl.up` scan kept on CUDA), the `bar.sync N` macro in `convexMeshMidphase.cu`, the `__ffsll`/`__clzll` casts in `articulationImpulseResponse.cuh`, the `cutil_math.h` operator guards, the `float4` forward declarations, `PxPreprocessor.h` and `PxCudaTypes.h`: no SASS change in any including TU.
+
+The two TUs whose SASS differs, both from unguarded shared edits that are equivalent on NVIDIA:
+
+- **`convexMeshMidphase.cu`, kernel `triangleTriangleOverlaps` only** (commit `49671488`, BV32 root masks): upstream's `(1 << n) - 1` compiles to a plain `SHF.L`/`SHL`, which on NVIDIA returns 0 for a count of 32, so the mask is `0xffffffff`; the new `n < 32 ? (1u << n) - 1 : 0xffffffff` adds one `ISETP.GE.U32 ... 0x20` and one `SEL` per mask (2 of each on every target; sm_52 builds the same value as `SEL(~(0xffffffff << n), -1)`), plus register and scheduling changes (2368 vs 2376 instructions on sm_90). Same mask value for every `n` in 0..32; the other 3 kernels of the TU are identical.
+- **`algorithms.cu`, kernels `scanPerBlockKernel`, `scanPerBlockKernel4x4`, `addBlockSumsKernel4x4`, `radixFourBitCountPerBlockKernel` on sm_52 to sm_90** (AMD commit `d09e2532`, `warpSize` replaced by `PXG_LOGICAL_WARP_SIZE = 32`): upstream's `id % warpSize` and `/ warpSize` are lowered as a generic unsigned division by a value nvcc only learns is 32 late (`I2F.U32.RP`/`MUFU.RCP`/`IMAD.HI` sequences); with the literal they become `& 0x1f` and shifts, and the loops bounded by `blockDim.x / 32` unroll differently (for example `scanPerBlockKernel` 152 to 120 instructions on sm_90). Same arithmetic as long as `warpSize` is 32, which it is on every NVIDIA GPU; on sm_100 and sm_120 nvcc folds `warpSize` itself and the SASS of all 7 kernels is identical at both commits, which is the direct evidence that the two forms are the same program.
+
+### Finding 1 (for the porter and Jeff; not a build break)
+
+`CudaContextManager.cpp` (AMD commit `d09e2532`) restructured the CUDA module-load loop, not only the HIP one. Upstream:
+
+```
+CUresult ret = CUDA_ERROR_UNKNOWN;
+if (moduleTable[i])
+{
+    ret = mCudaCtx->moduleLoadDataEx(&mCuModules[i], moduleTable[i], 0, NULL, NULL);
+}
+if (ret != CUDA_SUCCESS && ret != CUDA_ERROR_NO_BINARY_FOR_GPU)
+{ ... report "Failed to load CUDA module data. Cuda error code %i." ... }
+```
+
+At `4764ca13` the loop starts with `if (!moduleTable[i]) continue;` for both paths, so on CUDA a null module-table entry (one `__cudaUnregisterFatBinary` has zeroed) is now skipped silently where upstream reported error 999. Every non-null entry behaves as before, and the generated code differs only in this loop. Smallest fix, if the reviewer or Jeff wants the CUDA path untouched: move the `continue` inside the `#if defined(__HIP_PLATFORM_AMD__) && !defined(__HIPCC__)` branch and restore upstream's four lines above (with its blank line) in the `#else` branch. Not applied here.
+
+### Reproduce
+
+```
+cd <clone>/physx
+export PM_PACKAGES_ROOT=<dir> PM_CUDA_PATH=/usr/local/cuda-12.8 CUDACXX=/usr/local/cuda-12.8/bin/nvcc
+export PATH=/usr/local/cuda-12.8/bin:$PATH CMAKE_PREFIX_PATH=<freeglut prefix>
+./generate_projects.sh linux-gcc
+make -C compiler/linux-gcc-release -j128
+make -C compiler/linux-gcc-checked -j128
+cuobjdump -sass -arch sm_90 <obj>.cu.o   # nvdisasm 12.8.90 on PATH
+```
+
+Comparison scripts (job-local, not kept): `<job>/nvcc/scripts/cmpcmds.py` (compile commands), `sasscmp.py` (per-kernel SASS, 8 targets), `cubincmp.py` (cubin sections), `fdiff.sh`/`opdiff.py` (one kernel's SASS and opcode counts).
