@@ -1818,3 +1818,24 @@ The 8 CUDA TUs are Frame.cu, Pathtrace_impl.cu, Raycast_impl.cu, VisionarayScene
 ## Compiler defect already reported upstream (checkup session, 2026-11-24)
 
 The AMDGPU long-branch defect found in round 6 is known: llvm/llvm-project issue #224205 ("[AMDGPU] Long-branch reserved SGPR pair is the return address s[30:31] in a callable function", opened 2026-09-17 by an outside user, gfx1101, same symptom) and fix PR #245387 ("[AMDGPU] Preserve calling convention registers in long branches", opened 2026-11-23 by an AMD engineer, not merged yet; tests precommitted in #244501). Found with `gh search issues --repo llvm/llvm-project "AMDGPU long branch"`. So the "Draft issue" above should NOT be filed as a new issue. What jeff may still want: a comment on #224205 adding this project's reproducer and the fact that it also reproduces for gfx90a, gfx942, gfx1030, gfx1151, gfx1200 and gfx1201 with ROCm 10.1 (AMD clang 24.0.0git); that is his call and needs his approval of the text. The `sampleLight` force-inline (d7d363b9) can be dropped once a ROCm release carries the fix; the isosurface intersector's latent instance goes away with it too.
+
+## CUDA compile check 2026-11-24 (mi355 host, nvcc 12.8.93): moat-fix-10 head d7d363b9 vs upstream c1aa91b
+
+Requested by jeff: repeat of the 2026-11-23 check (6f1e7937) at the current staging head, for the two commits since, fd2375a (pinned HIP device arrays, DeviceArray.h) and d7d363b (sampleLight force-inlined under `__HIP_DEVICE_COMPILE__`, renderer/common.h). Compile and link only; nothing run on any GPU (platform detection bypassed with `MOAT_PLATFORM`, so not even rocminfo ran). Same toolkit (`/usr/local/cuda-12.8`, nvcc V12.8.93) and host gcc 13.3.0. Trees: fork `moat-fix-10` at d7d363b9 (= recorded head_sha and the remote branch tip), upstream at c1aa91b, plus a 6f1e7937 tree for the preprocessed comparison; plain clones in the job directory, no edits.
+
+Deps: the same ANARI-SDK next_release @ 47b22af and unpatched visionaray master @ 99d4829c CUDA-on installs the 2026-11-23 job built (its CMakeCache confirms `VSNRAY_ENABLE_CUDA=ON`, `VSNRAY_ENABLE_HIP=OFF`, `CMAKE_CUDA_ARCHITECTURES=80`), copied into this job's directory; the installs carry no absolute paths.
+
+Procedure unchanged from the 2026-11-23 entry (same cmake line, `ninja -k 0 -j 16`, every target), plus `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON`; second pass adds `"-DCMAKE_CUDA_FLAGS=-gencode=arch=compute_80,code=sm_80"`. Builds ran one at a time, each wrapped in `utils/timeit.sh anari-visionaray compile`.
+
+| tree | pass | rc | steps | CUDA TUs | libraries | errors | warning lines |
+|---|---|---|---|---|---|---|---|
+| d7d363b9 (port) | default (sm_52) | 0 | 120/120 | 8 | libanari_library_visionaray.so, libanari_library_visionaray_cuda.so | 0 | 24 |
+| c1aa91b (upstream) | default (sm_52) | 0 | 120/120 | 8 | same two | 0 | 24 |
+| d7d363b9 (port) | + sm_80 | 0 | 120/120 | 8 | same two | 0 | 32 |
+| c1aa91b (upstream) | + sm_80 | 0 | 120/120 | 8 | same two | 0 | 32 |
+
+Warnings: the normalized multisets (paths, line numbers, nvcc temp names) are identical between port and upstream in both passes, and identical to the 6f1e7937 result: `#177-D` unused `eta` (renderer/common.h) and `currentIndex` (UnstructuredField.cpp), nvcc's `-arch=native` fallback and pre-sm_75 deprecation notes, and the matching remarks. cuobjdump on the + sm_80 CUDA library: 8 sm_52 + 8 sm_80 ELFs on both trees.
+
+The two commits are invisible to the CUDA build, shown on preprocessed source. Every TU in compile_commands.json (116: 108 host-compiler TUs of both libraries, and the 8 `.cu` TUs) was preprocessed on the 6f1e7937 and d7d363b9 trees, configured identically with the + sm_80 flags: `g++ -E` for host TUs, and for each `.cu` the gcc `-E` steps of `nvcc -dryrun --keep` (host `.cpp4.ii`, device `compute_52.cpp1.ii` and `compute_80.cpp1.ii`), 132 outputs per tree. After stripping line markers and the tree path, 94 are byte-identical and 38 differ only in whitespace; with whitespace collapsed all 132 are token-identical. The 38 are the TUs that include renderer/common.h, and the only textual change is the line break d7d363b introduced in the `sampleLight` declaration (`inline LightSample sampleLight(` became `inline` and `LightSample sampleLight(` on two lines, parameters re-indented): under CUDA, host and device, `sampleLight` stays plain `inline`. The DeviceArray.h change leaves no trace: no CUDA-build TU contains `hipMalloc` or `hipHostMalloc`, and the CUDA arm still preprocesses to `cudaHostAlloc(&devicePtr, n*sizeof(T), 0x00)`.
+
+Result: PASS at d7d363b9. The port adds no nvcc error or warning over upstream c1aa91b, and the CUDA and CPU builds compile token-identical source to 6f1e7937, so the 2026-11-23 CUDA result carries over unchanged. No platform state was changed and nothing was pushed to the fork.
