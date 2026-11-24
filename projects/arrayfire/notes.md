@@ -3391,3 +3391,49 @@ utils/timeit.sh arrayfire cuda-compile -- cmake --build build-$T -j 16 -- -k 0
   - `test/.../cholesky_dense.cpp.o`: the port's `choleskyEps` test tolerance helper.
 - NVRTC: not rerun. `half.hpp` and every `src/backend/cuda/kernel/*.cuh` are unchanged since the 2026-11-04 NVRTC check (upstream's range touched only `src/api/c/device.cpp` and the CPU backend among the source directories that check covered).
 - Not run: the tests (no NVIDIA GPU here, and none were to be run on this host's AMD GPUs).
+
+## Validation 2026-11-24 (validator, linux-gfx1201, sync round moat-sync-b11d700 head 539d4be10) -- RESULT: VALIDATION-FAILED (130/132; sparse+sparse csrgeam2 segfault, port defect)
+
+Asked for by jeff (fleet job on the gfx1201 host). First Linux gfx1201 record. Fresh clone of `AMD-Ecosystem/arrayfire` `moat-sync-b11d700`, checked out at `539d4be1021cbb78dcd2c19b951aabefa940844d` (= `head_sha` = `reviewed_sha`); `protect-fork` installed; `git status --porcelain` empty before and after (build dir gitignored). Nothing pushed to the fork.
+
+GPU: AMD Radeon AI PRO R9700 (gfx1201, RDNA4, wave32, 32 GiB), `HIP_VISIBLE_DEVICES=2` as pinned by the dispatcher, all 4 cards idle at start, `ulimit -c 0`. Before the project tests, a trivial HIP program (64-thread kernel, `hipMemcpy` back, compiled `--offload-arch=gfx1201`) ran on the pinned card: `devices=1 name=AMD Radeon AI PRO R9700 arch=gfx1201 warp=32`, `kernel OK`, exit 0, no hang. Toolchain: ROCm SDK wheels 10.1.0 in `/opt/python-3.11-venv` (`hipconfig --version` 7.16.26385-0000000, `AMD clang version 24.0.0git (ROCm/llvm-project d6f6cb691863)`), no `/opt/rocm` -- the same toolchain as the gfx942/gfx1100/gfx90a records at this head and 83f66a507. Host packages added first: `sudo apt-get install -y libfftw3-dev libboost-all-dev libopenblas-dev liblapacke-dev`.
+
+### Commands (same as the gfx942 entries at this head, arch gfx1201)
+```
+R=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+S=projects/arrayfire/src; B=$S/build-hip-gfx1201
+python3 -I $S/.github/scripts/check-matrix-data.py $S $B      # ON, 9 matrices restored from arrayfire-data 2723164f7
+AF_CI_MTX_FILES=ON utils/timeit.sh arrayfire compile -- cmake -C $S/.github/scripts/matrixmarket.cmake -S $S -B $B -GNinja \
+  -DCMAKE_BUILD_TYPE=Release -DAF_BUILD_HIP=ON -DAF_BUILD_CUDA=OFF -DAF_BUILD_CPU=ON -DAF_BUILD_OPENCL=OFF -DAF_BUILD_ONEAPI=OFF \
+  -DAF_BUILD_UNIFIED=ON -DAF_BUILD_EXAMPLES=OFF -DAF_BUILD_FORGE=OFF -DAF_WITH_CUDNN=OFF -DAF_WITH_IMAGEIO=OFF \
+  -DAF_BUILD_DOCS=OFF -DAF_BUILD_TESTS=ON -DCMAKE_HIP_ARCHITECTURES=gfx1201 -DCMAKE_PREFIX_PATH=$R -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++
+utils/timeit.sh arrayfire compile -- cmake --build $B -j 12
+export ROCM_PATH=$R; rm -rf ~/.arrayfire
+utils/timeit.sh arrayfire test -- ctest --test-dir $PWD/$B -R '_cuda$' -j1 --output-on-failure
+$B/test/reduce_cuda
+```
+Configure trap: the first configure failed with `af_forge-populate ... fatal: not a git repository` because ArrayFire's 4-second connectivity probe (`file(DOWNLOAD https://github.com/arrayfire/arrayfire/blob/v3.0.0/CMakeLists.txt ... TIMEOUT 4)` in CMakeModules/AFconfigure_deps_vars.cmake) timed out on a cold connection, so it printed "No cloud connection" and went offline, leaving an empty `extern/af_forge-src` in the SOURCE tree. `curl` to the same URL then returned 200 in 0.2-2 s. Fix: `rmdir $S/extern/af_forge-src; rm -rf $B` and configure again (online that time). Build: 1655/1655, exit 0, 0 errors (418 s at -j12). `info_cuda`: `ArrayFire v3.10.1 (CUDA, 64-bit Linux, build 539d4be10)`, `[0] AMD Radeon AI PRO R9700, 32624 MB`.
+
+### Results
+ctest `_cuda$`: **130/132 PASS** (1251 s). JIT cache refilled with 3314 `KER*_HIP_gfx1201_AF_310.bin`. `reduce_cuda` standalone 1062/1062. threading 11.3 s, jit 79 s, binary 62 s, blas, sparse, sort, scan, topk, where, inverse_dense passed.
+1. `test_confidence_connected_cuda`: 3 pass, 12 skip, 21 fail (Image IO not configured) -- the standing `AF_WITH_IMAGEIO=OFF` disposition, as on every platform.
+2. **`test_sparse_arith_cuda`: SEGFAULT.** All 80 `SPARSE_ARITH` (sparse-dense) cases pass; the process dies on the first `SparseSparseArith` case, `float_Addition_10_10`.
+
+Against the other GPUs at this head and at 83f66a507/83be19781 (same toolchain): gfx942, gfx90a and gfx1100 (also wave32) are 131/132 with `confidence_connected` the only failure; `sparse_arith` passes there. The one difference is `sparse_arith`.
+
+### Cause: a device pointer passed where hipSPARSE's host pointer mode expects a host pointer (port defect, pre-existing since 62f0a39ff)
+- gdb backtrace: `hipsparseXcsrgeam2Nnz` -> `rocsparse_csrgeam_nnz` -> `csrgeam_nnz_core` -> `csrgeam_nnz_core_without_allocation<int,int>`, SIGSEGV on host, called from `arrayfire::cuda::arithOp<float, af_add_t>(SparseArray, SparseArray)` (src/backend/hip/sparse_arith.cu:291).
+- `src/backend/hip/sparse_arith.cu:275,291-299` allocates `nnzDevHostPtr = memAlloc<int>(1)` (device memory) and passes it as `nnzTotalDevHostPtr` while the handle is in the default HOST pointer mode (no `hipsparseSetPointerMode` anywhere in the HIP backend). In host mode rocSPARSE dereferences that pointer on the CPU.
+- Standalone repro `agent_space/smoke/geam.hip` (10x10, 35 nnz, plain hipSPARSE, nothing from ArrayFire): host pointer mode + host `int*` -> nnzC=35; host mode + `hipMalloc` `int*` -> **SIGSEGV** at the same rocSPARSE function; device mode + either pointer -> 35. In gdb the faulting instruction is `mov (%r14),%eax` (then `cmp $0xffffffff`), with `r14` = `si_addr` = the `hipMalloc` address: a host read of `*nnz_C`.
+- Why only some hosts: this host's R9700s expose a 256 MiB BAR0 for 32 GiB of VRAM (sysfs `resource`; no large BAR), so `hipMalloc` memory is not CPU-mapped and the host read faults. On large-BAR hosts the runtime CPU-maps device memory and the same read silently succeeds, which is why the gfx942/gfx90a/gfx1100 Linux hosts pass. The earlier crashes on windows-gfx1101, windows-gfx1201 and windows-gfx1151 (lines ~1198, 1364, 1481, 1558, 2574, 3189) were put down to "a Windows rocsparse csrgeam2 bug". They are this same defect, so the cause is the host's BAR mapping, not Windows. It is not a ROCm bug: rocSPARSE's documented contract for host pointer mode is a host pointer.
+- Fix demonstrated (throwaway, reverted, not committed; patch kept as `agent_space/sparse_arith-hostnnz-experiment.patch`): pass `&nnzC` (a host `int`) to `hipsparseXcsrgeam2Nnz` and drop the device-to-host copy branch. After rebuilding `afcuda`, `sparse_arith_cuda` passed **123/123** on this GPU. Reverted with `git checkout`, rebuilt, and the crash came back at the clean head; `git status --porcelain` empty afterwards. A clean porter fix: write the count to a host `int` (host pointer mode is what csrgeam2's host `alpha`/`beta` need anyway). The CUDA backend has the same pattern (src/backend/cuda/sparse_arith.cu:212,237), which cuSPARSE tolerates; the minimal port fixes only the HIP file.
+- Not a regression of this sync round: the code is unchanged since 62f0a39ff and upstream's range touches no sparse code.
+
+### Gates
+CUDA no-regression compile: already recorded at this head (nvcc 12.8 entry above: PASS), not rerun. Jargon and documentation: unchanged from the gfx942 validation at this head (the round changes no docs). Note: `ulimit -c 0` did not stop core files, because `kernel.core_pattern` pipes to apport, and the kernel invokes a pipe handler whatever RLIMIT_CORE says ("dumped core" printed for the two segfaulting runs).
+
+### State
+`set-state arrayfire linux-gfx1201 validation-failed --agent validator` at 539d4be10 (a GPU failure, no `--gate`). The "Retested" part of the sync review PR draft is NOT updated, because this platform did not pass. Owed to the porter: the host-`int` fix in src/backend/hip/sparse_arith.cu, then revalidation (a small-BAR host shows the defect, so revalidate on this host or a Windows host).
+
+## Lesson for cuda-to-rocm: a device pointer under host pointer mode crashes only on small-BAR hosts
+A library output argument that CUDA code passes as device memory while the handle is in host pointer mode (for example hipSPARSE `csrgeam2Nnz`'s `nnzTotalDevHostPtr`; cuSPARSE tolerates it) is dereferenced on the CPU by rocSPARSE. It works on hosts whose GPUs have a large (resizable) BAR, because the runtime CPU-maps `hipMalloc` memory there, and segfaults in host code inside the library on hosts with a 256 MiB BAR (common on workstation cards and Windows machines). The symptom looks like an OS- or arch-specific library bug. To tell the two apart, check the GPU's BAR0 size (`/sys/bus/pci/devices/<bdf>/resource`) and repeat the call with a host pointer, or with `hipsparseSetPointerMode(DEVICE)`. The fix is a host variable, or device pointer mode with device scalars.
