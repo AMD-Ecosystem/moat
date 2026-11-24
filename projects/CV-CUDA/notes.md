@@ -1720,12 +1720,13 @@ Jargon: this round's commits and the full diff against upstream are clean. `--po
 State: linux-gfx90a -> `completed` at `8da17190`. The bit-exact residual is far larger than the last record; whether the contraction setting or per-site FMA spelling should change before this goes to the maintainer is jeff's call (see the porter section's DECISION).
 
 ## Fix review PR draft
+(updated 2026-11-24 for the tip `db84d5c5`; replaces the 11-23 draft that named `8da17190`)
 
-Title: [ROCm] Merge upstream v0.19.0 and port the new code to HIP
+Title: [ROCm] Merge upstream v0.19.0, port the new code, match nvcc's FMA results
 
 Body (for `upstream.py --fix-review`; the section headed exactly `## Upstream reply` is the only upstream-visible part, ending at `## For jeff`):
 
-Upstream released v0.18.0 and v0.19.0 and CVCUDA/CV-CUDA#293 stopped merging into main. The maintainer has not commented; nothing was requested. This round only absorbs the base: it merges upstream main (3c06df7f, v0.19.0) into the branch and carries the HIP path over to the code the two releases added or rewrote. The published commits are untouched; everything is new commits on top.
+Upstream released v0.18.0 and v0.19.0 and CVCUDA/CV-CUDA#293 stopped merging into main. The maintainer has not commented; nothing was requested. This round merges upstream main (3c06df7f, v0.19.0) into the branch, carries the HIP path over to the code the two releases added or rewrote, and then brings the ROCm results in line with the bit-exact tests the releases added. The published commits are untouched; everything is new commits on top.
 
 ## What conflicted
 
@@ -1739,25 +1740,31 @@ Twelve files. Upstream deleted src/cvcuda/priv/legacy/ and rewrote those operato
 - 7133a17b Warp-level code added by the releases kept in 32-lane groups on 64-lane wavefronts (ChannelCopy, Otsu, NMS, Posterize, AutoContrast, Inpaint).
 - 2c08d77c Half-precision tests compiled with the HIP compiler on ROCm, with three small test-side adjustments.
 - 8da17190 Installation guide: ci/build.sh moved to build.sh upstream; the ROCm command now also passes -DBUILD_PYTHON=0.
+- c610c9ca, ff752787, f2ea4e0a, 7f87d4ba Fused multiply-adds spelled out on the HIP device pass. nvcc fuses a * b + c after inlining, also across the cuda_tools vector operators, and the new golds and planar/interleaved parity tests pin that; clang fuses only within one expression. Three macros in MathOps.hpp (NVCV_CUDA_MULADD, ADDMUL, MULACC) evaluate an explicit per-element fma on the HIP device pass and expand to the original expression everywhere else, so the CUDA build parses the same expressions. Used in the interpolation wraps and the ConvertTo, Normalize, BrightnessContrast, resize, filter, warp and rotate kernels.
+- 8f6c1884 Works around an AMDGPU code generation issue: the backend folds a float-to-half conversion into the preceding fma (v_fma_mixlo_f16), rounding once instead of twice; an empty asm keeps them apart in SaturateCast<__half>(float) and TvResize's half store (HIP device pass only).
+- db84d5c5 Two-product blends fuse the left product. It corrects the rationale in the bodies of c610c9ca and 7f87d4ba, which claimed nvcc fuses the right one; the evidence did not support that, and the left form is what the scalar paths already computed.
 
 The OSD, bounding box and box blur operators stay out of the ROCm build, as in the published PR.
 
 ## Retested
 
-AMD Instinct MI250X (gfx90a), ROCm 7.16, at 8da17190: cvcuda_test_unit 63 passed, 1 skipped, 0 failed; nvcv_test_cudatools_system 1182 of 1188 (the same two known non-port clusters as before); cvcuda_test_system 7630 passed, 18 skipped, 185 failed of 7833 (was 43 or 44 failed of 3886 at the published tip). The suite doubled and most new tests are bit-exact. Every failure is a test-fixture async-copy race (passes under AMD_SERIALIZE_COPY=3), a floating-point contraction difference (flips with -ffp-contract=fast), or one of 17 deterministic single-LSB cases. None is a crash, NaN, or wave64 signature. The documented build command was also run and builds.
+AMD Instinct MI250X (gfx90a), ROCm 7.16, at db84d5c5: cvcuda_test_unit 63 passed, 1 skipped, 0 failed; nvcv_test_cudatools_system 1182 of 1188 (the same two known non-port clusters as before); cvcuda_test_system 7797 passed, 18 skipped, 18 failed of 7833 (at 8da17190: 185 failed). Of the 18, 17 are tests that free a pageable host buffer before the asynchronous 2D upload from it has run (PadAndStack, ColorTwist planar var-shape); they pass when the buffers are kept alive. The last is one GammaContrast var-shape pixel off by one, cause not yet found.
 
-Not yet run at this tip: a gfx1100 (wave32) re-test, and a CUDA compile with nvcc.
+Not yet run at this tip: a gfx1100 (wave32) re-test, and the CUDA build with nvcc.
 
 ## Upstream reply
 
-I merged main (v0.19.0) into this branch to resolve the conflicts and carried the HIP changes over to the operators that moved out of legacy/ and to the new code in v0.18 and v0.19. Retested on MI250X (gfx90a).
+I merged main (v0.19.0) into this branch to resolve the conflicts and carried the HIP changes over to the operators that moved out of legacy/ and to the new code in v0.18 and v0.19. The new bit-exact tests needed one more change on the HIP side: nvcc fuses multiply-adds across the cuda_tools vector operators, so the affected sites now spell the fused operation out through three small macros in MathOps.hpp; they compile to the original expressions in the CUDA build. Retested on MI250X (gfx90a). Three system tests still fail intermittently on ROCm because they upload from a host buffer that is freed before the asynchronous copy runs (PadAndStack planar and F16, ColorTwist planar var-shape); they pass when the buffers are kept alive.
 
 ## For jeff
 
-- Bit-exact failures on gfx90a rose from 43-44 to 185 because upstream doubled the bit-exact test surface. A large share depends on the contraction setting: the new golds (std::fma in TestOpConvertTo.cpp) show nvcc fusing across inlined operator calls, which -ffp-contract=on does not. Neither off (107 failures, 49 new gold breaks) nor fast (145, 39 new) is clean. Decide whether that is acceptable for the PR or needs per-site FMA work first; numbers in notes.md, Fix round 2026-11-23.
-- The CUDA nvcc compile of this round is owed (no toolkit on the gfx90a host; installing one was refused there).
-- jargon.py --port flags an in-house term in the body of published commit b623dffa from June; fixing it would rewrite what the maintainer has read.
-- Do not merge before gfx1100 is re-tested; the reply above names only gfx90a.
+- cvcuda_test_system on gfx90a: 185 -> 18 failures. 163 were contraction (the 11-23 notes undercounted this group as about 75: a further 76 failed under both on and fast and passed only under off), 3 a ROCm compiler fold, 1 GammaContrast (unresolved, notes "Group 2"), 18 race members (13-17 per run).
+- The CUDA build is unchanged by construction (macro expansions checked mechanically per file), but the real nvcc build and an SASS read of LinearBlend, the Rotate planar coordinate and Convertor are owed on the nvcc host at db84d5c5. The SASS read also answers which product nvcc fuses in a*b + c*d; the round now assumes the left one (LLVM's rule, upstream's WarpCommon pin).
+- The upstream reply mentions the test race; a draft upstream issue is in "Fix round 2026-11-24", Group 3. Filing it, or dropping the sentence, is your call.
+- A ROCm compiler bug is registered (deferral amdgpu-fma-mixlo-f16-single-rounding) with a standalone reproducer; your call where to file it.
+- The macros are a public-header addition (installed MathOps.hpp). The alternative, #if/#else duplication at about 200 sites, was rejected as a larger upstream diff.
+- jargon.py --port still flags only the June commit b623dffa.
+- Do not merge before gfx1100 is re-tested; the reply names only gfx90a.
 
 ## CUDA compile check 2026-11-23 (nvcc 12.8, mi355 host) at `8da17190` vs upstream `3c06df7f` (v0.19.0)
 RESULT: **PASS, no regression from the port.** Both trees build completely with nvcc (exit 0, every target including the libraries, all 12 test executables and the two nested `nvcv_standalone` sub-builds), and neither build prints a compiler diagnostic. The two build logs are identical apart from absolute paths and configure timings. No GPU was used: compile and link only (the host has no NVIDIA GPU, and the AMD GPUs were in use by others).
@@ -1931,3 +1938,15 @@ VERDICT: **review-passed**.
 - CUDA identity, mechanical: `agent_space/cudaexpand.py` expands every NVCV_CUDA_MULADD/ADDMUL/MULACC call with its non-HIP-device definition and compares each changed file with parentheses and whitespace removed. `8f6c1884 -> db84d5c5`: OpResize.cu, ResizeTapCommon.cuh, OpRandomResizedCrop.cu identical. Whole round `8da17190 -> db84d5c5`: 13 of 17 files identical; the other 4 are identical once the HIP-device-only blocks (MathOps.hpp HipFma/macros, SaturateCastImpl.hpp specialization), the platform-guarded TvResize asm and the new `#include "MathOps.hpp"` in InterpolationWrap.hpp are removed. So nvcc compiles the same expressions; what remains owed is the real nvcc build and SASS read listed in the porter section (no nvcc on this host).
 - `db84d5c5` hygiene: title 50 chars, `[ROCm]`, AI disclosure, Test Plan, no trailer, ASCII, jargon clean. Tests (porter response) reproduce the 8f6c1884 counts.
 - Still recorded, not blocking: coverage-path fusion (InterpolationWrap.hpp:508/672/688), TorchVisionGray half fold exposure, TvResize guard-macro inconsistency, GammaContrast d1d45083 unresolved, 18 test-fixture race members (upstream test bug).
+
+## Validation 2026-11-24 (linux-gfx90a, revalidate, fix round, tip `db84d5c5`)
+Host: MI250X (gfx90a), ROCm 7.16 SDK (`/etc/rocm_env.sh`, clang 24), `HIP_VISIBLE_DEVICES=3` (dispatcher pin, GPU idle per `amd-smi process`), `ulimit -c 0`. Clone at `db84d5c5`, `git status --porcelain` shows no modified tracked file. Build: the build-hip recipe ("Fix round 2026-11-23"), clean from an empty directory at `8f6c1884`, then incremental to `db84d5c5` (ninja rebuilt the three changed sources); `libcvcuda.so.0.19.0` carries 62 `amdgcn-amd-amdhsa--gfx90a` objects and nothing else.
+```
+utils/timeit.sh CV-CUDA test -- projects/CV-CUDA/src/build-hip/bin/cvcuda_test_unit            # 63 passed / 1 skipped / 0 failed
+utils/timeit.sh CV-CUDA test -- projects/CV-CUDA/src/build-hip/bin/nvcv_test_cudatools_system  # 1182 / 1188; 5x InterpolationVarShapeWrapTest.correct_shift (fixture race) + TypeTraitsMakeTypeVectorTest/3
+utils/timeit.sh CV-CUDA test -- projects/CV-CUDA/src/build-hip/bin/cvcuda_test_system          # 7797 passed / 18 skipped / 18 failed of 7833
+```
+Against `8da17190` (7630 / 18 / 185): the 18 are 17 test-fixture copy-race members (PadAndStackPlanar, PadAndStackF16, PadAndStack integer parity, ColorTwistPlanarVarShape; pass with the source buffers kept alive) and `OpGammaContrast.varshape_correct_output/d1d45083` (one pixel, unresolved, see "Fix round 2026-11-24" Group 2). No failure outside the baseline sets; no crash, hang, NaN or wave64 signature. Same counts in three full runs (pre-push at `8f6c1884`, pre-push at `db84d5c5`, this record run).
+CUDA no-regression gate: NOT RUN (no CUDA toolkit on this host); owed at `db84d5c5` on the nvcc host, with the file list and SASS checks in the porter section. The CUDA expressions were checked mechanically (Review 2026-11-24 (b)).
+Docs: unchanged this round (installation.rst "Building for AMD GPUs (ROCm)" current). Jargon: only the pre-existing `b623dffa` hit.
+State: linux-gfx90a -> `completed` at `db84d5c5`, with the GammaContrast pixel open. linux-gfx1100 still owes revalidation (other host).
