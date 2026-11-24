@@ -9033,3 +9033,57 @@ rc=0
 Both findings as drafted reproduce on 10.2 / HIP 7.17: the array mapped from a GL 2D texture reports `Depth 1` (a `hipArray3DCreate` 2D array reports 0), and both 2D copies reject it with `hipErrorInvalidValue` while the same copies on the `hipArray3DCreate` array succeed.
 
 Processes: Weston 3497288 and its children weston-keyboard 3497307, weston-desktop-shell 3497308, Xwayland 3498117, all mine, stopped by those PIDs. Files: `<job>/ev/repro/` (sources, `t`, `run_sort.log`, `run_gl.log`), `<job>/gl/` (Weston root, `start_weston.sh`, `weston.ini`, `weston.log`); scratch.
+
+## Evidence session (rocPRIM stale-error reproducer, gfx90a) (2026-11-24, linux-gfx90a MI250X, evidence only)
+
+Requested by the coordinator for jeff, who approved filing the rocPRIM report and wants its reproducer verified. Evidence only: no fork commit, no state change. Dispatcher pin `HIP_VISIBLE_DEVICES=1`, `ulimit -c 0`, no process stopped.
+
+Environment: job venv upgraded from TheRock 10.1.0 to `rocm[devel]==10.2.0` (index `https://stable.repo.amd.com/rocm/whl-next/`, extra index PyPI), `rocm-sdk init`, `R=$(rocm-sdk path --root)`. `hipconfig --version`: `7.17.26434-0000000`. `ROCPRIM_VERSION 400800`, `HIPCUB_VERSION 400700` (header-only, from the 10.2 devel tree; the leftover `rocm-sdk-libraries`/`rocm-sdk-device-gfx*==10.1.0` packages do not take part). GPU: AMD Instinct MI250X / MI250, `gfx90a:sramecc+:xnack-`.
+
+Files: `stale_error_sort.hip` byte-identical to the gfx1201 session's copy (md5 73da7bedaee557d4d3e30755d7e816f6); `stale_error_sort_random.hip` is the request's second file (md5 996fbe6a96f0c2a6adbece136d6361f3). Build, for each:
+
+```
+$R/lib/llvm/bin/clang++ -x hip --rocm-path=$R --offload-arch=gfx90a -O2 <file> -o <out> -L$R/lib -lamdhip64 -Wl,-rpath,$R/lib
+```
+
+(only `[[nodiscard]]` warnings for the unchecked hipMalloc/hipMemcpy calls).
+
+### Results: 3 runs each, output verbatim
+
+Every one of the six runs printed exactly this (a second set of 3 runs per file was byte-identical too, md5 0cc70769265235c6282ce180344591a6 for all six logs):
+
+```
+clean sort:
+  SortPairs returned 0 (hipSuccess); 0 of 4194303 adjacent pairs out of order
+hipIpcGetEventHandle returned 9 (hipErrorInvalidConfiguration); the caller handles it and continues
+sort after the failed call:
+  SortPairs returned 9 (hipErrorInvalidConfiguration); 0 of 4194303 adjacent pairs out of order
+sort again:
+  SortPairs returned 0 (hipSuccess); 0 of 4194303 adjacent pairs out of order
+```
+
+Same as gfx1201 on the surface, but **"0 out of order" here does not mean sorted**. Both files `hipMemset(k_out, 0, ...)` before the sort, and an untouched all-zero `k_out` also counts 0 adjacent inversions. An instrumented copy (`probe.hip`: same setup, also fills `v_out` with 0xff, compares `k_out` with `std::sort` of the input, counts zero keys, checks each value against its key, and redefines `ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR` before the hipCUB include to log each check) shows that for n = 2^22 the sort after the failed call **wrote nothing**: all 4194304 keys are still 0 and all 4194304 values are still 0xff, for decreasing and random keys alike. So the gfx1201 reading "returns 9 but the output is correctly sorted" is almost certainly the same artifact (same file, same n, same code path), and the gfx950 figure (2,096,613 of 4,194,303, i.e. 49.99%, what an unwritten buffer of arbitrary content gives) fits the same mechanism with an output buffer that was not zeroed. Both files fail to show the defect for this reason. Use a check against a reference sort, or leave `k_out` non-zero (for example 0xff fill), so the report shows the incomplete output.
+
+Instrumented results, each size sorted clean, then `hipIpcGetEventHandle` fails (9), then sorted again (decreasing and random keys gave identical counts):
+
+| n | path | clean | after the failed call: return; keys != std::sort; out of order; zero keys; bad values |
+|---|---|---|---|
+| 1000 | single block sort | 0, correct | 9; 0; 0; 0; 0 (correct) |
+| 100000 | block sort + merge sort | 0, correct | 9; 100000; 97; 0; 0 (sorted runs of 1024 only) |
+| 1048576 | block sort + merge sort | 0, correct | 9; 1048576; 1023; 0; 0 (sorted runs of 1024 only) |
+| 1048577 | onesweep | 0, correct | 9; 1048577; 0; 1048577; 1048577 (nothing written) |
+| 4194304 | onesweep | 0, correct | 9; 4194304; 0; 4194304; 4194304 (nothing written) |
+
+In the poisoned runs none of the instrumented `ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR` checks ran (clean runs logged each one: `radix_sort_block_sort_kernel`, then `device_block_merge_*` and `transform_kernel`; or `compute_global_digit_histograms`, `scan_global_digit_histograms`, then 4 times `onesweep_iteration`).
+
+### Why: where the early return happens
+
+The stale error is not returned by `ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR` (`rocprim/common.hpp:30`). It comes one step earlier, from `detail::execute_launch_plan` (`rocprim/device/config_types.hpp:835-842`), which every kernel launch goes through: it launches the kernel and then `return hipGetLastError();`, and each caller wraps it in `ROCPRIM_RETURN_ON_ERROR`. So the **first kernel launch of the sort** is enqueued and then picks up the leftover error, and the sort returns at once. The second, third and later launches never happen. HIP keeps the error from `hipIpcGetEventHandle` across the successful `hipMalloc`/`hipMemcpy`/`hipMemset` calls in between, because only `hipGetLastError` clears it, which is why the next sort is clean. What the caller gets depends only on what that first kernel writes (`radix_sort_impl`, `device_radix_sort.hpp:803-870`):
+
+- n <= 1024 (block_size x items_per_thread for int pairs, `single_sort_items_per_block`): one kernel, `radix_sort_block_sort`, writes `keys_out` directly. It completes, so the output is **correct** and the 9 is only a wrong return code.
+- 1024 < n <= 1048576 (`merge_sort_limit` default `1024 * 1024`, `device_radix_sort_config.hpp:51`): `radix_sort_merge_impl`'s first launch is the block sort, which leaves 1024-key sorted runs. The merge passes never run, so the output is **partly sorted and wrong** (97 and 1023 inversions, one at each run boundary).
+- n > 1048576: `radix_sort_onesweep_impl`'s first launch is the histogram kernel in `radix_sort_onesweep_global_offsets` (`device_radix_sort.hpp:151`, before its check at `:158`). It writes only the temp-storage histogram, no `onesweep_iteration` runs, and **`keys_out`/`values_out` are never written**.
+
+The size thresholds and the first kernel of each path come from the generic `radix_sort_impl`, but tuned configs can differ, so the single-block cutoff may be different on other arches. The mechanism (`execute_launch_plan` returning a leftover error on the first launch) is the same everywhere. So the report should say that any leftover HIP error makes rocPRIM device algorithms return after their first kernel launch, that the output can be correct, partial or never written depending on the size path, and that the reproducer needs a reference check rather than an inversion count over a zeroed buffer.
+
+Files (scratch, `agent_space/rp/`): the two sources, `probe.hip`, `*.run{1,2,3}.log`, `probe.log`.
