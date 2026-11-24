@@ -2,7 +2,11 @@
 
 Planner run 2026-11-20 on linux-gfx90a (no GPU used, nothing built), for jeff. Analysed at upstream `main` 302e0e97024ebd68688fe890e5df83731edf7b54 with submodules.
 
-**Three rulings are needed from jeff before a porter starts.** They are stated with options at the top of the 2026-11-20 planner section in `notes.md` (Q1 NVFP4 scope; Q2 the unreachable components; Q3 whether a correctness-first port is the complete deliverable). The plan below is written for the recommended answers and says where the other answer changes it.
+**Rulings (Jeff Daily, 2026-11-23, recorded in `notes.md`): Q1 = c, Q2 = a, Q3 = b.** The planner wrote this plan for Q1 = a and Q3 = a; the porter updated it on 2026-11-24 (linux-gfx942) so that every section below states the ruled scope:
+
+- Q1 = c: INT4 on every platform. Native NVFP4 only where the hardware has FP4 matrix instructions (gfx950 scaled MFMA `f8f6f4`, gfx1250 WMMA f4), with the NVFP4 scales (ue4m3, block 16) handled in software there. Every other AMD target traps on FP4 exactly as upstream does below sm_120, and `get_precision()` returns `fp4` only on gfx950 and gfx1250.
+- Q2 = a: `gemm_w8a8_fp16` (CUTLASS) is left out of the ROCm source list; `gemm_batched_fp16` gets a hipBLAS strided-batched implementation; `mha_fwd_block` raises "Block-sparse attention is not supported on ROCm".
+- Q3 = b: the stage 2 matrix-instruction paths (RDNA WMMA, CDNA MFMA) are required on every gate before review, whatever stage 1's speed. Stage 1 stays in the tree as the exact reference each stage 2 path is proven bit-identical against.
 
 ## Project
 
@@ -49,7 +53,7 @@ Census (`surface.py`, regex): 40 CUDA-bearing files under `src/`; 22 kernels, 45
 | `mma_m16n8kx_s32common` m8n8k32 (sm_75 form) | `zgemm/mma_earlycuda.cuh` | not used on ROCm: the HIP path always takes the `mma.cuh` signatures |
 | s8 m16n8k32 | `zgemm/gemm_w8a8.cuh` `GEMM_W8A8::mma` | same primitive layer, s8 operands |
 | `mma_m16n8k16_f16f16f16f16`, `mma_m16n8k16_f32f16f16f32<bf16>` | `zgemm/mma.cuh`, used by LoRA (`lora.cuh`), epilogues and `attention.cuh` | same primitive layer, f16/bf16 operands |
-| `mma_fp4` (`kind::mxf4nvf4.block_scale.scale_vec::4X ... e2m1 ... ue4m3`), `quantize_float2_fp4`, `quantize_float4_fp8` | `zgemm/gemm_w4a4.cuh`, `gemm_utils.cuh` | **ruling needed** (notes Q1); recommended: trap on ROCm exactly as upstream does below sm_120 (`trap_no_fp4`) |
+| `mma_fp4` (`kind::mxf4nvf4.block_scale.scale_vec::4X ... e2m1 ... ue4m3`), `quantize_float2_fp4`, `quantize_float4_fp8` | `zgemm/gemm_w4a4.cuh`, `gemm_utils.cuh` | Q1 = c: native on gfx950 (`v_mfma_scale_f32_*_f8f6f4` with FP4 operands) and gfx1250 (WMMA f4), NVFP4 ue4m3 block-16 scales applied in software (the MX hardware scale is e8m0 per 32); FP4 quantize through the gfx950/gfx1250 FP4/FP8 conversion instructions. Every other AMD target traps (`trap_no_fp4`) as upstream does below sm_120 |
 | `ldmatrix.sync.aligned.{x4,x4.trans}.m8n8.shared.b16` | `gemm_utils.cuh`, `awq/gemm_awq.cu` (both forms) | plain LDS loads into the same fragment registers (pure data movement, bit-identical) |
 | `movmatrix.sync.aligned.m8n8.trans.b16` | `gemm_utils.cuh` | width-32 `__shfl` transpose |
 | `ld.shared.v2/v4`, `st.shared.v2/v4`, predicated `ld.global`/`st.global` | `gemm_utils.cuh` `load`/`store`/`load_pred`/`store_pred` | plain C++ vector loads, `if (pred)` |
@@ -72,7 +76,8 @@ Stage 2, matrix cores, per arch family, behind `__GFX9__`/`__gfx90a__`/`__gfx942
 
 - RDNA wave32 (gfx11, gfx1151, gfx12): one logical warp is one wavefront. INT4 has a native target: `v_wmma_i32_16x16x16_iu4` (gfx11), the gfx12 `iu4` forms. f16/bf16: `v_wmma_f32_16x16x16_{f16,bf16}`. Shuffle PTX fragments into the WMMA operand layout and the result back (layouts in `no-hip-equivalent.md`).
 - CDNA wave64 (gfx90a, gfx942, gfx950): no INT4 MFMA input. Unpack s4/u4 to s8 in registers (memory stays 4-bit) and use the i8 MFMA. Because each wavefront holds two logical warps with different operands, the 16x16 MFMA cannot be used per warp directly; the per-warp-safe form is the 4x4 block MFMA (`__builtin_amdgcn_mfma_i32_4x4x4i8` on gfx90a, the gfx94x 4x4 i8 form), sixteen independent 4-lane blocks. Whether a 16x16 form with one warp's operands broadcast per issue is faster is a performance-pass question, not this port's.
-- (Ruling Q3, recommended answer.) Stage 2 is in scope only as far as it is needed to make the end-to-end tests finish in practical time on each gate; if stage 1 already does that on an arch, stage 2 there is optional and recorded as such in notes. Speed is recorded, never gated.
+- Ruling Q3 = b: stage 2 is required on every gate before review (wave64 CDNA MFMA, wave32 RDNA WMMA), each proven bit-identical to stage 1 on that hardware with the build switch that selects stage 1 (the porter's notes name it). Speed is recorded, never gated.
+- Porter correction (2026-11-24) to the CDNA bullet above: the W4A4 GEMM loads the same weight tile in every warp of a block (`load_wgt` has no warp index), so one 32x32 MFMA per wavefront can take the A rows of both 32-lane warps (rows 0-15 and 16-31) against two 16-column weight tiles with no wasted lanes. The CDNA stage 2 therefore uses the i8 32x32 MFMA (`v_mfma_i32_32x32x16_i8` on gfx942/gfx950, `v_mfma_i32_32x32x8i8` on gfx90a) over the whole GEMM block, not the per-warp 4x4 block form.
 
 ### C. Wavefront-width sites (fix on both widths; logical warp stays 32)
 
@@ -98,14 +103,15 @@ All zgemm and AWQ code indexes a logical 32-lane warp (`GEMMConfig_*::WARP_SIZE 
 |---|---|---|---|
 | `kernels/gemm_f16.cu` | `gemm_f16` (alpha, bias) | `GEMM_F16` in `Linear.cpp` (Sana `kv_linear`; LoRA of `GEMV_AWQ` norm linears in Flux) | hipBLASLt or hipBLAS `GemmEx` with bias added by an epilogue or a small kernel; `hipblaslt` epilogues differ per type (libraries.md) |
 | `kernels/dwconv.cu` | `dwconv_f16` (depthwise 3x3) | `DWCONV` in Sana | small direct HIP depthwise kernel (preferred, no MIOpen handle) or `at::conv2d` through the torch interop |
-| `kernels/gemm_batched.cu` | `gemm_batched_fp16` | only `Attention::forward(qkv, pool_qkv, sparsityRatio)`, which every caller invokes with `sparsityRatio = 0.0f` (`FluxModel.cpp:1289,1392`) | **ruling Q2**: recommended hipBLAS strided-batched GEMM (cheap, keeps the code path whole) |
-| `kernels/gemm_w8a8.cu` | `gemm_w8a8_fp16` | no caller anywhere in `src/` or `nunchaku/` | **ruling Q2**: recommended leave out of the ROCm source list, with the reason in notes |
+| `kernels/gemm_batched.cu` | `gemm_batched_fp16` | only `Attention::forward(qkv, pool_qkv, sparsityRatio)`, which every caller invokes with `sparsityRatio = 0.0f` (`FluxModel.cpp:1289,1392`) | Q2 = a: hipBLAS strided-batched GEMM |
+| `kernels/gemm_w8a8.cu` | `gemm_w8a8_fp16` | no caller anywhere in `src/` or `nunchaku/` | Q2 = a: left out of the ROCm source list |
 | `kernels/dispatch_cutlass.h` | type dispatch | the above | not compiled on ROCm |
 
 ### F. Block-Sparse-Attention (`third_party/Block-Sparse-Attention`, flash-attention-2 fork on CuTe/CUTLASS, sm80 instantiations)
 
 - `mha_fwd` (dense): the default `AttentionImpl::FlashAttention2` of the C++ `QuantizedFluxModel` (`FluxModel.cpp:120, 246`, `Attention::forward(qkv)`). ROCm replacement: `at::scaled_dot_product_attention` through `src/interop/torch.*` (torch's ROCm flash backend: AOTriton/CK), same `[B, T, H, D]` view and scale. The Python v1 models already use torch SDPA.
-- `mha_fwd_block` (block-sparse): only from the sparsity path above, unreachable with `sparsityRatio = 0`. ROCm: throw a clear "block-sparse attention is not supported on ROCm" error (ruling Q2 covers it with gemm_batched).
+- `mha_fwd_block` (block-sparse): only from the sparsity path above, unreachable with `sparsityRatio = 0`. Q2 = a: ROCm throws "Block-sparse attention is not supported on ROCm".
+- Porter addition (2026-11-24): `mha_varlen_fwd` (dense, variable length) is also reached, from `MultiHeadCrossAttention::forward` in `SanaModel.cpp:166` (the Sana cross attention); the planner's inventory missed it. ROCm: per-sample torch SDPA over the `cu_seqlens` offsets, in the same replacement file as `mha_fwd` (`src/interop/flash_api_rocm.cpp`).
 - `topk` (misc kernels) feeding the block mask: plain CUDA, ports with the rest.
 
 ### G. Libraries and runtime
@@ -118,7 +124,7 @@ All zgemm and AWQ code indexes a logical 32-lane warp (`GEMMConfig_*::WARP_SIZE 
 
 ### H. Python
 
-- `nunchaku/utils.py` `get_precision`, `is_turing`, `check_hardware_compatibility` key on `torch.cuda.get_device_capability()`; ROCm reports gfx numbers that collide with NVIDIA SMs (gfx90a -> (9,0), gfx942 -> (9,4), gfx1100 -> (11,0); platform-limits.md). Add a `torch.version.hip` arm: precision `int4` on every AMD arch (under the recommended Q1), `is_turing` False, compatibility check accepts the supported gfx list.
+- `nunchaku/utils.py` `get_precision`, `is_turing`, `check_hardware_compatibility` key on `torch.cuda.get_device_capability()`; ROCm reports gfx numbers that collide with NVIDIA SMs (gfx90a -> (9,0), gfx942 -> (9,4), gfx1100 -> (11,0); platform-limits.md). Add a `torch.version.hip` arm: precision `int4` on every AMD arch except gfx950 and gfx1250, where Q1 = c makes `fp4` available (whether `auto` picks `fp4` there, as upstream does on FP4-capable GPUs, is an open question for jeff in notes; until it is ruled and that path is validated, `auto` stays `int4`), `is_turing` False, compatibility check accepts the supported gfx list.
 - `setup.py` version tag and arch selection (above).
 - Everything else (diffusers pipelines, `nunchaku/models`, caching, LoRA conversion, `app/`, `examples/`) is device-agnostic PyTorch and needs no change; the tests exercise it.
 
@@ -157,6 +163,7 @@ All zgemm and AWQ code indexes a logical 32-lane warp (`GEMMConfig_*::WARP_SIZE 
 - `src/common.h`: `cublasGetStatusString` arm if hipify leaves it.
 - `nunchaku/utils.py`: ROCm arms of `get_precision`, `is_turing`, `check_hardware_compatibility`.
 - `tests/ops/` (new, shipped with the port): kernel-level golden tests (below). Upstream asks contributors not to modify existing tests; new tests are welcome.
+- `src/interop/flash_api_rocm.{h,cpp}` (new, ROCm builds only): `mha_fwd` and `mha_varlen_fwd` through torch SDPA, `mha_fwd_block` raising.
 - README / docs installation section: a "Building for ROCm" paragraph with the exact command.
 
 ## Build commands
@@ -201,4 +208,4 @@ Record LPIPS values, op-test pass counts and per-image latency per gate in notes
 
 ## Open questions
 
-See the 2026-11-20 planner section of `notes.md` (Q1 NVFP4 scope, Q2 unreachable components, Q3 correctness-first completeness). None blocks writing the primitive layer, but the porter must not finish `setup.py`/`gemm_w4a4.cuh` FP4 handling or drop sources before jeff rules.
+All three planner questions are ruled (notes, "Rulings on the planner's questions (Jeff Daily, 2026-11-23)"). Open items the porter records in notes as they arise.
