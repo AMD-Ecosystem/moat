@@ -125,3 +125,10 @@
 {"kind":"phase","ts":"2026-11-24T02:09:44Z","phase":"test","seconds":2.06,"exit":1,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261123-144434-fix-cv-cuda-failures-prompt/moat/agent_space/wt-CV-CUDA/projects/CV-CUDA/src/build-hip/bin/nvcv_test_cudatools_system"}
 {"kind":"phase","ts":"2026-11-24T02:20:08Z","phase":"test","seconds":624.434,"exit":1,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261123-144434-fix-cv-cuda-failures-prompt/moat/agent_space/wt-CV-CUDA/projects/CV-CUDA/src/build-hip/bin/cvcuda_test_system"}
 {"kind":"session","ts":"2026-11-24T02:20:34Z","epoch":1795486834.537751,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-11-24T02:23:42Z","epoch":1795487022.989309,"event":"start","platform":"linux-gfx1201"}
+{"kind":"phase","ts":"2026-11-24T02:27:07Z","phase":"compile","seconds":133.096,"exit":0,"cmd":"cmake --build projects/CV-CUDA/src/build-hip -j24"}
+{"kind":"phase","ts":"2026-11-24T02:27:31Z","phase":"test","seconds":0.002,"exit":127,"cmd":"projects/CV-CUDA/src/build-hip/bin/cvcuda_test_unit"}
+{"kind":"phase","ts":"2026-11-24T02:27:37Z","phase":"test","seconds":1.098,"exit":0,"cmd":"projects/CV-CUDA/src/build-hip/bin/cvcuda_test_unit"}
+{"kind":"phase","ts":"2026-11-24T02:27:43Z","phase":"test","seconds":1.868,"exit":1,"cmd":"projects/CV-CUDA/src/build-hip/bin/nvcv_test_cudatools_system"}
+{"kind":"phase","ts":"2026-11-24T02:34:57Z","phase":"test","seconds":426.862,"exit":1,"cmd":"projects/CV-CUDA/src/build-hip/bin/cvcuda_test_system"}
+{"kind":"session","ts":"2026-11-24T02:37:08Z","epoch":1795487828.592928,"event":"end","platform":"linux-gfx1201"}

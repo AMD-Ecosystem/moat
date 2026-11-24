@@ -1750,11 +1750,13 @@ The OSD, bounding box and box blur operators stay out of the ROCm build, as in t
 
 AMD Instinct MI250X (gfx90a), ROCm 7.16, at db84d5c5: cvcuda_test_unit 63 passed, 1 skipped, 0 failed; nvcv_test_cudatools_system 1182 of 1188 (the same two known non-port clusters as before); cvcuda_test_system 7797 passed, 18 skipped, 18 failed of 7833 (at 8da17190: 185 failed). Of the 18, 17 are tests that free a pageable host buffer before the asynchronous 2D upload from it has run (PadAndStack, ColorTwist planar var-shape); they pass when the buffers are kept alive. The last is one GammaContrast var-shape pixel off by one, cause not yet found.
 
-Not yet run at this tip: a gfx1100 (wave32) re-test, and the CUDA build with nvcc.
+AMD Radeon AI PRO R9700 (gfx1201, 32-lane wavefronts), ROCm 10.1, at db84d5c5: cvcuda_test_unit 63 passed, 1 skipped, 0 failed; nvcv_test_cudatools_system 1181 of 1188 (the same two clusters); cvcuda_test_system 7792 passed, 18 skipped, 23 failed of 7833: all 22 instances of the same freed-buffer tests in that run, plus the same GammaContrast pixel; with copies serialized only GammaContrast fails.
+
+Not yet run at this tip: a gfx1100 re-test, and the CUDA build with nvcc.
 
 ## Upstream reply
 
-I merged main (v0.19.0) into this branch to resolve the conflicts and carried the HIP changes over to the operators that moved out of legacy/ and to the new code in v0.18 and v0.19. The new bit-exact tests needed one more change on the HIP side: nvcc fuses multiply-adds across the cuda_tools vector operators, so the affected sites now spell the fused operation out through three small macros in MathOps.hpp; they compile to the original expressions in the CUDA build. Retested on MI250X (gfx90a). Three system tests still fail intermittently on ROCm because they upload from a host buffer that is freed before the asynchronous copy runs (PadAndStack planar and F16, ColorTwist planar var-shape); they pass when the buffers are kept alive.
+I merged main (v0.19.0) into this branch to resolve the conflicts and carried the HIP changes over to the operators that moved out of legacy/ and to the new code in v0.18 and v0.19. The new bit-exact tests needed one more change on the HIP side: nvcc fuses multiply-adds across the cuda_tools vector operators, so the affected sites now spell the fused operation out through three small macros in MathOps.hpp; they compile to the original expressions in the CUDA build. Retested on MI250X (gfx90a) and Radeon AI PRO R9700 (gfx1201). Three system tests still fail intermittently on ROCm because they upload from a host buffer that is freed before the asynchronous copy runs (PadAndStack planar and F16, ColorTwist planar var-shape); they pass when the buffers are kept alive.
 
 ## For jeff
 
@@ -1764,7 +1766,7 @@ I merged main (v0.19.0) into this branch to resolve the conflicts and carried th
 - A ROCm compiler bug is registered (deferral amdgpu-fma-mixlo-f16-single-rounding) with a standalone reproducer; your call where to file it.
 - The macros are a public-header addition (installed MathOps.hpp). The alternative, #if/#else duplication at about 200 sites, was rejected as a larger upstream diff.
 - jargon.py --port still flags only the June commit b623dffa.
-- Do not merge before gfx1100 is re-tested; the reply names only gfx90a.
+- Do not merge before gfx1100 is re-tested; the reply names gfx90a and gfx1201 (the gfx1201 run covers 32-lane wavefronts at this tip, but gfx1100 is the recorded wave32 platform and was last validated at 358edc33). With gfx1201 completed, `fix-ready` reports True: the wave32 gate is now met at db84d5c5, so a gfx1100 re-test is extra evidence, not a gate; whether to wait for it is your call.
 
 ## CUDA compile check 2026-11-23 (nvcc 12.8, mi355 host) at `8da17190` vs upstream `3c06df7f` (v0.19.0)
 RESULT: **PASS, no regression from the port.** Both trees build completely with nvcc (exit 0, every target including the libraries, all 12 test executables and the two nested `nvcv_standalone` sub-builds), and neither build prints a compiler diagnostic. The two build logs are identical apart from absolute paths and configure timings. No GPU was used: compile and link only (the host has no NVIDIA GPU, and the AMD GPUs were in use by others).
@@ -1950,3 +1952,28 @@ Against `8da17190` (7630 / 18 / 185): the 18 are 17 test-fixture copy-race membe
 CUDA no-regression gate: NOT RUN (no CUDA toolkit on this host); owed at `db84d5c5` on the nvcc host, with the file list and SASS checks in the porter section. The CUDA expressions were checked mechanically (Review 2026-11-24 (b)).
 Docs: unchanged this round (installation.rst "Building for AMD GPUs (ROCm)" current). Jargon: only the pre-existing `b623dffa` hit.
 State: linux-gfx90a -> `completed` at `db84d5c5`, with the GammaContrast pixel open. linux-gfx1100 still owes revalidation (other host).
+
+## Validation 2026-11-24 (linux-gfx1201, first validation, fix round, tip `db84d5c5`)
+Host: AMD Radeon AI PRO R9700 (gfx1201, 32-lane wavefronts), ROCm 10.1.0 pip SDK (`/etc/rocm_env.sh`, AMD clang 24.0.0git), `HIP_VISIBLE_DEVICES=0` (dispatcher pin; `amd-smi process` showed no GPU process at start), every GPU run under `ulimit -c 0`, one GPU process at a time. First 32-lane run at this head (linux-gfx1100 last validated `358edc33`).
+Clone: `GIT_LFS_SKIP_SMUDGE=1 git clone --branch moat-fix-293 https://github.com/AMD-Ecosystem/CV-CUDA.git projects/CV-CUDA/src` at `db84d5c5`; `git status --porcelain` shows no modified tracked file. The LFS stub libraries are not needed by this build (their link block in src/nvcv/util/CMakeLists.txt is the disabled glibc-2.17 compat path). Nothing pushed to the fork.
+Dependency: this host has no system GTest (configure fails "Could NOT find GTest" at tests/CMakeLists.txt:34). googletest v1.14.0 built into a job-local prefix and passed through `CMAKE_PREFIX_PATH`:
+```
+git clone --depth 1 --branch v1.14.0 https://github.com/google/googletest.git
+cmake -S googletest -B googletest/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=<job>/deps/prefix -DCMAKE_POSITION_INDEPENDENT_CODE=ON
+cmake --build googletest/build && cmake --install googletest/build
+```
+Build: the build-hip recipe from "Fix round 2026-11-23" with `-DCMAKE_HIP_ARCHITECTURES=gfx1201` and `-DCMAKE_PREFIX_PATH="$ROCM_PATH;<job>/deps/prefix"`, from an empty directory, `cmake --build ... -j24`: rc=0, 377/377. `libcvcuda.so.0.19.0` carries 62 `amdgcn-amd-amdhsa--gfx1201` objects and nothing else. Test executables need `source /etc/rocm_env.sh` (LD_LIBRARY_PATH) to load `librocprofiler-sdk-roctx.so.1`.
+Smoke: a trivial HIP kernel on the pinned GPU ran and returned warpSize=32 before the suites.
+```
+utils/timeit.sh CV-CUDA test -- projects/CV-CUDA/src/build-hip/bin/cvcuda_test_unit            # 63 passed / 1 skipped (StreamIdTest.HandleReuse) / 0 failed
+utils/timeit.sh CV-CUDA test -- projects/CV-CUDA/src/build-hip/bin/nvcv_test_cudatools_system  # 1181 / 1188; 6x InterpolationVarShapeWrapTest.correct_shift (/0,/5,/6,/7,/11,/12; fixture race) + TypeTraitsMakeTypeVectorTest/3
+utils/timeit.sh CV-CUDA test -- projects/CV-CUDA/src/build-hip/bin/cvcuda_test_system          # 7792 passed / 18 skipped / 23 failed of 7833, 426 s
+```
+Against linux-gfx90a at `db84d5c5` (unit 63/1/0; cudatools 1182/1188; system 7797/18/18):
+- unit: identical.
+- cudatools: one more `correct_shift` member (6 vs 5); that family is the documented pageable-async fixture race, 5-8 per run on gfx90a historically. TypeTraits/3 is the known HIP vector-header char identity case. Same two clusters.
+- system, test by test: `OpColorTwistPlanarVarShape/{0,1,2,3}` (4), `OpPadAndStack.integer_planar_interleaved_parity` (1), `_/OpPadAndStackPlanar.varshape_matches_interleaved/*` (all 9), `_/OpPadAndStackF16.correct_output/*` (all 8), `_/OpGammaContrast.varshape_correct_output/d1d45083` (1). Every one is a test gfx90a lists or a member of a family it lists. The difference (23 vs 18) is entirely in the copy-race families: this run lost all 22 race instances at once, where gfx90a loses 13-17 per run. The race family has 22 instances, not the 18 counted in "Fix round 2026-11-24" Group 3 (the F16 test has 8 parametrizations, which gfx90a saw 4-5 of per run). Check, one run: the 25 race-family instances plus GammaContrast under `AMD_SERIALIZE_COPY=3` -> 25 pass, only GammaContrast d1d45083 fails, so the race diagnosis holds here. The F16 failures show the freed-buffer signature (correct leading border words, then garbage such as 51836, 55240, 0 in the copied row). GammaContrast d1d45083 fails here too, deterministically and with copies serialized, as on gfx90a; its cause is still the open item from Group 2 (gtest truncates the vector print, so the index was not re-derived).
+- Nothing 32-lane specific: no failure outside the gfx90a sets, no NaN, zero-fill, crash or hang, no warp-reduction signature in any operator (Otsu threshold, NMS, Posterize, AutoContrast, ChannelCopy, Inpaint all pass).
+CUDA no-regression gate: NOT RUN (no CUDA toolkit on this host); still owed at `db84d5c5` on the nvcc host, as the gfx90a entry says.
+Docs: installation.rst "Building for AMD GPUs (ROCm)" present, unchanged this round. Jargon: `python3 utils/jargon.py --port CV-CUDA` reports only the pre-existing `b623dffa` hit ('fault-class', published June commit), as on gfx90a; listed for jeff, not sent back.
+State: linux-gfx1201 -> `completed` at `db84d5c5`.
