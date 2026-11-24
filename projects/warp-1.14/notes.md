@@ -9018,3 +9018,18 @@ Per jeff's ruling ("Ruling (Jeff Daily, 2026-11-24): strict-mode diagnostics tes
 
 - **Reviewer:** delta review of `1c94e68b..66ba4ffb`.
 - **Validators:** the Linux platforms need either revalidation at `66ba4ffb` or a person's decision on another route. The classifier reads a test-file regex change as `mixed`, so `source-class` does not apply. `binary-equiv` via `utils/codeobj_diff.py` would show identical library code objects, since no native file changed. Whether that route is acceptable for a test-only delta is the coordinator's or jeff's call.
+
+## Review 2026-11-24 (delta review 7, linux-gfx950, reviewer): `1c94e68b..66ba4ffb`
+
+Scope: porting session 35, commit `66ba4ffb` "[ROCm] Accept gfx1250-strict in the diagnostics arch check", per jeff's ruling "Ruling (Jeff Daily, 2026-11-24): strict-mode diagnostics test fix" (option a). Reviewed with the pr-review skill. Every check below was redone in this session. The lock was taken with `set-state warp-1.14 linux-gfx950 reviewing` from `delta-ported`. Fresh blob-filtered clone of `release/1.14.0.amd0` at `66ba4ffb`. No GPU was used.
+
+**Verdict: no findings; review passed.**
+
+Checks (each passed):
+- **Nothing else changed.** `git diff --stat 1c94e68b..66ba4ffb` shows only `warp/tests/test_diagnostics.py`, 2 insertions and 2 deletions (the comment line and the `assertRegex` line inside `if warp_dev.is_hip:`). The CUDA `else` branch (`^sm_\d+$`) is unchanged. No native, build or CUDA text changed, so no nvcc build is owed.
+- **Source of the string.** `cuda_dev["arch"]` is `arch_name` (`context.py:12386`, HIP devices only), which `warp.cu:322` copies verbatim from `hipDeviceProp_t::gcnArchName`. A physical device reports a processor name plus optional `:feature±` flags. It never reports a generic target.
+- **The regex `^gfx[0-9a-f]+(-strict)?(:[a-z]+[+-])*$`, tested in Python.** It accepts `gfx942:sramecc+:xnack-`, `gfx90a:sramecc-:xnack+`, `gfx908:sramecc+:xnack-`, `gfx950:sramecc+:xnack-`, `gfx90c:xnack-`, `gfx1036`, `gfx1100`, `gfx1151`, `gfx1201`, `gfx1250`, `gfx1250-strict` and `gfx1250-strict:sramecc+`. It rejects `sm_90`, `gfx1250-strictx`, `gfx1250strict`, `gfx1250-strict-strict`, `gfx-strict`, `GFX942`, `gfx942:sramecc` (a flag without a sign), `gfx942 ` (trailing space), an empty string and `nvidia`. ROCm 10.2 clang (AMD clang 24.0.0git) `-mcpu=help` lists only one `-strict` processor, `gfx1250-strict`, so `(-strict)?` covers every strict form the port can report.
+- **Comment.** "e.g. gfx942:sramecc+:xnack- or gfx1250-strict" matches the device strings recorded in the evidence sessions: the gfx1250 device in strict mode reported exactly `gfx1250-strict`.
+- **Commit hygiene.** The title is 58 characters, and `[ROCm]` is correct because the line sits in the HIP-only branch. The body has one-line paragraphs, the "Authored with Claude." disclosure, a fenced Test Plan with literal commands and no MOAT vocabulary, and `Signed-off-by`. There is no Co-Authored-By. The message is ASCII only (grep for non-ASCII bytes: none). The author and committer match the other 96 port commits. `jargon.py --port warp-1.14`: clean. `moatlib.py audit-commits warp-1.14`: OK. The fork clone has no modified tracked files.
+
+Validation is owed separately, as session 35 recorded: the Linux platforms are `completed` at `1c94e68b`, not at `66ba4ffb`, and the classifier refused `source-class` carry-forward (`mixed`).
