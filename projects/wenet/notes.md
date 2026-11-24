@@ -291,3 +291,83 @@ Verdict: **changes requested** (4 findings). The same job wrote the delta as por
 ## Ruling on the whisper install step (Jeff Daily, 2026-11-23)
 
 **a now, and c as a separate small PR later.** The ROCm install section keeps the whisper step (with its prerequisite named). Moving upstream's `openai-whisper` pin to a release that builds is a separate upstream PR, not part of the ROCm PR; it is prepared only when Jeff asks for it.
+## Porter round 3 (2026-11-23/24, linux-gfx942 fleet job, MI300X, HIP_VISIBLE_DEVICES=1), answering Review 2026-11-23 round 2
+
+New fork commits on `moat-port` (no amend, no rebase, plain push `b122b16..6860e5f`):
+
+- `70d929d` [ROCm] runtime: compare resolved paths to detect a user Torch_DIR (finding 1)
+- `6860e5f` [ROCm] docs: install setuptools<82 for whisper, Python 3.11 for ONNX (findings 2 and 3)
+
+Finding 4 (fd8ccb1's Test Plan omits the unpacked ROCm environment) is a correction for the final history, recorded below; `70d929d`'s Test Plan states that environment.
+
+### For jeff (decisions and facts; nobody could answer during the job)
+
+- **Still open, nothing changed for them:** Question 1 (transducer loss) and Question 2 (TheRock LibTorch RUNPATH) as the prompt for this job states (the notes also carry a "Rulings on the porter's questions" section answering both; this round changed nothing for either way).
+- **Whisper step, options a/b/c from round 2: still unruled; option a kept as instructed.** The step now reads `pip install "setuptools<82"` then `pip install --no-deps --no-build-isolation openai-whisper==20231117`. setuptools 82.0.0 is the first release without `pkg_resources` (checked by listing the wheels: 79.0.1, 80.9.0 and 81.0.0 contain `pkg_resources/__init__.py`, 82.0.0 does not), so the bound is `<82`, not round 2's `<81`. Upstream's `requirements.txt` stays broken for everyone (CUDA too) wherever pip's isolated build gets setuptools >= 82; that is unchanged and is the reason option b or c exists.
+- **New: `onnxruntime-migraphx==1.27.1` requires Python >= 3.11** (`Requires-Python: >=3.11` in its METADATA; on Python 3.10 pip offers only 1.23.0, 1.23.2, 1.24.2). The round-2 review's "onnxruntime-migraphx 1.27.1 for cp310 to cp314" was wrong. The README's own env is `conda create -n wenet python=3.10`, so the ONNX commands failed there. Shipped: the ONNX bullet says to create the env with `python=3.11` for those scripts (tested, below). Alternative for jeff: also document `onnxruntime-migraphx==1.24.2` for Python 3.10. That wheel is built for ROCm 7.1.1 (`libonnxruntime_providers_migraphx.so` RUNPATH `/opt/rocm-7.1.1/lib:...`, same SONAMEs `libmigraphx_c.so.3`, `libamdhip64.so.7`); against ROCm 7.2.4 with the 7.2.4 torch on Python 3.10 the probe passed (session providers `['MIGraphXExecutionProvider', 'CPUExecutionProvider']`, max abs diff 7.5e-8, only ROCm 7.2.4's HIP/HSA/MIGraphX mapped), but that is a cross-version pairing tested only on a 2-layer MLP, so it is not documented.
+- **Incident, cleaned up: `uv python install` wrote two symlinks into the shared `~/.local/bin`** (`python3.10`, `python3.12`, pointing into this job's `deps/uv-python`) at 23:32 UTC; I removed both within a minute (`ls ~/.local/bin | grep -c python` = 0 afterwards). Nothing else outside the job dir was written. The interpreters themselves live in `<job>/deps/uv-python` (UV_PYTHON_INSTALL_DIR). Next time pass `--no-bin` (or `UV_PYTHON_BIN_DIR=<job dir>`).
+- **Not done here, owed elsewhere: the CUDA compile check of `70d929d`.** This host has no nvcc and no CUDA toolkit. On an nvcc host, re-run cases 1, 2 and 3 of "CUDA no-regression configure and build" at `6860e5f`, and case 3 once more with the source reached through a symlink (`ln -s <clone> link; cmake -S link/runtime/libtorch ...`), with `fc_base` absent before the first configure.
+- **A conda env could not be reproduced here.** The micromamba download that would have given the README's literal `conda create -n wenet python=3.10` + `conda-forge::sox` env was refused by the permission classifier, so I did not retry it; the venvs below stand in for it. The one behaviour that differs is the starting setuptools (a conda env brings the channel's newest, likely >= 82), which is exactly the case the negative test below covers.
+
+### Finding 1: `70d929d`
+
+`runtime/core/cmake/libtorch.cmake`: `LIBTORCH_USER_TORCH_DIR` is ON only when `Torch_DIR` is set, `${Torch_DIR}/TorchConfig.cmake` exists, and `REALPATH(Torch_DIR)` differs from `REALPATH(${FETCHCONTENT_BASE_DIR}/libtorch-src/share/cmake/Torch)`. REALPATH on both sides, computed only when `Torch_DIR` is set, as instructed. The existence check was added because the simulation showed REALPATH alone leaves one regression: CMake's `get_filename_component(... REALPATH)` returns a non-existent path unresolved (checked: `<dir>/lnk/no/such/dir` stays as written), so a build directory created after `fc_base` existed (Torch_DIR cached as the real path) under a symlinked source, then `fc_base` deleted, compares a real path against a logical one and takes the user branch with a dead Torch_DIR (case I below). The check also makes a missing or config-less user `Torch_DIR` fall back to the download as base does (cases J, K; fd8ccb1 failed to configure there).
+
+Simulation (`agent_space/cmake-sim/run.sh`, recreated and extended in this job: a minimal project including each revision's file, the cpu/cu118 URLs pointed at local stand-in zips whose `TorchConfig.cmake` only reports a flavor, a third stand-in as the user's `Torch_DIR`; every case from the source dir directly and through `links/proj -> ../real`; CMake 3.31.6). Flavor per configure:
+
+| case | src | base be6ad97 | 110f06c | fd8ccb1 | 70d929d |
+|---|---|---|---|---|---|
+| A cpu, then GPU=ON | plain | cpu -> cu118 | cpu -> cpu | cpu -> cu118 | cpu -> cu118 |
+| A | link | cpu -> cu118 | cpu -> cpu | **cpu -> cpu** | cpu -> cu118 |
+| B GPU=ON, then GPU=OFF | plain | cu118 -> cpu | cu118 -> cu118 | cu118 -> cpu | cu118 -> cpu |
+| B | link | cu118 -> cpu | cu118 -> cu118 | **cu118 -> cu118** | cu118 -> cpu |
+| C user Torch_DIR+GPU, reconfigure | both | local -> local | local -> local | local -> local | local -> local |
+| D cpu, then GPU + user Torch_DIR | both | cpu -> local | cpu -> local | cpu -> local | cpu -> local |
+| E user Torch_DIR+GPU, then GPU=OFF | both | local -> local | local -> local | local -> local | local -> local |
+| G cpu, rm fc_base, GPU=ON | both | cpu, cu118 | cpu, FAILED | cpu, cu118 | cpu, cu118 |
+| H cpu, reconfigure, rm fc_base, GPU=ON | both | cpu, cpu, cu118 | cpu, cpu, FAILED | cpu, cpu, cu118 | cpu, cpu, cu118 |
+| F dir configured by base's file, then this file + GPU=ON | plain | cpu -> cu118 | cpu -> cpu | cpu -> cu118 | cpu -> cu118 |
+| F | link | cpu -> cu118 | cpu -> cpu | **cpu -> cpu** | cpu -> cu118 |
+| I fc_base made by another build dir; new dir cpu, rm fc_base, GPU=ON | plain | cpu, cu118 | cpu, FAILED | cpu, cu118 | cpu, cu118 |
+| I | link | cpu, cu118 | cpu, FAILED | **cpu, FAILED** | cpu, cu118 |
+| J GPU + non-existent Torch_DIR | both | cu118 | FAILED | FAILED | cu118 |
+| K GPU + Torch_DIR without TorchConfig.cmake | both | cu118 | FAILED | FAILED | cu118 |
+
+`70d929d` matches base in all 22 sequences (raw output `agent_space/cmake-sim/result.txt`).
+
+Real tree, `runtime/libtorch` (`agent_space/real-reconf.sh`, log `<job>/logs/real-reconf.log`). WeTextProcessing at fd9026c is now cloned to `runtime/libtorch/wetext-fd9026c` instead of `fc_base/...`, because a pin inside `fc_base` keeps `fc_base` existing and hides the symlinked case; `fc_base` removed before each sequence:
+- from the checkout and through `<job>/work/links/src -> <clone>`: `cmake -S .../runtime/libtorch -B A` fetches `2.2.0%2Bcpu.zip` (through the link it caches `Torch_DIR:PATH=<job>/work/links/src/runtime/libtorch/fc_base/libtorch-src/share/cmake/Torch`, the logical path, reproducing the review's premise); `-DGPU=ON` fetches `2.2.0%2Bcu118.zip` (then `Caffe2: CUDA cannot be found`, no CUDA toolkit; upstream's file stops at the same place); `-DGPU=OFF` fetches the cpu zip again. Sequence B (`-DGPU=ON`, then `-DGPU=OFF`): cu118, then cpu. Identical from the checkout and through the link.
+- fd8ccb1's file through the link (`logs/real-reconf-fd8ccb1.log`): the `-DGPU=ON` reconfigure fetches nothing and configures rc 0 against the CPU LibTorch. Review finding 1 confirmed on the real tree and fixed by `70d929d`.
+- ROCm build (venv: Python 3.11, `torch==2.8.0+rocm7.2.4.lw.gitd618db82`; ROCm 7.2.4 unpacked, `envB.sh`; libdrm-dev unpacked and `rocm_smiTargets.cmake` pointed at it): `cmake -S runtime/libtorch -B build-rocm -DGPU=ON -DTorch_DIR=<venv>/torch/share/cmake/Torch -DBUILD_TESTING=ON -DFETCHCONTENT_SOURCE_DIR_WETEXTPROCESSING=.../wetext-fd9026c`: `HIP VERSION: 7.2.53211-97f5574fe2`, `Found Torch: <venv>/torch/lib/libtorch.so`, no download; `cmake --build build-rocm -j64` rc 0, all five binaries; `decoder_main` NEEDs `libtorch.so libtorch_cpu.so libtorch_hip.so`; a plain `cmake -S ... -B build-rocm` reconfigure downloads nothing and keeps `Torch_DIR` at the wheel. Build dir `<job>/work/build-rocm` (for the validator on this host).
+
+### Findings 2 and 3: `6860e5f`
+
+Fresh venvs, each made at `$FLEET_VENV` and moved aside afterwards (the fleet guard allows pip only there); the README main-route commands run verbatim by `agent_space/readme-main.sh` from the source root, then the ONNX commands by `agent_space/readme-onnx.sh`; `which pip` checked to be `$FLEET_VENV/bin/pip` by both scripts. Logs in `<job>/logs/`.
+
+| Python (venv origin) | start pip / setuptools | main route | ONNX route | GPU checks |
+|---|---|---|---|---|
+| 3.12.15 (uv python-build-standalone; the system 3.12 lacks ensurepip) | 25.0.1 / none | all rc 0; setuptools ends 78.1.0 (torch on cp312 depends on setuptools and the PyTorch index serves 78.1.0, so `setuptools<82` was already satisfied) | all rc 0 | sanity on both stacks; ORT probe MIGraphX, diff 8.9e-8; `export_onnx_gpu.py` encoder and decoder succeed |
+| 3.11.17 (`/usr/bin/python3.11 -m venv`) | 24.0 / 79.0.1 | all rc 0 | all rc 0 | same; probe diff 6.0e-8; export succeeds |
+| 3.10.22 (uv standalone) | 23.0.1 -> upgraded to 26.3 / 79.0.1 | all rc 0 (after the pip upgrade) | `onnxruntime-migraphx==1.27.1` not found (needs >= 3.11) | sanity on the main route |
+
+- `pip check` after the main route on each: only `openai-whisper 20231117 requires triton, which is not installed` (the module comes from pytorch-triton-rocm 3.4.0).
+- Sanity (`agent_space/probe/sanity.py`, libsox from the job's SoX build on `LD_LIBRARY_PATH`): `torch.cuda.device_count() == 1`; on the rocm6.4 wheels the device name reads `AMD Radeon Graphics`, on the 7.2.4 wheels `AMD Instinct MI300X` (a naming difference only); torchaudio backends `['sox', 'soundfile']`; `torchaudio.info` and `sox_effects` speed 1.1 work; `torch.compile` vs eager diff <= 4.8e-7; `import whisper` gives 20231117.
+- Negative test (3.12 main-route venv, `logs/setuptools-negative-py312.log`): `pip install "setuptools>=82"` (got 84.2.1), then the whisper command with `--force-reinstall`: `ModuleNotFoundError: No module named 'pkg_resources'`, `metadata-generation-failed`, rc 1; then `pip install "setuptools<82"` (got 81.0.0) and the same command: rc 0.
+- Python 3.10 standalone's bundled pip 23.0.1 fails the very first command (torch from the PyTorch index): `typing_extensions-4.16.0 ... has inconsistent Name: expected 'typing-extensions', but metadata has 'typing_extensions'`, then the sdist fallback cannot get `flit_core` from that index. An old-pip problem, unrelated to ROCm or wenet; a conda env ships a current pip. Not documented.
+- `export_onnx_gpu.py` with the WenetSpeech u2++ checkpoint (copied from the previous job's `~/.wenet` cache into `<job>/home/.wenet`), `--ctc_weight=0.5`, `PYTHONPATH=<src>`: on 3.11 and 3.12, `export offline onnx encoder succeed!` and `export to onnx decoder succeed!`, MIGraphX "Model Compile" for both sessions (about 36 s and 65 s).
+- Finding 3: the runtime READMEs (EN and CN) now give `torch==2.8.0+rocm7.2.4.lw.gitd618db82`, the version pip lists and installs from repo.radeon.com (`torch.__version__` at run time prints `2.8.0+rocm7.2.4.gitd618db82`, without `lw.`; the pip string is the one that matters for a requirement).
+
+`python3 utils/jargon.py --port wenet`: clean. `utils/prose.py` on both commit messages: clean. Fork clone `git status --porcelain`: only the untracked `runtime/libtorch/wetext-fd9026c/` clone.
+
+### Corrections for the final history (older commit bodies are not rewritten), added this round
+
+- `fd8ccb1`: "Reconfiguring now behaves as before the local branch existed" was not true when the source directory is reached through a symlink, or for a missing/config-less `Torch_DIR` (cases A/B/F/I link, J, K above) until `70d929d`. Its Test Plan shows `cmake -B build-rocm -DGPU=ON -DTorch_DIR=...` as if against an installed ROCm; it ran with ROCm 7.2.4 packages unpacked from AMD's apt repository into a private prefix (`ROCM_PATH` there, its lib dirs on `LD_LIBRARY_PATH`, `rocm_smiTargets.cmake` pointed at an unpacked `libdrm-dev`), as `70d929d`'s Test Plan states.
+- `b122b16`: its README commands lacked the setuptools step and its ONNX commands do not work on the README's Python 3.10; its Test Plan ran on Python 3.11 only. `6860e5f` corrects both and its Test Plan lists the three Python versions.
+
+### Environment recipe changes since round 2 (for the validator)
+
+As round 2's recipe, with: job dir `/var/lib/jenkins/fleet/jobs/mi300b-20261123-152256-fix2-wenet-prompt` (deps copied from the round-2 job: `deps/rocm-7.2.4-root`, `deps/libdrm-dev-root`, `deps/sox-install`; `rocm_smiTargets.cmake` re-pointed at this job's libdrm); `agent_space/env.sh` and `envB.sh` rewritten for this job (cmake from `<job>/venv-orig/.../cmake/data/bin`, since the fresh venvs have none); venvs kept: `<job>/venv-312-main` (main route, 3.12), `<job>/venv-310-main`, `<job>/venv-312-onnx`, `<job>/venv-311-onnx` (main route + ONNX route, 3.11; also the current `$FLEET_VENV`), `<job>/venv-310-onnx-ortm1242` (the 1.24.2 experiment). A venv works only at the path it was created at, so swap one in with `mv` to `$FLEET_VENV`. WeTextProcessing pin at `runtime/libtorch/wetext-fd9026c`.
+
+## Lesson for cuda-to-rocm: telling a user's `<Pkg>_DIR` from the one `find_package` cached (build-cmake-link.md)
+
+**Adding a "use a local package if `<Pkg>_DIR` is given, else download it" branch to a CMake file needs a test that does not fire on the value `find_package` cached after the download.** `if(Torch_DIR)` alone fires on every reconfigure, so the download branch (and its CPU/GPU URL choice) never runs again. Comparing the cached value with the download directory as strings is not enough either: a project that sets `FETCHCONTENT_BASE_DIR` from `get_filename_component(... REALPATH)` gets a resolved path once the directory exists, while `find_package` caches the path the source dir was reached by, so they differ under a symlinked checkout (`/home`, `/data`, macOS `/tmp`). And `REALPATH` returns a non-existent path unresolved, so a deleted download directory defeats a resolved comparison too. What works: treat `<Pkg>_DIR` as the user's only when `${<Pkg>_DIR}/<Pkg>Config.cmake` exists and its REALPATH differs from the REALPATH of the download location. Test with two configures in one build directory (CPU then GPU, GPU then CPU), from the checkout and through a symlink, with stand-in archives for the downloads. (wenet, 2026-11)
