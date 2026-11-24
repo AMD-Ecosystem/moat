@@ -169,3 +169,6 @@
 {"kind":"phase","ts":"2026-11-24T05:41:53Z","phase":"test","seconds":2.01,"exit":1,"cmd":"projects/CV-CUDA/src/build-hip/bin/nvcv_test_cudatools_system"}
 {"kind":"phase","ts":"2026-11-24T05:52:15Z","phase":"test","seconds":622.077,"exit":1,"cmd":"projects/CV-CUDA/src/build-hip/bin/cvcuda_test_system"}
 {"kind":"session","ts":"2026-11-24T05:53:41Z","epoch":1795499621.858402,"event":"end","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-24T06:01:02Z","phase":"cuda-compile","seconds":5.576,"exit":0,"cmd":"ninja -C /var/lib/jenkins/fleet/jobs/mi355-20261123-215554-nvcc-cv-cuda-310d-prompt/cv/fork/build-cuda -j16 src/cvcuda/priv/CMakeFiles/cvcuda_priv.dir/OpRandomResizedCrop.cu.o"}
+{"kind":"phase","ts":"2026-11-24T06:01:08Z","phase":"cuda-compile","seconds":5.674,"exit":0,"cmd":"ninja -C /var/lib/jenkins/fleet/jobs/mi355-20261123-215554-nvcc-cv-cuda-310d-prompt/cv/up/build-cuda -j16 src/cvcuda/priv/CMakeFiles/cvcuda_priv.dir/OpRandomResizedCrop.cu.o"}
+{"kind":"phase","ts":"2026-11-24T06:01:14Z","phase":"cuda-compile","seconds":5.787,"exit":0,"cmd":"ninja -C /var/lib/jenkins/fleet/jobs/mi355-20261123-215554-nvcc-cv-cuda-310d-prompt/cv/e7a/build-cuda -j16 src/cvcuda/priv/CMakeFiles/cvcuda_priv.dir/OpRandomResizedCrop.cu.o"}
