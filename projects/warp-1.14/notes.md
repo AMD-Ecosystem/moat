@@ -6513,3 +6513,47 @@ nvcc check (nvcc 12.8): `cuda_util.cpp` preprocessed for CUDA (`g++ -E -P -DWP_E
 - Coordinator: run `test_tile_matmul.py` (and the fragment tests in their own processes) on gfx942 and gfx908, the 64 KiB devices this host does not have.
 - gfx1250, when that host is available again: rerun the evidence session's item 5 (fem `test_hex_mesh` error 209 from `radix_sort_pairs_device`, and the wrong `mesh_query_point` results) at `4e0d02ab`, per the coordinator note; a stale 209 left by a failed module load should no longer reach the sort.
 - Validators revalidate at `4e0d02ab`.
+
+## Review 2026-11-24, fifth round (linux-gfx950 MI355X, reviewer): `4ae8babd..4e0d02ab`
+
+Scope: porting session 32 on `release/1.14.0.amd0` (`10942265` the 64 KiB guard for the fragment tests, `4e0d02ab` clearing HIP's last error when a `cu*_f` wrapper fails), reviewed with the pr-review skill, plus the whole branch checked once more for a tolerated HIP error that could reach a later hipCUB/rocPRIM call outside the wrappers. Lock taken with `set-state warp-1.14 linux-gfx950 reviewing` from `ported`. Fresh blobless fork clone at `4e0d02ab`. GPU runs used only `HIP_VISIBLE_DEVICES=1` (dispatcher pin) under `ulimit -c 0`, with the porter job's `4e0d02ab` wheel and its `old_4ae8babd` wheel extracted side by side, plus the porter venv's ROCm 10.2 SDK, all read-only. The host's root filesystem was full (3.5 TB used, not by this job), so scratch went to a private `/dev/shm` directory, removed at the end.
+
+### Summary
+
+The two commits fully address the fourth round's two changes requested. I found no defect in the delta and no other leak path on the branch. Verdict: **Approve** (`review-passed`).
+
+### What was checked (each claim re-run or re-read)
+
+- **Every HIP call in the `cu*_f` wrappers is covered.** In the HIP section (`cuda_util.cpp:24-675`), every `hip*` call in a `cu*_f` wrapper goes through `hip_driver_result`: 66 wrappers, 72 calls (plus one in the helper `hip_array_element_size`), which matches the commit message. A per-function attribution script found no unwrapped call. The only HIP calls in the section that are not passed through it are `init_cuda_driver`'s `hipInit`, `hipGetDeviceCount` and `hipGetErrorString` (when those fail, the GPU is disabled), `get_error_string`'s `hipDrvGetErrorString` (called with a code HIP itself returned), and `hipGetLastError` itself.
+  - Correction to session 32's list: `cuGraphAddNode_f` and the batch memcpy have no HIP wrapper. `CUDA_VERSION` is undefined in the HIP build, so the `>= 12030`/`12080` blocks in `cuda_util.h` and `warp.cu` that use them are CUDA-only. This changes nothing in the code.
+- **Leaving `hipErrorNotReady` alone is right.** A scratch HIP program on gfx950 (ROCm 10.2) gave these results:
+  - `hipStreamQuery` and `hipEventQuery` on a busy stream return 600 and leave the last error 0.
+  - An earlier error 9 (failed `hipIpcGetEventHandle`) is still the last error after a NotReady query, so clearing at that point would only discard it.
+  - A stale 9 survives successful `hipMalloc`/`hipMemset`/`hipStreamSynchronize` calls, which is the mechanism the fix addresses.
+- **Nothing relies on reading HIP's last error after a wrapper failure.** I re-read every `cudaGetLastError` site in `warp/native`.
+  - Most only clear: `warp.cu` 594, 1060, 1209, 1216, 1228 and 3454.
+  - The detection reads (`warp.cu:1334` and `:1950`, and `wp_cuda_context_check` at `:2854`, reached through `verify_cuda`, the debug `wp_launch_device` check and `volume_builder.cu:353`) each follow a runtime `<<<>>>` launch, with no wrapper call in between.
+  - A failed `cuLaunchKernel_f` is still reported through its return value (`check_cu`), as with the CUDA driver API.
+  - One side effect of the clear: a runtime error still unread when a wrapper fails is discarded too. HIP keeps one last-error slot, which that wrapper's own error would overwrite anyway, and no reader runs at that point. Not a finding.
+- **The regression test fails without the fix.** I ran `warp/tests/cuda/test_ipc.py` from `4e0d02ab` against the `4ae8babd` library: `test_ipc_event_missing_interprocess_flag` FAILS with "Mismatched elements: 99999 / 100000", plus the stray `sort.cu:84` error 9 line (4 run, failures=1). Against the `4e0d02ab` library: 4 OK.
+- **The CUDA section is unchanged.** Every hunk of `4e0d02ab` in `cuda_util.cpp` lies inside `#if WP_ENABLE_HIP`. `g++ -E -P -DWP_ENABLE_CUDA=1 -DNDEBUG -I/usr/local/cuda-12.8/include` at `4ae8babd` and at `4e0d02ab` gives the same output except for `__LINE__` values (67,192 lines each). nvcc 12.8 compiles `cuda_util.cpp` at `4e0d02ab` as CUDA.
+- **64 KiB guard (`10942265`).** `shared_memory_fits` is the single place that holds the `4 * block_dim + 1024` margin; `skip_if_shared_memory_exceeded` calls it, and `test_tile_matmul.py` reaches it through the star import (`unittest_utils` has no `__all__`). From the `4e0d02ab` wheel on gfx950, the four `fragment_shapes` tests are OK with no shape skipped at the real 163,840-byte limit. With `max_shared_memory_per_block` forced to 65,536, only the 81,920-byte fp64 32x64x32 shape is skipped (at block_dim 96), and the four tests are OK.
+- **Whole branch, other tolerated HIP errors outside the wrappers.** I read every runtime call the port adds in `warp/native`, outside `cuda_util.cpp`. None is a HIP-only failure that Warp tolerates:
+  - `free_async_after_device_streams` (`warp.cu:892`, `:899`) calls `hipStreamGetDevice` only on Warp's own registered streams. `g_streams` entries are erased in `wp_cuda_stream_unregister`.
+  - The Windows `wp_hip_graph_launch` (`hip_compat.h`) calls `hipStreamIsCapturing`, which can fail only on an invalid stream. The graph launch would then fail and be reported.
+  - `cuda_init`'s `hipGetDeviceProperties` and `wp_cuda_runtime_version`'s `hipRuntimeGetVersion` succeed on any visible device.
+  - The remaining runtime calls (mempool, graph, memset and copy) are spelled the same as on CUDA, where a failure also sets the runtime's last error that CUB peeks, so they are not port divergences.
+  - Session 32's per-test sweep (7,562 tests, no error left behind at `4e0d02ab`) is consistent with this. It saw one GPU only, but the multi-GPU peer paths go through `cuCtxEnablePeerAccess_f`/`cuCtxDisablePeerAccess_f`, which are covered.
+- **Commit hygiene.** Titles are 69 and 61 characters. `[ROCm]` is on `4e0d02ab` (HIP-only) and not on the shared test commit. Neither commit has a Co-Authored-By trailer, and the delta has no non-ASCII. `jargon.py --port warp-1.14` is clean and `audit-commits` is OK. The branch is 0 behind `release-1.14`.
+
+### Commands (scratch in `/dev/shm/reviewer5-<job>/`, removed)
+
+```bash
+# both wheels' warp/ extracted side by side; 4e0d02ab test_ipc.py + unittest_utils.py copied into each
+PYTHONPATH=<dir>/old <porter venv>/bin/python -s run_ipc.py <dir>/old <cache>   # FAILED (failures=1), 99999/100000 mismatched
+PYTHONPATH=<dir>/new <porter venv>/bin/python -s run_ipc.py <dir>/new <cache>   # OK (4)
+$R/lib/llvm/bin/clang++ -x hip --rocm-path=$R --offload-arch=gfx950 -O2 -w nr.hip -o nr -L$C/lib -lamdhip64 -Wl,-rpath,$C/lib && ./nr
+# 1 stream=600 event=600 last=0 / 2 ipc=9 stream=600 event=600 last=9 / 3 ipc=9 last_after_successes=9
+g++ -E -P -DWP_ENABLE_CUDA=1 -DNDEBUG -I/usr/local/cuda-12.8/include -I<tree>/warp/native <tree>/warp/native/cuda_util.cpp   # both commits, equal modulo __LINE__
+PYTHONPATH=<dir>/new <porter venv>/bin/python -s frag.py <dir>/new <cache> [1]  # fragment_shapes x4 OK; forced 64 KiB skips only (81920, 96)
+```
