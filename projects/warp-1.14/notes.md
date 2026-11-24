@@ -7942,3 +7942,203 @@ Dedicated confirmation run of (b), 10 rounds, `tile_nbody` with three stable con
 - The cost of `on` on gfx1100 is one example 1-2% slower (tile_nbody) and nothing else measurable.
 
 Scripts: the file's `twice.py`, `perf2.py` and `exbench.py` unchanged; `user2.py` and `sn.py` from the request; my `r.sh`, `rounds.sh` (interleaving, order alternating), `summ.py`, `bench.py` and the reconstructions are in the job's `agent_space/s/` (scratch).
+
+## Evidence session (contraction, gfx950), addendum: taking the winding-number query off the register cliff under `on` (2026-11-24, linux-gfx950 MI355X, evidence only)
+
+Follow-up from the coordinator: on the ON tree, find the smallest HIP-only change in `warp/native` that makes `mesh_query_point_sign_winding_number` at least as fast under `-ffp-contract=on` as `4e0d02ab` is under `fast-honor-pragmas`, without making any query self-inconsistent. Evidence only: nothing committed to the fork, no state change through moatlib, no test edited. Conditions as in the section above: `HIP_VISIBLE_DEVICES=1` only, `ulimit -c 0`, a fresh kernel cache per run, and `warp.__file__` asserted. No process was stopped.
+
+**Result: it meets the bar on gfx950.** Candidate G below is a contraction-fast region over `evaluate_node_solid_angle` only, guarded so that it applies only when `fuse_fp` is on.
+- **Speed:** under `on` it makes the winding-number query **0.85x the time of `4e0d02ab`** (lbvh 99.5 against 116.7 ms, sah 41.4 against 48.7 ms) and 2.5x faster than plain `on`. Spills fall from 412 to 92 (FAST: 111).
+- **Consistency:** every twice-evaluated check stays 0 (`twice.py`, `hel.py`, `user2.py`, `sn.py`, plus a winding-number value probe), with default options and with `nofuse`.
+- **Tests:** `test_mesh*.py` is 49 OK.
+- **Other kernels:** no kernel is slower than plain `on`. `sign_normal` stays 2.5 to 4.7% behind FAST, as it is under `on` without the candidate.
+- **Not yet checked:** other arches. The gfx90a job is to check it; gfx942 is untested.
+
+### Where the spills come from
+
+**Why there is a cap.** The kernel has no `__launch_bounds__`, so HIP compiles for the default 1024-thread maximum, which allows 128 VGPRs (with no AGPRs) at the occupancy that block size needs. `.vgpr_count` is 128 in every variant here. I infer the cap from the metadata and did not test it. Changing it would be a codegen-wide change (launch bounds on every kernel) and is out of scope.
+
+**What the compiler inlines.** The inlined kernel holds three loops:
+- the closest-point traversal (`mesh_query_point_sign_winding_number`);
+- `mesh_query_inside_ray_tracing`, three `mesh_query_ray` traversals, which is the fallback for a mesh without solid-angle data and is never run for a winding-number mesh;
+- `solid_angle_iterative`, with three 32-entry private stacks.
+
+**Attribution.** Scratch instructions of `k_wn` per source line, from `llvm-objdump -d -l` of a `wp.config.lineinfo` build (`agent_space/s/wnk.py`, `attr.py`); the line info leaves the spill counts unchanged:
+
+| tree | scratch loads | scratch stores | instructions |
+|---|---|---|---|
+| FAST | 47 | 49 | 3,994 |
+| ON | 231 | 120 | 4,322 |
+
+The largest ON sites:
+
+| ON site | loads / stores |
+|---|---|
+| `mesh.h` 1981-2038, `intersect.h` 390 (`mesh_query_ray`, inlined through the cold ray-tracing fallback) | 27/24, 24/0, 16/8, 8/0 |
+| `mesh.h` 1165 (the leaf loop of `solid_angle_iterative`, `robust_solid_angle`) | 18/0 |
+| `mesh.h` 1281 (the closest-point leaf loop, `closest_point_to_triangle`) | 17/0 |
+| `mesh.h` 1147-1159, 1184 (the solid-angle stacks) | 8 each |
+
+So the extra spill code under `on` lands in all three loops: most of it in the cold fallback, and the rest in the two hot loops.
+
+### Candidates
+
+All of these are header-only on the ON tree, because hipRTC reads `warp/native` at JIT time; the ON `warp.so` and `agent_space/s/mkcand.sh` were used. Each figure is one `perf2.py` run per candidate (ms per launch), except G, which has the interleaved table further down. Spills are `k_wn_d89f8591_cuda_kernel_forward`'s `.vgpr_spill_count` / `.private_segment_fixed_size`.
+
+| candidate (HIP device only) | spills / scratch bytes | wn lbvh | wn sah | sign_normal lbvh |
+|---|---|---|---|---|
+| FAST (`4e0d02ab`) | 111 / 672 | 116.9 | 48.2 | 54.7 |
+| ON | 412 / 880 | 250.5 | 108.1 | 57.2 |
+| noinline `mesh_query_inside_ray_tracing` | 306 / 1296 | 344.9 | 149.7 | 56.1 |
+| noinline `solid_angle_iterative` | 375 / 912 (kernel only; the outlined function has 29 scratch ops) | 149.5 | 64.6 | 55.5 |
+| both noinline | 162 / 864 | 176.7 | 75.1 | 56.3 |
+| noinline `solid_angle_iterative` on the FAST tree (control) | not read | 240.3 | 102.7 | 53.7 |
+| noinline `evaluate_node_solid_angle` | 456 / 816 | 370.9 | 158.9 | 56.3 |
+| `fp contract(fast)` in `robust_solid_angle` | 412 / 880 | 255.3 | 108.6 | 57.2 |
+| `fp contract(fast)` in `evaluate_node_solid_angle` + `robust_solid_angle` | 92 / 608 | 98.6 | 41.3 | 57.2 |
+| the same + `solid_angle_iterative` | 92 / 608 | 98.6 | 41.2 | 56.0 |
+| the same + `mesh_query_point_sign_winding_number` | 92 / 608 | 100.3 | 41.3 | 56.5 |
+| **`fp contract(fast)` in `evaluate_node_solid_angle` only** | **92 / 608** | **98.7** | **41.0** | 56.9 |
+| **G = the previous, guarded by `fuse_fp` (below)** | **92 / 608** | **99.1** | **41.7** | 56.0 |
+
+**What the candidates show:**
+- **noinline does not work.** It moves the cliff instead of removing it. The same `noinline` that halves the ON time makes the FAST tree 2x slower, and the call boundary costs as much as it saves.
+- **What works is letting the compiler contract the Taylor-series evaluation in `evaluate_node_solid_angle`.** That is about 20 statements of products and sums of the node's moments, contracted as they are under `fast-honor-pragmas`.
+- **The contraction is inert where it doesn't matter.** Contracting `robust_solid_angle` alone does nothing, and widening the region beyond `evaluate_node_solid_angle` changes nothing.
+
+**Why G exists.** The bare pragma overrides `-ffp-contract=off`, so it would also contract under `fuse_fp=False`. Measured with the value probe below:
+
+| comparison | values differ |
+|---|---|
+| ungated `nofuse` vs ON `nofuse` | 364,410 of 2,094,912 |
+| G `nofuse` vs ON `nofuse` | **0** |
+| G default vs ungated default | **0** |
+
+G therefore defines `WP_FUSE_FP` in the hipRTC options when `fuse_fp` is on, which needs a library rebuild: tree `agent_space/cand/g`, a worktree at `4e0d02ab`, built with the gfx950 command above. `strings` shows `-ffp-contract=on`, `-ffp-contract=off` and `-DWP_FUSE_FP`.
+
+### Candidate G (diff against `4e0d02ab`; it includes the option change to `on`)
+
+```diff
+diff --git a/warp/native/solid_angle.h b/warp/native/solid_angle.h
+index b06ba5a4..dc0ea42c 100644
+--- a/warp/native/solid_angle.h
++++ b/warp/native/solid_angle.h
+@@ -391,6 +391,12 @@ CUDA_CALLABLE inline bool evaluate_node_solid_angle(
+     const vec3& query_point, SolidAngleProps* current_data, float& solid_angle, const float accuracy_scale_sq
+ )
+ {
++#if defined(__HIP_DEVICE_COMPILE__) && defined(WP_FUSE_FP)
++    // Without contraction across statements here, the inlined winding-number traversal exceeds the register budget
++    // and spills heavily on some AMD GPUs; contracting only this function is enough to avoid that.
++#pragma clang fp contract(fast)
++#endif
++
+     SolidAngleProps& data = *current_data;
+     float max_p_sq = data.max_p_dist_sq;
+     vec3 q = query_point - data.average_p;
+diff --git a/warp/native/warp.cu b/warp/native/warp.cu
+index 808dd763..28c142d9 100644
+--- a/warp/native/warp.cu
++++ b/warp/native/warp.cu
+@@ -4573,7 +4573,9 @@ size_t wp_hip_compile_program(
+     }
+ 
+     // NVRTC's default --fmad=true contracts across statements; Clang's HIP default does too and honors pragmas
+-    stored_options.push_back(fuse_fp ? "-ffp-contract=fast-honor-pragmas" : "-ffp-contract=off");
++    stored_options.push_back(fuse_fp ? "-ffp-contract=on" : "-ffp-contract=off");
++    if (fuse_fp)
++        stored_options.push_back("-DWP_FUSE_FP");
+ 
+     std::vector<const char*> opts;
+     for (const std::string& opt : stored_options)
+```
+
+CUDA is untouched:
+- the `solid_angle.h` region is under `__HIP_DEVICE_COMPILE__`;
+- the `warp.cu` hunk is in `wp_hip_compile_program`.
+
+Before any commit:
+- **Comment wording:** the comment's "some AMD GPUs" would need the `[ROCm]` title prefix. The comment wording is a draft.
+- **Contraction scope:** with G, `evaluate_node_solid_angle` is the one place in the library that contracts across statements under `on`. Anything else keeps `on`'s within-expression fusion only.
+
+### Measurements on G
+
+**Timing.** Session 33's `perf.py` (all of its kernels), 5 rounds, each running FAST, ON, G, FAST(B) as separate processes with fresh caches. GPU 0 had no other process before each round; the host load average was 13 to 41. Medians, with the range over rounds; FAST(B)/FAST is the noise floor.
+
+| kernel | FAST ms (median, range) | ON ms | candidate ms | candidate/FAST | candidate/ON | ON/FAST | FAST(B)/FAST (noise) |
+|---|---|---|---|---|---|---|---|
+| lbvh/point | 62.64 (62.56-62.96) | 62.5 (62.36-63.45) | 62.73 (62.52-63.43) | **1.002** | 1.004 | 0.998 | 0.994 |
+| lbvh/no_sign | 47.55 (46.9-47.87) | 47.14 (46.71-48.47) | 47.38 (47.15-47.81) | **0.996** | 1.005 | 0.991 | 1.001 |
+| lbvh/sign_normal | 53.77 (52.98-54.3) | 56.56 (55.14-56.85) | 56.29 (55.82-56.6) | **1.047** | 0.995 | 1.052 | 0.997 |
+| lbvh/sign_winding_number | 116.7 (116.3-117.8) | 249.2 (248.1-283.8) | 99.48 (98.53-99.8) | **0.852** | 0.399 | 2.134 | 1.004 |
+| lbvh/furthest_no_sign | 112.2 (111.1-113.9) | 100.9 (100.3-102) | 100.7 (100-101.4) | **0.898** | 0.998 | 0.899 | 1.000 |
+| lbvh/ray | 26.02 (25.98-26.05) | 26.05 (26.01-26.12) | 26.06 (26.04-26.13) | **1.002** | 1.000 | 1.001 | 0.998 |
+| sah/point | 35.37 (34.93-35.67) | 35.25 (35.17-35.48) | 35.52 (35.33-35.72) | **1.004** | 1.008 | 0.997 | 1.002 |
+| sah/no_sign | 21.02 (20.77-21.2) | 21.14 (20.9-21.45) | 20.93 (20.87-20.99) | **0.996** | 0.990 | 1.006 | 0.998 |
+| sah/sign_normal | 24.8 (24.73-24.93) | 25.43 (25.1-25.57) | 25.42 (25.21-25.47) | **1.025** | 1.000 | 1.025 | 0.993 |
+| sah/sign_winding_number | 48.67 (48.41-49.24) | 108.1 (107.9-108.3) | 41.41 (41.18-41.63) | **0.851** | 0.383 | 2.222 | 1.007 |
+| sah/furthest_no_sign | 46.82 (46.24-47.23) | 43.36 (42.98-43.65) | 43.08 (42.99-43.4) | **0.920** | 0.994 | 0.926 | 0.993 |
+| sah/ray | 17.93 (17.89-17.99) | 18 (17.93-18.07) | 18.02 (17.89-18.1) | **1.005** | 1.001 | 1.004 | 0.998 |
+| tri_tri | 0.0627 (0.06263-0.06282) | 0.06264 (0.06229-0.06272) | 0.06238 (0.06231-0.06262) | **0.995** | 0.996 | 0.999 | 1.002 |
+| elementwise | 0.00631 (0.005776-0.006579) | 0.006396 (0.005765-0.00739) | 0.006324 (0.005924-0.006512) | **1.002** | 0.989 | 1.014 | 1.014 |
+
+**The winding number is beyond noise in every round:**
+
+| tree | lbvh ms | sah ms |
+|---|---|---|
+| G | 98.5 to 99.8 | 41.2 to 41.6 |
+| FAST | 116.3 to 117.8 | 48.4 to 49.2 |
+
+The noise floor is 0.99 to 1.01, and elementwise is 1.01.
+
+**Other kernels:**
+- `furthest_no_sign` is 8 to 10% faster under `on`, with or without G.
+- `sign_normal` is 2.5 to 4.7% slower under `on`, with or without G (it does not call the solid-angle code).
+- Everything else is within 0.5%.
+
+**Consistency on G**, every count 0 with default options and with `nofuse`:
+- **`twice.py`** (official): 24 rows, both meshes, 9 BVH configurations, 5 ray directions. The point queries include `sign_winding_number`.
+- **`hel.py`** (official): `k_helpers`, `k_helpers2`, `k_tt`, `k_ee` on spiky and on the grid cube. Under FAST, `k_ee` is 17,631 and `k_tt` is 1.
+- **`user2.py`:** `box_d2`, `det2`, `dot`. Under FAST, `dot` is 1,399,489.
+- **`sn.py`:** `sign_normal` 0 of 2,094,912, and `intersect_tri_tri` 0 of 232,768 (55,961 hits).
+
+**Winding-number value probe** (`agent_space/s/wnval.py`):
+- **Method:** `wp::mesh_query_winding_number` through `func_native`, evaluated twice in one kernel (straight-line, then in a runtime loop beside a `sign_winding_number` query) and compared bitwise.
+- **Coverage:** spiky, the grid cube and a 204,800-triangle noisy torus, each with lbvh, sah and median, 232,768 points each.
+- **Result:** 0 differences for FAST, ON, the ungated candidate and G, in both modes. It does not separate FAST from ON, so it is a weak probe; it does show that G introduces no difference it can see.
+- **Against the other trees:** G's values differ from ON's in 317,406 of 2,094,912 (at most 2.4e-7) and from FAST's in 865,068 (at most 3.2e-6). The inside/outside decision at the default threshold 0.5 is identical in all.
+
+**Tests:** `python -m warp.tests -s autodetect -p "test_mesh*.py"`, fresh cache:
+
+| tree | result | `expect_eq` lines |
+|---|---|---|
+| G | Ran 49, OK (46.1 s) | 0 |
+| ON | Ran 49, OK (32.9 s) | 0 |
+| FAST | Ran 49, OK (32.7 s) | 0 |
+
+The full suite was not run on G (the ON tree's full suite is in the section above).
+
+### Why `example_tile_nbody` is slower under `on`
+
+Its inner loop does `accel += body_body_interaction(p0, pi)`, where the interaction returns `PARTICLE_MASS * inv_dist_cubed * r`, and computes `dist_sq = length_sq(r) + SOFTENING_SQ`. Warp generates each operation as its own statement or inlined vec3 operator call:
+- Under `fast-honor-pragmas`, the scale-multiply and the accumulate-add are contracted across those statements into packed FMAs.
+- Under `on` they stay separate multiplies and adds.
+
+Forward kernel `integrate_bodies_tiled` (38/39 VGPRs, no spills in any mode):
+
+| mode | FAST | ON |
+|---|---|---|
+| default options | 3 `v_pk_fma_f32` + 10 `v_fma_f32`, 14 `v_mul_f32` | 0 `v_pk_fma_f32` + 10 `v_fma_f32`, 19 `v_mul_f32` |
+| `fast_math` | 5 `v_pk_fma_f32`, 12 `v_mul_f32` | 0 `v_pk_fma_f32`, 21 `v_mul_f32` |
+
+The loop is short and arithmetic-bound, so losing those fusions shows up directly.
+
+### For the gfx90a job (and gfx942)
+
+- **Check G there.** Apply the diff above to a `4e0d02ab` worktree, rebuild, then run:
+  - `perf.py` or `perf2.py` interleaved against `4e0d02ab` and plain `on`;
+  - spill counts of `k_wn_*_forward` (the scripts file's readelf command);
+  - `twice.py`, `hel.py`, `user2.py` and `sn.py` with default options and `nofuse`;
+  - `test_mesh*.py`.
+- **What I don't know.** On gfx90a, plain `on` already spills only 72. Whether the contracted region keeps that or pushes it back toward the cliff is untested. If it does, the region is arch-dependent and the bar is not met there.
+- **Scripts** (scratch, `agent_space/s/`): `mkcand.sh` (candidate trees), `wnk.py` + `attr.py` (spill attribution), `mix.py` (instruction mix), `wnval.py` (value probe), `off/perf.py` (from the scripts file). Patches are in `agent_space/patches/`.
