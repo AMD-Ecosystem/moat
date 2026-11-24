@@ -9447,3 +9447,42 @@ The bf16 fragment test is forward only, with at most 2 x (32x32 + 32x64) + 4 x 3
 ### Scripts (job `agent_space/ev/scripts/`, scratch)
 
 `sweep.py`: every fragment case, smem metadata and correctness; run with `PYTHONPATH=<clone> python scripts/sweep.py [float16 float32 float64]`. `xcompile.py`: hipRTC compile of a cached module `.cu` for other targets plus `llvm-readelf --notes`; run as `python scripts/xcompile.py <module>.cu <outdir> <readelf> gfx908 gfx942 gfx90a gfx950`. `edge.py`: forward-only fp64 kernels at the limit; run as `python scripts/edge.py 32x64x32 64x32x56 64x32x64 64x64x64`. The scratch fix is `agent_space/ev/testfix.diff`, the diff above.
+
+### Addendum: the head moved to `4ae8babd` during this session
+
+Porting session 31 pushed `fa20eb13..4ae8babd` while the runs above were under way. Its last commit, `4ae8babd`, restructures the fragment loop with `fragment_cases(device)`, so the diff above no longer applies as is. Rebuilt the clone at `4ae8babd` for gfx942 (same command, "Warp build succeeded") and repeated the relevant runs:
+
+- Unmodified, each fragment test in its own process: float16, float32 and bfloat16 OK; **float64 FAIL**, with the same two lines (the launch line is now `warp.cu:5536`).
+- Unmodified, `python -m warp.tests -s autodetect -p "test_tile*.py"`: **Ran 599 in 184.2 s, FAILED (failures=1, skipped=14)**. Debug mode (`--warp-debug`): **Ran 599 in 217.7 s, FAILED (failures=1, skipped=14)**. The failure is `test_tile_matmul_fragment_shapes_float64_cuda_0` in both; same 14 skips, no error 700, no device assertion. At this head the harmless `test_tile_load_scoped` backward warning (65,536 bytes, never launched) also prints in release mode.
+- **The fix still holds**, rebased onto `fragment_cases` (same helper, same per-shape check; the HIP branch still returns all six shapes):
+  - float16, float32, float64 and bfloat16 each OK in their own process.
+  - `python -m unittest warp.tests.tile.test_tile_matmul`: Ran 26, OK, with no Warp error line.
+  - On NVIDIA the single 16x16x16 case is never skipped.
+
+```diff
+--- a/warp/tests/tile/test_tile_matmul.py
++++ b/warp/tests/tile/test_tile_matmul.py
+@@ -396,12 +396,20 @@ def fragment_cases(device):
+     return FRAGMENT_SHAPES[:1], (32,)
+ 
+ 
++def shared_memory_fits(device, dynamic_bytes):
++    # the largest block size adds the most static shared memory (see skip_if_shared_memory_exceeded)
++    return dynamic_bytes + 4 * max(FRAGMENT_BLOCK_DIMS) + 1024 <= wp.get_device(device).max_shared_memory_per_block
++
++
+ def test_tile_matmul_fragment_shapes(dtype):
+     # GPU results against the CPU
+     def test(test, device):
+         rng = np.random.default_rng(7)
+         shapes, block_dims = fragment_cases(wp.get_device(device))
+         for M, N, K in shapes:
++            # the backward kernel keeps the three tiles and their adjoints in shared memory
++            if not shared_memory_fits(device, 2 * wp.types.type_size_in_bytes(dtype) * (M * K + K * N + M * N)):
++                continue
+             mm = create_matmul_kernel(dtype, M, N, K)
+             A, B = rng.uniform(-1, 1, (M, K)), rng.uniform(-1, 1, (K, N))
+             for block_dim in block_dims:
+```
+
+The full suite was not repeated at `4ae8babd`. For the porter: commit the diff above (shared test code, no `[ROCm]` prefix). Its test plan is the four `-k fragment_shapes_<type>` runs on a 64 KiB device and on gfx950 (where nothing is skipped). For the coordinator: re-run the fragment tests on the gfx908 host with this fix; if error 700 remains there, it is a separate gfx908 defect, and `AMD_LOG_LEVEL=1 HIP_LAUNCH_BLOCKING=1` will name the faulting launch.
