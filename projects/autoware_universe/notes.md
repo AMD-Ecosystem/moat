@@ -881,3 +881,87 @@ colcon build --merge-install --parallel-workers 3 --base-paths src \
 ## Lesson for moat-porting: comparing CUDA host objects across two checkouts
 
 Extends `## Lesson for moat-porting: ROS 2 from debs on a fleet host with no root`. (1) When mirroring host entries into the unpacked tree, recurse into directories both trees have: `lib/x86_64-linux-gnu/cmake` exists in the debs, so mirroring only top-level entries hides the host's Boost configs (`BoostDetectToolset-1.83.0.cmake` not found from PCLConfig). Also export `LIBRARY_PATH=<tree>/usr/lib/x86_64-linux-gnu`, or `-llttng-ust` from rclcpp's tracing fails to link. (2) To diff host code between the base and the port, build both in workspace paths of the same length: `__FILE__` strings shift `.rodata` offsets and every object differs otherwise. Then normalize `_INTERNAL_<hash>`, `_GLOBAL__N__<hash>` and, with separable compilation, the module id in `__fatbinwrap_<id>_` / `__cudaRegisterLinkedBinary_<id>_`. Whatever differs after that is real, and lines added above an error-check macro show up as shifted `__LINE__` immediates.
+
+## Validation 2026-11-24 (validator, linux-gfx1100 fleet job; AMD Radeon RX 7900 gfx1100, wave32, Device ID 0x7449, HIP_VISIBLE_DEVICES=1 pinned by the dispatcher; fork `moat-port` at fc79489cfa73487ee4a497ce6940e609f528910f)
+
+Verdict: **completed** (wave32). This is a full run of the **documented build**: each package README's command, run from an empty workspace with tests enabled. The docs-gate failure this platform recorded at 129d61b is closed, because all three README builds link and pass under ld.lld. Every GPU test passes and every node runs end to end. The ground-segmentation comparison against the CPU reference is exact on this 32-wide GPU. The results that deviate are the known upstream ones, each reproduced with the same numbers as this platform's 129d61b round. The fork clone is clean at the head.
+
+### Environment (job directory only; nothing shared on the host changed)
+
+- TheRock ROCm 10.2.0 in `$FLEET_VENV`: `"$FLEET_VENV/bin/pip" install --index-url https://stable.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple 'rocm[devel,device-gfx1100]==10.2.0'`, `rocm-sdk init`. HIP 7.17.26434, `rocm-sdk version` 10.2.0. No system ROCm.
+- ROS 2 Jazzy and the released Autoware packages come from the debs unpacked in this platform's 129d61b round (`<job>/root`, Ubuntu noble's packaged libfmt9 9.1.0). They were copied into this job and their absolute paths rewritten, with no rebuild. The colcon venv (`/usr/bin/python3` 3.12) was copied and relocated the same way, because the fleet guard refuses `pip` into any venv except `$FLEET_VENV`.
+- Underlay `<job>/ws`, built fresh: `autoware_cuda_utils` + `autoware_cuda_dependency_meta` from AMD-Ecosystem/autoware_cuda `992d7034b5396900593126e8f19a1982ae7bc682` (`-- cuda is not found, building autoware_cuda_utils with HIP 7.17.26434`), cuda_blackboard `9e0fb865cd2e38dcc0db5e0e55497f40fb71f733` (`-- cuda was not found, building cuda_blackboard with HIP 7.17.26434`), negotiated `eac198b5`, autoware_core `15408eb6`, managed_transform_buffer `6c9a65b5`, tier4_autoware_msgs `efa41293`, plus `autoware_pointcloud_preprocessor` and `autoware_pcl_extensions` from the fork tree at fc79489. 11 packages, 3 min 32 s, rc 0 (`agent_space/build_deps.sh`, Release, `-DCMAKE_HIP_ARCHITECTURES=gfx1100`, 2 workers x `-j5`).
+- `MAX_JOBS=10` respected. Every GPU step ran under `ulimit -c 0` and `timeout`. GPU 1 was also carrying another job's load during this run (about 66% busy, 5.7 GB).
+
+### Build: the README commands, empty workspace (`agent_space/readme_build.sh <fork> <job>/ws_val`, wrapped in `utils/timeit.sh ... compile`)
+
+The driver deletes the workspace, links the three packages into `src/`, sources the environment and the underlay, and runs the three README commands in turn:
+```
+colcon build --packages-up-to <package> --cmake-args -DCMAKE_PREFIX_PATH=$ROCM_SDK -DCMAKE_HIP_ARCHITECTURES=gfx1100
+```
+That is each README's command with the SDK prefix in place of `/opt/rocm` (the README says ROCm outside `/opt/rocm` goes in `CMAKE_PREFIX_PATH`) and gfx1100 as the README's Radeon example. There is no build type, no `AUTOWARE_CUDA_USE_HIP`, no linker flag, and `BUILD_TESTING` is colcon's default ON (CMakeCache: `BUILD_TESTING=ON`, `CMAKE_BUILD_TYPE=` empty, `AUTOWARE_CUDA_USE_HIP=OFF`).
+- **All three rc 0**: preprocessor 51 s, ground segmentation 30 s, occupancy grid 93 s. Each prints `cuda was not found, building <pkg> with HIP 7.17.26434`.
+- Both preprocessor gtests link under ld.lld, each with `NEEDED libfmt.so.9`.
+- The device code in all three device libraries is `hip-amdgcn-amd-amdhsa--gfx1100` only (`clang-offload-bundler --list` on each `.hip_fatbin`).
+- `ldd -r` over the 20 stage-1 libraries, node executables and gtests: 0 undefined symbols, except the 4 cuda_blackboard symbols in `libcuda_ground_segmentation_lib.so` recorded since round 2.
+- Environment note, not a port issue: the first attempt failed at configure, before any of the port's CMake ran. `$FLEET_VENV` is an active venv (`VIRTUAL_ENV` set), and CMake's FindPython prefers an active venv, so ament ran its `package.xml` parser with the venv's Python 3.11, which has no `catkin_pkg`/`pyparsing`. The driver now puts the 3.12 colcon venv first on PATH and unsets `VIRTUAL_ENV` for the build step. The underlay avoids this with `-DPython3_EXECUTABLE`. Anyone building ROS from inside an unrelated venv hits the same thing.
+
+A second build with the same command plus `-DCMAKE_BUILD_TYPE=Release` (`<job>/ws_rel`) is also rc 0 (66 s, 31 s, 114 s). It is used only for the full gtest run below.
+
+### Tests (wrapped in `utils/timeit.sh ... test`; logs `<job>/logs/val-*.log`, probe output `<job>/logs/probes/`)
+
+- **Preprocessor gtests** (`agent_space/test_pre.sh`):
+  - Documented build, 20 runs of each executable: test_cuda_combine_cloud_handler 8/8 and test_cuda_pointcloud_preprocessor 19/19 (`--gtest_filter=-*UndistortionLeavesXyzirctTimeStampsUntouched`) passed in all 20 runs. Run alone, the excluded test aborts on upstream's `undistort_kernels.cu:234` assert `twist_global_stamp_nsec > pointcloud_stamp_nsec` (equal stamps, and this build has no `NDEBUG`). This is the deferral `autoware-undistort-test-trips-stamp-assert`; CUDA behaves the same, as on gfx942.
+  - Release build, `colcon test --packages-select autoware_cuda_pointcloud_preprocessor --ctest-args -R test_cuda --repeat until-fail:20`: 20 `[  PASSED  ] 20 tests` and 20 `[  PASSED  ] 8 tests` blocks, "100% tests passed, 0 tests failed out of 2".
+  - `AMD_LOG_LEVEL=3` on the Release test: `Gfx Major/Minor/Stepping: 11/0/0`, `Device ID: 0x7449`, 1080 `hipLaunchKernel`.
+- **Occupancy grid** (upstream tests disabled, #7724). Built out of tree from the fork's test sources (`harness/occupancy_grid_map`, `agent_space/ogm.sh`, with `-DCMAKE_PROJECT_INCLUDE` of `enable_language(C)` + `find_package(MPI COMPONENTS C)` as before), linked against the documented build's `libautoware_probabilistic_occupancy_grid_map_{common,cuda}.so`:
+  - The five gating tests, `--repeat until-fail:20 -E test_synchronized_grid_map_fusion_node`:
+    - First pass: test_pointcloud_based_method (GPU node) failed on its 9th repetition, in `test_null_input` (`AssertionError: 0 != 1`, no grid received within one `spin_once(timeout_sec=3.0)`). The test creates its publishers and publishes in the same instant, with no wait for discovery. The other two cases in that run passed.
+    - Run alone with the upstream file, the test passed 40 of 40. A copy that waits for the two publishers and the output topic to match before publishing (`agent_space/ogm_pcb/test_pcb_matched.py`) also passed 40 of 40.
+    - Second pass of the same command: "100% tests passed, 0 tests failed out of 5": test_utils, costmap_unit_tests, fusion_policy_unit_tests, test_pointcloud_based_method and test_ogm_geometry, 20/20 each.
+    - So upstream's test_pointcloud_based_method failed once in 69 runs (one failure in the first 9, none in the next 40 or 20), the same publish-before-discovery shape as the fusion test below, while GPU 1 was carrying another job's load. It passed 20/20 here at 129d61b and on gfx942 at fc79489. Not a port fault, and not registered as a separate deferral.
+  - **`test_synchronized_grid_map_fusion_node`** (known upstream test race on a CPU-only node, not gated): **0 of 40** runs alone pass, every failure `IndexError: list index out of range` at `self.msg_buffer[-1]`. It was 9 of 40 at 129d61b on this host and 60 of 60 on gfx942. The discovery-waiting copy from the 129d61b round (`agent_space/ogm_fusion/test_fusion_matched.py`) passes **20 of 20** with the expected values (same 1 / 99 / 50, unknown fusion 1 / 99 / 50).
+- **Ground segmentation, wave32 confirmation** (`harness/ground_segmentation`, `agent_space/gs_build.sh` + `gs_run.sh`; `gs_fixed` links the documented build's `ws_val/.../libcuda_ground_segmentation_lib.so`):
+  - `./gs_fixed 20 <seed>`, seeds 7 / 11 / 23: 60 of 60 runs give 0 label mismatches against the CPU reference, 0 missing, and are identical to run 0. "PASS: 0 of 20 runs differ" for each seed.
+  - Label hashes `04516cba11e18f95`, `7cd4bb48f4483e7f`, `957f6d786c501316`, identical to every wave64 and wave32 round. Seed 7: 150,516 ground, 4,848 non-ground, 7,832 box-filtered.
+  - Naive variant (`gs_naive 3 7`): 0 mismatches, hash `04516cba11e18f95`. As at 129d61b, the undone fix is harmless on a 32-wide wavefront; on wave64 the same harness gives 66,910 mismatches.
+  - Debug mask check (`agent_space/gs_dbg`, fork kernel source at fc79489 built with `-UNDEBUG -O1`, `__hip_check_mask` on): `gs_dbg` and `gs_dbg64` (`FULL_MASK` forced to 64-bit all-ones) both pass, hash `04516cba11e18f95`.
+  - The scenes dumped by this build (`gs_fixed dump <seed>`) are byte-identical to the 129d61b round's copies.
+- **Each node end to end** on the documented build (plain `PointCloud2` in and out, Fast DDS profile with a 64 MiB shared-memory segment; probes in `agent_space/probes/`):
+  - `cuda_voxel_grid_downsample_filter_node`:
+    - 32x16x8 grid: 4096 outputs, one per voxel, max centroid error 1.75e-6: PASS.
+    - 40x25x8 grid: 27,601 outputs for 8,000 voxels, equal to the upstream radix `end_bit` model (`cuda-voxel-downsample-radix-end-bit`), as at 129d61b.
+  - `cuda_pointcloud_preprocessor_node` vs the float32 numpy kernel model (seed 7):
+    - vx 0: 39,944 of 57,600 points (crop box 16,529, zero-distance 96, ring outliers 1,031), the same points in the same order as the model, max error 0 m.
+    - vx 10 m/s: 39,749 points, max error 9.54e-7 m.
+    - vx 0 repeated: identical.
+    - PASS. The counts equal the 129d61b round's. The errors are smaller than there (1.91e-6 / 2.86e-6 m), presumably because this build has no build type where that one was Release.
+  - `cuda_concatenate_and_time_sync_node` vs upstream's CPU node:
+    - Stationary: max difference 0 m.
+    - vx 5 m/s with `lidar_r` 40 ms late: both nodes shift `lidar_r` by +0.200 m; max difference 3.81e-6 m.
+    - Stationary repeated: 0 m.
+    - PASS.
+  - `cuda_polar_voxel_noise_filter_node` vs the CPU node: identical point sets on seeds 3, 11 and 29 (62,206 / 62,021 / 62,286 kept): PASS.
+  - `cuda_polar_voxel_outlier_filter_node` vs the CPU node:
+    - Seeds 3 and 11: identical (71,884 / 71,775).
+    - Seed 29: GPU 71,843 vs CPU 71,846, the same 3 CPU-only points as at 129d61b. This is the azimuth-edge rounding traced there: upstream's float kernel path, the same on CUDA.
+    - `model_outlier_full.py` again predicts both nodes' counts exactly on all three seeds (CPU-only 0 / 0 / 3).
+  - `cuda_scan_ground_segmentation_filter_node` (shipped parameter file), seeds 7 / 11 / 23: ground and non-ground sets equal the CPU reference exactly, no duplicates: PASS.
+  - **Component container** (`agent_space/container_run.sh`):
+    - Preprocessor loaded first: ground segmentation passes on seeds 7 and 11, and the preprocessor probe passes all three cases.
+    - Ground segmentation loaded first: `Failed to find class with the requested plugin name 'autoware::cuda_pointcloud_preprocessor::CudaPointcloudPreprocessorNode'`, the registered upstream issue `autoware-gs-component-preloads-preprocessor-components`. Ground segmentation still passes in that container.
+  - **Occupancy grid, projective map** (`OccupancyGridMapProjectiveBlindSpot`, scan origin 1.8 m above base_link, `agent_space/ogm_proj/test_ogm_proj.py`):
+    - "Ran 1 test ... OK". All five `map_projective::*` kernels launch, 5 frames each.
+    - Wall cells 99, behind and side cells 50, free cells 1 from 2 to 5.5 m, and the 5.5-6 m cell plus 6-9 m unknown (50). Same as the 129d61b round and gfx942.
+- **Non-GPU tests**, `colcon test` of the three packages on the documented build with `-E test_cuda`: 183 results, 0 errors, 0 failures. copyright, cpplint, lint_cmake and xmllint pass. The 64 skips are cppcheck: Ubuntu's 2.13 is on `ament_cppcheck`'s slow-version list, the environment gap of every round. Ground segmentation registers no tests.
+
+### Gates
+
+- CUDA compile: not run here (no nvcc on this host). It passed at fc79489 on the mi355 host (`## CUDA no-regression compile check at fc79489`).
+- Documentation: every package README's ROCm command builds from an empty workspace with tests enabled on gfx1100 (above). This closes the docs gate this platform failed at 129d61b. Jeff's README build-type question (Porter round 5) is unchanged.
+- `jargon.py --port autoware_universe`: clean. This needed a local `moat-port` branch in the fork clone (`git branch moat-port origin/moat-port`) as well as `main`.
+- Fork clone clean at fc79489 (`git status --porcelain` empty). Nothing was pushed to the fork.
+
+## Lesson for moat-porting: a fleet job's active venv steers CMake's FindPython away from ROS
+
+On a fleet host `$FLEET_VENV` is an active venv (`VIRTUAL_ENV` is set), and CMake's FindPython prefers an active venv over PATH (`Python3_FIND_VIRTUALENV=FIRST`). A ROS 2 colcon build that passes no `-DPython3_EXECUTABLE` therefore runs ament's `package_xml_2_cmake.py` with the job venv's interpreter. That interpreter lacks `catkin_pkg`/`pyparsing`, and configure fails in `ament_package_xml` before any package CMake runs. Putting another Python first on PATH does not help. For a build that must run a documented command verbatim, `unset VIRTUAL_ENV` and put the ROS-compatible Python (here a `/usr/bin/python3` venv with system site packages) first on PATH for the build step only. (autoware_universe, linux-gfx1100 validation at fc79489.)
