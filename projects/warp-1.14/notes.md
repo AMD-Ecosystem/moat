@@ -9332,3 +9332,118 @@ nvcc check: `cuda_pp.sh` (nvcc 12.8) of `2ce30148` against `4ae8babd`: 22 IDENTI
 Addendum to the coordinator finding above (V100, same setup, each fragment test in its own process at `2ce30148`): float32 OK in 570 s, float16 OK in 774 s, float64 OK in 657 s, 2001 s in all. So at `2ce30148` every NVIDIA case passes (block sizes 32, 48, 64, 96) and the only CUDA-side problem left is the 33 minutes, which the reduced non-HIP case list addresses.
 
 Coordinator check of `4ae8babd` on NVIDIA (V100, upstream `warp-lang==1.14.0` with the fork's `test_tile_matmul.py` at `4ae8babd`, `device.is_hip` read through `getattr`): `python -m warp.tests -s autodetect -p "test_tile_matmul.py"`: Ran 21 tests in 166.6 s, OK (skipped=1, the bf16 case). Upstream's own file takes 96 s there; at `2ce30148` the three fragment tests alone took 2001 s. The CUDA test regression is closed.
+
+## Evidence session (2026-11-23, linux-gfx942, evidence only): tile tests on a 64 KiB device at `2ce30148`
+
+Request from jeff: is the gfx908 failure of `test_tile_matmul_fragment_shapes_float64` (error 1 from `wp_cuda_launch_kernel`, all-zero result, and on gfx908 a sticky error 700 in the serial file run) common to every 64 KiB device, or specific to gfx908? Evidence only: no lock, no state change, nothing pushed to the fork. `HIP_VISIBLE_DEVICES=7` (dispatcher pin, kept), `ulimit -c 0` for every GPU run, `WARP_CACHE_PATH` set to a fresh directory in the job for each run. No process was stopped.
+
+**Answer: every 64 KiB device. The defect is in the test, not in the launch path.** One case, fp64 32x64x32, needs 81,920 bytes of dynamic shared memory in its backward kernel (plus 64 static), and no 64 KiB device can hold that. On gfx942 HIP refuses that launch cleanly with error 1: there is no fault and no error 700, in the per-test, serial-file, parallel-file, release-tile, debug-tile and full-suite runs. Warp's handling (a warning when the attribute cannot be set, then the launch attempt, which HIP refuses) is upstream's code path and behaves as it does on CUDA. Every other case passes on gfx942, at every block size. The error 700 seen on gfx908 does not reproduce here, and the code objects do not explain it (below).
+
+### 1. Host
+
+- AMD Instinct MI300X HF, `gfx942:sramecc+:xnack-`, 192 GiB. Ubuntu 24.04.5, kernel 6.8.0-110-generic, Python 3.11.17. GPU 7 idle before the runs (`amd-smi`: 0% GFX, no processes); host load average 4 to 10.
+- ROCm: the job venv came with TheRock 10.1.0. Installed `"$FLEET_VENV/bin/python" -m pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple "rocm[devel,device-gfx942]==10.2.0" numpy==1.26.4`, then `rocm-sdk init` (`rocm-sdk version` 10.2.0). Warp banner: "ROCm 10.2, HIP runtime 7.17".
+- Fork clone of `release/1.14.0.amd0` at `2ce30148`, built with `python build_lib.py --rocm-path $(rocm-sdk path --root) --hip-arch gfx942 -j 28` (51 s, "Warp build succeeded"). The tests ran from the source tree, and the tree was clean (`git status --porcelain` empty) for every run except the scratch fix in section 3.
+- **`wp.get_device("cuda:0").max_shared_memory_per_block` = 65536.**
+
+### 2. `test_tile_matmul.py`
+
+| run | result |
+|---|---|
+| `python -m warp.tests -s autodetect -p "test_tile_matmul.py"` (fresh cache) | Ran 26 in 210.6 s, **FAILED (failures=1)**: `test_tile_matmul_fragment_shapes_float64_cuda_0` |
+| `python -m unittest -v warp.tests.tile.test_tile_matmul` serial, warm cache | Ran 26, 25 OK, the same 1 failure |
+| the same serial, cold cache | Ran 26 in 22.7 s, the same 1 failure |
+| `-k fragment_shapes_float16` own process | OK |
+| `-k fragment_shapes_float32` own process | OK |
+| `-k fragment_shapes_float64` own process | **FAIL** |
+| `-k fragment_shapes_bfloat16` own process | OK |
+
+The first error lines, in every failing run:
+
+    Warp UserWarning: Failed to configure kernel dynamic shared memory for this device, tried to configure create_matmul_kernel__locals__mm_3b54a696_cuda_kernel_backward kernel for 81920 bytes, but maximum available is 65536
+    Warp CUDA error 1: invalid argument (in function wp_cuda_launch_kernel, warp/native/warp.cu:5534)
+
+The assertion fails with 1024 of 1024 elements at 0: that is `a.grad` (32x32), because the forward output is correct. The test stops at its first bad case, which is shape 32x64x32 at block_dim 16 (the last shape, the first block size). **No error 700 appeared in any run on this host.**
+
+A scratch sweep (`scripts/sweep.py`, below) runs every shape x block_dim x dtype without stopping and reads `<kernel>_smem_bytes` from the module metadata:
+
+| dtype | 16x16x16 | 48x16x32 | 24x16x16 | 17x33x15 | 16x32x16 | 32x64x32 |
+|---|---|---|---|---|---|---|
+| fp16 fwd / bwd bytes | 1536 / 3072 | 5632 / 11264 | 2048 / 4096 | 2640 / 5280 | 2560 / 5120 | 10240 / 20480 |
+| fp32 | 3072 / 6144 | 11264 / 22528 | 4096 / 8192 | 5264 / 10528 | 5120 / 10240 | 20480 / 40960 |
+| fp64 | 6144 / 12288 | 22528 / 45056 | 8192 / 16384 | 10512 / 21024 | 10240 / 20480 | 40960 / **81920** |
+
+The sizes do not depend on block_dim. Results: **89 of 90 (shape, block_dim, dtype) cases have c, a.grad and b.grad correct.** The exception is fp64 32x64x32: at all five block sizes the forward result is correct and `a.grad`/`b.grad` are 0, with the warning and error 1 each time. The backward size is always twice the forward one (each tile and its adjoint), 8 x 2 x (32x32 + 32x64 + 32x64) = 81,920.
+
+### 3. Shared memory against the limit, the launch path, and the fix
+
+- **Static LDS** (`llvm-readelf --notes` on the cached gfx942 code object): `.group_segment_fixed_size` 64 for both the forward and the backward kernel of that module. Total for the backward kernel: 81,920 + 64 = 81,984 bytes against 65,536; for the forward kernel: 40,960 + 64. Compiled through hipRTC for gfx908, gfx90a and gfx950 (`scripts/xcompile.py`, compile only): static LDS is 64 for both kernels on each target. Scratch (`private_segment_fixed_size`), forward / backward: gfx908 300 / 3552, gfx90a 212 / 3456, gfx942 and gfx950 212 / 3464. **gfx908's code object has the same LDS as gfx942's, so its error 700 does not come from a different shared memory size.**
+- **The launch path** is the earlier sessions' path, and it is upstream's. `Module.get_kernel_hooks` (`warp/_src/context.py:2483-2497`) calls `wp_cuda_configure_kernel_shared_memory` (`hipFuncSetAttribute(MAX_DYNAMIC_SHARED_SIZE_BYTES)`). When that fails, it logs "Failed to configure kernel dynamic shared memory" and still returns the hooks. `wp_cuda_launch_kernel` then calls `hipModuleLaunchKernel` with the full dynamic size. **HIP refuses it with hipErrorInvalidValue (error 1). The kernel is not launched and no fault follows**: the next launches in the same process and context run correctly (the sweep goes on through all five block sizes, and the rest of the file passes after it). CUDA does the same with `cuFuncSetAttribute`/`cuLaunchKernel`, which give CUDA_ERROR_INVALID_VALUE. Warp never raises a Python exception here on either platform; that is upstream behaviour.
+- **At the edge** (`scripts/edge.py`, forward-only fp64 kernels, block_dim 64):
+  - 64x32x56 asks for 59,392 bytes: correct.
+  - 64x32x64 asks for exactly 65,536 bytes plus 64 static: refused, with the warning "... for 65536 bytes, but maximum available is 65536" and error 1, and C stays 0.
+  - 64x64x64 asks for 98,304 bytes: refused the same way.
+
+  `hipFuncSetAttribute` counts static LDS against the limit, as CUDA does. The warning text is misleading at the edge, but it is upstream's message.
+- **Verdict: the defect is in the test** (a case that cannot fit in 64 KiB: fp64 32x64x32 with the backward pass). **There is no launch-path defect on gfx942**: an over-limit kernel is refused at the API and never reaches the GPU. Every 64 KiB device fails this case: gfx942 here and gfx908 at the coordinator's run, and gfx90a and the gfx11/gfx12 parts have 64 KiB of LDS per workgroup too (not run here). gfx950 (160 KiB) holds it. The test is the only tile test the port added or changed without a shared-memory guard: the other five 64 KiB skips in the tile run below come from the port's `skip_if_shared_memory_exceeded`.
+- **The gfx908 error 700 is not explained by this.** Same code, same LDS, and here the refusal is clean. It needs the gfx908 host: run the fragment tests there with the fix below, and if error 700 still appears, re-run with `AMD_LOG_LEVEL=1 HIP_LAUNCH_BLOCKING=1` to find the launch that faults. Until then it should be treated as a separate gfx908 question, not as part of this defect.
+
+**Smallest fix (test only; the porter commits it).** Skip, per case, a shape whose backward kernel does not fit the device. The margin is the one `skip_if_shared_memory_exceeded` uses, so a whole-test skip does not hide the cases that did run. Tested in the scratch clone on gfx942:
+- float16, float32, float64 and bfloat16 fragment tests each OK in their own process.
+- `python -m unittest warp.tests.tile.test_tile_matmul`: Ran 26, OK, with no Warp error line.
+- On this device only fp64 32x64x32 is skipped. The largest remaining backward size is 45,056 + 1,408 margin, which fits. On gfx950 and on NVIDIA (V100 96 KiB and later) nothing is skipped. The test ids are unchanged.
+
+```diff
+--- a/warp/tests/tile/test_tile_matmul.py
++++ b/warp/tests/tile/test_tile_matmul.py
+@@ -393,11 +393,19 @@ def fragment_block_dims(device):
+     return FRAGMENT_BLOCK_DIMS if device.is_hip else tuple(bd for bd in FRAGMENT_BLOCK_DIMS if bd >= 32)
+ 
+ 
++def shared_memory_fits(device, dynamic_bytes):
++    # the largest block size adds the most static shared memory (see skip_if_shared_memory_exceeded)
++    return dynamic_bytes + 4 * max(FRAGMENT_BLOCK_DIMS) + 1024 <= wp.get_device(device).max_shared_memory_per_block
++
++
+ def test_tile_matmul_fragment_shapes(dtype):
+     # GPU results against the CPU
+     def test(test, device):
+         rng = np.random.default_rng(7)
+         for M, N, K in FRAGMENT_SHAPES:
++            # the backward kernel keeps the three tiles and their adjoints in shared memory
++            if not shared_memory_fits(device, 2 * wp.types.type_size_in_bytes(dtype) * (M * K + K * N + M * N)):
++                continue
+             mm = create_matmul_kernel(dtype, M, N, K)
+             A, B = rng.uniform(-1, 1, (M, K)), rng.uniform(-1, 1, (K, N))
+             for block_dim in fragment_block_dims(wp.get_device(device)):
+```
+
+The bf16 fragment test is forward only, with at most 2 x (32x32 + 32x64) + 4 x 32x64 = 14,336 bytes, and needs no guard. Possible alternative for jeff and the porter: keep N=64 coverage for fp64 on 64 KiB devices by using a smaller K for that one shape (32x64x16 needs 57,344 bytes backward). That would change the shape for every dtype and drop the second K step that the fp16/fp32 matrix-core counts were measured with, so the guard is the smaller change.
+
+### 4. All tile tests
+
+- Release, `python -m warp.tests -s autodetect -p "test_tile*.py"` (fresh cache): **Ran 599 in 213.1 s, FAILED (failures=1, skipped=14)**, wall 215 s. The failure is `test_tile_matmul_fragment_shapes_float64_cuda_0`, with the same two lines as above. There was no other Warp error line.
+- Debug, `python -m warp.tests -s autodetect --warp-debug -p "test_tile*.py"` (fresh cache): **Ran 599 in 278.6 s, FAILED (failures=1, skipped=14)**. Same failure; no device assertion, no error 700.
+  - One more warning in debug only: `test_tile_load_scoped_kernel_..._cuda_kernel_backward kernel for 65536 bytes`. The test (upstream's `test_tile_load.py`) asks for the same 65,536 bytes in release too, and only debug's static LDS pushes it over. That backward kernel is never launched, so the test passes and the warning is harmless.
+- Skips, the same 14 in both modes:
+  - 8 tile FFT tests and `test_tile_solve_singular_matrices`: no MathDx, as on gfx950.
+  - 5 of the port's 64 KiB shared-memory skips, which gfx950 runs:
+    - `test_tile_assign_2d` (needs 66,688 bytes)
+    - `test_tile_reduce_axis_tier2` (66,816)
+    - `test_tile_reduce_axis_tier2_single_warp` (66,688)
+    - `test_tile_shared_mem_func` (67,584)
+    - `test_tile_shared_mem_large` (67,584)
+
+  So 599 tests with 14 skips here, against 9 skips on gfx950.
+
+### 5. Full default suite
+
+`python -m warp.tests -s autodetect` from the clean clone (fresh cache, one GPU, host load average 33 to 52 from other users' jobs on other GPUs): **Ran 7562 tests in 825.3 s, FAILED (failures=2, skipped=113)**. 7562 is the same count as session 30's gfx950 run.
+- `test_tile_matmul_fragment_shapes_float64_cuda_0`: as above.
+- `test_async` `test_copy_s2c_d2d_SrcPoolOff_DstPoolOff_Stream0_NoGrad_Graph_AccessSrcDst`: 125,184 of 1,000,000 elements wrong (1/8 of the array). This is the known MI300X lost-writes ROCm defect (deferred item; "Evidence session 2 (2026-11-20, linux-gfx942): narrowing the copy flake"), seen under host load. It is not related to this question and was not re-run.
+- One `Warp CUDA error 9: invalid configuration argument (in function radix_sort_pairs_device, warp/native/sort.cu:84)` line, printed while every neighbouring test passed. `test_fem_quadrature` (its neighbour in the log) alone gave 5 OK and `test_utils` alone 62 OK, both with no error line. Not attributed; a similar sort line once followed a sticky graph-launch error on Windows (test_grouped_bvh, above). No error 700 anywhere in the suite.
+- Skips: 113 against 81 on gfx950. The difference is environment: no `usd-core` in this venv (27 skips), no torch (2), and one GPU pinned. The rest are MathDx, multi-GPU and graph-feature skips plus the 5 shared-memory skips of section 4.
+
+### Scripts (job `agent_space/ev/scripts/`, scratch)
+
+`sweep.py`: every fragment case, smem metadata and correctness; run with `PYTHONPATH=<clone> python scripts/sweep.py [float16 float32 float64]`. `xcompile.py`: hipRTC compile of a cached module `.cu` for other targets plus `llvm-readelf --notes`; run as `python scripts/xcompile.py <module>.cu <outdir> <readelf> gfx908 gfx942 gfx90a gfx950`. `edge.py`: forward-only fp64 kernels at the limit; run as `python scripts/edge.py 32x64x32 64x32x56 64x32x64 64x64x64`. The scratch fix is `agent_space/ev/testfix.diff`, the diff above.
