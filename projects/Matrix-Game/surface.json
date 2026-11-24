@@ -271,6 +271,10 @@
   {
    "id": "model:mg3-generate",
    "evidence": "upstream main with FA2 CK/Triton and PR #67 head + AITER, 177 frames each, with and without --compile_vae; no fork change (PR #67 route); porter linux-gfx950 2026-11-23 at moat-port 6d94b2f; notes.md 'Porting (linux-gfx950, 2026-11-23, porter job 144930)'"
+  },
+  {
+   "id": "server:matrix_game.server",
+   "evidence": "real sessions on gfx950 at moat-port 6d94b2f: matrix-game serve (scripts/serve.sh, --preset realtime, ancient-egypt) with the model on the GPU, upstream-built CastleReferenceServer on llvmpipe (--allow-software-rendering), GStreamer x264 sidecar, MediaMTX v1.21.4; scripted client over /api/start + controller WebSocket; reference, dual-view and plain model sessions (765 to 1233 frames each, 0 dropped), the published stream read back over RTSP and decoded; browser WHEP media leg, hardware GL and audio not exercised; validator linux-gfx950 2026-11-24; notes.md 'Server session (validator, linux-gfx950, 2026-11-24)'"
   }
  ],
  "scoped_out": [
@@ -376,10 +380,6 @@
   }
  ],
  "owed": [
-  {
-   "id": "server:matrix_game.server",
-   "reason": "not run: an end-to-end session needs the C++ SDL2/OpenGL/FFmpeg game build and GStreamer; its GPU work is the same model path the render runs cover. Validator or a later round may smoke it with --reference-only plus one model session."
-  },
   {
    "id": "model:mg3-distributed",
    "reason": "not run: torchrun FSDP/Ulysses needs several GPUs and this job was pinned to one. NCCL->RCCL is transparent in torch; run on a host that can give the job several GPUs without disturbing others."
