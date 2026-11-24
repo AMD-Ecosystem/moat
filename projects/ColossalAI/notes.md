@@ -641,3 +641,23 @@ Verdict: **changes-requested**. Scope is the one-commit delta; the full port pas
 Checked with no finding: version parsing of `2.8.3.post2` and `2.8.4+rocm`; a broken or unidentifiable install fails the same way the existing `is_available` check does; CUDA never reaches the gate; the CK path (Triton not enabled) selects identically; eager warn-once works; the notes' flash-attn history (`701ebe05`, `4219765d`, `3f94643f`, aiter `e0d86ba5b`) and setup.py version derivation hold; setup.py inits `third_party/aiter` itself, so the documented plain clone works; commit title 55 chars, `[ROCm]` correct, prose disclosure, ASCII, no internal vocabulary; `-k 'not gpu'` 92 passed.
 
 Open for Jeff (not a finding against this delta): flash-attn >= 2.8.4 also supports gfx11/gfx12 with its default CK backend, which ColossalAI still refuses on RDNA (falls back to SDPA without a message when `FLASH_ATTENTION_TRITON_AMD_ENABLE` is unset). Admitting CK on RDNA for >= 2.8.4 would widen the Q2 ruling, so it needs his decision.
+
+## Porting round 3 (2026-11-24, linux-gfx1100 fleet job, porter role, `f780f7ea` -> `632c6026`)
+
+Answers the three findings of the review above in one commit: `632c6026 [ROCm] Keep the flash-attn version fallback traceable by torch.compile`.
+
+1. Blocker: `colossalai/kernel/kernel_loader.py` wraps the warning in `if not torch.compiler.is_compiling():`. Eager selection still warns once; under compile the warning is skipped and the reason is still returned, so auto falls back to sdpa and strict fa2 raises. If a process only ever selects inside compiled graphs, no warning is printed (tracing does not fill the eager `lru_cache`, so the first eager selection warns). `torch.compiler.is_compiling` exists from torch 2.3; the line runs only with flash-attn's Triton backend enabled and flash-attn < 2.8.4, and 2.8.3's Triton backend asks for Triton 3.2 (torch >= 2.6), so the torch >= 2.2 floor in setup.py is not reached there. Executed-line accounting is otherwise as in round 2: the gfx942 CK path and CUDA execute nothing new from this commit.
+2. Docs (both files): "On Instinct GPUs (gfx90a, gfx942, gfx950), Colossal-AI uses the default composable_kernel backend of `flash-attn`. On Radeon GPUs (gfx11, gfx12), it uses the Triton backend of `flash-attn` 2.8.4 or later, ..." The build command block is unchanged.
+3. Tests: a `clear_rocm_fa2_triton_cache` fixture clears the cache before and after both version-dependent tests. New `test_attention_rocm_fa2_triton_version_compiled` (2 cases) compiles `x + (1 if _rocm_flash_attention_triton_support() else 2)` with `fullgraph=True, backend="eager"`. It traces the gate itself and stubs no device: a first version stubbed `torch.cuda.get_device_properties` to compile a full `_select_backend`, and on a GPU host Dynamo's own Triton check (`torch/utils/_triton.py` `cuda_extra_check`, `.major`) read the stub and failed, also leaving `test_attention_compile_dense_forward_backward` failing after it. Negative check: with the guard replaced by `if True:`, the 2.8.3.post2 case fails.
+
+Results at `632c6026` (gfx1100, flash-attn main 2.8.4 installed, `FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE`):
+
+| run | result |
+|---|---|
+| `test_attention_backends.py -k 'not gpu'`, GPU visible | 94 passed, 568 deselected |
+| same, `CUDA_VISIBLE_DEVICES= HIP_VISIBLE_DEVICES=` | 94 passed, 568 deselected |
+| real-GPU fullgraph compile of `_select_backend(x, x, "auto", ...)`, only `kernel_loader.version` patched | 2.8.4: fa2 (eager and compiled); 2.8.3.post2: sdpa (eager and compiled; before this commit, Unsupported `_warnings.warn`) |
+| `COLOSSALAI_TEST_ATTENTION_BACKEND=fa2 -k gpu` | 185 passed, 383 skipped, 94 deselected |
+| `=sdpa -k gpu` | 198 passed, 370 skipped, 94 deselected |
+
+Files the delta `e2b767e8..632c6026` touches (for the CUDA recheck): still only `colossalai/kernel/kernel_loader.py`, `tests/test_shardformer/test_layer/test_attention_backends.py`, `README.md`, `docs/source/en/get_started/installation.md`. Nothing compiled changed.
