@@ -94,7 +94,7 @@ Options:
   - rocThrust is `THRUST_VERSION 200805` and has `thrust::hip::par_nosync`; `thrust::cuda` exists there only for `memory_resource`.
   - hipCUB 4.7.
 - HIP's `*_sync` functions run `__hip_check_mask`, which asserts the mask equals the arriving lanes. The upstream CMake ends up Debug (`set(CMAKE_BUILD_TYPE "Debug")` at line 121, after the Release default), so `NDEBUG` is undefined and that assertion traps. The early-return TLP kernels in `update_values.cuh`/`update_score.cuh` must build their masks from the lanes actually present, not from `0xffffffff` widened.
-- The CMake HIP Debug flags (`-O0`) would compile kernels unoptimised where nvcc's Debug (`-g`) does not, so the HIP branch sets `CMAKE_HIP_FLAGS_DEBUG` optimised.
+- The CMake HIP Debug flags (`-g -O`, corrected 2026-11-24; this line first said `-O0`) would compile kernels at clang's minimal `-O` level where nvcc's Debug (`-g`) still optimizes device code, so the HIP branch sets `CMAKE_HIP_FLAGS_DEBUG` optimised.
 - Full inventory, risks, change list, build and test commands are in `plan.md`. `surface.json` was generated (76 CUDA files, 34 components), and 6 planner-added components cover what the scan cannot see: the 19 foreach-built repro benchmarks, `native_tbe`, Bazel, the inline-PTX timer, hybrid host-memory values and the libcu++ atomics.
 - No GPU was used and nothing was built in this run.
 
@@ -128,7 +128,7 @@ Options:
 - `include/merlin/hip_compat.cuh` (new) is included first by every library header that touches a CUDA API (`debug.hpp` heads almost every chain). It detects HIP with `__HIP__ || __HIPCC__ || __HIP_PLATFORM_AMD__` and defines `MERLIN_HIP`. Under HIP it includes the HIP runtime, `hip_fp16`, cooperative groups plus `hip/cooperative_groups/hip_reduce.h`, and the three hipCUB device headers (with `namespace cub = hipcub`), and maps the ~70 CUDA runtime names the repo uses. `cudaMallocHost` maps to `hipHostMalloc`, whose C++ template takes the 3-arg form, and `cudaMemcpyTo/FromSymbol` wrap `HIP_SYMBOL`. It also supplies a SWAR `__vcmpeq4`, synchronous `__pipeline_memcpy_async` with no-op commit/wait, `__ldcs`/`__stcs` templates (nontemporal builtins for arithmetic types), `umax`, `global_timer_ns` (`wall_clock64()*10`, fixed 100 MHz), and global `__shfl` overloads for pointers and enums. The latter must be declared before `hip_cooperative_groups.h` so the tile `shfl` template finds them (CUDA tile shfl takes any type; HIP's `__shfl` only arithmetic ones). Lane-mask helpers `warp_ballot`/`warp_any`/`warp_sync`, `warp_mask_t` and `kFullWarpMask` are the CUDA intrinsics on CUDA and the maskless forms on HIP. They exist in both builds, but the functions only under `__CUDACC__ || __HIPCC__`, so host-only includes of `debug.hpp` still compile.
 - CUDA-only includes are guarded with `#ifndef MERLIN_HIP`: `<cuda/barrier>` and `<cuda/std/semaphore>` (libhipcxx `#error`s on AMD and neither is used), `<cuda_pipeline.h>`, CG, `cub/cub.cuh`, `cuda_runtime*.h`, `cuda_fp16.h`. libhipcxx serves `<cuda/atomic>` and `<cuda/std/functional>`.
 - `CUDART_VERSION >= 11030` guards gain `|| defined(MERLIN_HIP)`, so the TLPv2 kernels and the instrumented upsert-outcomes path (`insert_or_assign(..., outcomes)`, used by `hkv_hash_sensitivity_benchmark`) are available on HIP. `CUDART_VERSION >= 10000` in `utils.cuh` gains the same, for `attr.type`. Thrust uses `thrust::hip::par_nosync`. HIP already defines the `uint64_t` overloads of atomicCAS/Exch/Add (as `unsigned long`), so `utils.cuh`'s copies are CUDA-only. Two `const auto found_vote = g.ballot(...)` became `unsigned int`; a HIP tile ballot returns 64 bits, which made `__ffs` ambiguous.
-- CMake: `option(HKV_USE_HIP)`, `project(... CXX HIP)`, `find_package(hip hipcub rocthrust libhipcxx REQUIRED)`, `link_libraries(hip::hipcub roc::rocthrust libhipcxx::libhipcxx)`, test and benchmark `*.cc.cu` marked `LANGUAGE HIP` (in `benchmark/CMakeLists.txt` too, since source properties are directory-scoped), and `tests/hip_compat/` (one-line `cuda_runtime.h`, `cuda_runtime_api.h`, `cooperative_groups.h` that include `merlin/hip_compat.cuh`) prepended to the include path for the HIP build only, so the test sources stay untouched. `CMAKE_HIP_FLAGS_DEBUG` gets `-O3` appended: the root file's mid-file `set(CMAKE_BUILD_TYPE "Debug")` makes every target Debug, and HIP Debug is `-O0`. Assertions stay live, so HIP's `__hip_check_mask` traps on any bad warp mask in the test run. The benchmark `-O3` genex became `$<$<COMPILE_LANGUAGE:CUDA,HIP>:-O3>`. `CMAKE_HIP_ARCHITECTURES` is not pinned.
+- CMake: `option(HKV_USE_HIP)`, `project(... CXX HIP)`, `find_package(hip hipcub rocthrust libhipcxx REQUIRED)`, `link_libraries(hip::hipcub roc::rocthrust libhipcxx::libhipcxx)`, test and benchmark `*.cc.cu` marked `LANGUAGE HIP` (in `benchmark/CMakeLists.txt` too, since source properties are directory-scoped), and `tests/hip_compat/` (one-line `cuda_runtime.h`, `cuda_runtime_api.h`, `cooperative_groups.h` that include `merlin/hip_compat.cuh`) prepended to the include path for the HIP build only, so the test sources stay untouched. `CMAKE_HIP_FLAGS_DEBUG` gets `-O3` appended: the root file's mid-file `set(CMAKE_BUILD_TYPE "Debug")` makes every target Debug, and CMake's HIP Debug flags are `-g -O` (corrected 2026-11-24; earlier text said `-O0`; the compile line reads `-g -O -O3`). Assertions stay live, so HIP's `__hip_check_mask` traps on any bad warp mask in the test run. The benchmark `-O3` genex became `$<$<COMPILE_LANGUAGE:CUDA,HIP>:-O3>`. `CMAKE_HIP_ARCHITECTURES` is not pinned.
 - `tbe_like_cache_baseline.cc.cu`: three `__shfl_sync(0xffffffff, ...)` use `nv::merlin::kFullWarpMask`. The kernel is warp-per-miss on `warpSize` throughout with 256-thread blocks; its `grid_for(..., block / 32)` only sizes a grid-stride launch.
 - Bazel: `build_deps/gpus/rocm_configure.bzl` (`rocm_configure` -> `@local_config_rocm`: a `unix_cc_toolchain_config` clang toolchain on the ROCm LLVM, built-in include dirs from `clang -E -v` plus `$ROCM/include` and the resource dir, a `rocm` target linking `-lamdhip64` with RUNPATH, and `build_defs.bzl` with HIP versions of the `cuda_*` macros: `-x hip --rocm-path --offload-arch=<each> -isystem <rocm>/include/hipccl -DUSE_HIP=1`). With `NEED_ROCM=1`, `cuda_configure` writes a forwarding `@local_config_cuda` (alias `cuda` -> `@local_config_rocm//rocm`, `build_defs.bzl` re-exporting the ROCm macros), so the BUILD files are unchanged and no CUDA install is needed. `.bazelrc` `build:rocm` sets `--crosstool_top=@local_config_rocm//crosstool:toolchain`, `NEED_ROCM=1`, and passes `ROCM_PATH` and `ROCM_AMDGPU_TARGETS` through (default: `offload-arch`).
 - Docs: README "with cmake for AMD GPUs (ROCm)" and "with bazel for AMD GPUs (ROCm)" sections plus a requirements line, and one line in `benchmark/README.md`. The Sphinx site renders the README, so there is no other build doc to update.
@@ -283,3 +283,67 @@ The port builds the header library, tests, benchmarks and a Bazel path with HIP 
 - (c) Leave everything.
 
 The reviewer suggests (a) unless upstream merges with merge commits.
+
+## Porter 2026-11-24 (linux-gfx942 MI300X, porter role, answers "Review 2026-11-24")
+
+Requested by Jeff Daily (fleet job): address every finding of the 2026-11-24 review with new commits on `moat-port` (no amend, rebase or force-push), fix the pipeline update hang, and hunt the library for the same shape.
+
+### Fork commits (on top of 815cfdc; pushed, head 592f800)
+
+- `37516a1` [ROCm] Release slots in the pipeline update retry pass on HIP (finding 1)
+- `02ff9c1` Add a repeated-key test for the pipeline update kernels (finding 1 regression test; shared, no prefix)
+- `b4b770f` Build the repeated-key test with the other tests (its CMake target; split out because `CMakeLists.txt` also carried the finding-2 change and no commit was rewritten)
+- `d44146c` [ROCm] Define CUDA_ERROR_CHECK in HIP Debug builds (finding 2)
+- `592f800` [ROCm] Drop an unused define from the Bazel HIP options (finding 3)
+
+Finding 4 (records): the `-O0` text in the planner and porter sections is corrected in place (CMake's HIP Debug flags are `-g -O`; the ninja compile line here reads `-g -O -O3`). The same error in fork commit 8740206's body is part of the history decision below, still open.
+
+### Finding 1: the fix
+
+The retry stage of `pipeline_update_kernel_with_io` (update.cuh), `pipeline_update_score_kernel` (update_score.cuh) and `pipeline_update_values_kernel_with_io` (update_values.cuh) now, under `kRetryLockedAtCaller` (HIP only):
+- loops `while (warp_any(active_warp_mask, retry_mask != 0))`, and a group with nothing left `continue`s to that latch;
+- scans the bucket once per pass (the `has_locked_keys` do-while becomes one pass) and keeps the key for the next pass when the key is not found but the bucket has a LOCKED slot;
+- tries the compare-and-swap once per pass; a group that fails keeps the key and its position (`pending_pos`, a register, so the scan is not repeated, matching the CUDA loop that keeps `retry_pos`) for the next pass;
+- a group that takes the slot copies the value, updates the score and releases the key in that same pass, then clears the bit.
+No group ever spins inside a pass, and every holder releases before the common latch, whose condition (a wavefront vote) the compiler cannot decide. It is the shape upstream's `tlp_update_score_kernel` / `tlp_update_values_kernel` already use. On CUDA the flag is constexpr false: the ternary picks the original `retry_mask != 0`, the inner loops keep their original conditions, and the added `if (acquired == 0)` / `pending_pos` paths are unreachable.
+
+Reproduction and regression test (`tests/repeated_key_test.cc.cu`, 9 gtest cases): `HashTable<uint64_t, float, uint64_t, kCustomized>`, 1024 buckets of 128, dim 64 (256-byte values select the pipeline kernels for assign/assign_values), 75% prefill (load factor > 0.6 selects the pipeline kernel for assign_scores); a 1024-key batch of present keys with one present key at index `16*g` (g < copies, copies = 2, 3, 4) of every 128-key block, i.e. the first key of 2-4 consecutive 16-thread groups (one wave64 wavefront; 2 per wave32 wavefront). Every copy carries the same value/score, so the result is checked exactly. The API call and a stream sync run on a worker thread under a 120 s watchdog that `_Exit(1)`s with "FAILED: ... did not finish", so a hang fails the binary instead of hanging it.
+- Headers at 815cfdc (before the fix): `assign_2_copies`, `assign_4_copies`, `assign_scores_2_copies`, `assign_values_2_copies` each "did not finish within 120 s", rc 1.
+- After the fix: 9/9 pass in about 1 s total. `AMD_LOG_LEVEL=3` shows `pipeline_update_kernel_with_io`, `pipeline_update_score_kernel` and `pipeline_update_values_kernel_with_io` dispatched 3 times each (once per copy count).
+- The test is shared code and passes on CUDA by construction (independent thread scheduling); it was not compiled with nvcc here.
+
+### The hunt: every lock-taking kernel (wave64 and wave32)
+
+An inline reading plus a read-only audit subagent covered every kernel and helper under `include/` that CASes a key to LOCKED_KEY or takes another lock word. Verdicts, each re-checked in the source:
+- **Tile helpers and their grid-stride callers** (insert_or_assign / upsert io and hybrid, find_or_insert, find_ptr_or_insert, insert_and_evict, accum_or_assign, the `*_with_io` update kernels, `prepare_cpu_update_kernel`): SAFE. On HIP `find_and_lock_when_vacant`, `find_and_lock_when_full`, `find_and_lock_for_update` and `try_find_and_lock_for_update` return CONTINUE on a LOCKED slot instead of spinning; each caller holds at most one slot and releases it on every path (success, REFUSED, accum mismatch, evict restore) inside the same grid-stride iteration, before the latch (`t -= stride; continue;`). The argument does not depend on the tile size (4, 8, 16, 32) or the wavefront width.
+- **TLPv1 eviction** (upsert, find_or_insert, upsert_and_evict): SAFE, fixed in the previous round (publish in the pass, `warp_any` exit).
+- **TLPv2, filter and hybrid eviction loops, pipeline upsert/find_or_insert/upsert_and_evict, dual-bucket upsert**: SAFE. They skip LOCKED slots when choosing a victim, the digest CAS loops are bounded by the candidate mask, and the pipeline eviction loops mark candidates visited, so no lane waits on a holder. One upstream edge case: see the deferral below.
+- **`tlp_update_*` retry loops, `tlp_update_kernel_with_io`**: SAFE (release in the CAS pass; the latter never waits).
+- **Lookups, contains, find (ptr), erase, export/dump, size, clear**: take no lock and never wait on LOCKED (a locked key reads as missing).
+- **Rehash bucket mutex**: each tile locks only its own bucket.
+- **Locks held across kernels** (`*_lock_key_hybrid` -> `*_unlock_key`, `find_or_insert_ptr_kernel_lock_key` -> unlock kernel or `unlock_keys`, `lock_kernel_with_filter` -> `unlock_keys`, group_lock kernels): no wavefront hazard. The locking kernels do not wait on a repeated key in the batch.
+- **`gpu_select_kvm_kernel` (array_kernels.cuh:90)**: a thread spins until a lower thread empties a slot, and that thread empties its own slot only after its own spin, so mask `[0,1,1]` would hang on HIP. It has no caller (`gpu_boolean_mask` is unused in include/, tests and benchmarks), so it is left unchanged; it must be fixed if anything revives it.
+- **Host-held locks** (`find_or_insert(..., locked_key_ptrs)`, `lock_keys`): writers that run before `unlock_keys` can spin on CUDA and HIP alike; that is the documented API contract, not a port fault.
+
+Only the three pipeline update retry stages needed a fix, so they are the only kernels with a new test.
+
+Evidence for the SAFE verdicts (local probe, not committed: `agent_space/tile_probe.cc.cu`, built with the same flags as the tests; each API call plus a later `find` under a 60 s watchdog): 19 API variants (`insert_or_assign`, `find_or_insert`, pointer `find_or_insert`, each with `unique_key` false and true; pointer `find_or_insert` with `locked_key_ptrs` + `unlock_keys`; `accum_or_assign`; `assign`, `assign_scores`, `assign_values` with `unique_key` false and true; `insert_and_evict` false and true; `lock_keys` + `unlock_keys`; `erase`; `export_batch`) x prefill load factors 0, 40, 70 and 95% (tile sizes 4, 8 and 32 and the TLP/pipeline selectors) x 2, 3 and 4 copies x spacing 1, 4 and 16 x dims 16 and 64 on 1024x128 tables, plus a full single 128-slot bucket with 2 and 4 copies. Each 128-key block repeats an existing key (even blocks) or a new key (odd blocks). Result on gfx942 at the fixed head: **1406 of 1406 runs completed, no hang, no error**. Only the wave64 hardware was available; wave32 rests on the argument above (nothing in it depends on the width, and the `warp_any` exits are `__any` over the active lanes of whatever width).
+
+Deferral registered: `hkv-tlpv2-max-score-locked-bucket-spin`. In `tlp_v2_upsert_kernel_with_io`, a thread whose desired score is MAX_SCORE spins at `if (min_pos < 0) continue;` while every slot of its full bucket is LOCKED by threads of its own block, which publish only after the loop and a `__syncthreads`. That deadlocks on CUDA too, so it is upstream code and not a port fault; it needs a CUDA reproduction before an upstream report.
+
+### Finding 2: verification
+
+`cmake -DHKV_USE_HIP=ON -DCMAKE_BUILD_TYPE=Debug ...`: the HIP compile lines now carry `-DCUDA_ERROR_CHECK` (the default configure does not: `grep -c CUDA_ERROR_CHECK build-hip/build.ninja` = 0). In that Debug build `repeated_key_test` passes 9/9 and `find_with_missed_keys_test` passes 3 cases and fails the 4 `find_and_update_rr_*` cases with upstream's own `FAIL() << "R-role overlap requires CUDA_ERROR_CHECK disabled."`, the same result as a CUDA Debug build. The default build is unaffected.
+
+### Build and tests at 592f800 (TheRock ROCm 10.2.0 wheels in the job venv, no system ROCm, gfx942)
+
+- `cmake -S . -B build-hip -G Ninja -DHKV_USE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_PREFIX_PATH=$R && cmake --build build-hip -j 48`: 54/54, rc 0 (21 tests + 3 benchmarks).
+- The same with `-DHKV_BUILD_REPRO_BENCHMARKS=ON` in `build-hip-repro`: 96/96, rc 0.
+- Clean clone at 592f800, bazelisk 1.25.0 (Bazel 5.0.0): `ROCM_PATH=$R ROCM_AMDGPU_TARGETS=gfx942 bazel build --config=rocm //...`, "Build completed successfully", rc 0.
+- GPU, `ulimit -c 0`, timeout per binary: `repeated_key_test` 9/9, `correctness_stress_test` 62/62, `assign_values_test` 3/3, `uint32_score_test` 4/4. The full suite is the validator's.
+- `python3 utils/jargon.py --port HierarchicalKV`: clean.
+- **CUDA compile check: not run. This host has no nvcc; it runs elsewhere.** It should cover the three changed update headers and the new test.
+
+### Open for a person
+
+- The history decision under "Review 2026-11-24 / Decision for a person (history)" is still open. This round added commits only, so 8740206's `-O0` body and the 8f10a46/815cfdc pair stand as described there.
