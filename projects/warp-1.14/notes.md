@@ -9176,3 +9176,46 @@ Skips. Full suite, 80: no suitable devices 24, conditional graph nodes 16, MathD
 ### Scripts (`agent_space/v/`, scratch)
 
 `build.sh <tree> <jobs> <wheel dir>`: the two build commands above. `run.sh <label> <warp.tests args>`: `ulimit -c 0`, `HIP_VISIBLE_DEVICES=1`, cwd `<job>/run`, `rm -rf` then `WARP_CACHE_PATH=<job>/run/cache_<label>`, the site-packages assertion, then `$FLEET_VENV/bin/python -m warp.tests <args>`, logged to `<job>/run/<label>.log` with load average at start and end.
+## Validation 2026-11-24 (linux-gfx1201, Radeon AI PRO R9700, validator): release wheel at `1c94e68b`
+
+Requested by jeff (revalidation after porting session 34, the contraction ruling (a), candidate G). **Result: pass. Every run is clean: no failure, no error, no `Warp CUDA error` line anywhere, no error 700, no `test_async` failure. `test_mesh_query_point` passes (9 OK).** Platform recorded `completed` at `1c94e68bd54c28323ecb2a10a08ea89507cbfb6d`.
+
+### Setup
+
+- Device: AMD Radeon AI PRO R9700, gfx1201, wave32, 32 GiB, mempool enabled. Dispatcher pin `HIP_VISIBLE_DEVICES=3` kept for every run; `ulimit -c 0` in the run script. `amd-smi process -g 3` showed no process on that GPU before the runs (other GPUs had other users' processes; host load average 4 to 17). No process was stopped.
+- ROCm and Python deps: the job venv came with TheRock 10.1.0. `"$FLEET_VENV/bin/python" -m pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple "rocm[devel,device-gfx1201]==10.2.0" numpy==1.26.4 usd-core`, then `"torch[device-gfx1201]==2.15.0+rocm10.2.0"` from the same index (both installed cleanly; torch reports `2.15.0+rocm10.2.0`, `cuda.is_available()` True on the R9700; usd-core 26.11), then `rocm-sdk init` (`rocm-sdk version` 10.2.0). pip's resolver warns that the leftover 10.1.0 `rocm-sdk-device-*` packages want `rocm-sdk-libraries==10.1.0`; they are unused. Note for the next validator: the fleet guard refuses `python -m pip` resolved through `PATH`; spell it `"$FLEET_VENV/bin/python" -m pip`.
+- Fork: fresh clone of `AMD-Ecosystem/warp`, detached at `1c94e68b` (= `origin/release/1.14.0.amd0`), `git lfs pull`; `git status --porcelain` empty after every step.
+
+### Build, wheel, install
+
+- `python build_lib.py --rocm-path "$(rocm-sdk path --root)" --hip-arch gfx1201 --no-rocm-rpath -j 12` (under `utils/timeit.sh warp-1.14 compile`): "Warp build succeeded". warp.so 6,454,088 bytes; `strings warp.so` shows `-ffp-contract=on`, `-ffp-contract=off`, `-DWP_FUSE_FP`. The only warnings are the known `-Wunused-value` (ignored nodiscard `hipError_t`) in HIP compiles (apic.cu, cuBQL `builder/cuda.h`, nanovdb).
+- `python -m build --wheel -C--build-option=-Plinux-x86_64 -o <job>/val/wheel`: `warp_lang-1.14.0+rocm10.2.0-py3-none-manylinux_2_28_x86_64.whl`, 32,824,948 bytes, sha256 `74edcbe2cdc551fc97025ea683886cc5105a3c54f0d3a9570cf888a5ca057693`; 548 entries; `warp/bin/warp.so.rocm` = `'\n10.2.0\n'`; no member contains the job path; `Version: 1.14.0+rocm10.2.0`, `Requires-Dist: rocm<10.3,>=10.2`. A gfx1201-only wheel.
+- `"$FLEET_VENV/bin/python" -m pip install --force-reinstall --no-deps <wheel>`: installed warp.so sha256 `6478237f...7093b` equals the build's. Every test below ran from the installed wheel, cwd outside the tree (`warp.__file__` asserted to be in site-packages), each with a new empty `WARP_CACHE_PATH`.
+
+### Results
+
+| run | result |
+|---|---|
+| `python -m warp.tests -s autodetect` (full default suite) | **Ran 7610 tests in 750.2 s, OK (skipped=82)** |
+| `python -m warp.tests -s autodetect --warp-debug -p "test_tile*.py"` | **Ran 602 tests in 234.4 s, OK (skipped=15)**; no device assertion |
+| `python -m warp.tests -s autodetect -p "test_tile_matmul.py"`, cold cache, run 1 | **Ran 26, OK** (19.2 s; 119 code objects compiled into the empty cache) |
+| same, run 2 (new cold cache) | **Ran 26, OK** (19.1 s; 119 compiled) |
+| same, run 3 (new cold cache) | **Ran 26, OK** (19.1 s; 119 compiled) |
+
+- **`test_mesh_query_point.py`: 9 of 9 OK** in the full suite (test_mesh_query_point_cpu/cuda_0, test_adj_mesh_query_point_cpu/cuda_0, test_mesh_query_furthest_point_cpu/cuda_0, test_mesh_query_point_codegen_adjoints_with_select, test_set_mesh_points_cpu/cuda_0); usd-core installed, so none skip; 0 `expect_eq` lines in the log. `test_mesh.test_mesh_query_point_cuda_0` also OK.
+- torch installed: 34 test_torch tests ran and passed (the same 7610 total as the `4e0d02ab` gfx1201 run, which also had torch and usd-core).
+- **`Warp CUDA error` lines: none** in any of the five logs. **Error 700: none.** **`test_async`: no failure**, so nothing needed a rerun alone.
+- The one Warp warning, in the full suite and the debug tile run: `Failed to configure kernel dynamic shared memory ... test_tile_load_scoped_kernel_cf796b16_cuda_kernel_backward kernel for 65536 bytes, but maximum available is 65536` -- the known harmless one (that backward kernel is never launched, the test passes), not followed by any error line.
+- At the end of the full suite, after the last test and before `Ran 7610`, Python printed 5 `Exception ignored in: <Finalize object, dead>` / `sem_unlink` `FileNotFoundError` tracebacks from `multiprocessing/synchronize.py` (test-runner process teardown, Python-side; no Warp or HIP message, rc 0).
+- Full-suite skips (82), identical in reasons and counts to the `4e0d02ab` gfx1201 run: no suitable devices 18; conditional graph nodes not supported 16; not built with MathDx 8, MathDx not enabled 1, no-MathDx tolerance 1; at least two CUDA devices 7, multi-GPU not available 2; mempool access 5 and without mempool 1; peer access 3 and without peer 1; peer/mempool with graph module-load 1 each; insufficient free memory 3; cuda:0 cannot access CPU memory 2; NVRTC two architectures 2, NVRTC not available 1, Requires CUDA 1; rmm not installed 1; memory-usage flakiness 1; HIP stream priorities 1; the five 64 KiB shared-memory capability skips (`Needs 67584` x2, `66688` x2, `66816` x1).
+- Debug tile skips (15): MathDx support 8, `MathDx is not enabled` 1, no-MathDx tolerance 1, and the same five 64 KiB skips.
+
+### Gates
+
+- CUDA no-regression gate: already recorded at this head by the sixth review round (nvcc 12.8, CUDA build of a `1c94e68b` worktree, "Warp build succeeded"); not repeated.
+- `python3 utils/jargon.py --port warp-1.14`: clean (after creating local `release-1.14` and `release/1.14.0.amd0` branches in the clone).
+- Documentation: `docs/user_guide/installation.rst` documents the ROCm source build (`--rocm-path`, `--hip-arch`) beside the CUDA build; unchanged by this delta.
+
+### Scripts (`<job>/val/`, scratch)
+
+`runsuite.sh <label> <cache> <args...>`: `ulimit -c 0`, wipes and recreates `<cache>`, `cd <job>/val/run`, asserts `warp.__file__` is in site-packages, then `WARP_CACHE_PATH=<cache> $FLEET_VENV/bin/python -m warp.tests <args>` into `logs/<label>.log`. Each run wrapped as `utils/timeit.sh warp-1.14 test -- <job>/val/runsuite.sh ...`.
