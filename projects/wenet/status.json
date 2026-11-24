@@ -8,13 +8,13 @@
   "ext_type": "python-torch",
   "stage": "porting",
   "adopted_at": "2026-11-06T03:22:49Z",
-  "updated_at": "2026-11-24T00:50:30Z",
+  "updated_at": "2026-11-24T10:17:00Z",
   "head_sha": "6860e5fc6d08d46538b8de7cadabb53e1103d452",
   "depends_on": [],
   "porting": {
     "arch": "linux-gfx942",
-    "since": "2026-11-24T00:50:30Z",
-    "holder": "d3d795a35bc2"
+    "since": "2026-11-24T10:17:00Z",
+    "holder": "5b0bf92890ed"
   },
   "waivers": {},
   "platforms": {
@@ -48,7 +48,7 @@
       "failed_sha": null,
       "started_at": "2026-11-23T19:44:05Z",
       "completed_at": null,
-      "updated_at": "2026-11-24T00:50:30Z",
+      "updated_at": "2026-11-24T10:17:00Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
