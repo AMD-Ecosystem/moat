@@ -239,7 +239,7 @@
     },
     {
       "id": "python:attention-backends",
-      "note": "fa2 enabled on ROCm behind an AMD GPU check (Q2 ruling); strict fa2 acceptance 185 passed on gfx942 with flash-attn 2.8.3 (CK backend). gfx1100: sdpa 198 passed; fa2 via flash-attn 2.8.3.post2's Triton backend fails 2 of 185 from two flash-attn bugs (validation-failed, see notes)."
+      "note": "fa2 enabled on ROCm behind an AMD GPU check (Q2 ruling); strict fa2 acceptance 185 passed on gfx942 with flash-attn 2.8.3 (CK backend). gfx1100: sdpa 198 passed; fa2 via flash-attn 2.8.3.post2's Triton backend fails 2 of 185 from two flash-attn bugs (validation-failed, see notes). gfx942 at 632c6026: CK backend still selected (the flash-attn version gate is reached only with FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE), strict fa2 185 passed."
     },
     {
       "id": "python:fp8",
@@ -307,15 +307,15 @@
   "owed": [
     {
       "id": "tests:distributed",
-      "reason": "Batches 5 (2 GPUs) and 6, 7, 8, 9, 9q (4 GPUs) on both wavefront widths, per the Q3 ruling (option b); commands prepared in notes.md, not yet run (the porter job had one GPU)."
+      "reason": "Batches 5 (2 GPUs) and 6, 7, 8, 9, 9q (4 GPUs) on both wavefront widths, per the Q3 ruling (option b). wave64 ran them on linux-gfx942 at 632c6026 (notes, Validation 2026-11-24 at 632c6026): 6 and 7 pass; 5, 8, 9 and 9q have failures. Most are upstream's own (they fail the same way in upstream's CUDA CI), a test-harness artifact, the 24 GiB partitions' RCCL memory, or a registered ROCm profiler bug. AMD-only numerical misses in test_torch_fsdp_checkpoint_io, test_grad_sync_zero[case3], test_ring_attn (fa2) and test_shard_qwen2 (9q) need the porter. wave32 not yet run."
     },
     {
       "id": "tests:apex-gemini",
-      "reason": "Batch 11 (2 GPUs) on both widths, with ROCm apex installed if available, else recorded as skipped; not yet run."
+      "reason": "Batch 11 (2 GPUs) on both widths. wave64: 3 passed on linux-gfx942 at 632c6026 with TheRock's apex 1.13.0+rocm10.2.0a20261022 (upstream's CUDA CI skips it, no apex). wave32 not yet run."
     },
     {
       "id": "tests:largedist",
-      "reason": "Batch 10 (8 GPUs) on wave64 when a whole 8-GPU host is free; not yet run. If no such host becomes available, closing it unrun is a person's decision."
+      "reason": "Batch 10 (8 GPUs) on wave64 when a whole 8-GPU host is free; not run: the linux-gfx942 job at 632c6026 had 4 of the host's 8 GPUs, the others held by other jobs. If no such host becomes available, closing it unrun is a person's decision."
     }
   ],
   "removed_from_floor": []

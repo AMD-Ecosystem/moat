@@ -79,6 +79,19 @@
       "upstream_issue": null,
       "created_at": "2026-11-24T05:39:28Z",
       "decided": null
+    },
+    {
+      "id": "rocm-10.2-profiler-spawned-child-no-gpu-trace",
+      "kind": "rocm-bug-report",
+      "component": "rocprofiler-sdk",
+      "summary": "With TheRock 10.2.0a20261022 wheels and torch 2.13.0+rocm10.2.0a20261022, torch.profiler in a process spawned (multiprocessing spawn) by a parent that has created a HIP context records no GPU activity at all (no kernel, no runtime events). HIP context creation setenv()s ROCPROFILER_REGISTER_LIBRARY=<sdk>/librocprofiler-sdk.so.1 and HSA_TOOLS_ROCPROFILER_V1_TOOLS=0 at the C level; the child inherits them and its tracing is empty. unsetenv of both in the parent before spawning restores it. The image's ROCm 10.1 + torch 2.16 sets the same variables but its child still traces, so it is a regression in the 10.2 nightly profiler stack (rocprofiler-sdk or that torch build's kineto; not separated). 40-line repro in notes. Effect here: upstream test tests/test_benchmark/test_benchmark_device.py::test_scaling_reads_communication_from_the_profiler (batch 5) fails 'the trace has no profiled steps' on gfx942.",
+      "refs": [
+        "projects/ColossalAI/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-24T12:41:17Z",
+      "decided": null
     }
   ]
 }

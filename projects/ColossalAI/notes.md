@@ -747,3 +747,109 @@ Results (`agent_space` probe `select_probe.py`, outputs diffed as JSON):
 Strict `fa2` returns fa2 at SM >= 8.0 and raises "requires an Ampere or newer GPU" at 7.5; strict `fa3` returns fa3 only at SM 9.0; both identical in base and head. `FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE` changes no CUDA selection. In every head run `_rocm_flash_attention_support` was called 0 times and the new gate's `lru_cache` reported `hits=0, misses=0`: the version gate did not fire for NVIDIA's flash-attn 2.8.3.post2 or any other version. Positive control: calling head's `_rocm_flash_attention_triton_support()` directly with the faked 2.8.3.post2 metadata returns the "requires flash-attn >= 2.8.4 ..." reason with one warning, and with 2.8.4 returns None, so the fake metadata is what the gate reads.
 
 CPU tests under the CUDA torch, no flash-attn installed: `python -m pytest -q -p no:cacheprovider tests/test_shardformer/test_layer/test_attention_backends.py -k 'not gpu'`: base `e2b767e8` 87 passed, 568 deselected; head `632c6026` 94 passed, 568 deselected (the 7 extra are the new tests from the two commits).
+## Validation 2026-11-24 (linux-gfx942 fleet job, validator role, fork `moat-port` at `632c6026`, 1-, 2- and 4-GPU batches)
+
+Verdict: **validation-failed** for linux-gfx942 at `632c6026`. Every 1-GPU batch passes exactly as at `e2b767e8`, and the fa2 CK selection is unchanged. The multi-GPU batches that Jeff's Q3 ruling requires ran here for the first time. Batches 6, 7 and 11 pass. Batches 5, 8, 9 and 9q have failures. Most are upstream's own: they fail the same way in upstream's CUDA CI. Others are a harness artifact, the memory of this host's 24 GiB partitions, or a registered ROCm profiler bug. Four deterministic numerical misses are AMD-only, in code the port did not change, and need the porter (see "For the porter" below). Batch 10 was not run. Nothing was pushed to the fork, and the fork checkout is clean at `632c6026`.
+
+### Environment
+
+- Host: 4 of the 8 partitions of an MI300X in CPX mode (gfx942:sramecc+:xnack-, wave64, 24 GiB each, `total_memory` 25767706624), physical GPUs 0,5,6,7 as pinned by the dispatcher. The other four were held by other jobs. CPU: 2x EPYC 9654 (384 threads).
+- Fresh job venv, TheRock `10.2.0a20261022`, installed as in the porter's "Build recipe": `rocm[libraries,devel]`, `rocm-sdk-device-gfx942`, `torch==2.13.0+rocm10.2.0a20261022`, `amd-torch-device-gfx942`, `torchvision==0.28.0+rocm10.2.0a20261022`, plus the amdsmi `.pth`. `torch.cuda.device_count()` is 4. Requirements and requirements-test were installed with the torch/triton/rocm pins as constraints (transformers 5.17.0, peft 0.21.2, bitsandbytes 0.50.2, diffusers 0.35.2). triton 3.8.0+git66b3f9ff.rocm10.2.0a20261022, Python 3.11.
+- Compiler check: `rocm-sdk path --root` = `$FLEET_VENV/lib/python3.11/site-packages/_rocm_sdk_devel`. `hipcc --version` there gives HIP 7.17.26422 and AMD clang 24.0.0git (`2792f8ceeb5a`). `hipcc` on PATH and `cpp_extension.ROCM_HOME` both resolve to it. All 17 device compiles in the build log invoke `.../_rocm_sdk_devel/bin/hipcc` (`--offload-arch=gfx942`). None uses the image's ROCm 10.1 SDK (`/opt/python-3.11-venv`). The host C++ compiler is g++ 13.3.0.
+- Build: `BUILD_EXT=1 PYTORCH_ROCM_ARCH=gfx942 MAX_JOBS=48 $FLEET_VENV/bin/python -m pip install --no-build-isolation --no-deps -v -e <abs path to src>` built all seven extensions.
+- flash-attn 2.8.3.post2 (CK, gfx942): the wheel built by the earlier, reboot-killed multi-GPU job (built against this same torch, 2782 `--offload-arch=gfx942` compiles in its log), copied into this job directory (sha256 `f95b3c56...c4b0`), installed with `--no-deps`. `FLASH_ATTENTION_TRITON_AMD_ENABLE` unset.
+- apex for batch 11: TheRock's `apex==1.13.0+rocm10.2.0a20261022` from `https://nightly.repo.amd.com/rocm/pytorch/whl-next/`, `--no-deps`; `import apex.amp` works. It builds some kernels at first use (`fused_layer_norm_cuda`, `fused_weight_gradient_mlp_cuda`, `amp_C`) into the job's torch-extensions cache.
+- Every run: `ulimit -c 0`, `timeout --kill-after=60 <upstream's per-batch minutes>`, upstream's pytest flags (`-v -s -ra --tb=short --maxfail=10 --durations=20`), `FAST_TEST=1`, `OMP_NUM_THREADS=8 MKL_NUM_THREADS=8` (many-core host), `NCCL_DEBUG=WARN`, `TORCH_NCCL_ASYNC_ERROR_HANDLING=1`, and per-batch Triton/inductor caches in the job directory. Test lists, markers, ignores and timeouts were read from `.github/scripts/ci/run_colossalai_batch.sh`'s case statement at this head, which equals the porter's prepared commands as the reviewer checked. Batches 9 and 10 ran with HF offline; there is no local DeepSeek snapshot, so both DeepSeek files are ignored, as upstream does. Hostname resolution was fine on this host (`getent hosts` resolves). Rendezvous is on localhost.
+
+### fa2 on gfx942: CK selection unchanged by the delta
+
+`git diff e2b767e8 632c6026 -- colossalai/kernel/kernel_loader.py` adds `_rocm_flash_attention_triton_support()`. `_rocm_flash_attention_support` calls it only when `supported is _ROCM_FA2_TRITON_ARCHS`, which requires `FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE`. On this GPU, with the variable unset, `_rocm_flash_attention_support(q)` returns `None` (supported), and the version gate's `lru_cache` shows 0 hits and 0 misses afterwards, so it was never called. Strict fa2 acceptance with the CK build: 185 passed (below).
+
+### 1-GPU batches at `632c6026` (run concurrently on separate GPUs; CPU batch with no GPU)
+
+| batch | result | skips / notes |
+|---|---|---|
+| new `tests/test_kernels` | 155 passed | none |
+| 3 adam kernels | 62 passed | none |
+| 4a fp8 | 22 passed | none |
+| 4b inference CUDA kernels | 60 passed, 108 skipped | 108: upstream's unconditional `test_convert_fp8.py` skip ("FP8 conversion still needs improvement") |
+| 4c Triton kernels | 372 passed, 65 skipped | 64 "Alibi kernel does not support new kcache layout yet"; 1 unconditional `skip("cuda error")` (both upstream) |
+| 4d smoothquant | 4 skipped | the modules the tests import were removed upstream ("smoothquant linear not installed properly", "triton requires cuda version ... or not install torch_int"); they skip on CUDA too |
+| 4e flash decoding | 1326 passed, 258 skipped, 0 failed | 114 "Required GPU memory is larger than capacity" (24 GiB partition), 144 "requires vllm" |
+| 2 single-GPU core | 23 passed, 2 skipped | upstream HF5 guards (`test_runtime_compatibility.py:46,100`) |
+| attention `COLOSSALAI_TEST_ATTENTION_BACKEND=fa2 -k gpu` (CK flash-attn 2.8.3.post2) | **185 passed**, 383 skipped, 94 deselected | skips are the other backends' variants |
+| attention `=sdpa -k gpu` | 198 passed, 370 skipped, 94 deselected | |
+| 4f strict fa3 (`=fa3 -k gpu`) | 10 failed, 19 skipped (maxfail) | all `ModuleNotFoundError: No module named 'flash_attn_3'`; fa3 is `scoped_out` (Q2 ruling) |
+| 1 CPU core (`HIP_VISIBLE_DEVICES= ROCR_VISIBLE_DEVICES= CUDA_VISIBLE_DEVICES=`, upstream's `cpu_tracebacks` on `PYTHONPATH`) | 365 passed, 0 failed, 599 skipped | 568 "CUDA unavailable; this is not GPU validation", the rest device-required guards (Gemini/FSDP/LowLevelZero/HybridParallel need a device, BF16 autocast, TensorNVMe). 836 s, inside upstream's 15-minute budget |
+| runtime (JIT) path: worktree at `632c6026` (imports confirmed from it), fresh `HOME`, no prebuilt kernels; `tests/test_kernels`, adam kernel/optim, rms_layernorm, silu_and_mul, kv_cache_memcpy | 270 passed, 1 failed | all seven extensions built at first use. The failure is `test_cpu_adam_kernel[p_dtype2-g_dtype2-0.0-False]` (fp16, one near-zero element), the registered `colossalai-cpu-adam-fp16-test-unseeded` |
+| `python -B -m unittest discover .github/scripts/ci` | 84 OK | |
+
+These match the `e2b767e8` gfx942 validation count for count, except batch 1, which has 7 more passes: the new attention CPU tests.
+
+### Multi-GPU batches at `632c6026` (2-GPU batches side by side on disjoint pairs, then the 4-GPU batches one at a time on all four)
+
+| batch | GPUs | result | notes |
+|---|---|---|---|
+| 5 booster/LoRA/numerics | 0,5 | 334 passed, 4 failed, 1 skipped (5001 s of 90 min) | 3 failures are a harness artifact: with upstream's pinning they pass, giving **337 passed, 1 failed, 1 skipped**. The 1 is the ROCm profiler bug. Both below |
+| 11 apex Gemini | 6,7 | **3 passed** | TheRock apex; upstream's CUDA CI skips this batch (no apex) |
+| 6 distributed tensor | 4 | **12 passed**, 4 skipped | all 4 are unconditional upstream skips ("assertion may fail for CI devices" x2, "assertion fails for CI devices", "check functions assume 8 GPUS but CI only have 4 GPUs") |
+| 7 fp8 collectives | 4 | **7 passed**; DDP-hook script supplement on 4 ranks, exit 0 | the hook file has no `test_` functions, so it runs as a script, as upstream does |
+| 8 distributed training | 4 | 179 passed, 8 failed, 25 skipped (1329 s) | failures below |
+| 9 model and inference | 4 | 756 passed, 10 failed, 196 skipped, stopped by `--maxfail=10` | upstream's own CUDA run stops at the same cap. The 80 tests the cap cut off were run with no cap: 6 passed, 1 failed, 73 skipped |
+| 9q Qwen2 | 4 | 1 failed (twice) | below |
+| 10 largedist | 8 | **not run** | it needs 8 GPUs; this job had 4, and the other jobs on the host held the rest. Not taken |
+
+Batch 8 skips: 5 "TensorNVMe is not installed", 4 "Requires two guarded CUDA devices", 4 "tested in corresponding sharderformer", 3 "this is not used", 2 "Requires a guarded CUDA device", 2 unconditional, 2 "requires MOE_TENSOR_PATH reference tensors", 1 "TensorNVMe requires a guarded CUDA device", 1 "skip because of something wrong with CI", 1 "needs 8 GPUs". Batch 9 skips: 185 "Optional flash_attn_3 absent; this is not fa3 validation", 4 "not used in the current version", 2 upstream HF5 guards, 1 async plugin missing, 1 "no local model address ... for llama", 2 "ShardFormer blip2/command policy does not support this configuration with transformers 5.17.0", 1 "TODO check_gptj has something wrong". Remaining-batch-9 skips: 72 "Prepare the pinned remote-code snapshots first: missing llada" (HF offline), 1 opt HF5 guard.
+
+Baseline used for the classification: upstream's own CUDA run, "CI / Layer 3 / Full GPU Matrix" run 44923241683 (2026-11-21) never got GPUs. Its run 42390061264 (2026-11-07, `da8f5c2d`, torch 2.13.0+cu130, 4x H20) has junit artifacts, read with read-only `gh run download`. In that run, batches 6, 7 and 9q pass, 11 skips (no apex), and 5, 8, 9 and 10 fail.
+
+#### Failures, by cause
+
+Upstream's own failures (fail the same way in upstream's CUDA CI, transformers 5.17 API removals in shardformer modeling; not ROCm, not the port):
+- batch 8: `test_3d_plugin` (`'GPT2Model' object has no attribute 'get_head_mask'`), `test_gemini_checkpoint_io::test_gemini_ckpIO` (dtype float32 vs float16), `test_gemini_torch_compability::test_gemini_ckpIO[2]` (number of keys 3 vs 4).
+- batch 9: `test_continuous_batching`, `test_streamingllm::test_engine` (`'LlamaConfig' object has no attribute 'rope_theta'`), `test_drafter[5]` (`DynamicCache.to_legacy_cache`), `test_drafter::test_spec_dec` (`LlamaModel._update_causal_mask`), `test_with_torch_ddp::test_gpt2`, `test_shard_gpt2`, `test_shard_bloom` (`get_head_mask`), `test_shard_falcon` (`_update_causal_mask`), `test_shard_mistral` (`ValueError: not enough values to unpack (expected 2, got 1)` at `mistral.py:63`), and in the uncapped remainder `test_shard_t5` (`T5Stack.get_extended_attention_mask`). Mistral differs in one way: upstream fails fast, while here the ranks that did not raise deadlock in a collective (RCCL watchdog fired after 480 s; ranks spinning). In batch 9 I terminated the four hung ranks after 22 minutes, so pytest recorded the failure instead of the batch hitting its 120-minute timeout and losing its junit. In isolation it hung again until a 15-minute timeout. Same root error.
+
+Harness artifact (batch 5): `test_benchmark_core::test_cpu_run_end_to_end`, `test_moe_is_counted_on_the_device_and_matches_its_formula` and `test_benchmark_scaling::test_cpu_scaling_end_to_end` hide the GPUs from their spawned workers with `CUDA_VISIBLE_DEVICES=""`. My runner had pinned GPUs with `HIP_VISIBLE_DEVICES`, which HIP gives precedence, so the workers still saw two GPUs (`HIP_VISIBLE_DEVICES=6,7 CUDA_VISIBLE_DEVICES=` gives 2 devices; `CUDA_VISIBLE_DEVICES=` alone gives 0). Upstream's script pins with `CUDA_VISIBLE_DEVICES`. Rerun of `tests/test_benchmark` pinned the upstream way: 56 passed, 1 failed (the profiler test), 1 skipped ("this torch can recompute on the meta device"). `tests/test_numerics` hides GPUs the same way and passed under either pin. The 4-GPU batches contain no test that hides devices.
+
+ROCm profiler bug (batch 5, `test_benchmark_device::test_scaling_reads_communication_from_the_profiler`, "the trace has no profiled steps"): registered as `rocm-10.2-profiler-spawned-child-no-gpu-trace` (component rocprofiler-sdk). Creating a HIP context calls C-level `setenv` for `ROCPROFILER_REGISTER_LIBRARY=<sdk>/lib/librocprofiler-sdk.so.1` and `HSA_TOOLS_ROCPROFILER_V1_TOOLS=0`. These are invisible in Python's `os.environ`; read them with `libc.getenv`. A process spawned afterwards inherits them, and its `torch.profiler` then records no GPU activity at all (no kernel or runtime events, only CPU ops and user annotations). Repro (`scratch/spawn_repro.py` in the job dir, 30 lines): parent without context gives child kernel=3 runtime=11; parent with context gives 0/0; parent context plus `unsetenv` of both before spawning gives 3/11 again. Clearing them in the child's Python does not help. The image's ROCm 10.1 with torch 2.16 sets the same variables, but its child still traces (3/12), so this is a regression in the 10.2 nightly profiler stack (rocprofiler-sdk, or that torch build's kineto; not separated). With a diagnostic `sitecustomize` that clears the two variables before each spawn, the unmodified test passes, including its RCCL communication-share assertion. Not the port's code.
+
+Host memory, not the port (batch 8): `test_dist_lamb` (`Failed to CUDA calloc 536870912 bytes`) and `test_ep_moe_layer[4]` (`Failed to CUDA calloc 6291456 bytes`, `HIP failure: 'out of memory'`). Both create many communicators (`dist.new_group` / `ProcessGroupMesh` per case) on 24 GiB partitions. Both reproduce in isolation, and both pass with `NCCL_BUFFSIZE=1048576`, so RCCL's default per-communicator buffers exhaust a 24 GiB partition. Upstream's H20s have 96 GB, and upstream's run passed `test_dist_lamb`. A whole-GPU MI300X host should not hit it.
+
+apex-dependent test that upstream never runs (batch 8): `test_zero/test_gemini/test_inference.py::test_inference[4]` is `skipif(find_spec("apex") is None)` and skips in upstream's CI. Here the Gemini loss is identical in every run (5.602997), but the plain-torch reference built with apex AMP changes from run to run (5.6167, 5.6294, 5.6100, 5.6963 in four runs) against `rtol=atol=1e-5`. The nondeterminism is on the apex reference side (TheRock apex wheel), not in Gemini. Not investigated further.
+
+AMD-only numerical misses, deterministic (identical numbers in 3 isolated runs each), in code the port did not change. These need the porter:
+1. `test_checkpoint_io/test_torch_fsdp_checkpoint_io.py::test_torch_fsdp_ckpt` (passes in upstream's CUDA run): `assert criterion(outputs_sec) == criterion(outputs)` needs bitwise equality between two fp32 forwards over the same restored weights. Printed from a scratch copy: 0.010832846 vs 0.010832844, difference 1.86e-9 (and 4.66e-9 in the second sub-case), about 2 ulp. The two forward calls are not bitwise reproducible on this stack.
+2. `test_moe/test_grad_sync_zero.py::test_grad_sync_zero[case3]` (stage 2, `ExpertGradScale.IN_REDUCTION`, no overlap; a new upstream test that is not in the 11-07 CUDA run): `router_bias` relative L2 0.0653 (got/reference norm 1.0094) and `experts.down_proj` 0.0782 (0.9986), against `GRAD_RTOL = 5e-2`, bf16, 4 ranks, EP 2. The other four cases pass. It is larger than plain bf16 rounding, so it deserves a look (bf16 reduce-scatter accumulation in RCCL against NCCL is one hypothesis, not checked).
+3. `test_shardformer/test_layer/test_ring_attn.py::test_ring_attn` (fa2 path; upstream skips the module because its CI has no flash-attn): `ring_dv` against a single `flash_attn_qkvpacked_func`, bf16: 44 of 2,621,440 elements over tolerance, greatest absolute difference 0.03125 (one bf16 ulp at magnitude 4 to 8) against `atol=rtol=0.007`. `test_double_ring` passes. Ring attention merges several CK fa2 calls, and the CK backward accumulates in a different order from one call.
+4. `test_shardformer/test_model/test_shard_qwen2.py::test_qwen2` (batch 9q; passes in upstream's CUDA run, where apex is absent): config `{'tp_size': 4, 'pp_size': 1, 'enable_all_optimization': True, 'precision': 'fp32'}`, grad check: 1 of 19,447,808 elements over tolerance, greatest absolute difference 1.58e-6 (allowed 1e-6), relative 5.1e-4 (allowed 1e-4). With apex installed, `enable_all_optimization` also takes apex's fused norm, which upstream's CI never exercises.
+
+### For the porter (proposed, not made here)
+
+Each of 1-4 looks like an AMD numerics difference in an upstream test, not a defect in the port's kernels. The port's own C++ kernels are not involved in 1, 3 or 4, and the 1-GPU kernel batches all pass. The plan's rule (risk 13) applies: a tolerance change for AMD numerics goes behind `torch.version.hip` and never loosens CUDA. Before any tolerance change, 2 needs its cause confirmed, because 6.5% is large. A change to `test_ring_attn` is in the fa2 path the port enabled. Whether the batch-9 maxfail cap, the mistral hang, and the transformers 5.17 failures are left to upstream is Jeff's call; they fail on CUDA too.
+
+### Not run, and why
+
+- Batch 10 (`largedist`, 8 GPUs): not run. This job had 4 GPUs, and the other jobs on the host held the other four. No GPU was taken.
+- A full batch-5 rerun pinned the upstream way: not done (83 minutes). The full run plus the `tests/test_benchmark` rerun cover every test, and only the benchmark tests depend on the pin.
+
+### CUDA no-regression
+
+The delta `e2b767e8..632c6026` changes no compiled file (`kernel_loader.py`, its tests, README, docs), so the nvcc extension compile recorded at `e2b767e8` still describes the C++. The owed Python check under a CUDA torch was done here without an NVIDIA GPU. `torch==2.13.0+cu129` and `torchvision==0.28.0+cu129` were installed with the job venv's pip into a job-local `--target` directory put first on `PYTHONPATH`, with GPUs hidden. Result: `torch.version.cuda` 12.9, `torch.version.hip` None. `import colossalai.kernel.kernel_loader` works. `pytest tests/test_shardformer/test_layer/test_attention_backends.py -k 'not gpu'` gives 94 passed, 568 deselected. On CUDA, `_rocm_flash_attention_support` is never reached. Compile and CPU only; nothing ran on an NVIDIA GPU.
+
+### Gates
+
+- Integrity: `git -C projects/ColossalAI/src status --porcelain` is empty at `632c6026`. The JIT worktree was removed. Diagnostics ran from a scratch copy outside the checkout.
+- `python3 utils/jargon.py --port ColossalAI`: clean. Docs: the ROCm install section in README.md and docs/source/en/get_started/installation.md covers CK on Instinct.
+- Surface: `tests:distributed`, `tests:apex-gemini` and `tests:largedist` stay `owed`, with the wave64 results in their reasons (wave32 has not run them; batch 10 not run).
+
+## Lesson for cuda-to-rocm: HIP_VISIBLE_DEVICES overrides a test's CUDA_VISIBLE_DEVICES="" on ROCm
+
+Belongs in validation.md (running a project's test suite). PyTorch tests often hide the GPUs from a subprocess by setting `CUDA_VISIBLE_DEVICES=""`. On ROCm, HIP honours `CUDA_VISIBLE_DEVICES` only when `HIP_VISIBLE_DEVICES` is unset; with both set, `HIP_VISIBLE_DEVICES` wins (`HIP_VISIBLE_DEVICES=6,7 CUDA_VISIBLE_DEVICES=` gives 2 devices). A harness that pins GPUs with `HIP_VISIBLE_DEVICES` therefore makes "CPU-only" subprocess tests see GPUs and fail on device-only assertions. Pin GPUs with `CUDA_VISIBLE_DEVICES` (unset `HIP_VISIBLE_DEVICES`) when the suite hides devices that way, as the project's own CI does. (ColossalAI)
+
+## Lesson for cuda-to-rocm: a HIP context poisons torch.profiler in spawned children (ROCm 10.2 nightly)
+
+Belongs in diagnosis.md. On TheRock 10.2.0a20261022 with torch 2.13, creating a HIP context calls C-level `setenv` for `ROCPROFILER_REGISTER_LIBRARY` and `HSA_TOOLS_ROCPROFILER_V1_TOOLS=0`. Python's `os.environ` does not show them; `ctypes.CDLL(None).getenv` does. Every process started afterwards with multiprocessing `spawn` inherits them, and its `torch.profiler` trace has no GPU events at all, only CPU ops and user annotations. Tests that read kernels or `gpu_user_annotation` from a trace then fail with an empty timeline. `unsetenv` of both in the parent before spawning restores tracing; clearing them in the child is too late. ROCm 10.1 sets the same variables without the effect. When a profiler trace in a spawned worker is empty, check the inherited environment before suspecting the code. (ColossalAI)
+
+## Lesson for cuda-to-rocm: RCCL's default buffers can exhaust a partitioned MI300X GPU
+
+Belongs in libraries.md (RCCL). On an MI300X in CPX mode each partition has 24 GiB. Tests that create many communicators (`dist.new_group` per case) failed inside RCCL with `Failed to CUDA calloc ... bytes` / `HIP failure: 'out of memory'` at RCCL's default buffer size, and passed with `NCCL_BUFFSIZE=1048576`. On a partitioned host, read an RCCL calloc failure as a capacity limit first: rerun with smaller buffers before suspecting the code. (ColossalAI)
