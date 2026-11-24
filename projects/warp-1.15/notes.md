@@ -11,3 +11,17 @@ For the planner:
 - Not yet done here: `utils/licenses.py scan-nvidia warp-1.15` (needs a fork clone; 1.14's found only licence notices) and the Git LFS hook handling from 1.14's intake notes (move the LFS `pre-push` aside, then `protect-fork warp-1.15`).
 - Coordinator's upstream 1.14 -> 1.15 survey (what changed upstream that will need porter work) is in the coordinator's scratch and summarized in warp-1.14's discussion; the planner should do its own survey of `release-1.14..release-1.15` (native `.cu`/`.h` changes, new NVRTC/CUDA-only features, new libmathdx uses, build and test changes) and account for each in `surface.json`.
 - Lessons from 1.14 for this line: run every added or changed test on a real NVIDIA GPU with libmathdx (the Slurm V100 nodes), and every fix round on a 64 KiB shared-memory device and a wave32 device, not only gfx950.
+
+## Planning (2026-11-24, linux-gfx942 MI300X host, planner)
+
+Plan written to `plan.md` from `release-1.15` at `ffa038b1adf3` and the warp-1.14 port at `1c94e68b`; no build or GPU run (planning only). Lock taken with `set-state warp-1.15 linux-gfx942 planning`. Stage left at `planning`: six questions for jeff are in the plan (Q1-Q6), and Q1 (how the 1.14 port is carried: two merges, `-s ours release-1.14` then `release/1.14.0.amd0`) blocks the porter's first step. The porter does not start before warp-1.14 passes Linux revalidation at its final head (jeff's ruling), whatever Q1's answer.
+
+Owed items from intake, done here:
+- `utils/licenses.py scan-nvidia warp-1.15` on the fork clone `projects/warp-1.15/src`: 4 hits, the same licence notices as 1.14 (`README.md`, `licenses/cuda-LICENSE.txt`, `licenses/libmathdx-LICENSE.txt`, `licenses/nanovdb-LICENSE.txt`), no proprietary source.
+- Git LFS hook: this host has no `git-lfs`, so the clone had no LFS `pre-push` hook; `python3 utils/moatlib.py protect-fork warp-1.15` installed the fork guard ("fork pre-push hook installed"). Hosts with `git-lfs` follow 1.14's recipe (move LFS's hook aside first). 1.15 adds no LFS-tracked file.
+
+Trial merge (scratch clone `agent_space/trial`, push URL invalid, never pushed): `git merge --no-commit origin/release/1.14.0.amd0` into `release/1.15.0.amd0` -> 45 conflicting files; merging pristine `release-1.14` alone -> 32 (all upstream-vs-upstream); `git merge -s ours origin/release-1.14` (tree identical to `release-1.15`, `git diff --stat` empty) then the port -> 20 conflicting files, each listed with its nature in the plan.
+
+`surface.json`: `python3 utils/surface.py generate warp-1.15` (43 CUDA files, 19 components; the floor now includes 1.15's new top-level CMake build) extended to 79 components (1.14's ids kept, plus deterministic mode, clusters, lean launches, mipmaps, managed memory, the radix-sort bit range, the CMake HIP question, the release-tag workflows, the NVIDIA-libmathdx and 64 KiB test duties); 77 owed, 2 scoped out by binding 1.14 rulings (conditional graph nodes, Clang-CUDA JIT), the two cuBQL CMake targets removed from the floor with a reason; `surface.py check warp-1.15`: fully accounted for.
+
+Survey method: the 1.14..1.15 diff was read in four parts (host runtime, device headers, AOT kernels, build/packaging/tests); every finding the plan relies on was re-read in source, and HIP API facts were checked against the ROCm 10.1 SDK headers on this host (to be re-checked on 10.2 by the porter).

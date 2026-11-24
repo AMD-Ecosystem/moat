@@ -1,0 +1,812 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "ffa038b1adf3",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [
+      "warp/examples/cpp/00_cubin_launch/main.cu",
+      "warp/examples/cpp/01_source_include/main.cu",
+      "warp/examples/cpp/02_apic_visualization/main.cu",
+      "warp/native/apic.cu",
+      "warp/native/builtin.h",
+      "warp/native/bvh.cu",
+      "warp/native/bvh.h",
+      "warp/native/bvh_cubql.cu",
+      "warp/native/cuBQL/math/common.h",
+      "warp/native/cuBQL/math/constants.h",
+      "warp/native/cuBQL/traversal/aggregateApproximate.h",
+      "warp/native/cuda_crt.h",
+      "warp/native/cuda_util.cpp",
+      "warp/native/cuda_util.h",
+      "warp/native/deterministic.cu",
+      "warp/native/hashgrid.cu",
+      "warp/native/mesh.cu",
+      "warp/native/mesh.h",
+      "warp/native/nanovdb/NanoVDB.h",
+      "warp/native/nanovdb/PNanoVDB.h",
+      "warp/native/nanovdb/cuda/GridHandle.cuh",
+      "warp/native/nanovdb/cuda/NodeManager.cuh",
+      "warp/native/nanovdb/math/Math.h",
+      "warp/native/nanovdb/tools/cuda/GridChecksum.cuh",
+      "warp/native/nanovdb/tools/cuda/PointsToGrid.cuh",
+      "warp/native/nanovdb/util/Util.h",
+      "warp/native/nanovdb/util/cuda/Util.h",
+      "warp/native/reduce.cu",
+      "warp/native/runlength_encode.cu",
+      "warp/native/scan.cu",
+      "warp/native/sort.cu",
+      "warp/native/sparse.cu",
+      "warp/native/texture.h",
+      "warp/native/tile.h",
+      "warp/native/tile_bvh.h",
+      "warp/native/tile_cholesky.h",
+      "warp/native/tile_mesh.h",
+      "warp/native/tile_radix_sort.h",
+      "warp/native/tile_reduce.h",
+      "warp/native/tile_scan.h",
+      "warp/native/volume.cu",
+      "warp/native/volume_builder.cu",
+      "warp/native/warp.cu"
+    ],
+    "markers": {
+      "driver_api": 119,
+      "launch": 67,
+      "kernel": 88,
+      "device_code": 536,
+      "warp_intrinsic": 48,
+      "texture": 2,
+      "runtime_ptx": 28
+    },
+    "libraries": {
+      "cub": 81,
+      "thrust": 12,
+      "cublas": 27,
+      "cufft": 26,
+      "cusolver": 39
+    }
+  },
+  "components": [
+    {
+      "id": "example:00_cubin_launch",
+      "kind": "example",
+      "where": "warp/examples/cpp/00_cubin_launch/CMakeLists.txt"
+    },
+    {
+      "id": "example:01_source_include",
+      "kind": "example",
+      "where": "warp/examples/cpp/01_source_include/CMakeLists.txt"
+    },
+    {
+      "id": "example:02_apic_visualization",
+      "kind": "example",
+      "where": "warp/examples/cpp/02_apic_visualization/CMakeLists.txt"
+    },
+    {
+      "id": "example:03_apic_visualization_cpu",
+      "kind": "example",
+      "where": "warp/examples/cpp/03_apic_visualization_cpu/CMakeLists.txt"
+    },
+    {
+      "id": "library:glad",
+      "kind": "library",
+      "where": "warp/examples/cpp/02_apic_visualization/CMakeLists.txt"
+    },
+    {
+      "id": "library:warp",
+      "kind": "library",
+      "where": "CMakeLists.txt"
+    },
+    {
+      "id": "library:warp-clang",
+      "kind": "library",
+      "where": "CMakeLists.txt"
+    },
+    {
+      "id": "option:WARP_BUILD_CLANG",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "ON",
+      "doc": "Build warp-clang"
+    },
+    {
+      "id": "option:WARP_ENABLE_CUDA",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "unset",
+      "doc": "Build Warp with CUDA support"
+    },
+    {
+      "id": "option:WARP_FAST_MATH",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Enable fast math compiler options"
+    },
+    {
+      "id": "option:WARP_USE_DYNAMIC_CUDA",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Link CUDA runtime and compiler libraries dynamically"
+    },
+    {
+      "id": "option:WARP_USE_LIBMATHDX",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "ON",
+      "doc": "Build Warp with NVIDIA libmathdx support"
+    },
+    {
+      "id": "option:WARP_VERIFY_FP",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Enable floating point verification"
+    },
+    {
+      "id": "test:apic_visualization_cpu_smoke",
+      "kind": "test",
+      "where": "warp/examples/cpp/03_apic_visualization_cpu/CMakeLists.txt"
+    },
+    {
+      "id": "test:apic_visualization_smoke",
+      "kind": "test",
+      "where": "warp/examples/cpp/02_apic_visualization/CMakeLists.txt"
+    },
+    {
+      "id": "test:cubin_launch_test",
+      "kind": "test",
+      "where": "warp/examples/cpp/00_cubin_launch/CMakeLists.txt"
+    },
+    {
+      "id": "test:source_include_test",
+      "kind": "test",
+      "where": "warp/examples/cpp/01_source_include/CMakeLists.txt"
+    },
+    {
+      "id": "library:warp-native-aot",
+      "kind": "library",
+      "where": "build_lib.py:493-533 (21 .cpp + 13 .cu on 1.15, incl. bvh_cubql.*, deterministic.*; texture_software.cpp from the port)"
+    },
+    {
+      "id": "build_path:build_lib-hip-linux",
+      "kind": "build_path",
+      "where": "build_lib.py, warp/_src/build_dll.py (Unix branch)"
+    },
+    {
+      "id": "build_path:build_lib-hip-windows",
+      "kind": "build_path",
+      "where": "build_lib.py, warp/_src/build_dll.py (MSVC branch; clang-cl for HIP)"
+    },
+    {
+      "id": "runtime:driver-api-dynamic-load",
+      "kind": "driver_api",
+      "where": "warp/native/cuda_util.cpp HIP section; new 1.15 wrappers cuMipmappedArray{Create,Destroy,GetLevel}_f, cuFuncGetAttribute_f, cuOccupancyMaxActiveClusters_f"
+    },
+    {
+      "id": "runtime:nvrtc-to-hiprtc",
+      "kind": "runtime_compile",
+      "where": "warp.cu wp_hip_compile_program; context.py compile path refactored in 1.15 (_run_codegen, _get_compile_output_name(block_dim=))"
+    },
+    {
+      "id": "runtime:device-arch-selection",
+      "kind": "runtime_compile",
+      "where": "warp.cu int arch ABI; 1.15 adds arch>=90 cluster gates (warp.cu:5477, context.py:949,7878) that misfire on HIP"
+    },
+    {
+      "id": "runtime:device-compile-predicate",
+      "kind": "device_code",
+      "where": "__CUDA_ARCH__ gates in warp/native headers; new in 1.15: deterministic.h (6 gates), tile_radix_sort.h:42"
+    },
+    {
+      "id": "runtime:cuda-crt-header",
+      "kind": "device_code",
+      "where": "warp/native/cuda_crt.h, crt.h (unchanged in 1.15)"
+    },
+    {
+      "id": "device:ptx-inline-asm",
+      "kind": "device_code",
+      "where": "builtin.h, tile.h; new in 1.15: deterministic.h:239 isspacep.global"
+    },
+    {
+      "id": "device:tile-wavefront-width",
+      "kind": "warp_intrinsic",
+      "where": "tile_reduce.h (new half/bf16/vec/mat/shape/array warp_shuffle_down overloads with int mask), tile_radix_sort.h (new warp_shuffle_xor family, 0xFFFFFFFFu x12), tile_scan.h"
+    },
+    {
+      "id": "feature:libmathdx-replacement",
+      "kind": "library",
+      "where": "WP_ENABLE_MATHDX=0 on HIP; unchanged in 1.15 (deps/ unchanged)"
+    },
+    {
+      "id": "feature:cub-to-hipcub",
+      "kind": "library",
+      "where": "sort.cu (user begin_bit/end_bit, SortPayload, uint/double keys), scan.cu (strided, int64/double), sparse.cu (DeviceSelect::If/FlaggedIf in place, ExclusiveSum), deterministic.cu (SortPairs, ReduceByKey, InclusiveScan), reduce.cu, runlength_encode.cu, bvh.cu, volume_builder.cu"
+    },
+    {
+      "id": "feature:bvh-mesh-hashgrid",
+      "kind": "library",
+      "where": "bvh.cu, bvh.cpp, mesh.cu, mesh.h (1.15 ray traversal rewrite), hashgrid.cu, tile_bvh.h, tile_mesh.h; port's HIP LBVH build and depth-level refits"
+    },
+    {
+      "id": "feature:cubql-backend",
+      "kind": "library",
+      "where": "warp/native/cuBQL/** (unchanged upstream; port backports carry), new bvh_cubql.cu/.cpp, BVH::constructor_type"
+    },
+    {
+      "id": "feature:nanovdb-volume",
+      "kind": "library",
+      "where": "volume.cu, volume_builder.cu, warp/native/nanovdb/** (unchanged in 1.15)"
+    },
+    {
+      "id": "feature:sparse",
+      "kind": "library",
+      "where": "sparse.cu, sparse.cpp, sparse_util.h (bsr_compress, padded transpose, row capacity)"
+    },
+    {
+      "id": "feature:apic",
+      "kind": "library",
+      "where": "apic.cu, apic.cpp, apic*.h (APIC grew ~1500 lines in 1.15: conditional ops, adjoints, cluster attrs)"
+    },
+    {
+      "id": "feature:graph-capture",
+      "kind": "runtime",
+      "where": "cudaGraph*, capture pause/resume, is_context_capturing, cudaThreadExchangeStreamCaptureMode (new)"
+    },
+    {
+      "id": "feature:conditional-graph-nodes",
+      "kind": "runtime",
+      "where": "warp.cu conditional nodes, context.py capture_if/capture_while, apic.cu .wrp conditional replay"
+    },
+    {
+      "id": "feature:mempools",
+      "kind": "runtime",
+      "where": "cudaMallocAsync/cudaMemPool*, _is_graph_capture_allocation_supported (new)"
+    },
+    {
+      "id": "feature:ipc-peer-pinned-managed",
+      "kind": "runtime",
+      "where": "cuIpc*, peer access, pinned memory, managed memory"
+    },
+    {
+      "id": "feature:streams-events",
+      "kind": "runtime",
+      "where": "cuStream*/cuEvent*"
+    },
+    {
+      "id": "feature:device-textures",
+      "kind": "texture",
+      "where": "texture.cpp, texture.h, texture_software.cpp/.h (port), warp/_src/texture.py"
+    },
+    {
+      "id": "feature:gl-interop",
+      "kind": "runtime",
+      "where": "cuGraphicsGL* in cuda_util.cpp; warp/_src/render/render_opengl.py"
+    },
+    {
+      "id": "feature:clang-cuda-jit",
+      "kind": "runtime_compile",
+      "where": "warp/native/clang/clang.cpp NVPTX; tests/cuda/test_clang_cuda.py"
+    },
+    {
+      "id": "feature:python-device-plumbing",
+      "kind": "library",
+      "where": "context.py is_hip/arch name; dlpack.py kDLROCM (unchanged in 1.15); torch.py, jax, paddle.py"
+    },
+    {
+      "id": "feature:matrix-core-tile-matmul",
+      "kind": "device_code",
+      "where": "port's tile_matmul_mma.h (MFMA gfx90a/942/950, WMMA gfx11/gfx12, fp32 WMMA gfx1250); tile_matmul.h unchanged in 1.15"
+    },
+    {
+      "id": "feature:hip-performance-paths",
+      "kind": "library",
+      "where": "port's HIP-only GPU LBVH build, depth-level BVH refit, winding-number mesh refit, temporary frees after device streams (1.14 performance rulings)"
+    },
+    {
+      "id": "packaging:version-1.15.0+rocm10.2.0",
+      "kind": "build_path",
+      "where": "VERSION.md, warp/config.py, warp/native/version.h (mismatch is fatal at wp.init() in 1.15)"
+    },
+    {
+      "id": "packaging:wheel-linux",
+      "kind": "build_path",
+      "where": "setup.py, python -m build --wheel -C--build-option=-Plinux-x86_64"
+    },
+    {
+      "id": "packaging:wheel-windows",
+      "kind": "build_path",
+      "where": "setup.py, python -m build --wheel -C--build-option=-Pwindows-x86_64"
+    },
+    {
+      "id": "packaging:wheel-licences",
+      "kind": "build_path",
+      "where": "setup.py license_files: drop cuda/libmathdx notices in the ROCm wheel"
+    },
+    {
+      "id": "packaging:release-tag-workflows",
+      "kind": "build_path",
+      "where": ".github/workflows ci.yml, codeql.yml, sphinx.yml tag triggers; draft-release.yml repository guard"
+    },
+    {
+      "id": "test:warp-tests-default-suite",
+      "kind": "test",
+      "where": "python -m warp.tests (unittest_suites.py default_suite)"
+    },
+    {
+      "id": "test:tile",
+      "kind": "test",
+      "where": "warp/tests/tile/ (24 modules on 1.15, new test_tile_struct.py, test_tile_oob.py)"
+    },
+    {
+      "id": "test:cuda-runtime",
+      "kind": "test",
+      "where": "warp/tests/cuda/ (16 modules, new test_cluster_dim.py)"
+    },
+    {
+      "id": "test:texture",
+      "kind": "test",
+      "where": "warp/tests/cuda/test_texture.py (158 registrations, mipmaps)"
+    },
+    {
+      "id": "test:geometry-bvh-volume",
+      "kind": "test",
+      "where": "warp/tests/geometry/ (10 modules)"
+    },
+    {
+      "id": "test:fem",
+      "kind": "test",
+      "where": "warp/tests/fem/ (9 modules)"
+    },
+    {
+      "id": "test:graph-capture",
+      "kind": "test",
+      "where": "test_graph.py, cuda/test_*capture*.py, test_conditional*.py, test_apic.py"
+    },
+    {
+      "id": "test:interop",
+      "kind": "test",
+      "where": "warp/tests/interop/ (4 modules)"
+    },
+    {
+      "id": "test:matrix",
+      "kind": "test",
+      "where": "warp/tests/matrix/ (7 modules)"
+    },
+    {
+      "id": "test:aot",
+      "kind": "test",
+      "where": "warp/tests/aot/test_module_aot.py"
+    },
+    {
+      "id": "test:examples",
+      "kind": "test",
+      "where": "warp/tests/test_examples.py (warp/examples/**)"
+    },
+    {
+      "id": "test:cpu-regression",
+      "kind": "test",
+      "where": "default suite with GPUs hidden, compared with pristine release-1.15"
+    },
+    {
+      "id": "test:wheel-install",
+      "kind": "test",
+      "where": "default suite from the installed wheel in a clean venv, Linux and Windows"
+    },
+    {
+      "id": "test:cuda-nvcc-compile",
+      "kind": "test",
+      "where": "build_lib.py with nvcc on the mi355 fleet host"
+    },
+    {
+      "id": "test:nvidia-libmathdx",
+      "kind": "test",
+      "where": "every added or changed test file on an NVIDIA GPU with libmathdx (Slurm V100)"
+    },
+    {
+      "id": "test:64k-shared-memory",
+      "kind": "test",
+      "where": "tile tests on a real 64 KiB device (gfx942/gfx90a/gfx908) every fix round"
+    },
+    {
+      "id": "platform:wave64",
+      "kind": "platform",
+      "where": "gfx90a/gfx942/gfx950"
+    },
+    {
+      "id": "platform:wave32",
+      "kind": "platform",
+      "where": "gfx1100/gfx1201 Radeon"
+    },
+    {
+      "id": "platform:windows",
+      "kind": "platform",
+      "where": "windows-gfx1151"
+    },
+    {
+      "id": "feature:deterministic-mode",
+      "kind": "library",
+      "where": "deterministic.cu/.cpp/.h, warp/_src/deterministic.py, wp.config.deterministic (RUN_TO_RUN, GPU_TO_GPU)"
+    },
+    {
+      "id": "feature:thread-block-clusters",
+      "kind": "runtime",
+      "where": "cluster_dim kernel option, WP_CLUSTER_DIMS (codegen.py:5815), wp_cuda_set_kernel_cluster_attrs, wp_cuda_get_max_cluster_dim, cuOccupancyMaxActiveClusters, get_cuda_max_cluster_dim"
+    },
+    {
+      "id": "feature:lean-launch-grid",
+      "kind": "runtime",
+      "where": "grid_stride=False kernels, 3D lean grid in wp_cuda_launch_kernel, launch errors raise in Python"
+    },
+    {
+      "id": "feature:texture-mipmaps",
+      "kind": "texture",
+      "where": "cuMipmappedArray*, tex*DLod, Texture mip levels, mip_filter_mode, wp_texture_get_mip_level_array_device"
+    },
+    {
+      "id": "feature:managed-memory-kinds",
+      "kind": "runtime",
+      "where": "wp_alloc_device_managed, CudaManagedAllocator, memory_kind, wp_cuda_pointer_get_memory_kind, managed/concurrent-managed device attributes"
+    },
+    {
+      "id": "feature:radix-sort-bit-range",
+      "kind": "library",
+      "where": "wp.utils.radix_sort_pairs(begin_bit, end_bit) with 64-bit keys (rocPRIM begin_bit>0, end_bit 64 defect)"
+    },
+    {
+      "id": "feature:cmake-build-hip",
+      "kind": "build_path",
+      "where": "CMakeLists.txt, tools/cmake/WarpDependencies.cmake (new optional CMake build, CUDA/CPU only upstream)"
+    },
+    {
+      "id": "test:deterministic",
+      "kind": "test",
+      "where": "warp/tests/deterministic/ (5 modules, new)"
+    },
+    {
+      "id": "test:cluster-dim",
+      "kind": "test",
+      "where": "warp/tests/cuda/test_cluster_dim.py (selects devices by arch >= 90)"
+    },
+    {
+      "id": "test:unified-memory-allocator",
+      "kind": "test",
+      "where": "cuda/test_unified_memory.py, test_allocator.py (managed memory, memory kinds)"
+    }
+  ],
+  "covered": [],
+  "scoped_out": [
+    {
+      "id": "feature:conditional-graph-nodes",
+      "reason": "warp-1.14 Q4 ruling (Jeff Daily 2026-11-18) binds this line: report unsupported on HIP as upstream does for CUDA < 12.4, no emulation; 1.15's APIC conditional replay and capture_if/capture_while APIC recording inherit that refusal; deferred item warp-hip-conditional-graph-nodes (warp-1.14)"
+    },
+    {
+      "id": "feature:clang-cuda-jit",
+      "reason": "warp-1.14 Q7 ruling (Jeff Daily 2026-11-18) binds this line: not ported, both switches fail clearly on HIP; deferred item warp-hip-clang-jit (warp-1.14)"
+    }
+  ],
+  "owed": [
+    {
+      "id": "example:00_cubin_launch",
+      "reason": "C++ example: the 1.14 HIP CMake configuration carries over by merge; 02/03 adapt to 1.15's APIC API changes; rebuild and run CTest on HIP"
+    },
+    {
+      "id": "example:01_source_include",
+      "reason": "C++ example: the 1.14 HIP CMake configuration carries over by merge; 02/03 adapt to 1.15's APIC API changes; rebuild and run CTest on HIP"
+    },
+    {
+      "id": "example:02_apic_visualization",
+      "reason": "C++ example: the 1.14 HIP CMake configuration carries over by merge; 02/03 adapt to 1.15's APIC API changes; rebuild and run CTest on HIP"
+    },
+    {
+      "id": "example:03_apic_visualization_cpu",
+      "reason": "C++ example: the 1.14 HIP CMake configuration carries over by merge; 02/03 adapt to 1.15's APIC API changes; rebuild and run CTest on HIP"
+    },
+    {
+      "id": "library:glad",
+      "reason": "C++ example: the 1.14 HIP CMake configuration carries over by merge; 02/03 adapt to 1.15's APIC API changes; rebuild and run CTest on HIP"
+    },
+    {
+      "id": "library:warp",
+      "reason": "part of the new optional CMake build (CMakeLists.txt); HIP support there is plan question Q4 (unruled)"
+    },
+    {
+      "id": "library:warp-clang",
+      "reason": "part of the new optional CMake build (CMakeLists.txt); HIP support there is plan question Q4 (unruled)"
+    },
+    {
+      "id": "option:WARP_BUILD_CLANG",
+      "reason": "part of the new optional CMake build (CMakeLists.txt); HIP support there is plan question Q4 (unruled)"
+    },
+    {
+      "id": "option:WARP_ENABLE_CUDA",
+      "reason": "part of the new optional CMake build (CMakeLists.txt); HIP support there is plan question Q4 (unruled)"
+    },
+    {
+      "id": "option:WARP_FAST_MATH",
+      "reason": "part of the new optional CMake build (CMakeLists.txt); HIP support there is plan question Q4 (unruled)"
+    },
+    {
+      "id": "option:WARP_USE_DYNAMIC_CUDA",
+      "reason": "part of the new optional CMake build (CMakeLists.txt); HIP support there is plan question Q4 (unruled)"
+    },
+    {
+      "id": "option:WARP_USE_LIBMATHDX",
+      "reason": "part of the new optional CMake build (CMakeLists.txt); HIP support there is plan question Q4 (unruled)"
+    },
+    {
+      "id": "option:WARP_VERIFY_FP",
+      "reason": "part of the new optional CMake build (CMakeLists.txt); HIP support there is plan question Q4 (unruled)"
+    },
+    {
+      "id": "test:apic_visualization_cpu_smoke",
+      "reason": "C++ example: the 1.14 HIP CMake configuration carries over by merge; 02/03 adapt to 1.15's APIC API changes; rebuild and run CTest on HIP"
+    },
+    {
+      "id": "test:apic_visualization_smoke",
+      "reason": "C++ example: the 1.14 HIP CMake configuration carries over by merge; 02/03 adapt to 1.15's APIC API changes; rebuild and run CTest on HIP"
+    },
+    {
+      "id": "test:cubin_launch_test",
+      "reason": "C++ example: the 1.14 HIP CMake configuration carries over by merge; 02/03 adapt to 1.15's APIC API changes; rebuild and run CTest on HIP"
+    },
+    {
+      "id": "test:source_include_test",
+      "reason": "C++ example: the 1.14 HIP CMake configuration carries over by merge; 02/03 adapt to 1.15's APIC API changes; rebuild and run CTest on HIP"
+    },
+    {
+      "id": "library:warp-native-aot",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "build_path:build_lib-hip-linux",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "build_path:build_lib-hip-windows",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "runtime:driver-api-dynamic-load",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "runtime:nvrtc-to-hiprtc",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "runtime:device-arch-selection",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "runtime:device-compile-predicate",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "runtime:cuda-crt-header",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "device:ptx-inline-asm",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "device:tile-wavefront-width",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "feature:libmathdx-replacement",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "feature:cub-to-hipcub",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "feature:bvh-mesh-hashgrid",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "feature:cubql-backend",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "feature:nanovdb-volume",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "feature:sparse",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "feature:apic",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "feature:graph-capture",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "feature:mempools",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "feature:ipc-peer-pinned-managed",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "feature:streams-events",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "feature:device-textures",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "feature:gl-interop",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "feature:python-device-plumbing",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "feature:matrix-core-tile-matmul",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "feature:hip-performance-paths",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "packaging:version-1.15.0+rocm10.2.0",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "packaging:wheel-linux",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "packaging:wheel-windows",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "packaging:wheel-licences",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "packaging:release-tag-workflows",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "test:warp-tests-default-suite",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "test:tile",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "test:cuda-runtime",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "test:texture",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "test:geometry-bvh-volume",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "test:fem",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "test:graph-capture",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "test:interop",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "test:matrix",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "test:aot",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "test:examples",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "test:cpu-regression",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "test:wheel-install",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "test:cuda-nvcc-compile",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "test:nvidia-libmathdx",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "test:64k-shared-memory",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "platform:wave64",
+      "reason": "gate not yet validated for 1.15 (nothing ported yet)"
+    },
+    {
+      "id": "platform:wave32",
+      "reason": "gate not yet validated for 1.15 (nothing ported yet)"
+    },
+    {
+      "id": "platform:windows",
+      "reason": "gate not yet validated for 1.15 (nothing ported yet)"
+    },
+    {
+      "id": "feature:deterministic-mode",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "feature:thread-block-clusters",
+      "reason": "plan question Q2 (unruled): proposed unsupported-by-capability on HIP; until ruled it is open in-scope work"
+    },
+    {
+      "id": "feature:lean-launch-grid",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "feature:texture-mipmaps",
+      "reason": "plan question Q3 (unruled): hardware hipMipmappedArray on Linux image-capable devices, software sampler elsewhere, or refusal"
+    },
+    {
+      "id": "feature:managed-memory-kinds",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "feature:radix-sort-bit-range",
+      "reason": "plan question Q5 (unruled): HIP workaround for the rocPRIM 64-bit begin_bit>0/end_bit 64 defect, or a refusal and known issue"
+    },
+    {
+      "id": "feature:cmake-build-hip",
+      "reason": "plan question Q4 (unruled): HIP branch in the optional CMake build, or a clear refusal"
+    },
+    {
+      "id": "test:deterministic",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    },
+    {
+      "id": "test:cluster-dim",
+      "reason": "follows Q2"
+    },
+    {
+      "id": "test:unified-memory-allocator",
+      "reason": "in scope; not started for 1.15 (carried from the 1.14 port by merge where it exists, plus the 1.15 delta in plan.md); covered only by 1.15 evidence"
+    }
+  ],
+  "removed_from_floor": [
+    {
+      "id": "library:cuBQL_${device}_${T}${D}",
+      "kind": "library",
+      "where": "warp/native/cuBQL/CMakeLists.txt",
+      "reason": "cuBQL's own CMakeLists.txt is not part of Warp's build (neither build_lib.py nor Warp's new CMakeLists.txt invokes it); the vendored sources compile into bvh_cubql.cu/.cpp, accounted as feature:cubql-backend"
+    },
+    {
+      "id": "library:cuBQL_${device}_${T}${D}_static",
+      "kind": "library",
+      "where": "warp/native/cuBQL/CMakeLists.txt",
+      "reason": "same as library:cuBQL_${device}_${T}${D}: a target of cuBQL's unused CMakeLists.txt; accounted as feature:cubql-backend"
+    }
+  ]
+}
