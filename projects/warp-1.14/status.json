@@ -8,7 +8,7 @@
   "ext_type": "python-build-nvrtc",
   "stage": "review-passed",
   "adopted_at": "2026-11-18T17:38:39Z",
-  "updated_at": "2026-11-24T22:40:47Z",
+  "updated_at": "2026-11-24T22:41:38Z",
   "head_sha": "66ba4ffb31bce1bd822943cfc764c34eb21a8eef",
   "depends_on": [],
   "waivers": {},
@@ -21,85 +21,6 @@
       "started_at": null,
       "completed_at": "2026-11-24T20:33:58Z",
       "updated_at": "2026-11-24T20:33:58Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "state": "completed",
-      "validated_prior": [
-        "4e0d02ab7eeb4af2be6380ff27c54d9bc8d43ef2"
-      ]
-    },
-    "linux-gfx1100": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "66ba4ffb31bce1bd822943cfc764c34eb21a8eef",
-      "failed_sha": null,
-      "started_at": null,
-      "completed_at": "2026-11-24T22:40:47Z",
-      "updated_at": "2026-11-24T22:40:47Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "state": "completed",
-      "validated_prior": [
-        "4e0d02ab7eeb4af2be6380ff27c54d9bc8d43ef2"
-      ]
-    },
-    "linux-gfx950": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "66ba4ffb31bce1bd822943cfc764c34eb21a8eef",
-      "failed_sha": null,
-      "started_at": "2026-11-18T20:28:14Z",
-      "completed_at": "2026-11-24T22:36:19Z",
-      "updated_at": "2026-11-24T22:36:19Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "reviewer",
-      "state": "completed",
-      "validated_prior": [
-        "1c94e68bd54c28323ecb2a10a08ea89507cbfb6d"
-      ]
-    },
-    "linux-gfx1201": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "1c94e68bd54c28323ecb2a10a08ea89507cbfb6d",
-      "failed_sha": null,
-      "started_at": null,
-      "completed_at": "2026-11-24T20:16:42Z",
-      "updated_at": "2026-11-24T20:16:42Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -164,6 +85,86 @@
         "last_session_at": null
       },
       "last_agent": "planner"
+    },
+    "linux-gfx1201": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "66ba4ffb31bce1bd822943cfc764c34eb21a8eef",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-11-24T22:41:38Z",
+      "updated_at": "2026-11-24T22:41:38Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "validated_prior": [
+        "4e0d02ab7eeb4af2be6380ff27c54d9bc8d43ef2",
+        "1c94e68bd54c28323ecb2a10a08ea89507cbfb6d"
+      ]
+    },
+    "linux-gfx950": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "66ba4ffb31bce1bd822943cfc764c34eb21a8eef",
+      "failed_sha": null,
+      "started_at": "2026-11-18T20:28:14Z",
+      "completed_at": "2026-11-24T22:36:19Z",
+      "updated_at": "2026-11-24T22:36:19Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "reviewer",
+      "state": "completed",
+      "validated_prior": [
+        "1c94e68bd54c28323ecb2a10a08ea89507cbfb6d"
+      ]
+    },
+    "linux-gfx1100": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "66ba4ffb31bce1bd822943cfc764c34eb21a8eef",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-11-24T22:40:47Z",
+      "updated_at": "2026-11-24T22:40:47Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "validated_prior": [
+        "4e0d02ab7eeb4af2be6380ff27c54d9bc8d43ef2"
+      ]
     }
   },
   "license_spdx": "Apache-2.0",
