@@ -9362,3 +9362,118 @@ Debug tiles, 15: the 8 MathDx-support skips, `MathDx is not enabled` (1), the Ma
 ### Scripts (`agent_space/v/`, scratch)
 
 Same as the `4e0d02ab` gfx942 validation: `build.sh <tree> <jobs> <wheel dir>` (the two build commands above, logs `build_gfx942.log` and `wheel.log` in the tree) and `run.sh <label> <warp.tests args>` (`ulimit -c 0`, cwd `<job>/run`, `rm -rf` then `WARP_CACHE_PATH=<job>/run/cache_<label>`, site-packages assertion, logged to `<job>/run/<label>.log` with load average at start and end).
+## Evidence session (2026-11-24, linux-gfx1250, evidence only): final head `1c94e68b`, default and strict mode
+
+Requested by Jeff Daily per his ruling "gfx1250 before release" (option (c): one rerun at the final head on this hardware, including strict mode). Evidence only: no project state changed, no lock taken, nothing pushed to the fork. `HIP_VISIBLE_DEVICES=0` (dispatcher pin), `ulimit -c 0` for every GPU run. Scripts: `notes-evidence-gfx1250-final-scripts.md`.
+
+**Result.** Default mode: of the three earlier failures, two are gone (fem `test_hex_mesh`, `test_mesh_query_point`); the `s_set_pc_i64` translator failure in fem `test_deformed_geometry` still occurs, and is now reduced to a 30-line plain HIP program. It is the ROCm 10.2 code-object translator's defect, not the port's: the same generated source compiled for `gfx1250-strict` contains the same instruction sequence and passes natively in strict mode. Strict mode selects and runs: the device reports `gfx1250-strict` and both the library and hipRTC kernels load strict code objects; every GPU test passes alone except one port-added test regex that does not accept `gfx1250-strict` (fix below, validated). In both modes, the full suite's parallel phase hit a sticky `Warp CUDA error 719` in several workers at once and the runner fell back to isolated mode; the same happened in the 2026-11-23 session. That one is unclassified (it occurs without the translator, so the translator is not its cause); details in item 4.
+
+### Setup
+- Fork `release/1.14.0.amd0` cloned to `projects/warp-1.14/src`, detached at `1c94e68bd54c28323ecb2a10a08ea89507cbfb6d` (= `origin/release/1.14.0.amd0`), `git lfs pull`. `git status --porcelain` empty.
+- Job venv: `pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple "rocm[devel,device-gfx1250]==10.2.0" "torch[device-gfx1250]==2.15.0+rocm10.2.0" numpy==1.26.4 usd-core`, `rocm-sdk init`. Installed: rocm 10.2.0, torch 2.15.0+rocm10.2.0 (installs cleanly; works in default mode, not in strict mode, item 3), numpy 1.26.4, usd-core 26.11. The venv previously held ROCm 10.1 wheels; pip left the other arches' 10.1 `rocm-sdk-device-*` packages behind (dependency warnings only; gfx1250's device package is 10.2.0).
+- Build: `python build_lib.py --rocm-path $(rocm-sdk path --root) --hip-arch gfx1250,gfx1250-strict -j 64` from the clone, "Warp build succeeded" (29 s). 14 `--offload-arch=gfx1250` and 14 `--offload-arch=gfx1250-strict` in the log. `.hip_fatbin` of `warp.so` (`llvm-objcopy --dump-section`, split at the bundle magic, `clang-offload-bundler --list`): 11 bundles, each with `hip-amdgcn-amd-amdhsa--gfx1250` and `hip-amdgcn-amd-amdhsa--gfx1250-strict`. RUNPATH `$ORIGIN:<venv>/_rocm_sdk_devel/lib`.
+- Every test run from a scratch directory outside the tree with `PYTHONPATH=<clone>` (asserted `warp.__file__` is the clone), fresh `WARP_CACHE_PATH` per run.
+
+### 1. Host facts
+- GPU: one, amd-smi `TARGET_GRAPHICS_VERSION gfx1250`, "AMD Radeon Graphics", device id 0x75c1. Warp: `"cuda:0" : "AMD Radeon Graphics" (432 GiB, gfx1250, mempool enabled)`, greeting "ROCm 10.2, HIP runtime 7.17"; `hipconfig --version` 7.17.26434-0000000. Host: amdgpu driver 7.1.0.31300009, kernel 6.14.0-37-generic, amd-smi 27.1.0 (system ROCm 10.1.0, unused).
+- Idle: `amd-smi process` showed no process at 19:56 UTC before the first GPU run; every GPU step waited for an idle GPU (`idle_wait.sh`). During both suites a 20 s log compared amd-smi's process count on GPU 0 with this job's python process count: amd-smi never exceeded it, so no other team's process appeared (amd-smi shows host PIDs, which this container cannot map, so the count is the check). After the strict suite the only GPU process was this job's orphan (item 4), and the later steps allowed exactly that host PID and no other.
+- The translator: ROCm 10.2's runtime still installs its b0-to-a0 hook on this device (`[hsa-hotswap-rj] installed eager gfx1250 B0-to-A0 hook`). In default mode it translates every gfx1250 code object. In strict mode it logs only the install line and translates nothing (0 diagnostics in the whole strict suite).
+
+### 2. Default mode (device reports `gfx1250`)
+Command: `suite.sh default` = `python -m warp.tests -s autodetect` (fresh cache, outside the tree), 2174 s under `utils/timeit.sh`. **Ran 7608 tests in 2154.6 s, FAILED (failures=4, errors=10, skipped=80)**, rc 14. 7608 = 7564 of the torch-less runs plus the torch interop tests.
+
+How it ran: the parallel phase reached about 10,200 ok, then a sticky `Warp CUDA error 719: unspecified launch failure` (first line `in function wp_memcpy_d2h, warp/native/warp.cu:1112`) appeared in several workers at once (23,358 lines of 719 and 98 of `201: invalid device context`; cascades in test_quat 73, test_special_values 37, test_spatial 29, test_sparse 17, test_static 9, test_scalar_ops 8, test_constant_precision 4, test_spatial_assign_copy 3), then "Process pool broken during parallel execution. Switching to isolated single-process fallback." The final counts come from the fallback pass.
+
+The 14 in the final count:
+
+| test | result | first error | alone (`one.sh`, normal runner) |
+|---|---|---|---|
+| fem `test_deformed_geometry_cuda_0` | ERROR | `[hsa-hotswap-rj] error: translation diagnostic ... guest_offset=.text+0x3f664 mnemonic=s_set_pc_i64 message=indirect branch or call target recovery is not implemented for relocated kernel text`, `translation failed ... input_bytes=271216`, then `Warp CUDA error 209: no kernel image is available for execution on the device (in function wp_cuda_load_module, warp/native/warp.cu:5421)`; module `_test_geo_sides_ac74fa3c d4dbb37 ... (error)` | **reproduces**: test_fem_geometry.py Ran 22, FAILED (errors=1), same lines |
+| test_codegen `test_error_unmatched_arguments_cuda_0` (FAIL), `test_expect_cpu` (ERROR) | | the fallback's whole-file-in-one-process order: an expected-error test does not raise ("RuntimeError not raised" / "WarpCodegenError not raised"), later tests in the process inherit the state, CPU tests included; as on 2026-11-23 | test_codegen 117 OK |
+| test_constant_precision `test_mixed_literal_variable_rejects_wrong_type_cuda_0` (FAIL); `test_quatd_mixed_literal_variable_cpu`, `test_quatd_precision_cpu`, `test_transformd_precision_cpu`, `test_typed_constructor_accepts_literals_cpu` (ERROR) | | same pattern | 46 OK |
+| test_fixedarray `test_error_invalid_func_return_annotation_cuda_0` (FAIL); `test_fixedarray_array_polymorphism_cpu`/`_cuda_0`, `test_fixedarray_ptr_cpu` (ERROR) | | same pattern | 20 OK |
+| test_mat_constructors `test_anon_constructor_error_type_mismatch_cuda_0` (FAIL), `test_anon_type_instance_float16_cpu` (ERROR) | | same pattern | 54 OK |
+
+The three earlier failures:
+- **fem `test_deformed_geometry` (`s_set_pc_i64` module load failure): still occurs**, in the suite and alone. Item 5 has the reproducer.
+- **fem `test_hex_mesh_cuda_0` (radix sort 209): gone.** ok in the parallel phase, in the fallback, and in test_fem_geometry.py alone (the file's only failure is test_deformed_geometry). No `radix_sort_pairs_device` error anywhere in the run. This fits the coordinator's reading: the 209 was the failed neighbouring module load's error, left as HIP's last error and returned by the sort; porting session 32's stale-error fix removed that path.
+- **`test_mesh_query_point_cuda_0` (wrong query results): gone.** ok in the parallel phase, in the fallback, and alone (test_mesh_query_point.py 9 OK, 0 `expect_eq` lines). The translator still logs the same 501 `fallthrough past this block reaches no decodable instruction; translated with a synthesized s_endpgm boundary` warnings in that file, so those warnings were not the cause; the cause was the cross-statement contraction inconsistency that `1c94e68b` removed (porting sessions 33 and 34).
+
+Also alone, all OK: test_quat 167, test_special_values 74, test_spatial 201, test_sparse 47, test_scalar_ops 44 (the files with the most 719 cascades).
+
+`Warp CUDA error` lines while tests passed: none outside the 719 cascade. In the fallback pass the only lines during tests are the 209 of test_deformed_geometry; 30 more 719/201 lines print after the summary, at shutdown of the runner's main process, whose context the parallel phase had already poisoned. The translator logged 29,239 warnings of the `synthesized s_endpgm boundary` kind from 7 source objects (e.g. `8ad06f83143370a9`, 518 warnings the first time the library's sort runs; the library's code objects load on first use) and errors only for test_deformed_geometry's object.
+
+Skips (80, the fallback pass): no suitable devices 24, conditional graph nodes 16, not built with MathDx 8, two CUDA devices 7, mempool access 5, peer access 3, CPU memory access 2, NVRTC two architectures 2, multi-GPU 2, and 1 each: rmm not installed, MathDx tolerance (test_tile_mlp), memory-usage flakiness, without peer access, without mempool access, peer access and graph module-load, mempool access and graph module-load, Requires CUDA, NVRTC not available, MathDx is not enabled, HIP stream priorities. Same reasons as the 2026-11-23 run.
+
+### 3. Strict mode (`HSA_DISABLE_GFX12_STRICT=0`)
+- **Selection confirmed.** With the variable set, Warp reports `"cuda:0" : "AMD Radeon Graphics" (432 GiB, gfx1250-strict, mempool enabled)` (`dev.py`).
+- **hipRTC kernels compile for the strict target**: the cache file is `wp___main___ecb71ee.gfx1250-strict.hsaco`, ELF flags `0x4eb, gfx1250-strict, sramecc` (default mode: `.gfx1250.hsaco`, `0x449, gfx1250, sramecc`). The strict suite's cache holds 1780 objects, all named `.gfx1250-strict.hsaco`; 400 sampled all carry flags `0x4eb`.
+- **The library loads its strict code objects.** HIP logging (`AMD_LOG_LEVEL=4`, with or without a mask) does not name the selected code object, so a negative control: a second build of the same tree with `--hip-arch gfx1250` only (scratch worktree), run in strict mode, gives `Warp CUDA error 200: device kernel image is invalid (in function radix_sort_pairs_device, warp/native/sort.cu:84)` and an unsorted result. The two-target library sorts correctly in strict mode. So the runtime picks the library object by ISA, and with both present it loads `gfx1250-strict`. (Side observation in that unsupported configuration: the JIT kernel launched after the failed library registration also left its output unchanged without an error line. Not pursued; the shipped library always has both objects.)
+- **Full suite**, `suite2.sh strict HSA_DISABLE_GFX12_STRICT=0`, 2074 s: **Ran 7585 tests in 2058.7 s, FAILED (failures=6, errors=6, skipped=81)**, rc 12. Same course as default mode: 3,482 lines of `Warp CUDA error 719` in several workers at once (first again `wp_memcpy_d2h, warp.cu:1112`), pool broken, isolated fallback. 0 translator diagnostics.
+- 7585 = 7608 minus 23: torch cannot run kernels in strict mode, so the torch interop tests do not register (18 TestTorch, 4 TestDLPack, `test_array_from_cai_cuda_0`, 2 TestTileMLP) and 2 more skip with "No suitable devices" (26 against 24). The MathDx-tolerance skip of test_tile_mlp disappears with its tests. Checked directly: torch 2.15.0+rocm10.2.0 in strict mode reports `gcnArchName` `gfx1250-strict`, and `torch.ones(4, device='cuda') * 2` raises `torch.AcceleratorError: CUDA error: invalid kernel file` (`hipErrorInvalidKernelFile`): that wheel ships no strict code objects.
+
+The 12 in the final count:
+
+| test | result | cause | alone in strict mode |
+|---|---|---|---|
+| `test_diagnostics.test_print_diagnostics_cuda_device_structure` | FAIL | `AssertionError: Regex didn't match: '^gfx[0-9a-f]+(:[a-z]+[+-])*$' not found in 'gfx1250-strict'` (`test_diagnostics.py:112`) | **reproduces** (Ran 14, failures=1); **port defect**, test only: the regex is from the port's `bf6bd5ba` ([ROCm] Report AMD GPUs and the HIP version from Python). Fix below. |
+| `test_examples.test_core.example_torch_cuda_0` | FAIL | the example exits 1: `torch.AcceleratorError: CUDA error: invalid kernel file` in `self.z.backward(...)` | not a Warp defect: torch has no strict code object (above). Warp's own kernel in the example loaded and ran. |
+| test_codegen (2), test_constant_precision (2), test_fixedarray (4), test_mat_constructors (2) | | the fallback-order pattern of item 2 (a subset of the same tests) | 117, 46, 20, 54 OK |
+
+Also alone in strict mode, all OK: **test_fem_geometry 22** (test_deformed_geometry passes: no translator), **test_mesh_query_point 9**, test_quat 167, test_sparse 47, test_special_values 74, test_spatial 201, test_spatial_assign_copy 6, test_large 10. No `Warp CUDA error` line and no translator line in any of these runs. In the strict fallback pass no `Warp CUDA error` line printed during tests; the 30 lines after the summary are the shutdown of the poisoned main process, as in default mode. Skips: as default mode apart from the two differences above.
+
+Fix for the port (validated; not committed, the porter's to take):
+```diff
+--- a/warp/tests/test_diagnostics.py
++++ b/warp/tests/test_diagnostics.py
+@@ -108,8 +108,8 @@ class TestDiagnostics(unittest.TestCase):
+             cuda_dev = devices[1]
+             warp_dev = wp.get_device(cuda_dev["alias"])
+             if warp_dev.is_hip:
+-                # AMD target name with its feature flags, e.g. gfx942:sramecc+:xnack-
+-                self.assertRegex(cuda_dev["arch"], r"^gfx[0-9a-f]+(:[a-z]+[+-])*$")
++                # AMD target name with its feature flags, e.g. gfx942:sramecc+:xnack- or gfx1250-strict
++                self.assertRegex(cuda_dev["arch"], r"^gfx[0-9a-f]+(-strict)?(:[a-z]+[+-])*$")
+             else:
+                 self.assertRegex(cuda_dev["arch"], r"^sm_\d+$")
+```
+Applied in a scratch worktree at `1c94e68b` with the two-target library copied in: test_diagnostics.py **14 OK in strict mode and 14 OK in default mode**. The regex accepts `gfx1250-strict`, `gfx1250`, `gfx942:sramecc+:xnack-`, `gfx90a:xnack-`, `gfx1250-strict:sramecc+`, and rejects `sm_90` and `gfx1250-strictx`. A release-notes line for strict mode, if wanted: PyTorch 2.15.0+rocm10.2.0 does not run on a gfx1250 GPU in strict mode, so Warp's PyTorch interop is unavailable there.
+
+### 4. Classification
+- **`s_set_pc_i64` translation failure (default mode, test_deformed_geometry): ROCm translator.** See item 5. Nothing in Warp or the port is wrong: the code is valid and runs natively in strict mode.
+- **test_diagnostics regex (strict mode): port defect**, test only, fix above.
+- **example_torch (strict mode): PyTorch wheel environment** (no strict code objects), not Warp.
+- **Fallback-order failures (both modes): test-runner artifact**, pass alone; the same tests failed the same way on 2026-11-23, and they occur only after the pool breaks.
+- **The sticky 719 that breaks the pool (both modes): unclassified.** Facts: it appeared in three of three full-suite runs on this device (2026-11-23 at `26be6725`, and both runs here), with and without the translator active; it hits several worker processes at the same moment (errors in 4 to 8 different test files at once), which suggests a device-level event rather than one process's fault (no `dmesg` access here to confirm); every file with cascades passes alone in both modes. **In all three runs a `test_examples` child `example_sph` was left running after the pool broke**: here `example_sph_cuda_0` started about 360 (default) and 90 (strict) log lines before the first 719 and never finished in the parallel phase; in the fallback pass it passed in both modes. The orphan of the default run (PID 19357, parent 1, this job's venv) was killed by that PID after 26.5 min. The strict run's orphan (PID 83655, started 20:47:47, 100% of one CPU, holding `/dev/kfd`, 963 MB VRAM per amd-smi) could not be stopped from this session (the kill was refused by the session's permission policy); it ends with the job. Other tests in flight at the first 719 in both modes: `test_quat.test_assignment_cuda_0` and a `test_sparse` bsr test (`bsr_axpy_3_3` / `bsr_mm_1_3`). I did not try to reproduce it by running example_sph concurrently with other tests, because a device-level fault on this shared host would hit other teams. Whether it is the port, the runtime or this hardware revision is open; a run of `example_sph` in a loop beside one other GPU test file, on a device nobody else needs, is the next experiment.
+
+### 5. `s_set_pc_i64` reproducer (for a ROCm report)
+**What the translator refuses**: a tail call from a device function through a callee address that was spilled to a VGPR lane and reloaded. In the Warp object the function `_test_geo_sides_56bbc198` (142,208 bytes) computes `wp::expect_near<float>`'s address once (`s_get_pc_i64 s[22:23]` / `s_add_nc_u64 s[22:23], s[22:23], 0xfffffffffffe00d0`, which resolves to `0x2400`, `expect_near`), calls it five times (`s_swap_pc_i64 s[30:31], s[22:23]`), spills it (`v_writelane_b32 v127, s22, 0` / `s23, 1`), and at its end reloads it (`v_readlane_b32 s0, v127, 0` / `s1, v127, 1`) and tail-calls `s_set_pc_i64 s[0:1]` at `.text+0x3f664` (address `0x41a64`; `.text` starts at `0x2400`), exactly the reported offset. Forms the translator accepts in the same run: returns `s_set_pc_i64 s[30:31]`; tail calls through an address still in the SGPRs from `s_get_pc_i64` (`s[28:29]` in the other `_test_geo_sides` modules, `s[34:35]`, `s[62:63]`, `s[102:103]` elsewhere); long branches in large kernels. Of 1772 objects in the default run, only this one failed (`fnsize.py` over the cache).
+
+**Plain HIP reproducer** `tailspill.hip` (scripts file; 30 lines): `f` calls `__noinline__ g` three times, with an inline-asm clobber of every allocatable SGPR between the calls so the callee address must be spilled; the third call is a tail call. ROCm 10.2 clang, `clang++ -x hip --offload-arch=gfx1250 -O2` emits `s_get_pc_i64 s[0:1]`, `v_writelane_b32 v5, s0, 0` / `s1, 1`, `v_readlane_b32 s0, v5, 0` / `s1, v5, 1` and `s_set_pc_i64 s[0:1]` at `.text+0x400` (`0x1d00`). Results (`HSA_HOTSWAP_VERBOSE=1`):
+```
+== default mode, ./tailspill (built for gfx1250)
+[hsa-hotswap-rj] installed eager gfx1250 B0-to-A0 hook
+[hsa-hotswap-rj] error: translation diagnostic source_id=fnv1a64:0c8c0bb9fb49abdc severity=error kind=translator-legalization guest_offset=.text+0x400 mnemonic=s_set_pc_i64 message=indirect branch or call target recovery is not implemented for relocated kernel text
+[hsa-hotswap-rj] error: translation failed; set HSA_HOTSWAP_DUMP_SOURCE=1 to save the source code object source_id=fnv1a64:0c8c0bb9fb49abdc input_bytes=5480; please file a bug report
+[hsa-hotswap-rj] error: eager translation source_id=fnv1a64:0c8c0bb9fb49abdc input_revision=b0 output_revision=a0 outcome=translation_failed changed=0 input_bytes=5480 output_bytes=0 translation_status=4 status=4112
+launch=209 (no kernel image is available for execution on the device) sync=0 (no error) sum=0 (expect 192)
+== strict mode (HSA_DISABLE_GFX12_STRICT=0), ./tailspill_strict (same source, built for gfx1250-strict)
+[hsa-hotswap-rj] installed eager gfx1250 B0-to-A0 hook
+launch=0 (no error) sync=0 (no error) sum=192 (expect 192)
+== default mode, control ./noinl (one __noinline__ call, return through s[30:31])
+[hsa-hotswap-rj] eager translation ... outcome=translated changed=1 input_bytes=3672 output_bytes=7768 translation_status=0 status=0
+[hsa-hotswap-rj] eager translation ... outcome=translated changed=23 input_bytes=29624 output_bytes=33720 translation_status=0 status=0
+err=0 (no error) a[3]=7 (expect 7)
+```
+The device-only object (`--cuda-device-only --no-gpu-bundle-output`, 5912 bytes) fails the same way through `load_co` (`hipModuleLoad` 209, `guest_offset=.text+0x400`).
+
+**The Warp object itself, without Warp**: `load_co.hip` (plain `hipModuleLoad`) on `wp_warp.tests.fem.test_fem_geometry._test_geo_sides_ac74fa3c_d4dbb37.gfx1250.hsaco` (271,216 bytes, md5 `24480b03...`; generated source `.cu` md5 `5fef4de9...`, both kept in the job's `agent_space/f/repro/geo/`) with `HSA_HOTSWAP_VERBOSE=1 HSA_HOTSWAP_DUMP_SOURCE=1 HSA_HOTSWAP_DUMP_DIR=dump`: the same diagnostic at `.text+0x3f664`, "translation failed; source code object saved ... `rocjitsu-gfx1250-b0-to-a0-d6be3733c60f273d-f1IZ0k.elf`; please file a bug report and attach this code object", and `hipModuleLoad` 209. The saved ELF is byte-identical to the hsaco. The strict object from the same `.cu` (strict cache) has the same pattern (`v_readlane_b32 s0, v127, 0` / `s1, 1`, `s_set_pc_i64 s[0:1]` at `0x41704`) and test_fem_geometry passes with it in strict mode.
+
+For a report: title along the lines of "gfx1250 code-object translation fails on a tail call through a spilled callee address"; attach `tailspill.hip` and its build command, the verbose output above, the HIP runtime version (7.17.26434), and optionally the Warp object. Deferred item `rocm-gfx1250-a0-translator-failures` is Jeff's to rule on; nothing was filed. Of its three cases only this one remains.
+
+### For Jeff and the coordinator
+- The two earlier failures expected to be fixed are fixed at `1c94e68b` on this device. The remaining default-mode failure is the translator's, now with a minimal reproducer; it disappears in strict mode.
+- Strict mode works for Warp: correct objects selected for library and JIT kernels, every GPU test file that failed in either mode passes alone, and one test-only port fix (the diff in item 3) is owed if strict mode should pass `test_diagnostics`. PyTorch interop does not work in strict mode with the 10.2 torch wheel.
+- Open: the device-level 719 that breaks the full suite's process pool on this device in both modes (item 4).
+
+Commands not given above: `suite.sh default` (= `suite2.sh` with the earlier per-PID occupancy log), `one.sh <tag> <file> [HSA_DISABLE_GFX12_STRICT=0]` for each rerun, `dev.sh <tag> [env]` for the selection checks, `SRC=<scratch worktree> one.sh ...` for the negative control and the regex fix, `python3 fnsize.py <llvm-objdump> <objects>` for the `s_set_pc_i64` survey.

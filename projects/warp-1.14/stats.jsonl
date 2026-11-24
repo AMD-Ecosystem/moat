@@ -534,3 +534,7 @@
 {"kind":"phase","ts":"2026-11-24T20:31:23Z","phase":"test","seconds":21.962,"exit":0,"cmd":"agent_space/v/run.sh matmul3 -s autodetect -p test_tile_matmul.py"}
 {"kind":"phase","ts":"2026-11-24T20:33:14Z","phase":"test","seconds":82.88,"exit":0,"cmd":"agent_space/v/run.sh asyncfile_debug -s autodetect --warp-debug -p test_async.py"}
 {"kind":"session","ts":"2026-11-24T20:33:58Z","epoch":1795552438.647104,"event":"end","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-24T19:55:34Z","phase":"compile","seconds":0.007,"exit":2,"cmd":"python build_lib.py --rocm-path /var/lib/jenkins/fleet/jobs/mi450-20261124-115224-gfx1250-final-prompt/venv/lib/python3.11/site-packages/_rocm_sdk_devel --hip-arch gfx1250,gfx1250-strict -j 64 --no-rocm-rpath"}
+{"kind":"phase","ts":"2026-11-24T19:56:09Z","phase":"compile","seconds":29.401,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi450-20261124-115224-gfx1250-final-prompt/moat/projects/warp-1.14/src && python build_lib.py --rocm-path /var/lib/jenkins/fleet/jobs/mi450-20261124-115224-gfx1250-final-prompt/venv/lib/python3.11/site-packages/_rocm_sdk_devel --hip-arch gfx1250,gfx1250-strict -j 64"}
+{"kind":"phase","ts":"2026-11-24T20:34:38Z","phase":"test","seconds":2173.627,"exit":0,"cmd":"agent_space/f/suite.sh default"}
+{"kind":"phase","ts":"2026-11-24T21:17:05Z","phase":"test","seconds":2073.666,"exit":0,"cmd":"agent_space/f/suite2.sh strict HSA_DISABLE_GFX12_STRICT=0"}
