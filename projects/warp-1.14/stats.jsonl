@@ -497,3 +497,14 @@
 {"kind":"phase","ts":"2026-11-24T19:23:13Z","phase":"test","seconds":923.092,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261123-192311-porter-gfx90a-prompt/moat/agent_space/g/t.sh suite-fin2"}
 {"kind":"session","ts":"2026-11-24T19:41:58Z","epoch":1795549318.010359,"event":"start","platform":"linux-gfx950"}
 {"kind":"session","ts":"2026-11-24T19:49:33Z","epoch":1795549773.594846,"event":"end","platform":"linux-gfx950"}
+{"kind":"session","ts":"2026-11-24T19:57:30Z","epoch":1795550250.165739,"event":"start","platform":"linux-gfx950"}
+{"kind":"phase","ts":"2026-11-24T19:58:11Z","phase":"compile","seconds":31.892,"exit":0,"cmd":"agent_space/v/build.sh /var/lib/jenkins/fleet/jobs/mi355-20261124-115251-validator6-prompt/moat/projects/warp-1.14/src 42 /var/lib/jenkins/fleet/jobs/mi355-20261124-115251-validator6-prompt/wheel"}
+{"kind":"phase","ts":"2026-11-24T20:08:34Z","phase":"test","seconds":605.113,"exit":1,"cmd":"agent_space/v/run.sh full -s autodetect"}
+{"kind":"phase","ts":"2026-11-24T20:09:05Z","phase":"test","seconds":1.41,"exit":0,"cmd":"agent_space/v/run.sh alone1 -s autodetect -p test_async.py -k test_copy_i2c_d2d_SrcPoolOff_DstPoolOff_NoStream_NoGrad_NoGraph_AccessSrcDst"}
+{"kind":"phase","ts":"2026-11-24T20:10:46Z","phase":"test","seconds":101.068,"exit":0,"cmd":"agent_space/v/run.sh asyncfile -s autodetect -p test_async.py"}
+{"kind":"phase","ts":"2026-11-24T20:13:43Z","phase":"test","seconds":165.677,"exit":0,"cmd":"agent_space/v/run.sh debugtile --warp-debug -s autodetect -p test_tile*.py"}
+{"kind":"phase","ts":"2026-11-24T20:14:06Z","phase":"test","seconds":14.457,"exit":0,"cmd":"agent_space/v/run.sh matmul1 -s autodetect -p test_tile_matmul.py"}
+{"kind":"phase","ts":"2026-11-24T20:14:21Z","phase":"test","seconds":14.441,"exit":0,"cmd":"agent_space/v/run.sh matmul2 -s autodetect -p test_tile_matmul.py"}
+{"kind":"phase","ts":"2026-11-24T20:14:35Z","phase":"test","seconds":14.396,"exit":0,"cmd":"agent_space/v/run.sh matmul3 -s autodetect -p test_tile_matmul.py"}
+{"kind":"phase","ts":"2026-11-24T20:15:16Z","phase":"test","seconds":32.807,"exit":0,"cmd":"agent_space/v/run.sh mqp -s autodetect -p test_mesh_query_point.py"}
+{"kind":"session","ts":"2026-11-24T20:15:48Z","epoch":1795551348.780863,"event":"end","platform":"linux-gfx950"}
