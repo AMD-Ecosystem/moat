@@ -33,3 +33,7 @@
 {"kind":"phase","ts":"2026-11-23T22:29:47Z","phase":"test","seconds":292.441,"exit":0,"cmd":"bash -c timeout 3600 projects/oidn/src/build/oidnTest --device cpu > agent_space/test_cpu.log 2>&1"}
 {"kind":"phase","ts":"2026-11-23T23:05:47Z","phase":"test","seconds":2462.172,"exit":0,"cmd":"bash -c cd agent_space/train && PYTHONPATH=/var/lib/jenkins/fleet/jobs/rx7900-20261123-131337-val-oidn-w32-prompt/venv/lib/python3.11/site-packages/_rocm_sdk_devel/share/amd_smi timeout 5400 /var/lib/jenkins/fleet/jobs/rx7900-20261123-131337-val-oidn-w32-prompt/venv/bin/python /var/lib/jenkins/fleet/jobs/rx7900-20261123-131337-val-oidn-w32-prompt/moat/projects/oidn/src/training/train.py hdr alb nrm --filter RT -P preproc -t train -v valid -R results -r smoke --seed 1 --epochs 20 --valid_epochs 5 --save_epochs 10 > train_gpu.log 2>&1"}
 {"kind":"session","ts":"2026-11-23T23:31:44Z","epoch":1795476704.3022,"event":"end","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-24T00:42:09Z","phase":"compile","seconds":237.558,"exit":0,"cmd":"bash ../build.sh projects/oidn/src ../builds/port"}
+{"kind":"phase","ts":"2026-11-24T00:43:12Z","phase":"compile","seconds":62.519,"exit":0,"cmd":"bash ../build.sh ../wt/master ../builds/master"}
+{"kind":"phase","ts":"2026-11-24T02:06:52Z","phase":"compile","seconds":224.519,"exit":0,"cmd":"bash ../build.sh ../wt/port-ckfix ../builds/port-ckfix"}
+{"kind":"phase","ts":"2026-11-24T02:13:50Z","phase":"compile","seconds":201.327,"exit":0,"cmd":"bash ../build.sh ../wt/port-ck724 ../builds/port-ck724"}
