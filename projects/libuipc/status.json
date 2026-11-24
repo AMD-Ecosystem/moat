@@ -6,12 +6,53 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "unclaimed",
+  "stage": "awaiting-fork",
   "adopted_at": "2026-11-24T18:04:33Z",
-  "updated_at": "2026-11-24T18:04:33Z",
+  "updated_at": "2026-11-24T18:09:56Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-24T18:09:56Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    }
+  },
+  "license_spdx": "Apache-2.0",
+  "license_spdx_history": [
+    {
+      "from": null,
+      "to": "Apache-2.0",
+      "evidence": "https://github.com/spiriMirror/libuipc/blob/e06f8ee1b0ab7287cf1968ede4478c736a090370/LICENSE",
+      "at": "2026-11-24T18:09:56Z"
+    }
+  ],
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "none (no upstream PR/issue/branch/fork, no AMD org repo; KemengHuang/libuipc is the author's personal fork)",
+    "viable": true,
+    "summary": "Apache-2.0 C++20/Python IPC contact simulator (GPU_IPC successor, same author, who invited the PR on GPU_IPC#4); CUDA backend ~50k lines .cu, CUB only, no CUDA-only deps; large but mechanical HIP port with a real test suite",
+    "at": "2026-11-24T18:09:56Z"
+  }
 }
