@@ -6453,3 +6453,63 @@ First hardware runs of the port on gfx908 (64 KiB of shared memory per block; `r
 - At `4ae8babd`, `rep.py` (an fp64 32x64x32 forward and backward launch, then 50 rounds of a trivial kernel and a 4096-pair `radix_sort_pairs`, each round checked), three runs each: with the case that fits, 0 of 50 rounds bad, blocking or not; with the over-limit case, `grad sum 0.0`, `Warp CUDA error 1 ... wp_cuda_launch_kernel`, and exactly 1 of 50 rounds bad in all six runs (the first sort after the refused launch), no error 700. That is the fourth review's stale-last-error defect, reproduced on a second arch through a refused launch.
 
 Open on gfx908: whether error 700 still appears at the head that has the 64 KiB guard and the last-error fix (cold cache, no launch blocking), and a full suite there with the failing names kept.
+## Porting session 32 (2026-11-24, linux-gfx950 MI355X, porter): fourth-review changes 1 and 2
+
+Request from jeff: address the two changes the fourth review requested (64 KiB guard; stale HIP last error after a failed `cu*_f` wrapper), one commit each, then the final step as in session 31. Entered with `set-state warp-1.14 linux-gfx950 porting` from `changes-requested` at `4ae8babd` (no lock takeover). `HIP_VISIBLE_DEVICES=1` (amd-smi GPU 0), `ulimit -c 0` for every GPU run, no process stopped. Before starting, porting sessions 10 to 17 and their evidence sessions (20 sections, 269 KB) moved verbatim to `notes-archive.md` (`2440b1d0`) to keep this file under the 1000 KB gate; porting session 18 (the latest Windows record) stays here.
+
+Fork commits (`release/1.14.0.amd0`, pushed, head `4e0d02ab`):
+
+| commit | title |
+|---|---|
+| `10942265` | Skip tile_matmul fragment shapes whose backward exceeds shared memory |
+| `4e0d02ab` | [ROCm] Clear HIP's last error when a driver API wrapper fails |
+
+### 1. 64 KiB guard (`10942265`, no prefix)
+
+The reviewer's form: one predicate `shared_memory_fits(device, dynamic_bytes, block_dim)` in `warp/tests/unittest_utils.py` (`not device.is_cuda or dynamic_bytes + 4 * block_dim + 1024 <= max_shared_memory_per_block`), used by `skip_if_shared_memory_exceeded` and by `test_tile_matmul_fragment_shapes`, which skips (continue) a shape whose backward needs more than `2 * type_size * (M*K + K*N + M*N)` at the largest block size.
+
+- **This host has no 64 KiB device** (MI355X: 163,840 bytes per block). On gfx950 the four fragment tests (`-k fragment_shapes_float16/float32/float64/bfloat16`) pass with no shape skipped; test_tile_matmul 26 OK, test_tile_reduce 62 OK, test_tile_shared_memory 30 OK, test_tile_view 16 OK.
+- Scratch run (`agent_space/s32/force64k.py`, `max_shared_memory_per_block` forced to 65,536 on the same GPU, guard calls logged): **only fp64 (32, 64, 32) is skipped**; the four tests pass.
+- The coordinator runs it on gfx942 and gfx908.
+
+### 2. Stale HIP last error after a failed wrapper (`4e0d02ab`)
+
+Reproduced first with the reviewer's `warp_repro.py` and a three-path variant (`agent_space/s32/repro_paths.py`: sort 100,000 int32 pairs with `wp.utils.radix_sort_pairs` after the failure; adjacent pairs out of order out of 99,999):
+
+| failure before the sort | before | after |
+|---|---|---|
+| `Event.ipc_handle()` on an event without `interprocess=True` | 50,107 | 0 |
+| refused over-limit launch (160x160 fp64 shared tile, error 1) | 49,969 | 0 |
+| module load of a bogus image (`wp_cuda_load_module`, error 200) | 50,052 | 0 |
+
+Before the fix each case also printed a stray `sort.cu:84` error line; after, none.
+
+Fix, in one place: `static hipError_t hip_driver_result(hipError_t)` in the HIP section of `cuda_util.cpp` calls `hipGetLastError()` when the result is a failure other than `hipErrorNotReady`, and every HIP call in every `cu*_f` wrapper passes its result through it. `hipErrorNotReady` is excluded because a scratch HIP test (`agent_space/s32/notready/nr.hip`) shows `hipStreamQuery`/`hipEventQuery` returning it set no last error, so clearing there could only discard an earlier, unrelated error. clang-format applied (most of the 198-line diff is reflow).
+
+Wrapper coverage (`agent_space/s32/wrapper_audit.txt`, a script over the HIP section): 72 `cu*_f` wrappers; 66 make HIP calls, 72 HIP calls in all, **72 through `hip_driver_result`, none unwrapped**. The ones that can fail at run time are all covered, including: launch (`cuLaunchKernel_f`), module load/unload/get function/get global (`cuModuleLoadDataEx_f`, `cuModuleUnload_f`, `cuModuleGetFunction_f`, `cuModuleGetGlobal_f`), shared-memory and function attributes and occupancy (`cuFuncSetAttribute_f`, `cuOccupancyMaxPotentialBlockSize_f`), IPC (`cuIpcGetMemHandle_f`, `cuIpcOpenMemHandle_f`, `cuIpcCloseMemHandle_f`, `cuIpcGetEventHandle_f`, `cuIpcOpenEventHandle_f`), graph (`cuGraphAddNode_f`, `cuGraphNodeGetType_f`, `cuGraphNodeGetDependentNodes_f`, `cuStreamGetCaptureInfo_f`, `cuStreamUpdateCaptureDependencies_f`), GL registration and mapping (`cuGraphicsGLRegisterBuffer_f`, `cuGraphicsGLRegisterImage_f`, `cuGraphicsMapResources_f`, `cuGraphicsUnmapResources_f`, `cuGraphicsResourceGetMappedPointer_f`, `cuGraphicsSubResourceGetMappedArray_f`, `cuGraphicsUnregisterResource_f`), memcpy 2D/3D/peer/batch, arrays and texture objects, streams, events, peer access, device and context queries. The six without a HIP call: `cuDevicePrimaryCtxRetain_f`, `cuDevicePrimaryCtxRelease_f`, `cuCtxPushCurrent_f`, `cuCtxPopCurrent_f`, `cuCtxCreate_f`, `cuCtxDestroy_f` (push, pop and create call other wrappers). Not wrapped, deliberately: `init_cuda_driver` (one-time `hipInit`/`hipGetDeviceCount`) and `get_error_string`; `hip_array_element_size`'s `hipArray3DGetDescriptor` is wrapped.
+
+Regression test: `test_ipc_event_missing_interprocess_flag` (`warp/tests/cuda/test_ipc.py`) now sorts 100,000 keys after the failed `ipc_handle()` and compares with NumPy. Built without the fix it fails; with it test_ipc 4 OK. On CUDA the failed call sets no runtime error, so the added check passes unchanged.
+
+Per-test `hipGetLastError()` sweep over the full suite again (reviewer's `lasterr_runner.py`, `agent_space/s32/sweep.sh`, 6 shards, fork tree built for gfx950 at the fix): 7,562 tests (908 + 1,254 + 3,140 + 564 + 913 + 783), **no test leaves an error behind** (no `LASTERR` line in any shard), failures 0, errors 0, wall 817 s; last error 0 at start.
+
+The other direction, places where the port's own native code reads `hipGetLastError()`/`cudaGetLastError()`:
+- Clears only, no detection (unaffected): `warp.cu` 594 and 1060 (after a `cudaFreeAsync` invalid-value fallback), 1209 (copy retry), 1228 (pointer-attribute queries), 3454 (after `EndCapture`).
+- Detection reads: `warp.cu` 1334 (the Windows captured memset kernel launch, read right after it), `warp.cu` 1950 (array copy/fill after `wp_launch_device`), `warp.cu` 2859 `wp_cuda_context_check` (called by `verify_cuda`, `context.py` 6680, by the debug `wp_launch_device` check in `cuda_util.h` 49, and by `volume_builder.cu` 353), nanovdb `util/cuda/Util.h` 65, cuBQL `math/common.h` 380. All of these check runtime launches (`<<<>>>` / `hipLaunchKernelGGL`), whose errors the clearing never touches: it runs only when a `cu*_f` wrapper's own call fails. The one thing they no longer see is a failed `cuLaunchKernel_f` (module kernels), which is still reported through its return value (`check_cu` at `warp.cu` 5536); with the CUDA driver API such a failure is not visible to `cudaGetLastError` either, so this matches CUDA.
+
+nvcc check (nvcc 12.8): `cuda_util.cpp` preprocessed for CUDA (`g++ -E -P -DWP_ENABLE_CUDA=1 -DNDEBUG`) at `4ae8babd` and at the fix: identical (67,077 lines, line numbers normalized); `cuda_pp.sh` 4ae8babd vs the fix: 24 of 24 `.cu` units identical; the CUDA build (`agent_space/cudabuild_s24.sh`, worktree at `4e0d02ab`) succeeds. `jargon.py --port`: clean; `prose.py` on the bodies: clean; `audit-commits`: OK.
+
+### Final step (head `4e0d02ab`)
+
+- Release build (`agent_space/relbuild.sh <clone> 64`), wall 179 s, "Warp build succeeded": 26 `--offload-arch` per HIP compile, `gfx1250-strict` among them, `--offload-compress`; each of the 11 HIP translation units' `.hip_fatbin` lists 26 code objects including `gfx1250-strict`. warp.so 11,025,224 bytes, RUNPATH `$ORIGIN`, no build-path string.
+- Wheel (`python -m build --wheel -C--build-option=-Plinux-x86_64 -o <job>/wheel`, fork clone at `4e0d02ab`, tracked tree clean): **`/var/lib/jenkins/fleet/jobs/mi355-20261119-154230-warp114-perf-porter-mi355-prompt/wheel/warp_lang-1.14.0+rocm10.2.0-py3-none-manylinux_2_28_x86_64.whl`, 37,298,482 bytes, sha256 `1f518ee02ebb0a89f9d168e687770dd33a52852cd54dcb13d0d9e13dea4f9632`.** warp.so 11,025,224, warp-clang.so 67,136,896, warp.so.rocm 8 (`'\n10.2.0\n'`); 548 entries; no member contains the job path; `Version: 1.14.0+rocm10.2.0`, `Requires-Dist: rocm<10.3,>=10.2`. Session 31's wheel moved to `<job>/wheel/old_4ae8babd/`.
+- Installed into the job venv (force-reinstall, no deps; `pip check` clean): **installed size 106,473,492 bytes**; installed warp.so sha256 (`34967c5b...8736`) equals the build's.
+- Full default suite from the installed wheel, outside the tree, fresh cache: first run **Ran 7562 in 457.3 s, FAILED (failures=2, skipped=81)**: `test_async` `test_copy_s2f_d2d_SrcPoolOff_DstPoolOff_NoStream_NoGrad_Graph_AccessBoth` and `..._NoGraph_AccessBoth`, each 124,928 of 1,000,000 elements wrong (1/8 of the array), the signature of the filed lost-writes ROCm defect (deferred item `hip-mi300-xcd-lost-writes-after-free-realloc`, seen in sessions 19 to 22 and 31 under host load; pool off, so the frees are `hipFree`, not a wrapper). `test_async.py` alone right after: 2373 OK twice. Second full run: **Ran 7562 tests in 403.7 s, OK (skipped=81)**, wall 409 s; host load average 7 to 26.
+- Tile tests in debug mode from the installed wheel: **Ran 599 tests in 142.1 s, OK (skipped=9)**, no device assertion, no error 700.
+- Every result clean apart from the known ROCm defect: stage moved to `ported` (lock released).
+
+### Next step
+
+- Reviewer: review `4ae8babd..4e0d02ab`.
+- Coordinator: run `test_tile_matmul.py` (and the fragment tests in their own processes) on gfx942 and gfx908, the 64 KiB devices this host does not have.
+- gfx1250, when that host is available again: rerun the evidence session's item 5 (fem `test_hex_mesh` error 209 from `radix_sort_pairs_device`, and the wrong `mesh_query_point` results) at `4e0d02ab`, per the coordinator note; a stale 209 left by a failed module load should no longer reach the sort.
+- Validators revalidate at `4e0d02ab`.
