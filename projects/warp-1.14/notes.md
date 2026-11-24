@@ -7563,3 +7563,68 @@ Default options:
 ### Scripts (job `moat/agent_space/c/`, scratch)
 
 `r.sh` (above); `user2.py` and `sn.py` (as given in the request); `twice_own.py` and `perf_own.py` (step 2, as described); `exbench.py`, `exrounds.sh` (interleaved rounds; `M=fastmath` for the second table) and `exsum.py` (tables); `opt.py` (the `WARP_DEBUG` option check). Logs and JSON in the job's `ev/logs/`. Trees `ev/fast`, `ev/on` (scratch, not pushed anywhere).
+### Addendum to session 33 (2026-11-24, same job, linux-gfx90a): scripts file, option 3 measured on examples and the full suite
+
+Coordinator follow-up, jeff still away and not ruling: nothing committed to the fork, stage and lock unchanged (`porting`, held by this job; gfx90a `validation-failed` at `4e0d02ab`). Same host, pin (`HIP_VISIBLE_DEVICES=0`), venv and builds as session 33; `ulimit -c 0` for every GPU run; GPU idle (amd-smi, no other process) at every round; no process stopped.
+
+Coordinator result recorded with thanks to the V100 run: with upstream `warp-lang==1.14.0` on CUDA, `user2.py` gives 0 of 4,194,304 for box_d2, det2 and dot (default and `nofuse`), a sign_normal twice-in-one-kernel sweep on the 24^3 grid cube (9 BVH setups x 232,768 points) and `intersect_tri_tri` twice give 0, and upstream `test_mesh_query_point` is 9 OK. **So in every case measured, the inconsistency is HIP-only**; section 5's "not established" for CUDA is answered: NVRTC's contraction keeps these copies consistent, hipRTC's `fast-honor-pragmas` does not.
+
+**1. Scripts.** Complete runnable copies of every script used (`r.sh`, `t.sh`, `mqp.py`, `twice.py`, `hel.py`, `user2.py`, `perf.py`, `perf2.py`, `wnres.py`, `pfsum.py`, `exsum.py`, `exbench.py`), the one-line `warp.cu` change for the hipRTC `on` tree and the `llvm-readelf` spill command are in **`notes-contraction-scripts.md`**; they supersede the abbreviated copies in section "Scripts" above. `r.sh`/`t.sh` there are the portable form (paths relative to the script's own directory, `TREE`/`PY`/`HIP_VISIBLE_DEVICES` from the environment); re-run with them here they reproduce `user2.py`'s 1,399,489 (4e0d02ab) and `hel.py`'s 0 (`on`).
+
+**2a. Examples, hipRTC `on` against 4e0d02ab** (`exbench.py`: per-call GPU wall time of each example's step with default module options, i.e. `fuse_fp=True`, `fast_math=False`; 3 warm-up calls, then 5 samples of N back-to-back calls + sync, median; one process per tree per round, trees interleaved, fresh kernel cache per process; `before` = the clone's build with 4e0d02ab headers, `on` = worktree at 4e0d02ab with only the option string changed and rebuilt). Sessions 28-31 measured sph step, dem step, cloth 16 substeps, raycast render and a tile kernel (their `fm_perf.py` was not recorded, so these are re-implemented from the examples: cloth = `benchmarks/benchmark_cloth_warp.py` on a 256x256 cloth, 16 substeps; the tile kernel is replaced by the tile examples nbody and mcgp); added fluid, wave, marching cubes, mesh_intersect and FFT Navier-Stokes. Noise floor `floor` = an elementwise kernel the option does not change.
+
+First set:
+
+rounds: 5 / 5
+| case | before us (min / median) | on us (min / median) | on/before (min) | on/before (median) | per-round on/before |
+|---|---|---|---|---|---|
+| floor | 172.6 / 172.8 | 172.9 / 173.1 | 1.002 | 1.002 | 0.998 / 1.003 / 1.003 / 1.003 / 1.000 |
+| sph | 23392.6 / 23487.6 | 23365.1 / 23478.5 | 0.999 | 1.000 | 0.993 / 0.999 / 1.005 / 0.998 / 1.000 |
+| dem | 105536.5 / 105571.8 | 105166.2 / 105209.8 | 0.996 | 0.997 | 0.996 / 0.997 / 0.996 / 0.996 / 0.997 |
+| raycast | 2167.4 / 2170.5 | 2164.8 / 2169.2 | 0.999 | 0.999 | 0.997 / 0.999 / 1.001 / 0.999 / 0.999 |
+| fluid | 421.7 / 421.9 | 420.6 / 422.9 | 0.997 | 1.002 | 0.996 / 0.997 / 1.002 / 1.007 / 1.003 |
+| wave | 889.6 / 907.3 | 885.6 / 902.5 | 0.996 | 0.995 | 1.015 / 0.992 / 0.988 / 0.976 / 0.976 |
+| marching_cubes | 725.5 / 741.2 | 720.4 / 727.9 | 0.993 | 0.982 | 0.983 / 0.953 / 1.003 / 0.986 / 0.995 |
+| mesh_intersect | 644.0 / 644.8 | 659.1 / 660.3 | 1.023 | 1.024 | 1.021 / 1.023 / 1.027 / 1.025 / 1.024 |
+| navier_stokes | 681.1 / 686.9 | 670.7 / 679.3 | 0.985 | 0.989 | 0.997 / 1.018 / 0.988 / 0.989 / 0.972 |
+| tile_nbody | 2541.3 / 2541.9 | 2622.4 / 2622.8 | 1.032 | 1.032 | 1.032 / 1.032 / 1.032 / 1.032 / 1.032 |
+| tile_mcgp | 28241.5 / 28252.1 | 28286.0 / 28292.8 | 1.002 | 1.001 | 1.001 / 1.001 / 1.002 / 1.001 / 1.002 |
+| cloth | 2371.8 / 2391.0 | 2367.9 / 2385.1 | 0.998 | 0.998 | 0.989 / 0.998 / 1.008 / 0.999 / 0.998 |
+
+Second, independent set:
+
+rounds: 5 / 5
+| case | before us (min / median) | on us (min / median) | on/before (min) | on/before (median) | per-round on/before |
+|---|---|---|---|---|---|
+| floor | 172.6 / 172.8 | 172.7 / 173.1 | 1.000 | 1.002 | 1.000 / 1.002 / 1.002 / 1.003 / 1.001 |
+| sph | 23355.9 / 23393.7 | 23354.9 / 23444.3 | 1.000 | 1.002 | 0.999 / 1.005 / 0.999 / 0.999 / 0.997 |
+| dem | 105532.7 / 105583.1 | 105093.6 / 105167.7 | 0.996 | 0.996 | 0.996 / 0.997 / 0.996 / 0.996 / 0.996 |
+| raycast | 2165.3 / 2166.6 | 2165.1 / 2169.6 | 1.000 | 1.001 | 0.999 / 1.002 / 1.000 / 1.001 / 1.000 |
+| fluid | 419.3 / 422.4 | 421.2 / 422.0 | 1.005 | 0.999 | 0.998 / 1.005 / 0.997 / 1.003 / 0.998 |
+| wave | 879.3 / 892.1 | 881.9 / 899.1 | 1.003 | 1.008 | 0.989 / 1.023 / 1.147 / 0.910 / 0.957 |
+| marching_cubes | 710.9 / 718.0 | 720.3 / 734.4 | 1.013 | 1.023 | 1.018 / 1.033 / 1.153 / 0.876 / 0.987 |
+| mesh_intersect | 643.2 / 643.6 | 659.6 / 660.0 | 1.026 | 1.026 | 1.025 / 1.028 / 1.025 / 1.028 / 1.023 |
+| navier_stokes | 669.8 / 685.9 | 668.1 / 683.9 | 0.997 | 0.997 | 0.980 / 1.022 / 1.133 / 0.876 / 0.997 |
+| tile_nbody | 2540.9 / 2541.5 | 2621.6 / 2622.5 | 1.032 | 1.032 | 1.032 / 1.032 / 1.033 / 1.032 / 1.032 |
+| tile_mcgp | 28232.1 / 28246.5 | 28283.9 / 28289.6 | 1.002 | 1.002 | 1.002 / 1.002 / 1.006 / 0.998 / 1.002 |
+| cloth | 2363.8 / 2368.7 | 2362.7 / 2380.4 | 1.000 | 1.005 | 0.998 / 1.008 / 1.007 / 0.999 / 1.004 |
+
+- **Slower under `on` beyond noise, in every round of both sets: `example_mesh_intersect` step +2.3% to +2.8% and `example_tile_nbody` step +3.2%** (per round 1.021 to 1.028 and 1.032 to 1.033), against a noise floor of 0.998 to 1.003 per round.
+- Faster beyond noise: `example_dem` step 0.4% (0.996 to 0.997 in every round).
+- Within noise: sph, raycast, fluid, cloth, tile_mcgp (1.001 to 1.002, 0.998 to 1.006 per round, borderline at most), and wave, marching cubes and Navier-Stokes, whose own rounds swing 0.88 to 1.15 (both directions), so they show nothing either way.
+- With session 33's mesh query kernels (winding-number query 0.21x, i.e. 4.7x faster under `on`; sign_normal 0.99x; ray, tri_tri and controls unchanged), option 3's cost on gfx90a is two kernels 2-3% slower and its gain is the winding-number query; not measured on other arches.
+
+**2b. Full default suite on the `on` tree** (`t.sh suite-on`, i.e. `python -m warp.tests -s autodetect` from a directory outside the tree, fresh cache, `TREE` = the `on` worktree): **Ran 7564 tests in 1268.7 s, OK (skipped=83).** No failure, no `Warp CUDA error` line. `test_mesh_query_point_cuda_0` passes. The count is 46 below the validator's 7610 because this job venv has no torch ("Skipping Torch tests due to exception: No module named 'torch'"; the validator had installed torch), so the torch interop tests do not register; skips: "No suitable devices" 21, conditional graph nodes 16, MathDx 8 + 1, two-device 7, mempool 5 + 1 + 1, peer 3 + 1 + 1, shared-memory limit 5 (66688 x2, 66816, 67584 x2), CPU memory 2, NVRTC 2 + 1, multi-GPU 2, one each of rmm, memory-usage flakiness, "Requires CUDA", HIP stream priorities, and 2 `example_torch` cases ("No module named 'torch'").
+
+fp16 (the tests behind e92f2611's builtin.h region), each file alone with a fresh cache:
+
+| tree | test_mat.py (incl. test_inverse_float16) | test_fp16.py | test_bf16.py | test_math.py |
+|---|---|---|---|---|
+| 4e0d02ab (`fast-honor-pragmas` + fp16 region) | 134 OK | 6 OK | 48 OK | 16 OK |
+| `fast-honor-pragmas`, fp16 region removed (control) | **FAILED (failures=1)**: `test_inverse_float16_cuda_0`, -31.31 against -31.378, atol 0.05 (session 22's failure, reproduced) | 6 OK | 48 OK | 16 OK |
+| hipRTC `on` + fp16 region | 134 OK | 6 OK | 48 OK | 16 OK |
+| hipRTC `on`, fp16 region removed | **134 OK** | 6 OK | 48 OK | 16 OK |
+
+So under option 3 the builtin.h fp16 region is not needed for any test (with `on`, Clang fuses only within one expression, and Warp's half operators round in separate expressions); keeping it is harmless. The region-removed trees are copies of the package with only the two `#if defined(__HIP_DEVICE_COMPILE__)` pragma blocks (and their comment) deleted from `warp/native/builtin.h`, same `warp/bin`.
+
+**For jeff's ruling (unchanged question, section 4), option 3 on gfx90a in one line:** consistent in every case measured (as CUDA is), the full suite passes, the fp16 region becomes optional, `mesh_query_point_sign_winding_number` 4.7x faster, `example_mesh_intersect` and `example_tile_nbody` 2-3% slower, `example_dem` 0.4% faster, everything else within noise. Other arches not measured. Next step as in section "Next step"; the lock stays with this job until that porter round.
