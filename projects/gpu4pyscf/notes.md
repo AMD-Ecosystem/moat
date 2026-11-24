@@ -5901,3 +5901,79 @@ Fleet job dispatched by jeff, after the (h) evidence above (same job, environmen
 **Not covered:** wave32 is satisfied by linux-gfx1201 at this head; linux-gfx1100 and linux-gfx90a have not run the rescoped heads.
 
 **For the (h) draft, if jeff wants it** (not in the paragraph, because the fork is not master plus this pull request): with #1056's fix and the other open fixes underneath, as on the fork head, the six target tests pass on the MI300X with the split off, so there the changed files are reached and change nothing.
+
+## README known issue instead of #1055, 2026-11-24 (fleet job, linux-gfx942 MI300X, upstream master c9eea22a; not a pipeline round)
+
+Requested by jeff after sunqm's reply on #1055 (2026-11-24): compiler bugs should not be handled by changing code or build configuration; document the affected ROCm version and GPUs as a known issue in the README and link #1055 for the workaround. jeff agreed: a small README pull request, and #1055 is closed and stays as the reference. No stage, platform record, lock or `moat-port` touched.
+
+### Environment
+MI300X (`gcnArchName` gfx942:sramecc+:xnack-), `HIP_VISIBLE_DEVICES=6` from the dispatcher, all GPU work under `ulimit -c 0`. TheRock ROCm SDK 10.1.0 pip (HIP 7.16.26385, AMD clang 24.0.0 d6f6cb69), `LD_LIBRARY_PATH=$(rocm-sdk path --root)/lib` at run time. Job venv: numpy 2.2.6, scipy 1.17.1, cupy-rocm-7-0 14.2.0, pyscf 2.14.0, pyscf-dispersion 1.7.0, geometric 1.1.1, MCFun 0.2.6 (CI's pin; see below), pytest 9.2.0, pytest-timeout 2.4.0. Upstream master c9eea22a (still upstream's tip at the push, `git ls-remote`).
+
+### How CMake flags reach the README install path
+- setup.py (no pyproject.toml; pip uses the setuptools legacy backend, builds in-tree): `CMAKE_CONFIGURE_ARGS` is appended to the configure command with `configure_args.split(' ')`, so it is split on spaces. `-DCMAKE_HIP_FLAGS=-mllvm -disable-machine-licm` would become two arguments; the flag must be written `-mllvm=-disable-machine-licm` (clang accepts the `=` form). `CMAKE_BUILD_ARGS` goes to `cmake --build` (after a hard-coded `-j 8`). These are the only two pass-through variables, besides `HIP_ARCHITECTURES`.
+- `CMAKE_HIP_FLAGS` alone is enough. The 11 HIP libraries link with `-fgpu-rdc --hip-link` (target_link_options), so device code is generated at link time, and CMake's HIP link rule puts `CMAKE_HIP_FLAGS` on that line. `CMAKE_SHARED_LINKER_FLAGS` is useless anyway: lib/CMakeLists.txt:211 overwrites it with `-Wl,--no-as-needed`.
+- Proof, verbose build (`... CMAKE_BUILD_ARGS=--verbose pip install -v --no-deps --prefix <dir> .`, same flags): configure line ends `-DCMAKE_HIP_FLAGS=-mllvm=-disable-machine-licm -DGPU4PYSCF_BACKEND=hip`; `-mllvm=-disable-machine-licm` on **96/96** HIP `.cu` compile lines and **11/11** `--hip-link` lines (each also has `-fgpu-rdc`); `--offload-arch=gfx942` only. The exact README-command install's own build tree agrees: CMakeCache `CMAKE_HIP_FLAGS:STRING=-mllvm=-disable-machine-licm`, the flag in 11/11 `link.txt` and 11/11 `flags.make`. No-flag build tree: 0 occurrences.
+- Host note, not for the README: this job venv's `cmake` is a Python shim from a symlinked base env that pip's isolated build cannot import (`ModuleNotFoundError: No module named 'cmake'`); a `bin/cmake` symlink to the real 3.31.6 binary was put first on PATH. A normal user's cmake does not have this problem.
+
+### Runs (each install fresh: the README command into the job venv; the no-flag one with `--prefix` and `PYTHONPATH`)
+- README command `GPU4PYSCF_BACKEND=hip CMAKE_CONFIGURE_ARGS="-DCMAKE_HIP_FLAGS=-mllvm=-disable-machine-licm" pip install .`: exit 0 in 121 s, package `gpu4pyscf-rocm7x 1.9.1`, 11 libraries. Plain `GPU4PYSCF_BACKEND=hip pip install .`: exit 0 in 126 s.
+- RHF water/def2-svp (#1055's one-liner): flag install **-75.96097516696526**, CPU PySCF -75.96097516698238 (1.7e-11), 30 s. No-flag install: **`HSA_STATUS_ERROR_MEMORY_FAULT`, faulting kernel `rys_k_kernel`**, GPU hang analysis, then hung until `timeout 300` killed it (rc 124). (Earlier rounds saw `MEMORY_APERTURE_VIOLATION` for the same fault; the README says "memory access fault", which covers both.)
+- scf and dft, flag install, one pytest process per file, `--import-mode=importlib` from an empty directory so the installed package is tested (checked: `gpu4pyscf.__file__` in the venv), `-p no:xdist -m 'not slow and not benchmark and not special' -k 'not _high_cost'`, `OMP_NUM_THREADS=4`, four files at a time, `timeout -k 30 1800` per file, 286 s: **401 passed / 1 failed / 23 skipped / 0 errors over all 32 files** (scf 221/0/14/0, 19 files; dft 180/1/9/0, 13 files). No fault, no hang. The one failure: test_gks.py::test_mcol_gks_mgga, -28.188227223930294 vs -28.188215296679516 (1.2e-5, places=5); multi-collinear meta-GGA through the CPU libXC fallback, not a d-shell kernel.
+- MCFun: the first run had MCFun 0.3.0 (unpinned), which gave 16 more failures in test_gks.py and test_numint2c.py (`TypeError: eval_xc_eff() got an unexpected keyword argument 'collinear_threshold'`). Upstream CI pins `MCFun==0.2.6`; with it those two files give 10/1 and 12/0 (+6 subtests). The counts above use the 0.2.6 rerun of those two files and the first run for the other 30.
+
+### ROCm 10.2
+No ROCm 10.2 or newer toolchain on this host (only the TheRock 10.1.0 SDK; three public ROCm wheel indexes probed for gfx94X `rocm-sdk-devel` list no 10.x wheel at all). So no new check of a 10.2-compiled kernel and no 10.2 run; the README and drafts state the fix as "in ROCm 10.2 and later, by branch history and a static check of the compiled kernel (d6f6cb69 plus 8c6e07731faf), not confirmed by a 10.2 run" (claude-shared plan therock-10-1-machinelicm-vgpr-clobber-reduce.md).
+
+### The change: branch `pr-1054-readme-rocm-10-1` on AMD-Ecosystem/gpu4pyscf, tip **e241b11f10ff5f16c4dbefb23525b10afd81b03e** (one commit on upstream master c9eea22a, pushed)
+README.md +12: a `> [!WARNING]` block after the two ROCm `[!NOTE]` blocks in "Building for AMD GPUs (ROCm)", hard-wrapped like the rest of the README. Commit `[ROCm] Document the ROCm 10.1 d-shell fault on MI200/MI300 in README` (68 characters; `[ROCm]` kept on the commit per jeff's 2026-11-19 ruling, none on the PR title). The first local commit had no prefix; the branch was re-cut from master before any push (nothing published was rewritten). `jargon.py -C <clone> --commits/--diff upstream/master..pr-1054-readme-rocm-10-1`: clean; `prose.py` on the commit body: clean; ASCII only. The README text itself is hard-wrapped on purpose (file style, not a GitHub body).
+
+```
+> [!WARNING]
+> Known issue with ROCm 10.1 on MI200 and MI300 series GPUs (gfx90a, gfx942): a
+> compiler bug miscompiles the Rys J/K kernels, so calculations with d shells
+> (for example RHF/def2-svp) fail with a GPU memory access fault and then hang.
+> Radeon GPUs did not show it. The compiler fix is in ROCm 10.2 and later (from
+> the compiler sources and the compiled kernel; not yet confirmed by a run on
+> these GPUs). With ROCm 10.1, build with machine LICM disabled
+> (see [#1055](https://github.com/pyscf/gpu4pyscf/pull/1055)):
+> ```sh
+> GPU4PYSCF_BACKEND=hip CMAKE_CONFIGURE_ARGS="-DCMAKE_HIP_FLAGS=-mllvm=-disable-machine-licm" pip install .
+> ```
+```
+
+### Draft pull request for jeff (nothing posted; head AMD-Ecosystem:pr-1054-readme-rocm-10-1, base pyscf:master). `prose.py` and `jargon.py`: clean.
+
+Title: Document the ROCm 10.1 d-shell fault on MI200/MI300 in the README
+
+````markdown
+With ROCm 10.1 on MI200 and MI300 series GPUs (gfx90a, gfx942), the compiler miscompiles the Rys J/K kernels: any calculation with d shells (RHF water/def2-svp is enough) faults with a GPU memory access violation in `rys_k_kernel` and then hangs. Radeon GPUs (gfx1100, gfx1201) did not show it. The compiler fix (LLVM 8c6e07731faf) is in ROCm 10.2 and later, by the compiler's branch history and a static check of the compiled kernel; it has not been confirmed by a ROCm 10.2 run on these GPUs.
+
+As discussed in #1055, this documents the issue instead of changing the build: a known-issue note in "Building for AMD GPUs (ROCm)" with the affected ROCm release and GPUs, what users see, and the one-line build command that disables machine LICM, linking #1055 for the details. The flag is written as `-mllvm=-disable-machine-licm` because setup.py splits `CMAKE_CONFIGURE_ARGS` on spaces, and `CMAKE_HIP_FLAGS` is enough: CMake's HIP link rule passes it to the `-fgpu-rdc` link step, where the device code is generated.
+
+Tested on an MI300X (gfx942) with ROCm 10.1.0, CuPy 14.2.0, PySCF 2.14.0 at master c9eea22a, each install in a fresh environment:
+
+```
+GPU4PYSCF_BACKEND=hip CMAKE_CONFIGURE_ARGS="-DCMAKE_HIP_FLAGS=-mllvm=-disable-machine-licm" pip install .
+python -c "from pyscf import gto; from gpu4pyscf import scf; mol = gto.M(atom='O 0 0 0; H 0 -0.757 0.587; H 0 0.757 0.587', basis='def2-svp'); print(scf.RHF(mol).kernel())"
+```
+
+- With the command from the note: RHF water/def2-svp gives -75.96097516696526 (1.7e-11 from CPU PySCF); scf and dft with the CI marker selection, one pytest process per file, give 401 passed, 1 failed (test_mcol_gks_mgga, 1.2e-5 from its reference), 23 skipped. The verbose build log has the flag on all 96 HIP compile lines and all 11 `--hip-link` lines.
+- With plain `GPU4PYSCF_BACKEND=hip pip install .`: the same RHF run faults with `HSA_STATUS_ERROR_MEMORY_FAULT` in `rys_k_kernel` and hangs until killed.
+
+This pull request was prepared with Claude Code (Anthropic), which wrote the change and ran the tests on our hardware; I read and approved it before opening.
+
+Part of #1054.
+````
+
+The body ends with the disclosure sentence of jeff's 2026-11-19 ruling and then "Part of #1054." (the request asked for the body to end with that line; both are kept by putting the disclosure first).
+
+### Draft reply on #1055 for jeff (post after the new pull request is open, fill in its number, then close #1055). `prose.py` and `jargon.py`: clean.
+
+```
+The known issue is now documented in the README in #<NEW_PR>, which links back here, so I'm closing this pull request; it stays as the reference for the workaround.
+```
+
+### For jeff
+1. Open the pull request from `pr-1054-readme-rocm-10-1` with the title and body above.
+2. Post the #1055 reply with the new number and close #1055 (not merged).
+3. The 1054 tracking issue's checklist line for #1055 may want a note that it became the README known issue; not drafted.
