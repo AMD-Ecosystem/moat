@@ -4576,3 +4576,45 @@ State: linux-gfx1201 `completed` at `517c6a7` (wave32 gate).
 1. linux-gfx1100 and windows-gfx1151: first hardware run of the gfx11 capped cases (CFG 0, 8 head 128 nfx 1; CFG 10, 11 head 64 nfx 2) and of the deliberately uncapped head 128 nfx 2.
 2. linux-gfx950: validator run at `517c6a7`. linux-gfx90a: real run or carry-forward (see the gfx942 validation above).
 3. jeffdaily: the gfx950 operator host-path decision is still open.
+## Validation 2026-11-24 (linux-gfx950, at `517c6a7`) -- PASS
+
+Host: AMD Instinct MI355X (`gfx950:sramecc+:xnack-`), wave64, `HIP_VISIBLE_DEVICES=5` (pinned by the job; devices 0, 2, 3 and 4 belong to colleagues and were never touched; GPU 5 at 0 % GFX activity before the runs, while GPUs 2, 4 and 7 ran at 100 % for other containers). PyTorch 2.16.0a0+git6c3af02 / HIP 7.16.26385 (pip ROCm SDK), Python 3.11 (`/opt/python-3.11-venv`), all GPU runs under `ulimit -c 0`, builds at `MAX_JOBS`=64. Fresh fork clone in `projects/Quest/src` at `517c6a7` == `origin/moat-port` == `head_sha` == `reviewed_sha`, submodules initialised. Requested by jeffdaily: a full real run (not a carry-forward), same method and counts as the `9cb8bee` validation on this platform. This is the GPU the new 16x16x32 MFMA path (`QUEST_PREFILL_MMA` 2) targets; the porter round's evidence for it was not a validator record. Free disk before the build: 658 GB.
+
+- **Build**: `agent_space/quest/build_readme.sh` (the README Linux block verbatim with `-DCMAKE_HIP_ARCHITECTURES=gfx950`, after `rm -rf build`, `ninja -j $MAX_JOBS`), wrapped `utils/timeit.sh Quest compile`: rc 0, 8/8, 333 s, 0 errors, 18 warning lines (the known `nodiscard hipError_t` host code), `CMAKE_BUILD_TYPE=Release` from the default, `--offload-arch=gfx950` on all 8 compile lines (`ninja -t commands`).
+- **Tests**: `env PYTHONPATH=<fork>:<roles6d job>/pylib-test python -m pytest <fork>/quest/tests -p no:cacheprovider -v -rs` (transformers 4.37.2, pytest 7.3.2; the porter job's `pylib-test`, read in place), wrapped `timeit.sh Quest test`: **202 passed, 28 skipped, 0 failed** (22.1 s). approx_attention 42, decode_attention 6, decode_launch_shape 3, estimate 9, prefill_attention 29 + 13 skipped (`qo_len > kv_len`), rope 64, topk 49 + 15 skipped (`k >= kv_len`). Same as every record since `2b938d8`.
+- **fp64 reference harness** (`notes-prefill-harness.md`, CFG 0-11, built against this tree with `ARCH=gfx950`; `agent_space/quest/harness/checkall.sh <fork> fc`, wrapped `timeit.sh Quest test`; device reports `wave=64 op_elems=8`, the 16x16x32 path): **CFG 0-9 100/100**, and the review's CFG 10 and 11 (head 64, nfx 2) 10/10 each, so 120/120. Largest error per configuration over the 10 shapes, max |dO| / max |dLSE|: CFG 0 1.1e-3 / 5.3e-4; 1 1.1e-3 / 5.3e-4; 2 1.0e-3 / 3.4e-4; 3 1.1e-3 / 7.6e-4; 4 1.4e-3 / 7.8e-4; 5 (bf16) 9.8e-3 / 6.5e-3; 6 (bf16) 6.3e-3 / 4.4e-3; 7 1.2e-3 / 6.5e-4; 8 1.0e-3 / 9.0e-4; 9 1.3e-3 / 7.8e-4; 10 1.1e-3 / 7.6e-4; 11 (bf16) 7.4e-3 / 5.3e-3, all at or below the `9cb8bee` figures on this GPU. Negative control (`-DNEGCTRL=true`, the reference with the opposite causal flag) on CFG 0, 1 and 10: 1/10 each (the 1 x 17 shape, where both causal rules agree). The harness file is the recorded one with the porter's timing additions (CFG 101 = nfx 1 timing, an optional `qo` argument selecting one shape, 16384 x 16384, 1 s warmup and min of 7 loops per process); the check code is unchanged from the recorded copy.
+- **Kernel alone** (CFG 101 = nfx 1, the dispatcher's choice on gfx950 now, and CFG 100 = nfx 2 forced; 32 heads x 128, fp16, causal, page 16; `harness/ab.sh <qo> bin/t_101 bin/t_100`: 5 rounds, each binary once per round as its own process, best per binary), ms:
+
+| qo x kv | nfx 1 (dispatched) | porter round 2026-11-24 | nfx 2 forced | porter |
+|---|---|---|---|---|
+| 1 x 4096 | 0.147 | 0.147 | 0.267 | 0.267 |
+| 128 x 4096 | 0.163 | 0.149 | 0.285 | 0.274 |
+| 1024 x 4096 | 0.222 | 0.202 | 0.281 | 0.273 |
+| 4096 x 4096 | **0.412** | 0.414 | 0.545 | 0.544 |
+| 8192 x 8192 | **1.184** | 1.19 | 1.867 | 1.857 |
+| 16384 x 16384 | **4.253** | 4.32 | 5.790 | 5.788 |
+
+- **Through the operator** (`agent_space/quest/prefill_time.py`, the recorded script, best of 5 separate processes, each `MINMED=1 LOOP_MS=100 REPS=7 WARM_MS=1000`, wrapped `timeit.sh Quest test`, all rc 0; range across the 5 processes in parentheses; `pt_{1..5}.out`):
+
+| qo x kv | Quest `prefill_forward` | torch SDPA | ratio | porter (operator / SDPA / ratio) | max abs diff vs SDPA |
+|---|---|---|---|---|---|
+| 1 x 4096 | 0.262 (0.262-0.326) ms | 0.111 (0.111-0.195) ms | 2.36 | 0.232 / 0.106 / 2.19 | 6.1e-05 |
+| 128 x 4096 | 0.337 (0.337-0.453) ms | 0.147 (0.147-0.181) ms | 2.29 | 0.285 / 0.140 / 2.04 | 1.2e-04 |
+| 1024 x 1024 | 0.242 (0.242-0.374) ms | 0.048 (0.048-0.068) ms | 5.04 | 0.245 / 0.041 / 5.98 | 2.0e-03 |
+| 1024 x 4096 | 0.449 (0.449-0.523) ms | 0.131 (0.131-0.143) ms | 3.43 | 0.437 / 0.122 / 3.58 | 1.2e-04 |
+| 4096 x 4096 | **0.652** (0.652-0.759) ms | 0.235 (0.235-0.252) ms | **2.77** | 0.676 / 0.210 / 3.22 | 2.0e-03 |
+| 8192 x 8192 | **1.455** (1.455-1.531) ms | 0.782 (0.782-0.836) ms | **1.86** | 1.498 / 0.717 / 2.09 | 2.0e-03 |
+| 16384 x 16384 | **4.526** (4.526-4.664) ms | 2.818 (2.818-2.897) ms | **1.61** | 4.770 / 2.676 / 1.78 | 2.0e-03 |
+
+  Reading: the kernel and the operator reproduce the porter's figures (kernel within 1.6 % at the three large shapes, operator 3-5 % faster); SDPA was 5-12 % slower today than in the porter's run, so the ratios are lower than that round's for the large shapes, which is host variation, not the change. Against this run's SDPA the kernel alone is 1.75x at 4096^2, 1.51x at 8192^2 and 1.51x at 16384^2; through the operator 4096^2 is still 2.77x (the 2x target is met through the operator only from 8192^2 up). At `9cb8bee` on this GPU the operator was 1.204 / 3.548 / 10.53 ms (2026-11-23), so the change is 1.85x / 2.44x / 2.33x faster through the operator. The operator host-path decision (porter round 2026-11-24 resumed, item 7) stays with jeffdaily; nothing here changes its inputs.
+- **End-to-end**: `NousResearch/Llama-2-7b-chat-hf` at `351844e75ed0bcbbe3f10671b3c808d2b83894ee` (the earlier jobs' copies are gone, so it was downloaded again into `<job>/models` with `huggingface_hub.snapshot_download`: safetensors, json, tokenizer), `do_sample` false in `generation_config.json` (original kept as `.orig`), `agent_space/quest/e2e/example_textgen.py` (upstream's script with only `MODEL_PATH` changed), `PYTHONPATH=<fork>:<roles6d job>/pylib-e2e` (transformers 4.45.2): `--method hg`, `--method quest --token_budget 1024`, `--method quest --token_budget 128`, each wrapped `timeit.sh Quest test`, all rc 0, input length 103 (so the 103 x 103 prefill runs the new gfx950 kernel). Output with Quest's two banner lines removed (`grep -v '^Quest allocates\|^Token budget'`): md5 `b900af27eeb4170a5c47bc5940a2ca60` for all three, the digest of every earlier record ("Reason: The rabbit is the only one who is not working hard. ... can also mean \"lazy.\""). **Byte-identical.**
+- **CUDA gate**: not repeated; recorded at `517c6a7` by the porter round on this host (real nvcc 12.8, sm_80, both trees 8/8, objects byte-identical with per-process names masked), and the delta since is none.
+- **Content and integrity**: `jargon.py --port Quest` clean (after `git fetch origin main:main moat-port:moat-port` in the clone); the ROCm build is documented in `README.md` (Linux and Windows blocks) and the build above is that block; `audit-commits Quest` reports only the known `6e7d8db` gap; `git -C projects/Quest/src status --porcelain` empty. One `timeit.sh Quest test` entry with exit 127 in `stats.jsonl` is a harness invocation with a wrong relative path (rerun at once with the absolute path), not a test failure. No fork edit, no push to the fork, no GitHub write besides this project branch.
+
+State: linux-gfx950 `completed` at `517c6a7`.
+
+### Owed next (Quest at `517c6a7`)
+
+1. linux-gfx1201, linux-gfx1100, windows-gfx1151: first hardware runs of the capped wave32 code (the review's per-target harness list, CFG 10 and 11 included).
+2. linux-gfx90a: a real run or a carry-forward with `--host-checked`, per the review.
+3. jeffdaily: the gfx950 operator host-path decision; on today's numbers 4096^2 is 2.77x through the operator and 1.75x for the kernel alone.
