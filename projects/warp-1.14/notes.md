@@ -9048,3 +9048,47 @@ Bounded `srun` investigation on the Slurm MI100 nodes (coordinator scratch `p6ev
 - Verdict: undetermined; the evidence points to a transient condition on one node or in the runtime, not the port. Per jeff's ruling ("Start with (b), but if we can't figure it out, then (a)"), gfx908 ships in the wheel as built but not validated, with the known issue noted. If it recurs: `inv/sitecustomize.py` with `LAUNCHLOG_DIR` logs each test and launch per process without synchronization; record the GPU BDF and co-tenant jobs.
 - Release notes draft, add under known issues (for the porter who finalizes the draft): "MI100 (gfx908) is built but was not validated with the full test suite. On one MI100 system, runs failed intermittently with an illegal memory access (HIP error 700) that could not be reproduced later on that or other MI100 systems." Also list gfx908 among the built-but-not-validated targets.
 - Owed, minor: the names of the two full-suite failures on gfx908 (same on three nodes, not memory faults); not investigated.
+## Validation 2026-11-24 (linux-gfx950 MI355X, validator): release wheel at `66ba4ffb`
+
+Request from jeff: validate `release/1.14.0.amd0` at `66ba4ffb` (porting session 35, the strict-mode diagnostics test fix; delta from `1c94e68b` is `warp/tests/test_diagnostics.py` only, 2+/2-) on gfx950 from the release wheel. No lock taken. `HIP_VISIBLE_DEVICES=1` (dispatcher pin, kept; "AMD Instinct MI355X"). `ulimit -c 0` for every GPU run; every run used a fresh `WARP_CACHE_PATH` deleted just before; no process stopped. GPU 1 was not idle: `amd-smi process -g 1` showed one process from another container (not visible from this one) holding 7.1 GB VRAM at the start and 20.9 GB at the end. Host load average 31 to 50 during the runs.
+
+**Verdict: pass (`completed`).** Every run OK: zero failures, zero errors, no `Warp CUDA error` line and no error 700 in any run, so no rerun-alone or `HIP_LAUNCH_BLOCKING=1` case arose. No `test_async` pool-off failure this time. **`test_mesh_query_point`: 9 of 9 OK (usd-core installed), 0 skipped, 0 `expect_eq` lines**, in the full suite and alone. **`test_diagnostics`: 14 OK alone, including `test_print_diagnostics_cuda_device_structure`; in the full suite the file passed with the same 13 named tests seen ok plus `test_print_diagnostics_optional_frameworks`, whose ok marker landed on an interleaved line.**
+
+### Environment, build and wheel
+
+- Job venv (Python 3.11.17) came with TheRock 10.1.0 wheels. `"$FLEET_VENV/bin/python" -m pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple "rocm[devel,device-gfx950]==10.2.0" "torch[device-gfx950]==2.15.0+rocm10.2.0" numpy==1.26.4 usd-core build`, then `rocm-sdk init` (`rocm-sdk version` 10.2.0). torch 2.15.0+rocm10.2.0 installed cleanly and ran a GPU op correctly on the MI355X; usd-core 26.11 (`from pxr import Usd` ok). Stale `rocm-sdk-device-gfx*==10.1.0` remain (pip warns only).
+- Clone: `git clone --branch release/1.14.0.amd0 https://github.com/AMD-Ecosystem/warp projects/warp-1.14/src` at `66ba4ffb`, 67 LFS files smudged; no modified tracked files before or after.
+- Build plus wheel (`agent_space/v/build.sh <clone> 42 <job>/wheel`, under `utils/timeit.sh warp-1.14 compile`, 32 s):
+  ```bash
+  python build_lib.py --rocm-path "$(python -m rocm_sdk path --root)" --hip-arch gfx950 -j 42 --no-rocm-rpath   # "Warp build succeeded"
+  python -m build --wheel -C--build-option=-Plinux-x86_64 -o <job>/wheel
+  ```
+  `warp_lang-1.14.0+rocm10.2.0-py3-none-manylinux_2_28_x86_64.whl`, 32,790,537 bytes (gfx950 only), sha256 `45bb4af49143aef115e3579dfb5f7746db483580140ce51bb472610a04ec1733`. `strings warp.so`: `-ffp-contract=on`, `-ffp-contract=off`, `-DWP_FUSE_FP`.
+- Install: `pip install --force-reinstall --no-deps <wheel>` into `$FLEET_VENV`; installed `warp.so` sha256 `ce9ec917...e784a` equals the build's; `warp.so.rocm` reads `10.2.0`. Every run started outside the tree (cwd `<job>/run`) with `warp.__file__` asserted in site-packages. Banner: "Warp 1.14.0+rocm10.2.0 initialized".
+
+### Runs (`agent_space/v/run.sh <label> <args>`, under `utils/timeit.sh warp-1.14 test`)
+
+| run | result |
+|---|---|
+| `python -m warp.tests -s autodetect` (full default suite, 201 suites, 8 processes) | **Ran 7608 tests in 633.6 s, OK (skipped=80)** |
+| `--warp-debug -s autodetect -p "test_tile*.py"` | **Ran 602 tests in 166.8 s, OK (skipped=10)** |
+| `-s autodetect -p test_tile_matmul.py`, cold cache, run 1 / 2 / 3 | Ran 26, **OK** each time (14.1 / 14.0 / 13.9 s) |
+| `-s autodetect -p test_mesh_query_point.py` | Ran 9, **OK**, 0 skipped, 0 `expect_eq` lines |
+| `-s autodetect -p test_diagnostics.py` | Ran 14, **OK** |
+
+Warp error lines:
+- `Warp CUDA error`: 0 in every run listed above. No error 700, no "illegal memory access".
+- The `(error)` module-load lines are the rejection tests (kernels that are expected to fail compiling); they pass.
+- CPU only, not HIP: three `Warp: Compilation with PCH failed, retrying without precompiled headers` in the full suite, the same upstream CPU-path behavior recorded at `1c94e68b`; every test around them passed.
+
+Skips. Full suite, 80: no suitable devices 24, conditional graph nodes 16, not built with MathDx 8 + `MathDx is not enabled` 1 + `without MathDx (tolerance)` 1, two CUDA devices 7, mempool access 5 + 1 without + 1 with module-load, peer access 3 + 1 without + 1 with module-load, `cuda:0 cannot access CPU memory` 2, NVRTC two archs 2, multi-GPU 2, rmm 1, memory-usage flakiness 1 (upstream), `Requires CUDA` 1, NVRTC not available 1, stream priority 1 ("HIP maps stream priorities to normal priority ..."). Identical to the `1c94e68b` validation. No usd-core or torch skips: 34 `interop.test_torch` tests ran and passed. Debug tiles, 10: not built with MathDx 8, `MathDx is not enabled` 1, `test_tile_mlp` tolerance 1.
+
+### Content gates and CUDA
+
+- `python3 utils/jargon.py --port warp-1.14`: clean (`release-1.14` fetched into the clone).
+- Docs: the ROCm build and the release wheel install are in `docs/user_guide/installation.rst`.
+- CUDA gate: the delta from `1c94e68b` touches only a Python test file in its HIP branch, so no compiled CUDA text changed; the nvcc 12.8 build recorded at `1c94e68b` by the sixth-round review stands (delta review 7 said the same). Not repeated.
+
+### Scripts (`agent_space/v/`, scratch)
+
+`build.sh <tree> <jobs> <wheel dir>`: the two build commands above with `$FLEET_VENV/bin` first on PATH. `run.sh <label> <warp.tests args>`: `ulimit -c 0`, `HIP_VISIBLE_DEVICES=1`, cwd `<job>/run`, `rm -rf` then `WARP_CACHE_PATH=<job>/run/cache_<label>`, the site-packages assertion, then `$FLEET_VENV/bin/python -m warp.tests <args>`, logged to `<job>/run/<label>.log` with load average at start and end.

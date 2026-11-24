@@ -8,7 +8,7 @@
   "ext_type": "python-build-nvrtc",
   "stage": "review-passed",
   "adopted_at": "2026-11-18T17:38:39Z",
-  "updated_at": "2026-11-24T21:55:19Z",
+  "updated_at": "2026-11-24T22:36:19Z",
   "head_sha": "66ba4ffb31bce1bd822943cfc764c34eb21a8eef",
   "depends_on": [],
   "waivers": {},
@@ -92,11 +92,11 @@
     "linux-gfx950": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "1c94e68bd54c28323ecb2a10a08ea89507cbfb6d",
+      "validated_sha": "66ba4ffb31bce1bd822943cfc764c34eb21a8eef",
       "failed_sha": null,
       "started_at": "2026-11-18T20:28:14Z",
-      "completed_at": "2026-11-24T20:15:43Z",
-      "updated_at": "2026-11-24T21:55:19Z",
+      "completed_at": "2026-11-24T22:36:19Z",
+      "updated_at": "2026-11-24T22:36:19Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -111,7 +111,10 @@
         "last_session_at": null
       },
       "last_agent": "reviewer",
-      "state": "completed"
+      "state": "completed",
+      "validated_prior": [
+        "1c94e68bd54c28323ecb2a10a08ea89507cbfb6d"
+      ]
     },
     "windows-gfx1151": {
       "blocked": false,
