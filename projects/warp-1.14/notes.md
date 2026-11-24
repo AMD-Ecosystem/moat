@@ -6705,3 +6705,69 @@ Runner `agent_space/wrun.sh <label> <args>`: `ulimit -c 0; HIP_VISIBLE_DEVICES=0
 - Debug tile skips (15): MathDx 8 + 1 + 1, and the same five 64 KiB capability skips.
 - Other output, not errors: the known `test_tile_load_scoped` "Failed to configure kernel dynamic shared memory ... 65536 bytes, but maximum available is 65536" UserWarning (once in the full suite, once in debug; the test passes). Three "Warp: Compilation with PCH failed, retrying without precompiled headers" lines in the full suite (CPU kernels: PCH built for target CPU `''` vs `znver3`, and one truncated `/tmp/wp_pch_*/builtin_bd1_tis.pch`, while `test_options_cpu_compiler_flags_generic_cpu` and the parallel workers ran); this is the CPU compiler's PCH fallback shared by the CUDA build, the tests passed, not a HIP finding.
 - The four `test_tile_matmul_fragment_shapes_*` tests ran and passed in each cold run; at 65,536 bytes the guard from `10942265` is expected to skip only the fp64 32x64x32 shape internally (Porting session 32), which this run did not log separately.
+## Validation 2026-11-24 (linux-gfx90a, MI250X, validator): `4e0d02ab` -- validation-failed (`test_mesh_query_point`, FMA contraction)
+
+Requested by jeff. Release line, fork branch `release/1.14.0.amd0` at `head_sha` `4e0d02ab7eeb4af2be6380ff27c54d9bc8d43ef2` (stage `review-passed`). Fresh clone in `projects/warp-1.14/src`, checked out at that commit, LFS pulled (LFS `pre-push` moved aside, `protect-fork` installed); `git status --porcelain` empty at the end. Dispatcher pin `HIP_VISIBLE_DEVICES=0` kept (one MI250X GCD, `gfx90a:sramecc+:xnack-`, 64 GiB, 65,536 bytes shared memory per block); `ulimit -c 0` for every GPU run; no process stopped; no other process on the GPU at the start (amd-smi), host load average 1 to 12.
+
+### Setup and build
+- Job venv (Python 3.11.17) came with TheRock 10.1.0 wheels. Installed `rocm[devel,device-gfx90a]==10.2.0`, `torch[device-gfx90a]==2.15.0+rocm10.2.0`, `numpy==1.26.4`, `usd-core` (index `https://stable.repo.amd.com/rocm/whl-next/`, extra index PyPI), then `rocm-sdk init`. The stale `rocm-sdk-device-gfx*==10.1.0` packages stay (pip warns only about them).
+- Release library for this arch: `python build_lib.py --rocm-path "$(rocm-sdk path --root)" --hip-arch gfx90a -j 64 --no-rocm-rpath` (under `utils/timeit.sh warp-1.14 compile`): "Warp build succeeded", about 70 s; 14 HIP compiles, each `--offload-arch=gfx90a` only; warp.so 6,425,416 bytes, RUNPATH `$ORIGIN`.
+- Wheel: `python -m build --wheel -C--build-option=-Plinux-x86_64 -o <job>/wheel`: `warp_lang-1.14.0+rocm10.2.0-py3-none-manylinux_2_28_x86_64.whl`, 32,787,989 bytes, sha256 `1166578276a6a59cef54482419e34840c706537ffa6c1fa3e1e331b88d7dd61c` (gfx90a-only, so not the release artifact); warp.so.rocm in the wheel is `'\n10.2.0\n'` (no build path); `Version: 1.14.0+rocm10.2.0`, `Requires-Dist: rocm<10.3,>=10.2`. Installed with `pip install --force-reinstall --no-deps` into the job venv; every run below imports warp from site-packages (asserted) with cwd outside the tree.
+- Runner script (scratch `agent_space/v/suite.sh`): `ulimit -c 0; HIP_VISIBLE_DEVICES=0; rm -rf <cache_tag>; WARP_CACHE_PATH=<cache_tag> python -m warp.tests -s autodetect <args>` from a directory outside the tree, so each run starts with a fresh kernel cache.
+
+### 1. Full default suite (`python -m warp.tests -s autodetect`, fresh cache)
+**Ran 7610 tests in 1294.8 s, FAILED (failures=1, skipped=82).** No `Warp CUDA error` line anywhere in the log; no error 700. `test_async` passed in full (no pool-off copy failure).
+- **Failure: `test_mesh_query_point_cuda_0`** (`warp.tests.geometry.test_mesh_query_point`). No Warp/HIP error line; the first unexpected output line after the module load is `Error, expect_eq() failed:` (device-side), with values such as Expected 14 / Actual 45 (face) and Expected 0.174854 / Actual 0 (u/v); 120 `expect_eq` lines.
+- Skips (82): "No suitable devices to run the test." 21, "Conditional graph nodes not supported" 16, "Warp was not built with MathDx support" 8, "Requires at least two CUDA devices" 7, "Requires devices with mempool access support" 5, five "Needs <N> bytes of shared memory per block, device has 65536" (test_tile_reduce_axis_tier2 66816, ..._single_warp 66688, test_tile_shared_mem_func 67584, test_tile_shared_mem_large 67584, test_tile_assign_2d 66688), "Requires devices with peer access support" 3, "cuda:0 cannot access CPU memory" 2, "NVRTC must support at least two architectures" 2, "Multi-GPU not available" 2, and one each of "rmm not installed", "Skipping test on CUDA device without MathDx (tolerance)", "Skipped due to flakiness in memory usage measurement", "Requires devices without peer access support", "Requires devices without mempool access support", "Requires devices with peer access and CUDA graph module-load support", "Requires devices with mempool access and CUDA graph module-load support", "Requires CUDA", "NVRTC not available", "MathDx is not enabled", "HIP maps stream priorities to normal priority, so priority has no scheduling effect." Jax DLPack tests not registered (no jax).
+- The only "Failed to configure kernel dynamic shared memory" warning is the known `test_tile_load_scoped` backward (65,536 bytes; the test passes).
+
+### 2. The failure, alone and localized
+- `-p test_mesh_query_point.py` alone, fresh cache, twice: **FAILED (failures=1) of 9 both times**, same test, same output. Deterministic; not load-related.
+- The test's kernels compare two calls of the same query in one thread (the out-parameter form against the struct form) and then the out-parameter results with brute force. Running each of the test module's kernels in its own process (scratch `mqp_diag3.py`: spiky.usd, the test's 32^3 grid, every leaf size 1/2/4 and constructor sah/median/lbvh): only **`sample_mesh_query_sign_normal`** prints `expect_eq` failures (60 lines); `sample_mesh_query`, `_no_sign`, `_sign_winding_number`, `_sign_parity` print none. Every kernel's out-parameter distance equals brute force within 1e-4 at every query point, so the two forms of `mesh_query_point_sign_normal` disagree on face/u/v (a tie between equidistant faces broken differently), not on distance.
+- **With `wp.set_module_options({"fuse_fp": False}, module=<test module>)` (hipRTC `-ffp-contract=off`) set from the script, no test edit, fresh cache: 0 `expect_eq` lines; without it, 60.** So the divergence comes from cross-statement multiply-add contraction in the HIP kernel compile, which `e92f2611` ("[ROCm] Contract multiply-adds across statements in HIP kernels, as NVRTC", hipRTC `-ffp-contract=fast-honor-pragmas`) turned on: the two inlined copies of the query are contracted differently on gfx90a, so identical calls round differently. The mesh code is unchanged since `930d0098`, where the 2026-11-19 gfx90a evidence session had test_mesh* 49 OK (before `e92f2611`). gfx950 passes the test at this head (porter session 32, usd-core present); the 2026-11-23 gfx942 evidence session had no usd-core, so this test has not run on gfx942 since `e92f2611`. The gfx1250 evidence session's "wrong `mesh_query_point` results" may be the same case; not established.
+- A standalone kernel calling `mesh_query_point_sign_normal` both ways (my own module, same mesh and points) does **not** reproduce it (0 disagreements in all 18 configurations), so it depends on the code generated for the test's kernel. I stopped there: the fix is the porter's (and whether contraction "matches CUDA" here was the condition of jeff's 2026-11-20 ruling). Not a test problem to skip or loosen: the test asserts that one query called twice gives one answer.
+
+### 3. All tile tests in debug mode (`--warp-debug -p "test_tile*.py"`, fresh cache)
+**Ran 602 tests in 414.6 s, OK (skipped=15).** No `Warp CUDA error` line, no device assertion, no error 700. Skips: "Warp was not built with MathDx support" 8, the shared-memory skips 66688 x2, 66816 x1, 67584 x2, "MathDx is not enabled" 1, "Skipping test on CUDA device without MathDx (tolerance)" 1.
+
+### 4. `test_tile_matmul.py` three times, cold cache each time
+Run 1: **Ran 26 in 33.2 s, OK**; run 2: **26 in 32.5 s, OK**; run 3: **26 in 32.5 s, OK**. Each run cleared its cache and compiled 146 modules. No `Warp CUDA error` line and no error 700 in any of the three (the intermittent cold-cache error 700 seen on gfx908 did not appear on gfx90a at this head).
+
+### Content checks and CUDA gate
+- `python3 utils/jargon.py --port warp-1.14`: clean (after fetching `release-1.14` into the clone).
+- ROCm build documented (README "Packages for AMD GPUs" and the build section).
+- CUDA gate: already recorded at `4e0d02ab` (porter session 32: preprocessed `cuda_util.cpp` identical, `cuda_pp.sh` 24/24 units identical, CUDA build succeeded); not repeated.
+
+### Verdict
+`validation-failed` on linux-gfx90a at `4e0d02ab` (plain failure, not `--gate`): `test_mesh_query_point_cuda_0` fails deterministically, from the port's FMA-contraction change. Everything else on this arch is clean. For the porter: reproduce with `-p test_mesh_query_point.py` on gfx90a; the discriminator is the module's `fuse_fp` option.
+
+### Scripts (scratch `agent_space/v/`, wiped)
+`mqp_diag4.py`, the discriminating run (one kernel per process, because device printf output is flushed only at process exit):
+```python
+import itertools, os, sys
+import numpy as np
+import warp as wp
+from warp.tests.geometry import test_mesh_query_point as T
+from pxr import Usd, UsdGeom
+dev = wp.get_device("cuda:0")
+if "nofuse" in sys.argv:
+    wp.set_module_options({"fuse_fp": False}, module=T)
+st = Usd.Stage.Open(os.path.join(os.path.dirname(T.__file__), "..", "assets", "spiky.usd"))
+g = UsdGeom.Mesh(st.GetPrimAtPath("/Cube/Cube"))
+tri = T.triangulate(g.GetFaceVertexCountsAttr().Get(), g.GetFaceVertexIndicesAttr().Get())
+P = wp.array(np.array(g.GetPointsAttr().Get()), dtype=wp.vec3, device=dev)
+I = wp.array(np.array(tri), dtype=int, device=dev)
+p = T.particle_grid(32, 32, 32, np.array([-1.1, -1.1, -1.1]), 0.05, 0.0)
+n = len(p)
+Q = wp.array(p, dtype=wp.vec3, device=dev)
+z = lambda t: wp.zeros(n, dtype=t, device=dev)
+for leaf, con in itertools.product([1, 2, 4], ["sah", "median", "lbvh"]):
+    m = wp.Mesh(points=P, velocities=None, indices=I, support_winding_number=True, bvh_constructor=con, bvh_leaf_size=leaf)
+    f, s, d = z(int), z(float), z(float)
+    wp.launch(T.sample_mesh_query_sign_normal, n, inputs=[m.id, Q, f, s, d], device=dev)
+    wp.synchronize_device(dev)
+```
+```bash
+WARP_CACHE_PATH=<fresh> python -s mqp_diag4.py           # 60 "expect_eq() failed" lines
+WARP_CACHE_PATH=<fresh> python -s mqp_diag4.py nofuse    # 0
+```

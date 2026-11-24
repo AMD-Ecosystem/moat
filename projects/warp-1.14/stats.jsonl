@@ -300,3 +300,13 @@
 {"kind":"phase","ts":"2026-11-24T03:01:56Z","phase":"test","seconds":24.676,"exit":0,"cmd":"agent_space/wrun.sh matmul2 -s autodetect -p test_tile_matmul.py"}
 {"kind":"phase","ts":"2026-11-24T03:02:21Z","phase":"test","seconds":24.659,"exit":0,"cmd":"agent_space/wrun.sh matmul3 -s autodetect -p test_tile_matmul.py"}
 {"kind":"session","ts":"2026-11-24T03:03:07Z","epoch":1795489387.805003,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-11-24T02:39:39Z","epoch":1795487979.088973,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-24T02:40:06Z","phase":"compile","seconds":0.022,"exit":2,"cmd":"python build_lib.py --rocm-path /var/lib/jenkins/fleet/jobs/mi200-20261123-183542-validator-prompt/venv/lib/python3.11/site-packages/_rocm_sdk_devel --hip-arch gfx90a -j 64 --no-rocm-rpath"}
+{"kind":"phase","ts":"2026-11-24T02:41:13Z","phase":"compile","seconds":61.562,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi200-20261123-183542-validator-prompt/moat/projects/warp-1.14/src && python build_lib.py --rocm-path /var/lib/jenkins/fleet/jobs/mi200-20261123-183542-validator-prompt/venv/lib/python3.11/site-packages/_rocm_sdk_devel --hip-arch gfx90a -j 64 --no-rocm-rpath"}
+{"kind":"phase","ts":"2026-11-24T02:41:30Z","phase":"compile","seconds":6.49,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi200-20261123-183542-validator-prompt/moat/projects/warp-1.14/src && python -m build --wheel -C--build-option=-Plinux-x86_64 -o /var/lib/jenkins/fleet/jobs/mi200-20261123-183542-validator-prompt/wheel"}
+{"kind":"phase","ts":"2026-11-24T03:03:41Z","phase":"test","seconds":1307.479,"exit":1,"cmd":"agent_space/v/suite.sh full"}
+{"kind":"phase","ts":"2026-11-24T03:18:06Z","phase":"test","seconds":420.659,"exit":0,"cmd":"agent_space/v/suite.sh tiledbg --warp-debug -p test_tile*.py"}
+{"kind":"phase","ts":"2026-11-24T03:18:40Z","phase":"test","seconds":34.301,"exit":0,"cmd":"agent_space/v/suite.sh mm1 -p test_tile_matmul.py"}
+{"kind":"phase","ts":"2026-11-24T03:19:14Z","phase":"test","seconds":33.57,"exit":0,"cmd":"agent_space/v/suite.sh mm2 -p test_tile_matmul.py"}
+{"kind":"phase","ts":"2026-11-24T03:19:48Z","phase":"test","seconds":33.533,"exit":0,"cmd":"agent_space/v/suite.sh mm3 -p test_tile_matmul.py"}
+{"kind":"session","ts":"2026-11-24T03:20:47Z","epoch":1795490447.884265,"event":"end","platform":"linux-gfx90a"}
