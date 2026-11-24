@@ -132,3 +132,5 @@
 {"kind":"phase","ts":"2026-11-24T02:27:43Z","phase":"test","seconds":1.868,"exit":1,"cmd":"projects/CV-CUDA/src/build-hip/bin/nvcv_test_cudatools_system"}
 {"kind":"phase","ts":"2026-11-24T02:34:57Z","phase":"test","seconds":426.862,"exit":1,"cmd":"projects/CV-CUDA/src/build-hip/bin/cvcuda_test_system"}
 {"kind":"session","ts":"2026-11-24T02:37:08Z","epoch":1795487828.592928,"event":"end","platform":"linux-gfx1201"}
+{"kind":"phase","ts":"2026-11-24T02:33:08Z","phase":"cuda-compile","seconds":202.247,"exit":0,"cmd":"bash -c for t in nvcv_standalone nvcv_standalone_static; do cmake --build $0 -j16 -t $t -- -k 0 || exit 1; done; cmake --build $0 -j16 -- -k 0 /dev/shm/fleet-mi355-20261123-182151-nvcc-cv-cuda-db84-prompt-cvcc/fork/build-cuda"}
+{"kind":"phase","ts":"2026-11-24T02:36:38Z","phase":"cuda-compile","seconds":208.202,"exit":0,"cmd":"bash -c for t in nvcv_standalone nvcv_standalone_static; do cmake --build $0 -j16 -t $t -- -k 0 || exit 1; done; cmake --build $0 -j16 -- -k 0 /dev/shm/fleet-mi355-20261123-182151-nvcc-cv-cuda-db84-prompt-cvcc/up/build-cuda"}
