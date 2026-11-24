@@ -8,7 +8,7 @@
   "ext_type": "torch-extension",
   "stage": "review-passed",
   "adopted_at": "2026-11-05T22:44:55Z",
-  "updated_at": "2026-11-23T23:21:44Z",
+  "updated_at": "2026-11-24T00:02:50Z",
   "head_sha": "e2b767e85f8b83e0b83e3f6d4bcf61a19f63cbb0",
   "depends_on": [],
   "porting": null,
@@ -46,11 +46,11 @@
     "linux-gfx942": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": null,
+      "validated_sha": "e2b767e85f8b83e0b83e3f6d4bcf61a19f63cbb0",
       "failed_sha": null,
       "started_at": "2026-11-23T20:53:55Z",
-      "completed_at": null,
-      "updated_at": "2026-11-23T23:21:44Z",
+      "completed_at": "2026-11-24T00:02:50Z",
+      "updated_at": "2026-11-24T00:02:50Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -64,7 +64,8 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "reviewer"
+      "last_agent": "validator",
+      "state": "completed"
     }
   },
   "license_spdx": "Apache-2.0",

@@ -382,3 +382,44 @@ Verdict: **review-passed**. No blocking findings. The review read all 44 changed
 ### Non-blocking (no change requested)
 
 - `_LinearFp8.forward` unpacks `scaled_mm_fp8_formats()`. That returns `None` on AMD GPUs with no fp8 GEMM (gfx90a, gfx11), so `linear_fp8` fails there with a `TypeError` instead of a clear message. Without the port it failed in hipBLASLt anyway, and the tests skip by the same probe, so this is a usability nit, not a defect.
+
+## Validation 2026-11-24 (linux-gfx942 fleet job, validator role, fork `moat-port` at `e2b767e8`)
+
+One MI300X partition (gfx942, wave64, 24 GiB, `HIP_VISIBLE_DEVICES=2`). This job used only that GPU. Environment: a fresh job venv with TheRock `10.2.0a20261022` wheels (`rocm[libraries,devel]`, `rocm-sdk-device-gfx942`, `torch==2.13.0+rocm10.2.0a20261022`, `amd-torch-device-gfx942`, `torchvision==0.28.0+rocm...`), installed exactly as in the porter's "Build recipe". No system ROCm. The amdsmi `.pth` fix was applied, and `torch.cuda.device_count()` returned 1. Versions: HIP 7.17.26422, triton 3.8.0+git66b3f9ff.rocm10.2.0a20261022, Python 3.11.17. Requirements were installed with the torch/triton/rocm pins as constraints. All runs used `ulimit -c 0` and `timeout`, the pytest flags of upstream's batch script, `FAST_TEST=1`, and the file lists from `.github/scripts/ci/run_colossalai_batch.sh`, called with pytest directly.
+
+Build: `BUILD_EXT=1 PYTORCH_ROCM_ARCH=gfx942 MAX_JOBS=64 $FLEET_VENV/bin/python -m pip install --no-build-isolation --no-deps -v -e .` built all seven extensions. flash-attn `v2.8.3.post2` was built from source in the job directory with the CK backend (`BUILD_TARGET=rocm GPU_ARCHS=gfx942 FLASH_ATTENTION_FORCE_BUILD=TRUE ... pip wheel --no-build-isolation --no-deps .`) and installed with `--no-deps`.
+
+| batch | result | skips / notes |
+|---|---|---|
+| new `tests/test_kernels` (layernorm, both softmaxes, MoE) | 155 passed | none |
+| 3 adam kernels | 62 passed | none |
+| 4a fp8 | 22 passed | none |
+| 4b inference CUDA kernels | 60 passed, 108 skipped | 108: upstream's unconditional `test_convert_fp8.py` skip |
+| 4c Triton kernels | 372 passed, 65 skipped | upstream's own skips (Alibi kcache layout, one `skip("cuda error")`) |
+| 4d smoothquant | 4 skipped | the tests import modules upstream removed; they skip on CUDA too |
+| 4e flash decoding | 1326 passed, 258 skipped, 0 failed | 114 memory guard (24 GiB partition), 144 "requires vllm" |
+| 2 single-GPU core | 23 passed, 2 skipped | upstream HF5 guards (`test_runtime_compatibility.py:46,100`) |
+| attention `COLOSSALAI_TEST_ATTENTION_BACKEND=fa2 -k gpu` | 185 passed, 383 skipped (other backends' variants), 87 deselected | the real ROCm flash-attn 2.8.3.post2 build; strict mode forbids any SDPA fallback |
+| attention `=sdpa -k gpu` | 198 passed, 370 skipped, 87 deselected | |
+| 4f strict fa3 (`=fa3 -k gpu`) | 10 failed, 19 skipped (maxfail) | all `ModuleNotFoundError: No module named 'flash_attn_3'`. Strict acceptance fails by design without the Hopper-only package, as on any non-Hopper CUDA host. fa3 is `scoped_out` (Q2 ruling), so this is not a port failure |
+| 1 CPU core (GPUs hidden) | 358 passed, 599 skipped | device-required guards only. 1048 s while sharing the host with the flash-attn build and GPU batches (upstream budget 15 min; the porter measured 875 s) |
+| runtime (JIT) path: a worktree at the head, no prebuilt kernels, scratch `HOME`; `tests/test_kernels`, adam kernels, rms_layernorm, silu_and_mul, kv_cache_memcpy | 240 passed, 1 failed | all seven extensions built at first use into the scratch cache. The failure is `test_cpu_adam_kernel[fp16-fp16]` (one near-zero element, -1.7e-4 vs -1.3e-3), the registered unseeded fragility `colossalai-cpu-adam-fp16-test-unseeded`. Run alone: 12 passed |
+
+These results match the porter's evidence count for count. Integrity: `git -C projects/ColossalAI/src status --porcelain` is empty at `e2b767e8`. `utils/jargon.py --port ColossalAI` is clean. The ROCm build is documented next to the CUDA one in `README.md` and `docs/source/en/get_started/installation.md`. The zh-Hans docs are the porter's open question 1 for Jeff.
+
+CUDA no-regression gate: not run in this job, because this host has no nvcc in the job environment. The porter's nvcc 12.9 compile at this same head (notes above) is the recorded CUDA evidence. The real-nvcc compile on the mi355 fleet host runs elsewhere and is still owed before the port goes to Jeff.
+
+### Multi-GPU batches still owed for linux-gfx942 (Q3 ruling: both wavefront widths)
+
+Not run here: this job had one GPU and must not take others. These batches need a whole host, scheduled separately. `surface.json` keeps them `owed` (`tests:distributed`, `tests:apex-gemini`, `tests:largedist`), which blocks `pr-ready` until they are recorded:
+
+- 2 GPUs: batch 5 (booster/LoRA/numerics), batch 11 (apex Gemini; recorded as skipped if `import apex.amp` fails, as upstream does).
+- 4 GPUs: batches 6 (distributed tensor), 7 (fp8 collectives plus the DDP-hook script supplement), 8 (distributed training), 9 (model and inference, offline, DeepSeek files ignored without a local snapshot), 9q (Qwen2).
+- 8 GPUs (wave64 only): batch 10 (`largedist`), when a whole 8-GPU host is free.
+
+wave32 owes the same 2- and 4-GPU batches on a 4-GPU RDNA host.
+
+I checked the porter's prepared commands ("Multi-GPU batch commands for the validators" above) mechanically against `run_colossalai_batch.sh` at this head, with a script that compares each batch's test paths, `--ignore` list, `-m` marker and timeout. All eight batches match: 5, 11, 6, 7, 8, 9, 9q and 10. The GPU counts are right, HF offline and the DeepSeek ignores apply to 9 and 10 only, and `tests/test_fp8/test_fp8_ddp_comm_hook.py` defines no `test_` functions, so the script-mode supplement is what upstream runs. Two additions for whoever runs them:
+
+- Upstream's script asserts `torch.cuda.device_count() == <expected>` before each batch; the prepared `run()` does not. Run `python -c 'import torch; print(torch.cuda.device_count())'` with the batch's `HIP_VISIBLE_DEVICES` first. On these fleet images a job venv with newer TheRock wheels reports 0 devices without the amdsmi `.pth` fix, and the distributed tests then skip instead of running.
+- Use the venv's `python` first on PATH (`ROCM_HOME` resolves from `hipcc` on PATH), and a flash-attn build in the venv, so the fa2 cases in batches 8 and 9 run instead of skipping.

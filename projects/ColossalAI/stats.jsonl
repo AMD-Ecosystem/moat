@@ -32,3 +32,10 @@
 {"kind":"phase","ts":"2026-11-23T23:11:12Z","phase":"compile","seconds":1459.293,"exit":0,"cmd":"agent_space/cuda_compile.sh"}
 {"kind":"session","ts":"2026-11-23T23:12:43Z","epoch":1795475563.348614,"event":"end","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-11-23T23:16:11Z","epoch":1795475771.924318,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-23T23:29:25Z","phase":"compile","seconds":194.748,"exit":0,"cmd":"bash -c cd projects/ColossalAI/src && BUILD_EXT=1 PYTORCH_ROCM_ARCH=gfx942 MAX_JOBS=64 /var/lib/jenkins/fleet/jobs/mi300c-20261123-151350-review-colossalai-prompt/venv/bin/python -m pip install --no-build-isolation --no-deps -v -e . > /var/lib/jenkins/fleet/jobs/mi300c-20261123-151350-review-colossalai-prompt/agent/build-ext.log 2>&1"}
+{"kind":"phase","ts":"2026-11-23T23:48:14Z","phase":"test","seconds":1051.638,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300c-20261123-151350-review-colossalai-prompt/agent/run1gpu.sh cpu"}
+{"kind":"phase","ts":"2026-11-23T23:53:05Z","phase":"compile","seconds":1400.373,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300c-20261123-151350-review-colossalai-prompt/agent/fa2-build.sh"}
+{"kind":"phase","ts":"2026-11-23T23:54:38Z","phase":"test","seconds":1435.712,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300c-20261123-151350-review-colossalai-prompt/agent/run1gpu.sh kernels 3 4a 4b 4c 4d 2 sdpa 4e fa3"}
+{"kind":"phase","ts":"2026-11-23T23:57:38Z","phase":"test","seconds":172.706,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300c-20261123-151350-review-colossalai-prompt/agent/run1gpu.sh fa2"}
+{"kind":"phase","ts":"2026-11-24T00:01:56Z","phase":"test","seconds":258.471,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300c-20261123-151350-review-colossalai-prompt/agent/run-jit.sh"}
+{"kind":"session","ts":"2026-11-24T00:02:55Z","epoch":1795478575.852154,"event":"end","platform":"linux-gfx942"}
