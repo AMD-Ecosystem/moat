@@ -8862,3 +8862,22 @@ for name, (Pn, In) in [("spiky", tw.spiky()), ("gridcube", tw.gridcube()), ("tor
 np.savez(sys.argv[1], **res)
 print("saved", len(res), "arrays")
 ```
+
+## Coordinator summary (2026-11-24): contraction evidence across arches, for jeff's ruling (nothing committed)
+
+Head `4e0d02ab`, stage `porting`, lock held by the gfx90a porter job; gfx90a `validation-failed`. Three settings measured at that head: FAST (`-ffp-contract=fast-honor-pragmas`, committed, jeff's ruling of 2026-11-20), ON (`-ffp-contract=on`), G (ON plus `#pragma clang fp contract(fast)` in `evaluate_node_solid_angle`, guarded by `fuse_fp`; diff in the gfx950 addendum). Sections: porting session 33, "Evidence session (contraction, <arch>)", "Evidence session (candidate G, <arch>)".
+
+| | gfx90a | gfx942 | gfx950 | gfx1100 | gfx1201 | V100, upstream 1.14.0 |
+|---|---|---|---|---|---|---|
+| `wp.dot` twice in a user kernel, FAST (of 4,194,304) | 1,399,489 | 1,399,489 | 1,399,489 | 966,853 | 966,853 | 0 |
+| builtins twice, FAST | sign_normal 30/134 (test fails), tri_tri 1 | tri_tri 1, edge_edge 17,631 | tri_tri 1, edge_edge 17,631 | 0 | 0 | 0 |
+| all of the above under ON and under G | 0 | 0 | 0 | 0 | 0 | n/a |
+| winding-number query, lbvh ms: FAST / ON / G | 3324 / 712 / 740 | 178 / 440 / 145 | 117 / 250 / 99.5 | 316 / 312 / 317 | 297 / 297 / 297 | n/a |
+| VGPR spills in that kernel: FAST / ON / G | 383 / 72 / (see section) | 113 / 412 / 92 | 111 / 412 / 92 | 0 / 0 / 0 | 0 / 0 / 0 | n/a |
+| full suite on G | 7564 OK | 7562 OK | not run on G (ON: one pool-off copy failure that passes alone, #16355) | 7564 OK | 7564 OK | n/a |
+| slower under ON/G than FAST beyond noise | tile_nbody +3.2%, mesh_intersect +2.3 to 2.8% | sign_normal +1.5 to 2.6%, tile_nbody | sign_normal +2.5 to 4.7%, tile_nbody +3.2% (+7.2% fast_math) | tile_nbody +1 to 2.4% | tile_nbody +1% (+4.2% fast_math), tile_mcgp +1.4% | n/a |
+
+- With `fuse_fp=False`, G's winding-number results are bitwise equal to ON's on every arch checked, so the option still means no fusion.
+- G against the bar "consistent, suite passes, winding-number query no slower than the faster of FAST and ON": met on gfx942, gfx950, gfx1100, gfx1201; on gfx90a G is 4.0 to 4.6% slower than ON on that query (and 4.5x faster than FAST, the committed head).
+- Still open for the porter round if jeff picks ON or G: the precompiled library's device code is compiled with Clang's HIP default (cross-statement contraction; session 22), which the hipRTC option does not change; the fp16 `FP_CONTRACT OFF` region in builtin.h becomes unnecessary under ON; the comment above the option string must be rewritten; gfx950 full suite on G; nvcc check; delta review; revalidation on all five Linux platforms.
+- The gfx1250 "wrong `mesh_query_point` results" (translator evidence session) were not re-examined; the host is not ours to use at present.
