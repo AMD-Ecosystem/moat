@@ -23,3 +23,12 @@
 {"kind":"session","ts":"2026-11-24T02:17:16Z","epoch":1795486636.81582,"event":"start","platform":"linux-gfx942"}
 {"kind":"phase","ts":"2026-11-24T02:32:00Z","phase":"test","seconds":883.511,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300b-20261123-174000-fix3-autoware-universe-s1-prompt/agent_space/validate_all.sh"}
 {"kind":"session","ts":"2026-11-24T02:33:46Z","epoch":1795487626.564161,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-24T02:43:26Z","epoch":1795488206.931737,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-24T02:54:25Z","phase":"compile","seconds":107.295,"exit":2,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261123-184027-val-autoware-universe-w32-prompt/agent_space/build_pkgs.sh"}
+{"kind":"phase","ts":"2026-11-24T02:56:27Z","phase":"compile","seconds":105.579,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261123-184027-val-autoware-universe-w32-prompt/agent_space/build_pkgs.sh -DCMAKE_EXE_LINKER_FLAGS=-Wl,--no-as-needed -L/usr/lib/x86_64-linux-gnu -l:libfmt.so.9 -Wl,--as-needed"}
+{"kind":"phase","ts":"2026-11-24T02:57:15Z","phase":"test","seconds":34.635,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261123-184027-val-autoware-universe-w32-prompt/agent_space/test_pre.sh"}
+{"kind":"phase","ts":"2026-11-24T03:07:16Z","phase":"test","seconds":451.444,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261123-184027-val-autoware-universe-w32-prompt/agent_space/ogm.sh test"}
+{"kind":"phase","ts":"2026-11-24T03:17:10Z","phase":"compile","seconds":16.44,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261123-184027-val-autoware-universe-w32-prompt/agent_space/gs_build.sh"}
+{"kind":"phase","ts":"2026-11-24T03:17:26Z","phase":"test","seconds":4.784,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261123-184027-val-autoware-universe-w32-prompt/agent_space/gs_run.sh"}
+{"kind":"phase","ts":"2026-11-24T03:35:04Z","phase":"test","seconds":5.017,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261123-184027-val-autoware-universe-w32-prompt/agent_space/test_full.sh"}
+{"kind":"session","ts":"2026-11-24T03:41:42Z","epoch":1795491702.117531,"event":"end","platform":"linux-gfx1100"}

@@ -599,3 +599,110 @@ Recipe of the Porter stage 1 section, with the fmt link workaround (environment 
 - `jargon.py --port autoware_universe`: clean.
 - ROCm README sections are present in all three packages.
 - Fork clone clean at 129d61b (`git status --porcelain` empty).
+
+## Validation 2026-11-24 (validator, linux-gfx1100 fleet job; AMD Radeon RX 7900 gfx1100, wave32, HIP_VISIBLE_DEVICES=1 pinned by the dispatcher; fork `moat-port` at 129d61b)
+
+Verdict: **validation-failed --gate docs** (the GPU run passed; the documented ROCm build does not link). Every GPU test of the three packages passes, every node runs end to end and matches its reference, and the ground-segmentation comparison is exact on this 32-wide GPU. What fails is the build, with the packages' documented command: the two preprocessor gtests do not link (below). Earlier rounds recorded this as an environment problem of the hand-built dependency closure. It is not. It reproduces with Ubuntu noble's packaged libfmt 9.1, so anyone following the README hits it. The fork clone is clean at `129d61b2dc9d63a7cab5d4b1e4bebf5f2c92030e`.
+
+### For the porter: the documented ROCm build fails to link the preprocessor gtests
+
+- Command: the README's `colcon build --packages-up-to autoware_cuda_pointcloud_preprocessor --cmake-args ... -DCMAKE_HIP_ARCHITECTURES=gfx1100`, with tests built (colcon's default). Errors: `ld.lld: error: undefined reference: fmt::v9::vprint(...)` (also `throw_format_error`, `locale_ref::get`, `is_printable`) `>>> referenced by .../autoware_pointcloud_preprocessor/lib/libdistortion_corrector_core.so (disallowed by --no-allow-shlib-undefined)`.
+- Only `test_cuda_pointcloud_preprocessor` and `test_cuda_combine_cloud_handler` fail. Every library and node executable links. Checked with `make -k` in a scratch build dir (`build_nofmt`).
+- Cause: upstream's `libdistortion_corrector_core.so` (autoware_pointcloud_preprocessor, built by g++) uses fmt but has no `NEEDED` entry for libfmt (`readelf -d`: only autoware_utils_math, memory_utils, libstdc++, libm, libgcc_s, libc). The HIP test executables link with the SDK's clang, whose linker is ld.lld. ld.lld refuses an undefined symbol in a shared library that nothing on the link line defines. GNU ld accepts it. The same build with `-DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=bfd` links both tests, and `test_cuda_pointcloud_preprocessor` passes 20/20. The CUDA build links these tests with GNU ld, which is why the nvcc check passed.
+- Not an environment artefact: this job used Ubuntu noble's `libfmt9` 9.1.0 and `libspdlog` from the archive (ROS debs, see Environment), not the hand-built fmt of earlier rounds.
+- Why fail now when rounds 1-4 passed with the workaround: under the standing rule, a port's ROCm build must work with its documented command, and toolchain workarounds belong in the build files, guarded to the platform. The fix belongs in a build file, not in the validation recipe. Candidates, for the porter to choose: link `fmt` to `distortion_corrector_core` in autoware_pointcloud_preprocessor (a shared fix to an underlinked upstream library, CUDA-neutral), or add fmt to the two HIP test targets inside `if(USE_HIP)`. Wave64 has the same toolchain, so it is affected identically; its `completed` at 129d61b stays until the head moves.
+
+### Environment (job directory only; nothing shared on the host changed)
+
+- TheRock ROCm 10.2.0 into `$FLEET_VENV`: `$FLEET_VENV/bin/pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple 'rocm[devel,device-gfx1100]==10.2.0'`, `rocm-sdk init`. HIP 7.17.26434, with libhipcxx, hipCUB and rocThrust. No system ROCm.
+- ROS 2 Jazzy and the released Autoware packages from debs, the mi355 recipe (`## Lesson for moat-porting: ROS 2 from debs on a fleet host with no root`), not a source build:
+  - 421 debs (packages.ros.org noble snapshot 20261105 plus the Ubuntu noble archive), fetched with a private `APT_CONFIG` and unpacked with `dpkg-deb -x` into `<job>/root`.
+  - Relocated (`agent_space/fixroot.py`); host `.so` files symlinked in, except the host's Ubuntu ROCm 5.7 runtime (see the lesson below).
+  - colcon 0.21 from a `/usr/bin/python3` (3.12) venv, with `-DPython3_EXECUTABLE=/usr/bin/python3`.
+  - `CPATH`/`LIBRARY_PATH` point at `<job>/root/usr/include` and `<job>/root/usr/lib/x86_64-linux-gnu` (range-v3, tl-expected, CGAL).
+- Built from source in `<job>/ws`:
+  - `autoware_cuda_utils` + `autoware_cuda_dependency_meta`, AMD-Ecosystem/autoware_cuda `992d7034b5396900593126e8f19a1982ae7bc682` (`-- cuda is not found, building autoware_cuda_utils with HIP 7.17.26434`).
+  - cuda_blackboard `9e0fb865cd2e38dcc0db5e0e55497f40fb71f733` (`-- cuda was not found, building cuda_blackboard with HIP 7.17.26434`), negotiated `eac198b5`.
+  - autoware_point_types and autoware_agnocast_wrapper from autoware_core `15408eb6`, managed_transform_buffer `6c9a65b5` (autowarefoundation), tier4_debug_msgs from tier4_autoware_msgs `efa41293`.
+  - autoware_pointcloud_preprocessor and autoware_pcl_extensions from the fork tree.
+  - Everything else is the released 20261105 debs (autoware_utils 1.9.0, autoware_msgs 1.13.0, grid_map 2.2.2, nav2_costmap_2d 1.3.14, pcl_ros 2.6.5, pointcloud_to_laserscan 2.0.2).
+- `MAX_JOBS=16` respected (4 workers x `-j4`, then 3 x `-j6`). Every GPU step ran under `ulimit -c 0` and `timeout`.
+
+### Build at 129d61b (rc 0, 1 min 45 s, with the fmt workaround; without it, the two gtests fail as above)
+
+```
+source <job>/env.sh && source <job>/ws/install/setup.bash
+colcon build --parallel-workers 3 --base-paths src --build-base build --install-base install \
+  --packages-select autoware_cuda_pointcloud_preprocessor autoware_ground_segmentation_cuda autoware_probabilistic_occupancy_grid_map \
+  --cmake-args -DCMAKE_BUILD_TYPE=Release -DPython3_EXECUTABLE=/usr/bin/python3 -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DAUTOWARE_CUDA_USE_HIP=ON -DBUILD_TESTING=ON "-DCMAKE_EXE_LINKER_FLAGS=-Wl,--no-as-needed -L/usr/lib/x86_64-linux-gnu -l:libfmt.so.9 -Wl,--as-needed"
+```
+All three configure with `cuda was not found, building <pkg> with HIP 7.17.26434`. The code objects in all three device libraries are `amdgcn-amd-amdhsa--gfx1100` only.
+
+### Tests (logs in `<job>/logs/`; probes in `<job>/agent_space/probes/`)
+
+- **Preprocessor gtests**, `colcon test --packages-select autoware_cuda_pointcloud_preprocessor --ctest-args -R test_cuda --repeat until-fail:20`: test_cuda_combine_cloud_handler 8/8 and test_cuda_pointcloud_preprocessor 20/20, 20 `[  PASSED  ]` blocks each, "100% tests passed". `AMD_LOG_LEVEL=3`: `Gfx Major/Minor/Stepping: 11/0/0, Device ID: 0x7449`, 1080 `hipLaunchKernel`.
+- **Occupancy grid** (out of tree, `harness/occupancy_grid_map`; this environment needs `-DCMAKE_PROJECT_INCLUDE` with `enable_language(C)` + `find_package(MPI COMPONENTS C)`, because the harness's bare `find_package(PCL)` pulls VTK's MPI target), `--repeat until-fail:20`:
+  - test_utils, costmap_unit_tests, fusion_policy_unit_tests, test_pointcloud_based_method (GPU node) and test_ogm_geometry: 20/20 each.
+  - test_synchronized_grid_map_fusion_node failed on its 4th repetition. Run alone: 9 of 40 pass. `IndexError: list index out of range` at `self.msg_buffer[-1]`: no fused grid arrived.
+  - Cause: upstream's test publishes immediately after creating its publishers and never waits for discovery, so the first frames are lost. A copy that only waits until both publishers and the output subscription match (`agent_space/ogm_fusion/test_fusion_matched.py`) passes 20/20 with the expected values (1, 99, 50; unknown fusion 1, 99, 50).
+  - The fusion node launches no kernel; it links the HIP library only because `ament_auto` links every dependency.
+  - So this is an upstream test race that this host's load exposes, not a port fault. Upstream has these tests disabled anyway (#7724). Not registered.
+- **Ground segmentation**, wave32 confirmation (`harness/ground_segmentation` against the installed 129d61b library):
+  - `./gs_fixed 20 <seed>`, seeds 7 / 11 / 23: 60 of 60 runs give 0 label mismatches against the CPU reference, 0 missing, and are identical to run 0.
+  - Label hashes `04516cba11e18f95`, `7cd4bb48f4483e7f`, `957f6d786c501316`: identical to the wave64 runs. Seed 7: 150,516 ground, 4,848 non-ground, 7,832 box-filtered.
+  - Naive variant (`gs_naive 3 7`): 0 mismatches, hash `04516cba11e18f95`. On a 32-wide wavefront each 32-thread group is a whole wavefront, so the undone fix is harmless here (on wave64 the same binary gives 66,910 mismatches).
+  - Debug mask check (`-UNDEBUG -O1`, `__hip_check_mask` on, fork kernel source): pass, hash `04516cba11e18f95`. The same build with `FULL_MASK` forced to 64-bit all-ones also passes on wave32: `__ballot_sync` first trims the mask to the wavefront (`__hip_adjust_mask_for_wave32`). The trap the wave64 validator saw is wave64-only.
+- **Each node end to end** (plain `PointCloud2` in and out; this environment needs a Fast DDS profile with a 64 MiB shared-memory segment, see the lesson below):
+  - `cuda_voxel_grid_downsample_filter_node`:
+    - 32x16x8 grid (24,576 points, 6 per voxel, shuffled): 4096 outputs, one per voxel, max centroid error 1.75e-6: PASS.
+    - 40x25x8 grid (8000 voxels): 27,601 outputs. That equals the upstream radix `end_bit` model for this point order (stable sort on the low 12 bits, count runs), so it is upstream's bug (`cuda-voxel-downsample-radix-end-bit`), not the port's.
+  - `cuda_pointcloud_preprocessor_node` vs a float32 numpy model of its kernels (stable ring sort, transform, negative crop box, 2D undistortion, ring outlier filter). Scene: 32 rings x 1800 steps over a 100 ms sweep (PointXYZIRCAEDT, rings shuffled), 15 spikes and 3 zero-distance returns per ring, static TF base_link->lidar (1.0, 0.5, 2.0, yaw 30 deg), `use_imu:=false`, 200 Hz twist.
+    - vx 0: 39,944 of 57,600 points, the same points in the same order as the model, max error 1.91e-6 m.
+    - vx 10 m/s: 39,749 points, max error 2.86e-6 m.
+    - vx 0 repeated: identical.
+    - PASS.
+  - `cuda_concatenate_and_time_sync_node` vs upstream's CPU node, two XYZIRC lidars (8192 points each, id in intensity/channel, static TFs at +-40 deg yaw):
+    - Stationary: max GPU-vs-CPU difference 3.81e-6 m, ids one to one, return types equal.
+    - vx 5 m/s with `lidar_r` 40 ms late: both shift `lidar_r` by +0.200 m and leave `lidar_l` in place; max difference 3.81e-6 m.
+    - PASS.
+  - `cuda_polar_voxel_noise_filter_node` vs the CPU node (83,000 points: 4 dense rings, 3,000 isolated points, mixed return types and intensities; shipped parameter file): identical point sets on seeds 3, 11 and 29 (62,206 / 62,021 / 62,286 kept). PASS.
+  - `cuda_polar_voxel_outlier_filter_node` vs the CPU node:
+    - Seeds 3 and 11: identical (71,884 / 71,775).
+    - Seed 29: GPU 71,843 vs CPU 71,846. The 3 CPU-only points are deterministic over 3 repeats and reproduce in an 825-point neighbourhood.
+    - Traced (`agent_space/probes/edge29.py`, `probe_polar_tiny.py`): point 59759 lies 3.9e-6 voxel units below an azimuth edge (az/res = 156.999996 with res = 2*pi/359 after `adjust_resolution_to_circle`).
+      - The CPU node rounds the double azimuth to float and divides it by the double resolution, so the point falls in voxel 156, beside 61292. Two primary returns: the CPU keeps 59759, 61292 and 56041.
+      - The GPU kernel rounds the quotient to float before `floorf`, giving exactly 157.0, so the point is alone in voxel 157 and dropped. A correctly rounded float atan2 gives the same 157.
+    - So this is upstream's float kernel path (the same on CUDA), not GPU math error. It is the edge-rounding class of the wave64 round (radial axis there, azimuth here).
+    - A whole-frame model of both nodes (`model_outlier_full.py`) predicts the node counts exactly on all three seeds (CPU-only 0 / 0 / 3).
+    - The kernel uses no warp-level operation, so the wavefront width plays no part.
+  - `cuda_scan_ground_segmentation_filter_node` (shipped parameter file), harness scenes for seeds 7, 11 and 23 (`gs_fixed dump`): ground and non-ground sets equal the CPU reference exactly (seed 7: 150,516 / 4,848), no duplicates. PASS.
+  - **Component container** (`agent_space/probes/container.launch.py`):
+    - Preprocessor loaded first: ground segmentation passes on seeds 7 and 11, and the preprocessor probe passes all three cases.
+    - Ground segmentation loaded first: `Failed to find class with the requested plugin name 'autoware::cuda_pointcloud_preprocessor::CudaPointcloudPreprocessorNode'`, the registered upstream issue `autoware-gs-component-preloads-preprocessor-components`.
+  - **Occupancy grid, projective map** (`OccupancyGridMapProjectiveBlindSpot`, scan origin 1.8 m above base_link, `agent_space/ogm_proj/test_ogm_proj.py`):
+    - All five `map_projective::*` kernels launch, 5 frames each.
+    - Wall cells 99, behind and side cells 50, free cells (1) from 2 to 5.5 m, the 5.5-6 m cell and 6-9 m unknown (50). Matches round 1's hand computation and the wave64 run.
+- **Non-GPU tests**, full `colcon test` of the three packages: 213 results, 0 failures, 0 errors.
+  - copyright, cpplint, lint_cmake and xmllint pass (xmllint runs here: 6 and 3 checks).
+  - cppcheck is skipped by `ament_cppcheck` (Ubuntu's cppcheck 2.13.0 is on its slow-version list: the 64 skips). With `AMENT_CPPCHECK_ALLOW_SLOW_VERSIONS=1` it fails to start: the relocated deb looks for `std.cfg` under its compiled-in `/usr/lib/x86_64-linux-gnu/cppcheck`. That is an environment gap, as in every earlier round.
+  - Ground segmentation registers no tests.
+- **`ldd -r`** over every stage-1 library and executable: 0 undefined symbols, except the 4 cuda_blackboard symbols in `libcuda_ground_segmentation_lib.so` that round 2 recorded.
+
+### Gates
+
+- CUDA compile: not run here (no nvcc on this host). Still owed at 129d61b, as the wave64 validation says.
+- `jargon.py --port autoware_universe`: clean (after `git fetch origin main:main` in the fork clone; the tool needs the local `main`).
+- ROCm README sections present in all three packages, but the documented command does not build with tests (above).
+- Fork clone clean at 129d61b (`git status --porcelain` empty).
+
+## Lesson for cuda-to-rocm: ld.lld rejects underlinked g++ shared libraries that GNU ld accepted
+
+For `references/build-cmake-link.md`. A HIP executable links with the ROCm SDK's clang, and the TheRock SDK's clang uses ld.lld. ld.lld rejects any undefined symbol in a linked shared library that no input on the link line defines (`undefined reference ... (disallowed by --no-allow-shlib-undefined)`). The CUDA build links the same executable with GNU ld, which accepts it. A host library that uses a dependency without linking it (no `NEEDED` entry, e.g. a g++-built library calling fmt) therefore breaks only the ROCm link, and only for executables that link it directly (here, unit tests). Diagnose with `readelf -d <lib> | grep NEEDED`. Confirm with `-DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=bfd`: if GNU ld links it, the library is underlinked. The proper fix is to link the dependency to that library. Otherwise add it to the affected HIP targets in the build files, guarded to the HIP build. A linker flag in a validation recipe is not a fix. (autoware_universe, TheRock ROCm 10.2, Ubuntu noble libfmt 9.1.)
+
+## Lesson for moat-porting: ROS 2 from debs, three more traps
+
+Extends `## Lesson for moat-porting: ROS 2 from debs on a fleet host with no root`.
+- **ROCm runtime shadowing.** When symlinking host libraries into the unpacked tree, skip the host's Ubuntu ROCm runtime (`libhsa-runtime64.so.1`, `libamdhip64.so.5`, `libhsakmt.so.1`), and put `$ROCM_SDK/lib` first in `LD_LIBRARY_PATH`. Otherwise GNU ld resolves `libamdhip64.so.7`'s dependency against ROCm 5.7's `libhsa-runtime64.so.1` and fails with `undefined reference to hsa_amd_vmem_*@ROCR_1`. CMake package configs in the tree also compute their prefix from their own location, so their libraries must exist there: symlinking the host's `.so` files in is what makes `fmt::fmt` and the like resolve.
+- **Fast DDS shared-memory limit.** A best-effort subscriber silently drops any message over about 500 KB on localhost, because Fast DDS's default shared-memory segment is 512 KB. A 48,000-point PointCloud2 never arrives, which looks like a node that publishes nothing. Use a profile (`FASTRTPS_DEFAULT_PROFILES_FILE`) with an SHM transport of `segment_size` 64 MiB plus UDPv4 and `useBuiltinTransports false`.
+- **Relocated cppcheck.** The cppcheck deb cannot run from a relocated tree: `std.cfg` is looked up under the compiled-in `/usr/lib/x86_64-linux-gnu/cppcheck`. Also, `ament_cppcheck` skips cppcheck 2.13 unless `AMENT_CPPCHECK_ALLOW_SLOW_VERSIONS` is set.
