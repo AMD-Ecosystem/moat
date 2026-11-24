@@ -347,7 +347,7 @@ Fresh venvs, each made at `$FLEET_VENV` and moved aside afterwards (the fleet gu
 | Python (venv origin) | start pip / setuptools | main route | ONNX route | GPU checks |
 |---|---|---|---|---|
 | 3.12.15 (uv python-build-standalone; the system 3.12 lacks ensurepip) | 25.0.1 / none | all rc 0; setuptools ends 78.1.0 (torch on cp312 depends on setuptools and the PyTorch index serves 78.1.0, so `setuptools<82` was already satisfied) | all rc 0 | sanity on both stacks; ORT probe MIGraphX, diff 8.9e-8; `export_onnx_gpu.py` encoder and decoder succeed |
-| 3.11.17 (`/usr/bin/python3.11 -m venv`) | 24.0 / 79.0.1 | all rc 0 | all rc 0 | same; probe diff 6.0e-8; export succeeds |
+| 3.11.17 (`/usr/bin/python3.11 -m venv`) | 24.0 / 79.0.1 | all rc 0 | all rc 0 | sanity only after the ONNX route (torch 2.8.0+rocm7.2.4), none on the main-route rocm6.4 stack (corrected after review round 3; run in Porter round 4); probe diff 6.0e-8; export succeeds |
 | 3.10.22 (uv standalone) | 23.0.1 -> upgraded to 26.3 / 79.0.1 | all rc 0 (after the pip upgrade) | `onnxruntime-migraphx==1.27.1` not found (needs >= 3.11) | sanity on the main route |
 
 - `pip check` after the main route on each: only `openai-whisper 20231117 requires triton, which is not installed` (the module comes from pytorch-triton-rocm 3.4.0).
@@ -368,9 +368,9 @@ Fresh venvs, each made at `$FLEET_VENV` and moved aside afterwards (the fleet gu
 
 As round 2's recipe, with: job dir `/var/lib/jenkins/fleet/jobs/mi300b-20261123-152256-fix2-wenet-prompt` (deps copied from the round-2 job: `deps/rocm-7.2.4-root`, `deps/libdrm-dev-root`, `deps/sox-install`; `rocm_smiTargets.cmake` re-pointed at this job's libdrm); `agent_space/env.sh` and `envB.sh` rewritten for this job (cmake from `<job>/venv-orig/.../cmake/data/bin`, since the fresh venvs have none); venvs kept: `<job>/venv-312-main` (main route, 3.12), `<job>/venv-310-main`, `<job>/venv-312-onnx`, `<job>/venv-311-onnx` (main route + ONNX route, 3.11; also the current `$FLEET_VENV`), `<job>/venv-310-onnx-ortm1242` (the 1.24.2 experiment). A venv works only at the path it was created at, so swap one in with `mv` to `$FLEET_VENV`. WeTextProcessing pin at `runtime/libtorch/wetext-fd9026c`.
 
-## Lesson for cuda-to-rocm: telling a user's `<Pkg>_DIR` from the one `find_package` cached (build-cmake-link.md)
+## Lesson for cuda-to-rocm: a local-package option must be a variable only the user sets, not `<Pkg>_DIR` (build-cmake-link.md)
 
-**Adding a "use a local package if `<Pkg>_DIR` is given, else download it" branch to a CMake file needs a test that does not fire on the value `find_package` cached after the download.** `if(Torch_DIR)` alone fires on every reconfigure, so the download branch (and its CPU/GPU URL choice) never runs again. Comparing the cached value with the download directory as strings is not enough either: a project that sets `FETCHCONTENT_BASE_DIR` from `get_filename_component(... REALPATH)` gets a resolved path once the directory exists, while `find_package` caches the path the source dir was reached by, so they differ under a symlinked checkout (`/home`, `/data`, macOS `/tmp`). And `REALPATH` returns a non-existent path unresolved, so a deleted download directory defeats a resolved comparison too. What works: treat `<Pkg>_DIR` as the user's only when `${<Pkg>_DIR}/<Pkg>Config.cmake` exists and its REALPATH differs from the REALPATH of the download location. Test with two configures in one build directory (CPU then GPU, GPU then CPU), from the checkout and through a symlink, with stand-in archives for the downloads. (wenet, 2026-11)
+**To let a CMake build that downloads a dependency use a local copy instead (a ROCm LibTorch in place of a downloaded CUDA one), add one explicit cache variable that only the user sets; do not infer the request from `<Pkg>_DIR`.** `find_package` writes `<Pkg>_DIR` into the cache itself, so after the first download configure the value is set although no user set it. `if(Torch_DIR)` then fires on every reconfigure and the download (with its CPU/GPU URL choice) never runs again. Each attempt to tell the user's value from the cached one misses a case: a string compare with the download directory fails under a symlinked checkout, because `find_package` caches the hint path as it was computed at the first configure, and a hint built with `get_filename_component(... REALPATH)` stays unresolved while the download directory does not exist yet (a build directory created after it existed caches the resolved path instead); a resolved compare plus an existence check fails for a relative value, which `if(EXISTS)` resolves from the current directory and `find_package` from the source directory. The fix is to stop inferring: declare e.g. `set(LIBTORCH_PATH "" CACHE PATH "...")`; when it is set, `find_package(Torch PATHS ${LIBTORCH_PATH} NO_DEFAULT_PATH)` and skip the download; when it is empty, leave the original code untouched. Declaring it as a PATH cache entry makes CMake turn an untyped relative `-D` value into an absolute path from the current directory. Two details: a set path with no package should stop configure with an error naming the variable, not fall back to the download (that silently builds against something else); and a package config caches more than `<Pkg>_DIR` (LibTorch's caches `Caffe2_DIR` and the library paths it finds), so unset those entries before loading the local copy, so it replaces a copy loaded earlier in the same build directory, and after, so that emptying the variable returns to the download as in a fresh build directory. Test with several configures in one build directory (download then local, local then download, CPU then GPU), from the checkout and through a symlink, with stand-in archives for the downloads. (wenet, 2026-11)
 
 ## Review 2026-11-24 (round 3: linux-gfx942 fleet job, reviewer, delta b122b16..6860e5f)
 
@@ -408,3 +408,83 @@ These ran on this host while the child review was in progress, against head 6860
 ## Ruling on the LibTorch option design (Jeff Daily, 2026-11-23, after three review rounds)
 
 **b: stop inferring.** Add one explicit new CMake option for a local LibTorch that only the user sets and nothing else writes, and leave `Torch_DIR` and the download logic exactly as upstream has them. The three rounds of findings (cached value, symlinked source, relative path) all came from telling a user's `Torch_DIR` from the one `find_package` caches; that inference is removed, not refined.
+
+## Porter round 4 (2026-11-24, linux-gfx942 fleet job, MI300X, HIP_VISIBLE_DEVICES=2), the LibTorch option redesign and review round 3
+
+New fork commit on `moat-port` (no amend, no rebase, plain push `6860e5f..dfbc15f`):
+
+- `dfbc15f` [ROCm] runtime: add LIBTORCH_PATH instead of inferring from Torch_DIR (the ruling above; review round 3 findings 1 and 3)
+
+Review round 3 finding 2 (the lesson) is answered by rewriting the lesson above for the new design; finding 3 by the 3.11 main-route sanity run below and the corrected Porter round 3 table row. An earlier attempt at this round (job `mi300c-20261123-164737-fix3-wenet-prompt`) was killed by a host reboot; its uncommitted draft of the option, its simulation script and its downloaded ROCm 7.2.4 debs were salvaged by copying and re-verified (below); none of its results are used.
+
+### The design (`runtime/core/cmake/libtorch.cmake`)
+
+- The download branch is byte-for-byte be6ad97; the whole diff of that logic against upstream is `if(NOT IOS)` -> `elseif(NOT IOS)`. `Torch_DIR` is not read or tested anywhere by the new code; `runtime/libtorch/CMakeLists.txt` is back to upstream (zero diff).
+- New cache entry, declared in `libtorch.cmake` just before its use: `set(LIBTORCH_PATH "" CACHE PATH "local LibTorch to use instead of downloading one")`. Name: it parallels `LIBTORCH_URL` in the same file (where the downloaded LibTorch comes from; this says where a local one is), and `*_PATH` is how the sibling `xpu.cmake` names user-given locations (`XPU_API_PATH`). The file has no `option()` lines of its own; the runtimes' options are single upper-case words (`GPU`, `TORCH`, `ONNX`), which a path variable cannot be. Maintainers may rename it.
+- Set: `find_package(Torch QUIET PATHS ${LIBTORCH_PATH} NO_DEFAULT_PATH)`, no FetchContent. Accepts the LibTorch root, its `share/cmake/Torch`, or `share/cmake` (`torch.utils.cmake_prefix_path`); the README uses the wheel's `torch` directory.
+- Set to a directory with no LibTorch (missing, or no `TorchConfig.cmake`): `FATAL_ERROR` "LIBTORCH_PATH is '<value>', which has no LibTorch (share/cmake/Torch/TorchConfig.cmake). Set it to a LibTorch directory, or unset it to download LibTorch." Chosen over a silent download, as instructed.
+- Same-build-dir switching: `TorchConfig.cmake` caches `Torch_DIR`, `Caffe2_DIR`, `TORCH_LIBRARY`, `c10_LIBRARY`, `kineto_LIBRARY`, `C10_CUDA_LIBRARY` (the find calls in TorchConfig for a shared LibTorch on Linux, checked in the torch 2.8 wheel's config). With `LIBTORCH_PATH` set, these six entries are unset before `find_package` (so a LibTorch loaded earlier is replaced, not mixed: without it the simulation showed a stale `Caffe2_DIR` and `c10_LIBRARY` from the earlier LibTorch) and again after it (so emptying `LIBTORCH_PATH` reaches the untouched download code with nothing cached, exactly like a fresh build dir). Consequence: `LIBTORCH_PATH` beats a `Torch_DIR` given with it, and a user `Torch_DIR` cached earlier is dropped once `LIBTORCH_PATH` is set.
+- Relative values: an untyped `-DLIBTORCH_PATH=<rel>` is made absolute from the current directory by CMake (the PATH cache type does that). A typed `-DLIBTORCH_PATH:PATH=<rel>` is stored as written and gets the configure error unless it resolves from the source directory (observed on CMake 3.14.4 and 3.31.6). Recorded in the commit body; not worked around.
+
+### Simulation (this job's `agent_space/sim/sim.py`, results `result-3.31.txt`, `result-3.14.txt`)
+
+A minimal project with runtime/libtorch's `FETCHCONTENT_BASE_DIR` REALPATH setup including each revision's `libtorch.cmake` (be6ad97, 6860e5f, dfbc15f), the two URLs pointed at local stand-in zips whose `TorchConfig.cmake` finds Caffe2 by `find_package` and c10/torch by `find_library` (cached, like the real one) and reports a flavor; MIXED is printed if torch, Caffe2 and c10 disagree. 35 cases, each from the source dir and through `links/proj -> ../real`, on CMake 3.31.6 and 3.14.4 (Kitware tarball, sha256 9f414df8...5c50 checked against Kitware's SHA-256 list): **the two CMake versions give identical tables.**
+
+- The 12 cases without `LIBTORCH_PATH` (A, B, C, D, E, G, H, I, J, K, R, F of rounds 2 and 3) x 2 = 24 sequences: dfbc15f == be6ad97 in all. Note case D (CPU download, then `-DGPU=ON -DTorch_DIR=<user>`) is MIXED on be6ad97 itself (torch from the user dir, Caffe2/c10 from the cached download: an upstream quirk), and dfbc15f reproduces it exactly; 6860e5f gave a different mix there and failed R.
+- The 23 `LIBTORCH_PATH` cases, all identical through the symlink:
+
+| case | dfbc15f |
+|---|---|
+| L1/L2/L5 GPU + root, `share/cmake/Torch`, `share/cmake` | local1 |
+| L3 option, GPU off | local1 |
+| L4 option, then plain reconfigure | local1 -> local1 |
+| M1/M2 option + GPU, then `-ULIBTORCH_PATH` / `-DLIBTORCH_PATH=` | local1 -> cu118 |
+| M3 option, then unset + `-DGPU=OFF` | local1 -> cpu |
+| M4 cpu, option, `-ULIBTORCH_PATH`, then `-DGPU=ON` | cpu -> local1 -> cpu -> cu118 |
+| N1 GPU download, then option | cu118 -> local1 |
+| N2 cpu, then GPU + option, then unset | cpu -> local1 -> cu118 |
+| V local1, then local2 | local1 -> local2 |
+| S option + `Torch_DIR` together; S2 cached user `Torch_DIR`, then option | local2; local1 -> local2 |
+| O missing dir; P dir without config; P2 download then no-config dir | ERR(LIBTORCH_PATH); same; cu118 -> ERR |
+| P3 bad, then fixed; P4 bad, then emptied | ERR -> local1; ERR -> cu118 |
+| Q relative from a cwd that is neither src nor build; Q2 cwd = build dir; Q3 then reconfigure from elsewhere | local1; local1; local1 -> local1 |
+| Q4 typed `-DLIBTORCH_PATH:PATH=rel` from another cwd | ERR(LIBTORCH_PATH) |
+
+### Real tree (`agent_space/real-seq.sh`, logs `<job>/logs/real-seq-new.log`, `real-seq-base.log`)
+
+`runtime/libtorch`, WeTextProcessing pinned at fd9026c in `runtime/libtorch/wetext-fd9026c` (untracked clone; passed through the same path the source was reached by, else `add_subdirectory` refuses it under a symlinked source, which is why every configure in the killed job's log failed), CMake 3.31.6, ROCm 7.2.4 prefix (`envB.sh`), venv C (below). From the checkout and through `<job>/work/new/links/src -> <clone>`, identical results:
+
+- option set + GPU: rc 0, `HIP VERSION: 7.2.53211-97f5574fe2`, nothing fetched, cache holds only `LIBTORCH_PATH`; then `-DLIBTORCH_PATH= -DGPU=OFF`: fetches the 2.2.0 cpu zip, `Found Torch: <fc_base>/libtorch-src/lib/libtorch.so`; plain reconfigure: unchanged; option set again: back to the wheel.
+- cpu download, then option + GPU: wheel; then `-ULIBTORCH_PATH` (GPU stays ON): fetches the cu118 zip and stops at `Caffe2: CUDA cannot be found` (no CUDA toolkit here), the same place be6ad97 stops for `-DGPU=ON`.
+- option = missing dir: the `LIBTORCH_PATH is ...` error; then corrected: rc 0.
+- relative option with cwd = build dir, and with cwd = another directory: rc 0, cached as the absolute wheel path.
+- without the option, run with dfbc15f's and with be6ad97's file: cpu -> `-DGPU=ON` (cu118 fetched, CUDA not found) -> `-DGPU=OFF` (cpu fetched); `-DGPU=ON -DTorch_DIR=<wheel>/share/cmake/Torch`: cu118 zip still fetched (upstream does that), then `Found Torch: <wheel>/lib/libtorch.so`, reconfigure unchanged. Same downloads and results for both files.
+
+ROCm build (`agent_space/build-rocm.sh`, wrapped in `timeit.sh wenet compile`): `cmake -S runtime/libtorch -B <job>/work/build-rocm -DGPU=ON -DLIBTORCH_PATH=<venv>/lib/python3.11/site-packages/torch -DBUILD_TESTING=ON -DFETCHCONTENT_SOURCE_DIR_WETEXTPROCESSING=...` then `cmake --build -j48`: rc 0, all five binaries plus the unit tests; `decoder_main` NEEDs `libtorch.so libtorch_cpu.so libtorch_hip.so libc10.so libhipblaslt.so.1 librocm_smi64.so.1`, RUNPATH into the wheel's `torch/lib` and the ROCm 7.2.4 prefix's `lib`. Toolchain actually used (CMakeCache): `CMAKE_CXX_COMPILER=/usr/bin/c++` (GNU 13.3.0; wenet has no HIP sources, so no HIP compile happens), `HIP_HIPCC_EXECUTABLE` and `hip_DIR` in the job's ROCm 7.2.4 prefix (`hipcc --version`: HIP 7.2.53211, AMD clang 22.0.0git roc-7.2.4); no `/opt/rocm` path anywhere in the cache (the image has no `/opt/rocm*`). No TheRock `rocm-sdk-devel` wheel is involved in this recipe, so the 10.1/10.2 compiler trap in the job prompt does not apply.
+
+Runtime READMEs (EN and CN): the `Torch_DIR` paragraph replaced by `LIBTORCH_PATH` (directory holding `share/cmake/Torch`, the error, `-DLIBTORCH_PATH=` to go back), command `cmake -DGPU=ON -DLIBTORCH_PATH=$(python -c 'import os, torch; print(os.path.dirname(torch.__file__))') ..`. No other doc mentions `Torch_DIR`.
+
+`python3 utils/jargon.py --port wenet`: clean. `utils/prose.py` on the message: clean. Title 69 characters. Fork clone `git status --porcelain`: only the untracked `runtime/libtorch/wetext-fd9026c/`.
+
+### Python 3.11 main route (review round 3 finding 3)
+
+Fresh `/usr/bin/python3.11 -m venv --clear "$FLEET_VENV"` (pip 24.0, setuptools 79.0.1), the README main-route commands verbatim (`agent_space/readme-main.sh`, log `<job>/logs/readme-main-py311.log`): all rc 0; torch 2.8.0+rocm6.4, pytorch-triton-rocm 3.4.0, deepspeed 0.20.0, numpy 2.4.6; `pip check` only `openai-whisper 20231117 requires triton, which is not installed`. Then `agent_space/probe/sanity.py` on that stack, before anything else was installed (log `sanity-main-py311.log`): `torch 2.8.0+rocm6.4 hip 6.4.43482`, 1 device `AMD Instinct MI300X`, backends `['sox', 'soundfile']`, `torchaudio.info` and sox speed 1.1 work, `torch.compile` vs eager 2.4e-7, `whisper 20231117`, `SANITY OK`. Copy kept at `<job>/venv-311-main`. Then the README ONNX-route commands on top (`readme-onnx.sh`, log `readme-onnx-py311.log`): torch 2.8.0+rocm7.2.4.lw.gitd618db82, torchaudio 2.8.0+rocm7.2.4.git6e1c7fe9, triton 3.4.0+rocm7.2.4 beside pytorch-triton-rocm 3.4.0, onnx 1.23.2, onnxruntime-migraphx 1.27.1 (venv C, now `$FLEET_VENV`).
+
+### Environment recipe for this round (for the validator)
+
+As round 2's recipe, in job dir `/var/lib/jenkins/fleet/jobs/mi300c-20261124-021320-re-fix3-wenet-prompt`: `agent_space/env.sh` (PATH venv first, PYTHONPATH unset, `OMP/OPENBLAS_NUM_THREADS=16`, `ulimit -c 0`, `HIP_VISIBLE_DEVICES=2`, `CMAKE` = the image's cmake 3.31.6 binary, read-only), `envA.sh` (+ SoX lib), `envB.sh` (+ ROCm 7.2.4 prefix). ROCm 7.2.4: the 69 debs copied from the killed job, `InRelease` signature checked fresh against `https://repo.radeon.com/rocm/rocm.gpg.key` ("Good signature from AMD MLSE DevOps"), the Packages index sha256 checked against `InRelease`, all 69 deb sha256s checked against the index, then `dpkg -x` into `<job>/deps/rocm-7.2.4-root`. `libdrm-dev_2.4.125-1ubuntu0.1~24.04.2` sha256 checked against Ubuntu's noble-updates index, unpacked, `rocm_smiTargets.cmake` re-pointed at it. SoX 14.4.2 rebuilt from the sourceforge tarball (sha256 b45f5986...5f6c) into `<job>/deps/sox-install`.
+
+### For jeff (decisions and facts; nobody could answer during the job)
+
+- **Name of the option: `LIBTORCH_PATH`** (reasons above). Alternatives if you or the maintainers prefer: `LIBTORCH_DIR` (CMake's `<Pkg>_DIR` look-alike, which is the confusion this redesign removes, so not chosen), `TORCH_PATH`.
+- **`LIBTORCH_PATH` wins over `Torch_DIR`** and drops a cached `Torch_DIR` when set (needed so a set-then-unset build dir returns to the download). Upstream's own `-DTorch_DIR` behaviour without the option is untouched, including its quirks (it still downloads the zip it then ignores; case D mixes LibTorches).
+- **Not done here, owed elsewhere: the CUDA configure and build check of `dfbc15f`.** This host has no nvcc. On an nvcc host, re-run cases 1, 2 and 3 of "CUDA no-regression configure and build" (no `LIBTORCH_PATH`; expected identical to be6ad97 since the download code is byte-identical), plus: `-DGPU=ON -DLIBTORCH_PATH=<CUDA LibTorch 2.8.0+cu128>` (expected: no download, links that LibTorch), and in one build dir `-DGPU=ON` (cu118 download), then `-DLIBTORCH_PATH=<cu128>`, then `-DLIBTORCH_PATH=` (expected cu118 again, `decoder_main` NEEDs `libtorch_cuda.so` each time).
+- Rulings that stand and were not touched: transducer loss (docs and k2 only), RUNPATH (no workaround), whisper step (kept, with the `setuptools<82` prerequisite named).
+
+### Corrections for the final history (older commit bodies are not rewritten), added this round
+
+The `Torch_DIR` design of `15c6342`, `fd8ccb1` and `70d929d` is gone at `dfbc15f`; when the branch is squashed or its PR body written:
+
+- `15c6342`, `fd8ccb1`, `70d929d`: every statement that the runtime uses a local LibTorch "when `Torch_DIR` is given" (and the runtime README text of `15c6342`/`b122b16` that says so) describes the removed design; the option is `LIBTORCH_PATH`, and `Torch_DIR` behaves as upstream.
+- `70d929d`: "a `Torch_DIR` that does not point at a LibTorch; ... the download runs" was false for a relative `Torch_DIR` valid from the current directory but not from the source directory (review round 3 finding 1: configure error where upstream downloads). Moot after `dfbc15f`.
+- `6860e5f`: its Test Plan says the GPU checks ran "in each environment" after the main-route block; on Python 3.11 they ran only after the ONNX route had replaced torch with the 7.2.4 wheels. The 3.11 main-route check ran in round 4 and is in `dfbc15f`'s Test Plan.
