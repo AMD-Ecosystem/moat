@@ -496,3 +496,4 @@
 {"kind":"phase","ts":"2026-11-24T18:53:26Z","phase":"test","seconds":1279.541,"exit":1,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261123-192311-porter-gfx90a-prompt/moat/agent_space/g/t.sh suite-fin"}
 {"kind":"phase","ts":"2026-11-24T19:23:13Z","phase":"test","seconds":923.092,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261123-192311-porter-gfx90a-prompt/moat/agent_space/g/t.sh suite-fin2"}
 {"kind":"session","ts":"2026-11-24T19:41:58Z","epoch":1795549318.010359,"event":"start","platform":"linux-gfx950"}
+{"kind":"session","ts":"2026-11-24T19:49:33Z","epoch":1795549773.594846,"event":"end","platform":"linux-gfx950"}
