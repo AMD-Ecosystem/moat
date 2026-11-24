@@ -7,7 +7,7 @@
   "priority": 6.119,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:03Z",
-  "updated_at": "2026-11-24T01:37:14Z",
+  "updated_at": "2026-11-24T01:37:51Z",
   "head_sha": "8f6c188404b1bef4544fe8203bf55d34115b58f3",
   "pr_url": "https://github.com/CVCUDA/CV-CUDA/pull/293",
   "pr_number": 293,
@@ -23,7 +23,7 @@
   "pr_state": "open",
   "license_spdx": "Apache-2.0",
   "upstream_repo_id": 527819251,
-  "stage": "porting",
+  "stage": "reviewing",
   "platforms": {
     "windows-gfx1201": {
       "blocked": true,
@@ -74,7 +74,7 @@
       "validated_sha": "8da17190dd8d61aa83b0dc4136f10106fc5237f3",
       "started_at": "2026-05-31T02:22:53Z",
       "completed_at": "2026-11-23T22:12:34Z",
-      "updated_at": "2026-11-23T22:51:27Z",
+      "updated_at": "2026-11-24T01:37:51Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -88,7 +88,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "porter",
+      "last_agent": "reviewer",
       "validated_prior": [
         "358edc33955c58ecc1c219d21f3b3db59b10a50c"
       ]
@@ -151,12 +151,12 @@
   },
   "porting_released": {
     "arch": "linux-gfx90a",
-    "since": "2026-11-23T22:05:50Z",
-    "at": "2026-11-23T22:11:53Z"
+    "since": "2026-11-23T22:51:27Z",
+    "at": "2026-11-24T01:37:42Z"
   },
   "porting": {
     "arch": "linux-gfx90a",
-    "since": "2026-11-23T22:51:27Z",
+    "since": "2026-11-24T01:37:51Z",
     "holder": "c96c0beba8a6"
   },
   "reviewed_sha": "8da17190dd8d61aa83b0dc4136f10106fc5237f3"
