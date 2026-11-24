@@ -9280,3 +9280,7 @@ python build_lib.py --rocm-path $R --hip-arch <25 dist_info targets>[,gfx1250-st
 # per source: the build log's clang++ command with --offload-arch/--offload-compress/--offload-jobs/-o removed, plus
 #   --offload-arch=<t> --cuda-device-only --no-gpu-bundle-output -o <src>_<t>.o ; then llvm-objdump -d --no-show-raw-insn and diff
 ```
+
+## Coordinator finding: the fragment tests take about 30 minutes on NVIDIA with libmathdx (2026-11-23)
+
+Rerun on a V100 (upstream `warp-lang==1.14.0`, the fork's `test_tile_matmul.py` at `2ce30148` with `device.is_hip` read through `getattr(..., False)` because upstream's Device has no such attribute): no block size fails or hangs (`tile_matmul` float32 16x16 at block_dim 32, 48, 64 and 96: error 0, 24 to 28 s each, almost all of it the cuBLASDx LTO compile), but the whole file did not finish inside a 30 minute allocation, where upstream's file takes 96 s. Six shapes times four block sizes times three types is 72 cuBLASDx compiles at about 25 s. Fix owed by the porter: on non-HIP GPU devices the fragment tests run one shape at one block size per type (the cases exist to cover the HIP matrix-core fragment boundaries; cuBLASDx has upstream's own tests), all cases stay on HIP, test ids unchanged. The coordinator re-times the file on the V100 afterwards.
