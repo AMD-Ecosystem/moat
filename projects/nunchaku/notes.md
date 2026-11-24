@@ -90,6 +90,15 @@ Analysed at upstream 302e0e97024ebd68688fe890e5df83731edf7b54 (with submodules).
 - Q3 (speed): **b**. Stage 2 matrix-instruction paths (RDNA WMMA, CDNA MFMA) are required on every gate before review, whatever stage 1's speed. Stage 1 stays as the exact reference each stage 2 path is proven bit-identical against.
 - Standing ruling of the same day: Windows laptop GPU runs go last across all ports; they are queued, not started.
 
+## Rulings on the porter's questions (Jeff Daily, 2026-11-24)
+
+Answers to the three questions of the gfx942 porter round below (relayed in the gfx950 porter dispatch of 2026-11-24).
+
+- Q1 (FP4 scaling): **(b) for now**: decode e2m1 x ue4m3 to f16 in registers (exact) and run the f16 matrix instructions. On gfx950 use (b), because its scaled MFMA takes only power-of-two scales per 32 elements. jeff noted that gfx1250 also has a 16-element block scale: upstream LLVM has `v_wmma_scale16_f32_16x16x128_f8f6f4` and `v_wmma_scale16_f32_32x16x128_f4` (64-bit scale operands, "wmma-n16-insts") with scale formats E8, E5M3 and E4M3 (`MATRIX_SCALE_FMT_E4M3`). If the scale16 form gives one E4M3 scale per 16 elements of K, that is NVFP4's own block and scale format and gfx1250 can run NVFP4 natively. So on gfx1250: first establish from the LLVM sources and MC tests (and the ISA documentation if available) the exact scale16 operand layout (scales per lane, the K range each covers, and that E4M3 is the unsigned ue4m3 NVFP4 uses); if it matches NVFP4, write the gfx1250 path on the native scale16 WMMA, otherwise use (b) there too; record what was found either way.
+- Q2: **(b)**: add the f16/bf16 MFMA path for the m16n8k16 primitive on CDNA (gfx90a, gfx942, gfx950), with the same design as the RDNA WMMA path (paired n16 products, transposed operands, C kept outside the matrix instruction and added in fp32). Bit identity with stage 1 is not expected; use the RDNA round's tolerance and its justification, and show determinism run to run.
+- Q3: keep `get_precision("auto")` at `int4` on gfx950 and gfx1250 until an FP4 run on those cards shows equal or better LPIPS and speed than INT4; then switch. Record the measurement that can be made on gfx950.
+- Order of work for the gfx950 round: CDNA f16/bf16 MFMA first, then FP4 on gfx950 via (b) (remove the trap only on targets with a working path), then the gfx1250 path compiled and checked in the code objects (unproven until a gfx1250 run). gfx11/gfx12 behaviour unchanged, CUDA path untouched, new commits on top of `moat-port`; stage stays `porting` while a required proof is missing.
+
 ## Porter round 2026-11-24 (porter, linux-gfx942 fleet job, for jeff)
 
 ### Questions for jeff (nothing below waits on them except where stated)
