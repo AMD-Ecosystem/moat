@@ -433,6 +433,7 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - A fault inside a vendored JIT entry point: rebuild-with-a-forced-throw beats a debugger
 - scikit-learn's KMeans can crash a Python test on a machine with very many cores
 - Failures that appear only when the whole suite runs in one process
+- A sync-bound GPU test that passes alone can time out under `ctest -jN`
 - A free-memory leak check measures the whole GPU, not your process
 - A free-memory-delta test can fail once per process on gfx90a
 - Two GPUs visible to one process can crash the runtime
