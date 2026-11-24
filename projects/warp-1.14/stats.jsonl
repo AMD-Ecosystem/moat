@@ -541,3 +541,4 @@
 {"kind":"phase","ts":"2026-11-24T21:47:46Z","phase":"build","seconds":27.465,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi355-20261119-154230-warp114-perf-porter-mi355-prompt/moat/agent_space/build950.sh /var/lib/jenkins/fleet/jobs/mi355-20261119-154230-warp114-perf-porter-mi355-prompt/moat/projects/warp-1.14/src"}
 {"kind":"session","ts":"2026-11-24T21:53:49Z","epoch":1795557229.3338,"event":"start","platform":"linux-gfx950"}
 {"kind":"session","ts":"2026-11-24T21:55:22Z","epoch":1795557322.182039,"event":"end","platform":"linux-gfx950"}
+{"kind":"session","ts":"2026-11-24T22:25:39Z","epoch":1795559139.172235,"event":"start","platform":"windows-gfx1151"}
