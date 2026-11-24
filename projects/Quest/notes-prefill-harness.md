@@ -2,9 +2,9 @@
 
 Written for the linux-gfx950 validation at fork `9cb8bee` (notes.md, "Validation 2026-11-23 (linux-gfx950, at `9cb8bee`)") because the porter's harness (`prefill_harness.cu`, 2026-11-20) was never recorded and its container is gone. Kept here so the Radeon and Windows validators can run the same check. They are not part of the port and do not go to the fork.
 
-## `prefill_harness.cu`: fp64 reference check (CFG 0-9) and kernel-only timing (CFG 100)
+## `prefill_harness.cu`: fp64 reference check (CFG 0-11) and kernel-only timing (CFG 100)
 
-Calls `BatchPrefillWithPagedKVCacheDispatched` directly with a forced `num_frags_x`, shuffled pages in the NHD layout (unused page slots hold garbage), and checks output and LSE against an fp64 CPU reference with the bottom-right causal rule. Tolerances: 5e-3 + 5e-3 |ref| (fp16), 2e-2 + 3e-2 |ref| (bf16), LSE 2e-2 + 2e-3 |ref| in log2 units. Ten shapes per configuration: 1x17, 13x33, 16x16, 51x400, 63x700, 77x129, 128x129, 244x1110, 311x311, 502x1110 (qo x kv), 4 KV heads. `-DNEGCTRL=true` makes the reference use the opposite causal flag (negative control). CFG 100 times the kernel for 32 heads x 128, fp16, causal, page size 16, nfx 2 (forced, also for 1 x 4096 where the operator would pick nfx 1), mean of 20 launches after 3 warmups.
+Calls `BatchPrefillWithPagedKVCacheDispatched` directly with a forced `num_frags_x`, shuffled pages in the NHD layout (unused page slots hold garbage), and checks output and LSE against an fp64 CPU reference with the bottom-right causal rule. Tolerances: 5e-3 + 5e-3 |ref| (fp16), 2e-2 + 3e-2 |ref| (bf16), LSE 2e-2 + 2e-3 |ref| in log2 units. CFG 10 and 11 (head 64 with two query tiles per warp) were added by the 2026-11-24 linux-gfx942 review, because no earlier configuration or test reached that instantiation. Ten shapes per configuration: 1x17, 13x33, 16x16, 51x400, 63x700, 77x129, 128x129, 244x1110, 311x311, 502x1110 (qo x kv), 4 KV heads. `-DNEGCTRL=true` makes the reference use the opposite causal flag (negative control). CFG 100 times the kernel for 32 heads x 128, fp16, causal, page size 16, nfx 2 (forced, also for 1 x 4096 where the operator would pick nfx 1), mean of 20 launches after 3 warmups.
 
 ```cpp
 // fp64 reference check and timing of Quest's paged prefill kernel, calling
@@ -230,6 +230,12 @@ int run_case(uint32_t qo_len, uint32_t kv_len, uint32_t seed, int iters, double*
 #elif CFG == 9
 #define CASE half, 2, 32, 8, 128, true
 #define NAME "fp16 hd128 GQA8 nfx2 causal p32"
+#elif CFG == 10
+#define CASE half, 2, 16, 1, 64, true
+#define NAME "fp16 hd64 nfx2 causal p16"
+#elif CFG == 11
+#define CASE __hip_bfloat16, 2, 8, 4, 64, false
+#define NAME "bf16 hd64 GQA4 nfx2 non-causal p8"
 #elif CFG == 100
 #define CASE half, 2, 16, 1, 128, true
 #define NAME "timing fp16 hd128 nfx2 causal p16, 32 heads"

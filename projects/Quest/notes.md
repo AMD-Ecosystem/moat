@@ -4300,3 +4300,454 @@ Llama-2-7b-chat was not run: the earlier Windows sections show it was never run 
 CUDA gate: not run here (Windows host); recorded at `9cb8bee` by the linux-gfx950 host (real nvcc, PASS). `python utils/jargon.py --port Quest` clean. The README documents the Windows ROCm build and it is the block above. No machine instability (no driver reset, no device loss) during any GPU run.
 
 State: windows-gfx1151 `completed` at `9cb8bee`.
+
+## Ruling 2026-11-23 (jeffdaily): prefill within 2x of SDPA on every validated GPU before the pull request
+
+Asked whether anything still blocks the upstream pull request, jeffdaily answered "Quest decision, do Option C": before the pull request, do both performance follow-ups the validators found, so that no validated GPU misses the plan's target of prefill within 2x of PyTorch's `scaled_dot_product_attention`. (1) gfx950: use the wider MFMA instructions (16x16x32) and bring the long shapes within 2x if the hardware allows, saying plainly what limits it if not; gfx942 and gfx90a keep their code path and results. (2) wave32 Radeons: cap `num_frags_z` (the linux-gfx1201 validator's scratch cap: 512 -> 176 B/lane of spill, 2.44 -> 2.07 ms at 4096^2), wave32 WMMA targets only, chosen by measurement, and measure whether it shortens the Radeon build of `batch_prefill.cu`. Changes stay inside the HIP-only prefill header and the `USE_HIP` blocks; the CUDA branch must stay byte-identical after preprocessing, proven with real nvcc in the same round.
+
+## Porter round 2026-11-24 (linux-gfx950): gfx950 16x16x32 MFMA with direct loads, wave32 tile cap
+
+Host: AMD Instinct MI355X (`gfx950:sramecc+:xnack-`), `HIP_VISIBLE_DEVICES=5` (pinned by the job; devices 0, 2, 3 and 4 belong to colleagues' benchmarks and were never touched), PyTorch 2.16.0a0+git6c3af02 / HIP 7.16.26385 (pip ROCm SDK clang), all GPU runs under `ulimit -c 0`, builds at `MAX_JOBS`=25 or fewer. Third start of this job: the two earlier attempts (stopped for GPU conflicts) pushed nothing; their scratch (a 16x16x32 + `ds_read_b64_tr_b16` variant, a `global_load_lds` direct-load variant, the harness and profiling scripts) was copied into this job and reused. The work lock carried the second attempt's stamp; `set-state Quest linux-gfx950 porting` re-stamped it to this job.
+
+**Status at the end of this round: the change is complete in the fork working tree and checked with the fp64 harness on gfx950 hardware, with the WMMA layout emulation, and by preprocessing for CUDA; it is NOT committed or pushed, and `head_sha` is still `9cb8bee`.** The host's root filesystem (3.5 TB overlay shared by every container) filled up during the round (58-100 MB free, consumed again within seconds after this job freed 13 GB of its own model copy and 113 MB of profiler output), which killed the README extension build at link time (`clang-linker-wrapper: error: 'clang' failed`), the Radeon compile-time runs (`llvm-offload-binary command failed`) and two harness builds (`LLVM ERROR: IO failure on output stream: No space left on device`). Without a full extension build at the final tree there is no test-suite, end-to-end or operator-timing evidence for it, so nothing was pushed (pushing would also have made every validated platform revalidate a head its own porter had not built). The full diff against `9cb8bee` is in `notes-prefill-round-2026-11-24.md`, so the next porter starts from it (`git apply`), not from scratch.
+
+### What the change does (2 files, +341 -30, all HIP-only)
+
+- `prefill_matrix_core.cuh`: gfx950 gets its own selector value (`QUEST_PREFILL_MMA` 2): `v_mfma_f32_16x16x32_{f16,bf16}` (k = 32, 8 operand elements per lane), V kept row-major in LDS and its V^T operand read with `ds_read_b64_tr_b16` (`load_v_tr`), and K/V tiles copied global -> LDS with `global_load_lds_dwordx4` into two static buffer pairs one tile ahead (`kv_tile_t`, `kv_tile_pages`, `kv_tile_copy`, one barrier per tile). When the page size is a multiple of the rows one copy instruction covers (4 rows at head 128, 8 at head 64: page sizes 8, 16, 32), every lane of an instruction reads the same page, so the page index is read into a scalar at the copy (`readfirstlane`) and only the last, partial tile keeps per-lane masking. gfx942/gfx90a (selector 1), gfx11 and gfx12 keep their code; the earlier attempt's direct-load design is kept, with the scalar-page change and the deferred page read added here.
+- Two policy functions shared by host and device, the same pattern as `q_in_registers`: `max_num_frags_x(shape)` (1 on gfx950, else 2) and `kv_frags(num_frags_x, num_frags_y, num_frags_z, shape)`, the K/V fragments per tile the kernel uses: 2 on gfx950, and 2 on wave32 when the query tile is in registers and the fp32 accumulators (S^T, O^T) plus query operands at `num_frags_z` exceed 128 registers per lane; otherwise `num_frags_z`.
+- `prefill.cuh`: the kernel's template parameter is named `kernel_num_frags_z` under `USE_HIP` and the body defines `num_frags_z = kv_frags(...)` in device passes, so every shared line (iteration counts, mask iteration, shared memory pointers, page step) sees the tile actually used, the kernel's mangled name is unchanged, and the CUDA text is untouched. The host sizes dynamic shared memory with the same function (0 on gfx950, whose tiles are static), and `split_qo_indptr` takes `max_num_frags_x` under `USE_HIP`. No change to the dispatcher's `SWITCH_*` lines.
+- Header comment updated for gfx950. `hip_compat/README.md` and `README.md` stay as they are: their statements (emulation only on GPUs without the 16x16x16 instructions: gfx908, RDNA2, gfx1250) remain true.
+
+### gfx950: where the time went, measured (kernel alone, standalone harness, 32 heads x 128, fp16, causal, page 16, best of 5 interleaved processes)
+
+`agent_space/quest/harness/ab.sh <qo> <bins...>` runs every binary once per round for 5 rounds and keeps each one's best, so the load a colleague puts on other GPUs of this host affects all variants alike.
+
+| step (4096 x 4096) | kernel ms |
+|---|---|
+| `9cb8bee` (16x16x16 MFMA, register-staged loads, nfx 2, nfz 4) | 0.990 |
+| + 16x16x32 MFMA, V row-major + `ds_read_b64_tr_b16` (earlier attempt's `exp` tree) | 0.746 |
+| + `global_load_lds` double-buffered direct loads (earlier attempt's `dl` tree) | 0.479 |
+| + nfx 1, nfz 2: 192-206 VGPR, 0 AGPR, two wavefronts per SIMD instead of one (nfx 2 is 256 VGPR + 143-152 AGPR) | 0.446 |
+| + scalar page per copy instruction, branch-free full tiles | 0.421 |
+| + page index read into a scalar at the copy, not after its load (the compiler had put `s_waitcnt vmcnt(0)` right after the next tile's page loads, serialising the copy with the compute) | **0.413** |
+
+Same steps at 8192^2 / 16384^2: `9cb8bee` 3.20 / 10.19 ms, final 1.19 / 4.33 ms. Short shapes: 1 x 4096 0.456 -> 0.146, 128 x 4096 0.464 -> 0.149, 1024 x 4096 0.451 -> 0.201 ms. nfx 2 / nfz 4 with all the copy changes is 0.460, nfx 2 / nfz 2 0.533: the occupancy step is what makes nfx 1 the choice.
+
+Tried and measured without gain (kept out): skipping the O rescale when no column maximum moved, and packed `v_cvt_pk_f16_f32` for P (0.422 vs 0.413 at 4096^2, 4.30 vs 4.34 at 16384^2: noise or worse); three LDS XOR permutations for the K/V tiles (row % 8, (2r + 2r/16) % 16, row % 16: 0.410-0.413, although `SQ_LDS_BANK_CONFLICT` is ~44 % of `SQ_LDS_IDX_ACTIVE`); removing the barrier's `vmcnt` wait (no change, so global latency is covered); fixed trivial copy addresses (no change after the scalar-page step; 0.447 -> 0.348 before it, which is what pointed at the address math). Counter totals (`rocprofv3 --pmc`, `prof/pmc.sh`): VALU instructions about 8x the MFMA count; a cycle count (32 MFMA x 16 cycles and ~290 VALU x 4 cycles per wavefront iteration) puts pure issue at about half the measured ~3800 SIMD-cycles per wavefront iteration. What remains is dependency latency inside a wavefront (QK -> max -> exp -> PV) with only two wavefronts per SIMD to hide it; closing that needs a software-pipelined (ping-pong) loop of the kind hand-tuned attention kernels use, a rewrite beyond this port.
+
+What SDPA runs here (`rocprofv3 --kernel-trace`, `prof/one.py 4096`): `flyc_attn_fwd`, 219 us at 4096^2, 512 workgroups of 512 threads (8 wavefronts), 128 VGPR + 128 AGPR, 68 KB LDS: a hand-tuned assembly kernel. Quest's prefill kernel inside the operator in the same trace: 497 us (the `dl` build, nfx 2).
+
+**Kernel alone against SDPA (SDPA best of 2 processes, `MINMED=1 LOOP_MS=100 REPS=7 WARM_MS=1000`):** 4096^2 0.413 / 0.211 = 1.96x; 8192^2 1.19 / 0.722 = 1.65x; 16384^2 4.33 / 2.68 = 1.62x. So the kernel meets the target at the long shapes and only just at 4096^2.
+
+**Through the operator it cannot, and the reason is upstream host code, not the kernel.** With the `dl` build (kernel 0.479 ms), `prefill_time.py` gave 0.769-0.778 ms at 4096^2 (SDPA 0.211-0.213, 3.6x), 1.95 ms at 8192^2 (2.7x), 5.43-5.45 ms at 16384^2 (2.0x): 0.29-0.36 ms per call on top of the kernel. `prefill_with_paged_kv_cache` (`quest/ops/csrc/batch_prefill.cu`) builds two index tensors with `torch::tensor` (host-to-device copies), calls `kv_indices[-1].item()` (a device-to-host sync), and `split_qo_indptr` copies `qo_indptr` back to the host; each sync drains the GPU, which then idles while the host prepares the launch (111 us median idle gap between consecutive prefill kernels under the tracer). On MI300X the same overhead was ~0.07 ms; on this host it is 4x that, plausibly the shared host's load. With the final kernel (0.413 ms) the operator would be about 0.70 ms at 4096^2, about 3.3x. Changing that host code is outside this round's boundary (shared CUDA code under `quest/ops/csrc`), so it is a decision for jeffdaily: keep the kernel-alone figure as the gfx950 evidence, or allow a change to the operator's host path (both syncs can be avoided for batch size 1, which is all Quest uses).
+
+### wave32 tile cap: measured by spill (compile only; this host has no WMMA)
+
+`agent_space/quest/harness/res.sh <tree> <arch> <cfg>` (harness device compile with `-Rpass-analysis=kernel-resource-usage`; `t9cb` = `git archive 9cb8bee`, `v2` = the change), fp16, causal, page 16, the instantiation the dispatcher launches (nfz 4) and its nfz 2 sibling, scratch B/lane / VGPR / occupancy:
+
+| target, shape | `9cb8bee` nfz 4 | `9cb8bee` nfz 2 | change, launched instantiation |
+|---|---|---|---|
+| gfx1201 head 128 nfx 2 (Q in registers) | 512 / 256 / 5 | 176 / 256 / 5 | **176** / 256 / 5 (cap) |
+| gfx1201 head 64 nfx 2 | 16 / 256 / 5 | 0 / 214 / 7 | **0** / 214 / 7 (cap) |
+| gfx1201 head 128 nfx 1 | 0 / 242 / 5 | 0 / 235 / 6 | 0 / 242 / 5 (no cap) |
+| gfx1201 head 64 nfx 1 | 0 / 225 / 6 | 0 / 146 / 9 | 0 / 225 / 6 (no cap) |
+| gfx1100/gfx1151 head 128 nfx 2 (Q in LDS) | 348-396 / 256 / 5 | 424-448 / 256 / 5 | 348-396 (no cap: two fragments spill more) |
+| gfx1100/gfx1151 head 64 nfx 2 | 260 / 256 / 5 | 0 / 254 / 5 | **0** / 254 / 5 (cap) |
+| gfx1100/gfx1151 head 128 nfx 1 | 176 / 256 / 5 | 100 / 253 / 5 | **100** / 253 / 5 (cap) |
+| gfx1100/gfx1151 head 64 nfx 1 | 0 / 215 / 7 | 0 / 218 / 6 | 0 / 215 / 7 (no cap) |
+
+The rule in `kv_frags` reproduces exactly the "cap" column. The validator's measured case (gfx1201 head 128 nfx 2: 2.44 -> 2.07 ms, 34.9 -> 27.8 ms) is in it; the other capped cases are chosen on spill alone and need the Radeon validators' timing. gfx11 head 128 nfx 2, the operator's main prefill shape on gfx11, is deliberately not capped.
+
+Radeon compile time of `batch_prefill.cu` before and after (`agent_space/quest/bp/bp.sh <tree> <arch> <out>`, the extension's exact compile line with the target swapped): **not obtained.** Both gfx11 "before" runs finished device code generation after 827 s and 831 s (three targets compiling in parallel), then failed writing the output (`llvm-offload-binary command failed`, the full disk); the "after" runs and the gfx1201 runs were still compiling when the disk filled. The structural expectation, not a measurement: the gfx12 head-128 nfx-2 nfz-4 instantiation now compiles as the nfz-2 body (176 instead of 512 B/lane of spill), so gfx12 should get faster to build; on gfx11 the most expensive instantiation (head 128 nfx 2) is unchanged.
+
+### Correctness evidence for the change (all at the final working tree)
+
+- fp64 reference harness on gfx950 hardware (`notes-prefill-harness.md` method; `harness/checkall.sh ../v2 fc`, 10 configurations x 10 shapes: fp16/bf16, head 64/128, nfx 1/2, GQA 4/8, page sizes 1/8/16/32, causal and not): **100/100**. Negative control (`-DNEGCTRL=true`, reference with the opposite causal flag), nfx 1 and nfx 2: 1/10 each (the 1 x 17 shape, where both rules agree).
+- RDNA3 and RDNA4 index logic on this GPU: new test-only `harness/wmma_emu.h` (the four WMMA builtins renamed to a shuffle emulation of their documented layouts, each 32-lane half of a wave64 as one wave32), built with `-include wmma_emu.h -Xarch_device -DQUEST_PREFILL_MMA=11` (or `=12`); the binaries report `prefill_mma_shape` {32, 16} and {32, 8}, so the host applied the wave32 `kv_frags` rule: **100/100 each**. Negative control: gfx12 with the gfx11 accumulator row formula: 0/80 in the 8 configurations that built (2 failed to build: disk).
+- gfx942 and gfx90a: no device-code change intended (`kv_frags` returns `num_frags_z`, `max_num_frags_x` 2, smem formula equal). An assembly diff of the harness for both was started but its output was lost to the full disk; owed.
+- CUDA: `prefill.cuh` with `#include` lines removed through `cpp -P -undef -nostdinc`, at `9cb8bee` and at the change, with and without `-D__CUDACC__ -D__CUDA_ARCH__=900`: identical, md5 `02d6a90c0d2eea0259c7a25b34a3f580` (970 lines), the digest every earlier record has. `prefill_matrix_core.cuh` is reached only through the `USE_HIP` include. The real-nvcc compile was not run (no disk for a build directory); owed.
+- An earlier build of the same gfx950 code (before the last wave32-only refinement of `kv_frags`) compiled `batch_prefill.cu` for gfx950 with the extension's exact line: rc 0, 333 s.
+
+### Deferral `quest-prefill-matrix-cores`
+
+Not closed (a person rules). Its subject, prefill on the matrix cores, was completed by `6c06912`/`9cb8bee`; this round is the performance follow-up of the 2026-11-23 ruling. When the change lands it completes item 2 and the kernel half of item 1; whether gfx950 meets the target through the operator depends on the host-code decision above.
+
+### Owed next (Quest, change not yet pushed)
+
+1. On a host with disk: `git apply` the patch from `notes-prefill-round-2026-11-24.md` on `9cb8bee`, build with the README command for gfx950, run the seven suites (expect 202 passed, 28 skipped), the fp64 harness, end-to-end (`hg`, Quest 1024 and 128, byte-identical text), operator timing (`prefill_time.py`, best of 5 processes), the gfx942/gfx90a assembly diff, the real-nvcc compile, and the Radeon `batch_prefill.cu` compile times; then commit (`[ROCm] Speed up prefill on gfx950 and the wave32 GPUs`), push, `advance-head`, `set-state ... ported`.
+2. jeffdaily: the operator host-path decision (gfx950 through the operator is about 3.3x at 4096^2 because of ~0.3 ms of host synchronisation per call; kernel alone 1.96x).
+
+### Addendum: Radeon compile times of `batch_prefill.cu` (2026-11-24 round), not conclusive
+
+Six runs of `agent_space/quest/bp/bp.sh` (the extension's exact compile line, target swapped, own temporary directory each), before (`9cb8bee`) and after (the change) for each target, started within a minute of each other beside the gfx950 extension build, on a host whose disk was full. Wall seconds and how each ended: gfx1100 before 835 s (failed opening its output object: no space), after 1119.5 s (rc 0); gfx1151 before 831 s (first attempt, failed in `llvm-offload-binary`), after 510 s (failed at `amdgcn-link`: disk); gfx1201 before 698 s (failed at `amdgcn-link`: disk), after 788.5 s (rc 0). The spread has no consistent sign (gfx1151 39 % faster, gfx1100 34 % and gfx1201 13 % slower) and is larger than anything the change can do to these targets, so it reflects the host's varying load, not the change. A clean sequential pair on an idle host is owed; the Radeon validators' full builds will also show it.
+
+## Porter round 2026-11-24 resumed (linux-gfx950, job roles6d): building and checking the saved change
+
+Host: AMD Instinct MI355X (`gfx950:sramecc+:xnack-`), `HIP_VISIBLE_DEVICES=5` (pinned by the job; devices 0, 2, 3 and 4 belong to colleagues and were never touched), PyTorch 2.16.0a0+git6c3af02 / HIP 7.16.26385, Python 3.11 (`/opt/python-3.11-venv`), all GPU runs under `ulimit -c 0`, `MAX_JOBS`=64 (exported). `set-state Quest linux-gfx950 porting` re-stamped the lock from the finished job `roles6c` (resume, expected). Fresh fork clone at `9cb8bee`; the patch extracted from `notes-prefill-round-2026-11-24.md` is byte-identical to the earlier job's `round.patch`, `git apply --check` clean, and the resulting two headers are byte-identical to that job's working tree. Free space on the job's filesystem at the start: 170 GB.
+
+1. **Build** (free before: 169 GB): `agent_space/quest/build_readme.sh` (README Linux block verbatim, `-DCMAKE_HIP_ARCHITECTURES=gfx950`, after `rm -rf build`, `ninja -j $MAX_JOBS`), wrapped `utils/timeit.sh Quest compile`: rc 0, 8/8, 325 s, 0 errors; 18 warning lines, the same set (by file and count) as the `9cb8bee` gfx950 validation build: `ignoring return value of type 'hipError_t' declared with 'nodiscard'` (pre-existing host code). Free after: 169 GB.
+2. **Test suites**: `env PYTHONPATH=<fork>:<job>/pylib-test python -m pytest <fork>/quest/tests -p no:cacheprovider -v -rs` (transformers 4.37.2, the same `pylib-test` as the earlier rounds), wrapped `timeit.sh Quest test`: **202 passed, 28 skipped, 0 failed** (19.0 s); the 28 skips are the usual 13 `qo_len > kv_len` (prefill) and 15 `k >= kv_len` (topk). Same as every record since `2b938d8`.
+3. **fp64 reference harness** (`notes-prefill-harness.md` method, `harness/checkall.sh <fork> fc`, built against the fork tree; device reports `mma shape wave=64 op_elems=8`, the 16x16x32 path): **100/100** (10 configurations x 10 shapes). Negative control (`-DNEGCTRL=true`), CFG 0 (nfx 1) and CFG 1 (nfx 2): 1/10 each (the 1 x 17 shape, where both causal rules agree), as expected.
+4. **End-to-end** (`NousResearch/Llama-2-7b-chat-hf` at `351844e7`, read in place from the 2026-11-23 gfx950 validation job's `models` directory, `do_sample` false; `agent_space/quest/e2e/example_textgen.py`, upstream's script with only `MODEL_PATH` changed; `env PYTHONPATH=<fork>:<job>/pylib-e2e python3 example_textgen.py --method hg`, `--method quest --token_budget 1024`, `--method quest --token_budget 128`, each wrapped `timeit.sh Quest test`): all rc 0. Input length 103, so the 103 x 103 prefill runs the new gfx950 kernel. Output with Quest's two banner lines removed (`grep -v '^Quest allocates\|^Token budget'`): md5 `b900af27eeb4170a5c47bc5940a2ca60` for all three, and the same digest as the earlier job's runs on this host ("Reason: The rabbit is the only one who is not working hard. ... can also mean \"lazy.\""). **Byte-identical.**
+5. **CUDA, real nvcc** (the 2026-11-19 recipe: `<job>/nvcc/run.sh <tree> build-<tree> /usr/local/cuda`, then `ninja -C build-<tree> -j32 _kernels`; CUDA 12.8 `nvcc` V12.8.93, g++-11 11.5.0 toolchain file, `torch==2.5.0+cu124` in `$FLEET_VENV`, `-DCMAKE_CUDA_ARCHITECTURES=80`, no NVIDIA GPU so compile and link only). Trees: `<job>/nvcc/base` = fork at `9cb8bee`, `<job>/nvcc/v2` = `9cb8bee` + the change (copies of the fork clone with submodules). Both configure rc 0 and build `_kernels` **8/8, rc 0, 0 warning or error lines** (308 s / 311 s, in parallel); both modules 18,714,200 B. The 7 nvcc compile lines are identical after path normalization (`-gencode arch=compute_80,code=sm_80`, no `USE_HIP`).
+   - Objects: the per-tree objects differ only through paths (`base` vs `v2` are different lengths, which moves embedded `__FILE__` strings) and nvcc's per-process names. To compare the code itself, the two header states were compiled at **one path** with the exact nvcc lines (`<job>/nvcc/cmp/same.sh base|v2`: copy that state's `prefill.cuh` and `prefill_matrix_core.cuh` into tree `s`, run the 7 lines from `ninja -t commands` with `-o`/`-MF` redirected). With nvcc's process-specific strings masked (`tmpxft_<pid>_<n>` temp names and the `_INTERNAL_<hash>_..._cu_<hash>_<pid>` anonymous-namespace id, same length; `cmp/norm2.py`), **all 7 objects are byte-identical** between `9cb8bee` and the change, including `batch_prefill.cu.o` (16.2 MB, host code and the sm_80 cubin).
+   - Preprocessing: `prefill.cuh` with `#include` lines removed through `cpp -P -undef -nostdinc`, at `9cb8bee` and at the change, plain and with `-D__CUDACC__ -D__CUDA_ARCH__=900` and `=800`: identical, md5 `02d6a90c0d2eea0259c7a25b34a3f580` (970 lines), the digest of every earlier record. With `-DUSE_HIP` they differ (as intended). `prefill_matrix_core.cuh` is included only under `#if defined(USE_HIP)` (`prefill.cuh:45-47`).
+   - **The CUDA view is unchanged, and so is nvcc's output.**
+6. **gfx942 and gfx90a device code, before and after** (`agent_space/quest/bp/asm.sh <tree> <arch> <out.s>`: `batch_prefill.cu` compiled with the extension's exact HIP compile line, `-c` swapped for `-S --cuda-device-only`, one target; trees `<job>/nvcc/base` (`9cb8bee`) and `<job>/nvcc/v2`). All rc 0 (gfx942 271/272 s, gfx90a 424/429 s). The whole translation unit's device assembly (165.8 MB gfx942, 170.9 MB gfx90a; 1536 kernels and 165,888 `v_mfma` lines in both trees; every prefill instantiation the dispatcher can launch) differs, after replacing the tree path, in **14 lines per target and no instruction**: (a) the device constant `matrix_core::prefill_mma_shape` the host reads to size shared memory grew from 8 to 16 bytes with its two new fields, `k` = 16 and `static_kv` = 0 (`{64, 4}` -> `{64, 4, 16, 0}`); (b) the compiler's per-translation-unit id `__hip_cuid_<hash>` (a hash of the source, 5 lines). No kernel's code, register count, LDS size or metadata changed: gfx942 and gfx90a keep their code exactly. Diffs kept as `agent_space/quest/asm/diff_gfx9{42,0a}.txt`; the `.s` files were deleted after the diff.
+   - Note on the earlier round's `bp/bp.sh` (also used for the Radeon compile times): its `sed -e "s#OUT#$O#"` replaced the first `OUT` in the template, which is inside `-DHIPBLASLT_OUTER_VEC`, not the `-o OUT` argument, so those runs wrote their object to a file named `OUT` in the temporary directory and defined a mangled macro (unused by Quest). The wall times are unaffected; fixed here (`s#-o OUT #-o $O #`).
+7. **Prefill time** (32 heads x 128, fp16, causal, page size 16; GPU 5 only).
+   - Kernel alone (standalone harness, `harness/ab.sh <qo> bin/b_100 bin/v2_101 bin/v2_100`: 5 rounds, each binary once per round, best per binary; `b_100` = `9cb8bee` at nfx 2, the dispatcher's choice there for these shapes; `v2_101` = the change at nfx 1, the dispatcher's choice on gfx950 now; `v2_100` = the change forced to nfx 2, which the dispatcher no longer launches on gfx950), ms:
+
+| qo x kv | `9cb8bee` | change (nfx 1) | change forced nfx 2 |
+|---|---|---|---|
+| 1 x 4096 | 0.455 | **0.147** | 0.267 |
+| 128 x 4096 | 0.463 | **0.149** | 0.274 |
+| 1024 x 4096 | 0.451 | **0.202** | 0.273 |
+| 4096 x 4096 | 0.991 | **0.414** | 0.544 |
+| 8192 x 8192 | 3.218 | **1.188** | 1.857 |
+| 16384 x 16384 | 10.240 | **4.322** | 5.788 |
+
+     These reproduce the earlier round's figures (0.413 / 1.19 / 4.33 ms) to within 0.3 %.
+   - Through the operator (`agent_space/quest/prefill_time.py`, best of 5 separate processes, each `MINMED=1 LOOP_MS=100 REPS=7 WARM_MS=1000`; range across the 5 processes in parentheses; `pt_v2_{1..5}.out`):
+
+| qo x kv | Quest `prefill_forward` | torch SDPA | ratio | kernel alone | operator - kernel | kernel / SDPA | max abs diff vs SDPA |
+|---|---|---|---|---|---|---|---|
+| 1 x 4096 | 0.232 (0.232-0.240) ms | 0.106 (0.106-0.106) ms | 2.19 | 0.147 ms | 0.085 ms | 1.38 | 6.1e-05 |
+| 128 x 4096 | 0.285 (0.285-0.307) ms | 0.140 (0.140-0.140) ms | 2.04 | 0.149 ms | 0.136 ms | 1.06 | 1.2e-04 |
+| 1024 x 1024 | 0.245 (0.245-0.274) ms | 0.041 (0.041-0.041) ms | 5.98 | not measured | -- | -- | 2.0e-03 |
+| 1024 x 4096 | 0.437 (0.437-0.474) ms | 0.122 (0.122-0.123) ms | 3.58 | 0.202 ms | 0.235 ms | 1.65 | 1.2e-04 |
+| 4096 x 4096 | 0.676 (0.676-0.722) ms | 0.210 (0.210-0.213) ms | 3.22 | 0.414 ms | 0.263 ms | 1.97 | 2.0e-03 |
+| 8192 x 8192 | 1.498 (1.498-1.537) ms | 0.717 (0.717-0.724) ms | 2.09 | 1.188 ms | 0.310 ms | 1.66 | 2.0e-03 |
+| 16384 x 16384 | 4.770 (4.770-4.941) ms | 2.676 (2.676-2.681) ms | 1.78 | 4.322 ms | 0.448 ms | 1.62 | 2.0e-03 |
+
+     At `9cb8bee` on this GPU (2026-11-23 validation, same method) the operator was 1.204 ms at 4096^2 (5.30x), 3.548 ms at 8192^2 (4.41x), 10.53 ms at 16384^2 (3.76x). Now 3.22x, 2.09x and 1.78x. The kernel alone is within 2x of SDPA at every shape it was measured at (1.97x at 4096^2, the closest); through the operator only 16384^2 is.
+   - **Operator overhead at the new code, for the host-path decision.** `operator - kernel` above is 0.085-0.136 ms at qo <= 128, 0.26 ms at 4096^2, 0.31 at 8192^2, 0.45 at 16384^2. It grows with the shape, so it is not all host synchronisation. A kernel trace splits it (`rocprofv3 --kernel-trace`, `prof/one.py <n>`: 50 operator calls back to back, then 50 SDPA calls): at 4096^2 the prefill kernel inside the operator takes 405.7 us min / 434.8 us median, and the GPU sits idle 77.8 us min / 92.8 us median between consecutive prefill kernels (the only other kernel between them is one `__amd_rocclr_copyBuffer`, the host-to-device index copy); launch to launch 489 us min / 538 us median. At 16384^2: kernel 4346 / 4464 us, idle 105 / 125 us. So the host path (`torch::tensor` copies, `kv_indices[-1].item()`, `split_qo_indptr`) leaves the GPU idle about 0.08-0.13 ms per call on this host now (the earlier round's 111 us median gap is the same thing), and the kernel inside the operator runs a few percent slower than the harness's best (traced median 0.435 vs best-of-5 0.414 ms). Not explained: the traced launch-to-launch time (0.49-0.54 ms at 4096^2) is 0.14-0.19 ms below what `prefill_time.py` reports for the same call (0.676 ms best); the profiler run is one process right after the timing runs, so clock state or the event-timing loop may account for it, not checked further. Read either way: removing the syncs (batch size 1) would remove the ~0.09 ms idle gap and whatever host work it hides, which puts the operator at roughly 0.49-0.59 ms at 4096^2, 2.3-2.8x of SDPA. On this GPU the host path alone does not bring 4096^2 within 2x; the kernel is at 1.97x by itself. The host code was not touched (jeffdaily's open decision).
+8. **Committed and pushed** (items 1 to 3 passed): fork commit `517c6a746eebc5e0b5a6cc23416e1be089d95885` on top of `9cb8bee` (no amend, plain push `9cb8bee..517c6a7 moat-port`; `pr-state` none, so `moat-port` is not frozen), title `[ROCm] Speed up prefill on gfx950 and the wave32 GPUs` (54 chars), body: problem, the three gfx950 changes, the wave32 cap with the measured and spill-chosen cases told apart, the shared policy functions, gfx90a/gfx942 unchanged (constant fields only), CUDA unchanged, AI-agent disclosure, Test Plan (gfx950 build and tests, fp64 reference, `example_textgen.py` three ways, the CUDA two-tree build). The same two files as the saved patch, `git status --porcelain` empty after the commit. `jargon.py --port Quest`: clean (after `git fetch origin main:main` in the fresh clone, which the check needs); `prose.py` on the body: clean. `advance-head Quest 517c6a7...` done; every platform validated at `9cb8bee` now reads `revalidate`.
+   - What the reviewer should know: the change is HIP-only (shown above for CUDA by preprocessing and by nvcc object identity). gfx942/gfx90a device code is instruction-identical. gfx950 is checked on hardware (suites, fp64 harness, end-to-end). The gfx11/gfx12 code changed only by the `num_frags_z` cap; that path is checked on this host only through the WMMA layout emulation and by spill counts. The emulation was re-run here at `517c6a7` (`harness/checkall.sh <fork> e11|e12 -include harness/wmma_emu.h -Xarch_device -DQUEST_PREFILL_MMA=11|12`; devices report `wave=32 op_elems=16` and `op_elems=8`): **100/100 for each layout**, which covers capped instantiations (gfx12 head 128 nfx 2 in CFG 1, 2, 4, 5, 7, 9; gfx11 head 128 nfx 1 in CFG 0 and 8), so the Radeon validators' runs are its first hardware evidence, and the capped cases other than gfx1201 head 128 nfx 2 have no timing yet.
+9. **Radeon compile time of `batch_prefill.cu`, gfx1201** (`agent_space/quest/bp/bp.sh <tree> gfx1201 <out.o>`: the extension's exact HIP compile line with the target swapped to gfx1201, `-o` fixed as described in item 6; own temporary directory each; trees `<job>/nvcc/base` = `9cb8bee`, `<job>/nvcc/v2` = the change, byte-identical to `517c6a7`). Two pairs, each pair before and after started together so both see the same load; the host was nearly idle (load average 8-16 on 256 cores; free disk 683 GB):
+
+| run | `9cb8bee` | change | change / before |
+|---|---|---|---|
+| pair 1 | 1485.3 s, rc 0 | 789.1 s, rc 0 | 0.53 |
+| pair 2 | 1476.3 s, rc 0 | 786.0 s, rc 0 | 0.53 |
+
+   **The cap almost halves the gfx1201 build of `batch_prefill.cu` (about 24.7 -> 13.1 minutes, one translation unit for one target).** Most of the old build's time was the device link (`ld.lld` doing the device code generation was still running alone 10 minutes after the change's build had finished), consistent with the head-128 nfx-2 nfz-4 instantiation's 512 B/lane spill: the change compiles it as the nfz-2 body. Objects: 4,333,696 / 4,333,704 B before, 4,296,448 / 4,296,464 B after. gfx11 was not measured: there the most expensive instantiation (head 128 nfx 2, Q in shared memory) is deliberately not capped, so no comparable gain is expected.
+
+### State at the end of this resumed round
+
+Fork `moat-port` at `517c6a7`, `head_sha` advanced, project set to `ported` for the reviewer (lock released). Scratch deleted as each result was recorded (nvcc build trees, same-path object copies, assembly files, compile-time objects); the job directory keeps only the two small nvcc source trees and logs. Free disk at the end: 677 GB.
+
+### Owed next (Quest at `517c6a7`)
+
+1. Reviewer: review the delta `9cb8bee..517c6a7` (two HIP-only headers).
+2. Validators: every platform validated at `9cb8bee` now reads `revalidate`. linux-gfx950 needs a fresh validator run at `517c6a7` (this porter round's evidence is above, but the validator role records it); linux-gfx942 and linux-gfx90a have instruction-identical kernels (item 6), but the device constant the host reads gained two fields (and the host code of the dispatcher changed under `USE_HIP`), so this is not a binary-identical delta; whether it qualifies for a carry-forward is for `carry-forward`'s own classification and the reviewer, otherwise they revalidate; linux-gfx1201, linux-gfx1100 and windows-gfx1151 run the capped wave32 code for the first time on hardware and owe full runs with `prefill_time.py`, which will also give the first timing of the spill-chosen capped cases.
+3. jeffdaily: the operator host-path decision, now on current numbers (item 7): through the operator gfx950 is 3.22x of SDPA at 4096^2, 2.09x at 8192^2, 1.78x at 16384^2; the kernel alone is 1.97x / 1.66x / 1.62x. The host path leaves the GPU idle 0.08-0.13 ms per call; removing it would bring 4096^2 to roughly 2.3-2.8x, not within 2x.
+4. Deferral `quest-prefill-matrix-cores`: not closed (a person rules).
+
+## Review 2026-11-24 (linux-gfx942, delta `9cb8bee..517c6a7`) -- PASS
+
+Host: AMD Instinct MI300X (`gfx942:sramecc+:xnack-`), `HIP_VISIBLE_DEVICES=0` (pinned by the job), PyTorch 2.16.0a0+git6c3af02 / HIP 7.16.26385 (pip ROCm SDK clang), GPU runs under `ulimit -c 0`. Fresh fork clone at `517c6a7` == `origin/moat-port` == `head_sha`. Reviewed with the pr-review skill. Every point below was checked in this session, not taken from the porter's notes. No findings.
+
+Points jeffdaily asked to have checked independently:
+
+- **CUDA branch untouched.** `prefill.cuh` with `#include` lines removed, through `cpp -P -undef -nostdinc`, at `9cb8bee` and `517c6a7`: identical with no defines, with `-D__CUDACC__ -D__CUDA_ARCH__=900` and with `=800`, md5 `02d6a90c0d2eea0259c7a25b34a3f580` (970 lines, the digest of every earlier record). With `-DUSE_HIP` the two differ, as intended. The delta touches only `prefill.cuh` and `prefill_matrix_core.cuh`, and the latter is included only under `#if defined(USE_HIP)` (`prefill.cuh:45-47`, the only include in the tree). The new kernel-body branch `#if QUEST_PREFILL_MMA == 2` evaluates to 0 under nvcc (the macro is undefined) and falls through to the unchanged `#else`. The porter's real-nvcc build of both trees (7 objects byte-identical once nvcc's per-process names are masked) was not repeated: this host has no CUDA toolkit.
+- **gfx942 and gfx90a keep their code path: confirmed.** `batch_prefill.cu` compiled to device assembly with the extension's exact HIP compile line (taken from this build's `ninja -t commands`, `-c` replaced by `-S --cuda-device-only`, one target), with the `9cb8bee` and `517c6a7` headers at paths of the same length (`agent_space/quest/asm/asm.sh A|B <arch>`, 7.2 min gfx942, 11.7 min gfx90a). Both targets have 1536 kernels and 165,888 `v_mfma` lines in each tree. After the tree path is normalised, the diff is 14 lines per target and contains no instruction: (a) `matrix_core::prefill_mma_shape` grows from 8 to 16 bytes with `.long 16` (`k`) and `.long 0` (`static_kv`); (b) the per-translation-unit `__hip_cuid_<hash>` symbol (5 places). No kernel code, register count, LDS size or kernel metadata changed. The host side under `USE_HIP` was checked by reading it. The dynamic shared memory size is `(q_in_registers ? 0 : nfx * num_warps) + kv_frags(...) * 2` fragments; with `static_kv` 0 and wave 64, `kv_frags` returns `num_frags_z`, so the size equals the old value in both branches. `split_qo_indptr` takes `max_num_frags_x` = 2 for `k` 16, which is the old constant, and on a failed symbol read it falls back to `{}`, which also gives 2. The added symbol read shares the existing per-device cache in `get_prefill_mma_shape`. **For gfx942 and gfx90a the change is behavior-preserving**: the same instructions run with the same launch configuration. It is not binary-identical: the code object's constant data changed, and the host now reads 16 bytes instead of 8. A carry-forward would therefore be a judgment, not an identity. jeffdaily asked for a real run on this platform, and the validator below does one.
+- **wave32 cap only on WMMA targets: confirmed.** `kv_frags` (`prefill_matrix_core.cuh:112-121`) caps when `static_kv` is set, which only the gfx950 selector value 2 does (`kShape` and the `{64, 8, 32, 1}` constant). It also caps when `wave_size == 32`, which only selector values 11 and 12 (gfx11 and gfx12 WMMA) report, when the query tile is in registers and the accumulators plus query operands exceed 128 registers. Wave64 MFMA (`{64, 4, 16, 0}`) and the emulated targets (`{0, 0, 0, 0}`, which also fails `q_in_registers`) return `num_frags_z` unchanged. For the shapes the dispatcher launches (`max_num_frags_z_reg` 4, since rotary is rejected on entry, and 64 KB LDS allows 4), the formula was evaluated by hand. It caps exactly four instantiations: gfx12 head 128 nfx 2 (256 > 128), gfx12 head 64 nfx 2 (160), gfx11 head 64 nfx 2 (224) and gfx11 head 128 nfx 1 (160). It does not cap gfx11 head 128 nfx 2 (Q in LDS, so `q_in_registers` is false), gfx12 head 128 nfx 1 (exactly 128) or head 64 nfx 1 on either. That matches the porter's spill table. The device (`kShape`) and the host (the constant read through `get_prefill_mma_shape`) evaluate the same function on the same values, so the kernel's tile and the dynamic shared memory size agree. Page sizes 1/8/16/32 all divide the capped 32-row tile, so the shared `page_iter_base += 16 * num_frags_z / page_size` step stays exact.
+- **Each capped case is still correct, as far as an Instinct GPU can show.** The fp64 reference harness (`notes-prefill-harness.md`, built against the `517c6a7` tree with `ARCH=gfx942`) gave 100/100 natively (MFMA), 100/100 with the RDNA3 emulation and 100/100 with the RDNA4 emulation (`-include wmma_emu.h -Xarch_device -DQUEST_PREFILL_MMA=11|12`; the emulation header is the 2026-11-20 porter's, from that job's `agent_space`). The emulated binaries report `wave=32 op_elems=16` and `op_elems=8`, so the host applied the wave32 rule. Configurations 0-9 covered the capped gfx12 head 128 nfx 2 (CFG 1, 2, 4, 5, 7, 9) and gfx11 head 128 nfx 1 (CFG 0, 8) cases. **Head 64 with nfx 2, capped on both gfx11 and gfx12, was reached by no configuration and no pytest case.** `test_prefill_attention.py` uses head 128 only, and the harness had head 64 only at nfx 1. So this review added CFG 10 (fp16, head 64, nfx 2, causal, page 16) and CFG 11 (bf16, head 64, GQA 4, nfx 2, non-causal, page 8) to the recorded harness. Both give 10/10 natively, 10/10 with the RDNA3 emulation and 10/10 with the RDNA4 emulation, so 36 configurations x 10 shapes = 360/360. Negative controls: `-DNEGCTRL=true` on CFG 0, 1 and 10 gives 1/10 each (the 1 x 17 shape, where both causal rules agree). The emulation with the wrong gfx11 accumulator row (`wmma_emu_bad.h`, `QUEST_PREFILL_MMA=11`) gives 0/10 on CFG 10 and on CFG 11, so the emulation detects a wrong layout at the new configurations. An emulation checks index logic only, not the hardware's register allocation or spill code; that is what the Radeon runs below are for.
+- **What the Radeon validators must run to cover every capped case and the uncapped one** (each at `517c6a7` on real hardware, besides the seven suites, end-to-end and `prefill_time.py`):
+  - gfx1201 (gfx12 WMMA): harness CFG 1, 2, 4, 5, 7, 9 (capped head 128 nfx 2), CFG 10 and 11 (capped head 64 nfx 2), and CFG 0, 3, 6, 8 (uncapped nfx 1). Pytest's `qo_len` >= 77 cases launch the capped head-128 nfx-2 kernel through the operator, and `qo_len` 13/24/51 launch the uncapped head-128 nfx-1 kernel. Time CFG 100 (head 128 nfx 2 capped, against the 2.44 ms uncapped and 2.07 ms hand-capped records at 4096^2).
+  - gfx1100 and windows-gfx1151 (gfx11 WMMA): harness CFG 0 and 8 (capped head 128 nfx 1), CFG 10 and 11 (capped head 64 nfx 2), and CFG 1, 2, 4, 5, 7, 9 (**deliberately uncapped head 128 nfx 2, Q in LDS**). Also CFG 3 and 6 (uncapped head 64 nfx 1). Pytest's `qo_len` 13/24/51 cases go through the capped head-128 nfx-1 kernel and `qo_len` >= 77 through the uncapped nfx-2 one. `prefill_time.py`'s 1 x 4096 row is the capped nfx-1 kernel through the operator, and its other rows are the uncapped nfx-2 one. Compare both with the `9cb8bee` gfx1100/gfx1151 timings: the capped nfx-1 kernel has no timing yet, and the nfx-2 one should not move.
+  - Head-64 timing of the capped nfx-2 case is not covered by any script (CFG 100 is head 128). Quest's models are head 128, so correctness by CFG 10 and 11 is what matters there.
+- **Commit message against the notes: the claims match.** 0.99 ms vs 0.21 ms SDPA at 4096^2 before (porter's table 0.990/0.991; SDPA 0.210-0.213); 0.41 ms after, 3.22 -> 1.19 ms and 10.2 -> 4.32 ms (table: 3.218 -> 1.188, 10.240 -> 4.322). The gfx1201 512 -> 176 B/lane spill matches the spill table. The R9700 2.44 -> 2.07 ms measurement (validation 2026-11-23, linux-gfx1201) was taken with `max_num_frags_z_reg` = 2, which instantiates nfz 2 and sizes shared memory for it. The commit's cap runs the nfz-2 body inside the nfz-4 instantiation with the same shared memory size, so "the same cap applied by hand" is accurate. The other capped cases are described as chosen by spill, which is true. "gfx90a and gfx942 keep their code ... apart from two new fields in the constant" is confirmed above. The title is 53 characters (the porter's notes say 54) and carries `[ROCm]`; the body has the AI-agent sentence, a literal fenced Test Plan, ASCII only, and no trailer. `jargon.py --port Quest` and `prose.py` on the message are clean.
+
+Also read for defects, none found. The gfx950 double buffer: the barrier at the top of each step waits `vmcnt(0) lgkmcnt(0)` (`0x70` in the gfx9 encoding) before `s_barrier`, which covers read-after-write on the current buffer and write-after-read on the buffer the next copy fills. The prologue's `zero_v_tile` stores are ordered before the first copy by `block.sync()`. Rows at or past `kv_len` are never copied. Their scores are replaced (a select, not an add) with -5e4 by `mask_s`, which runs for every tile from `mask_iteration` on, and that covers the last partial tile in both the causal and non-causal formulas. Their stale or zero V rows therefore meet a probability of exactly 0. The page index uses `readfirstlane` only in the `full`-tile branch, where every lane of an instruction covers rows of one page (`page_size % rows_per_inst == 0`, and `first_chunk` is a multiple of 64). `kv_tile_t::num_chunks` divides exactly for every reachable shape (num_warps 4; head 64/128; effective nfz 2), and head 256 is not dispatched for prefill (`SWITCH_HEAD_DIM_PREFILL`).
+
+## Validation 2026-11-24 (linux-gfx942, at `517c6a7`) -- PASS
+
+Host: AMD Instinct MI300X (`gfx942:sramecc+:xnack-`), `HIP_VISIBLE_DEVICES=0` (pinned by the job; 0 % GFX activity before the runs), PyTorch 2.16.0a0+git6c3af02 / HIP 7.16.26385 (pip ROCm SDK), Python 3.11 (`/opt/python-3.11-venv`), all GPU runs under `ulimit -c 0`, builds within `MAX_JOBS`. Fork clone at `517c6a7` == `origin/moat-port` == `head_sha` == `reviewed_sha`, submodules initialised, `git status --porcelain` empty. This is a full real run, not a carry-forward (requested by jeffdaily), with the same method and counts as the `9cb8bee` validation on this platform. The review above found the delta instruction-identical for gfx942.
+
+- **Build**: `agent_space/quest/build_readme.sh` (the README Linux block verbatim with `-DCMAKE_HIP_ARCHITECTURES=gfx942`, after `rm -rf build`, `ninja -j $MAX_JOBS`), wrapped `utils/timeit.sh Quest compile`: rc 0, 8/8, 573 s (four device-assembly compiles for the review ran beside it), 0 errors, 18 warning lines (pre-existing `nodiscard hipError_t` host code), `CMAKE_BUILD_TYPE=Release` from the default.
+- **Tests**: `env PYTHONPATH=<fork>:<roles5 job>/pylib-test python -m pytest <fork>/quest/tests -p no:cacheprovider -v -rs` (the 2026-11-20 job's `pylib-test`, read in place), wrapped `timeit.sh Quest test`: **202 passed, 28 skipped, 0 failed** (33.6 s). rope 64, estimate 9, decode_attention 6, approx_attention 42, decode_launch_shape 3, topk 49 + 15 skipped (k >= kv_len), prefill_attention 29 + 13 skipped (qo_len > kv_len). Same as at `9cb8bee`.
+- **fp64 reference harness** (`notes-prefill-harness.md`, built against this tree with `ARCH=gfx942`, run in the review above at the same commit): CFG 0-9 **100/100** native MFMA (device reports `wave=64 op_elems=4`); negative control (`-DNEGCTRL=true`) CFG 0 and 1: 1/10 each (the 1 x 17 shape, where both causal rules agree). The new CFG 10 and 11 were also 10/10 natively, and the CFG 10 negative control gave 1/10.
+- **End-to-end**: `NousResearch/Llama-2-7b-chat-hf` at `351844e7` (read in place from the 2026-11-20 job's `models`), `do_sample` false, `agent_space/quest/e2e/example_textgen.py` (upstream's script with only `MODEL_PATH` changed), `PYTHONPATH=<fork>:<roles5 job>/pylib-e2e` (transformers 4.45.2): `--method hg`, `--method quest --token_budget 1024`, `--method quest --token_budget 128`, each wrapped `timeit.sh Quest test`, all rc 0, input length 103. Output with Quest's two banner lines removed: md5 `b900af27eeb4170a5c47bc5940a2ca60` for all three. That is also the digest of the `9cb8bee` outputs kept by the 2026-11-20 job on this host under the same filter ("Reason: The rabbit is the only one who is not working hard. ... can also mean \"lazy.\""). **Byte-identical.**
+- **Prefill time through the operator against SDPA** (`agent_space/quest/prefill_time.py`, the 2026-11-20 script: causal, 32 heads x 128, fp16, page size 16; `is_causal` where qo = kv, `causal_lower_right` where qo < kv; mean of 20, 5 for the large shapes). Two runs, wrapped `timeit.sh Quest test`, first run shown (the second is within 1 %):
+
+| qo x kv | Quest prefill_forward | torch SDPA | ratio | max abs diff vs SDPA | `9cb8bee` record (2026-11-20) |
+|---|---|---|---|---|---|
+| 1 x 4096 | 0.497 ms | 0.177 ms | 2.82 | 6.1e-05 | 0.460 ms |
+| 128 x 4096 | 0.621 ms | 0.200 ms | 3.10 | 1.2e-04 | 0.582 ms |
+| 1024 x 1024 | 0.254 ms | 0.079 ms | 3.22 | 2.0e-03 | 0.215 ms |
+| 1024 x 4096 | 0.633 ms | 0.265 ms | 2.38 | 2.4e-04 | 0.593 ms |
+| 4096 x 4096 | 1.183 ms | 0.626 ms | 1.89 | 2.0e-03 | 1.135 ms |
+| 8192 x 8192 | 3.156 ms | 2.068 ms | 1.53 | 2.0e-03 | 3.116 ms |
+| 16384 x 16384 | 10.819 ms | 8.002 ms | 1.35 | 2.0e-03 | 10.656 ms |
+
+  Every shape is about 0.04 ms per call slower than the 2026-11-20 record, although the device code is identical. To tell host conditions apart from the change, `9cb8bee` was built here with the same README command (`agent_space/quest/base`, rc 0, 8/8). The two extensions were then timed interleaved, base / new three times each (`ab_{base,new}_{1,2,3}.out`; range over the three runs): 1 x 4096 0.494-0.498 / 0.494-0.500; 128 x 4096 0.616-0.620 / 0.616-0.624; 1024^2 0.247-0.253 / 0.249-0.253; 1024 x 4096 0.626-0.631 / 0.627-0.632; 4096^2 1.178-1.186 / 1.179-1.185; 8192^2 3.137-3.168 / 3.175-3.195; 16384^2 10.809-10.856 / 10.821-10.845 ms. **No difference between the two heads beyond noise**: the offset to the old record is host-side variation today, not the change. Kernel alone (recorded harness CFG 100, nfx 2 forced, best of 3 interleaved processes, `9cb8bee` / `517c6a7`): 128 x 4096 0.506 / 0.510, 1024^2 0.148 / 0.148, 1024 x 4096 0.517 / 0.517, 4096^2 1.063 / 1.067, 8192^2 3.005 / 3.004 ms. The plan's target holds: 4096 x 4096 is within 2x of SDPA (1.89x through the operator, 1.07 ms kernel).
+- **CUDA gate**: no CUDA toolkit on this host. It is recorded at `517c6a7` by the porter round on the gfx950 host (real nvcc 12.8, sm_80, both trees 8/8, objects byte-identical with per-process names masked). This review's preprocessing check also gives the unchanged CUDA view (md5 `02d6a90c...`).
+- **Content**: `jargon.py --port Quest` clean; the ROCm build is documented in the README (Linux and Windows blocks); `audit-commits` reports only the known `6e7d8db` gap; fork tree clean.
+
+### Owed next (Quest at `517c6a7`)
+
+1. linux-gfx1201, linux-gfx1100, windows-gfx1151: first hardware runs of the capped wave32 code. Run the seven suites, end-to-end and `prefill_time.py`, plus the fp64 harness configurations listed per target in the review above (CFG 10 and 11 included: the capped head-64 nfx-2 instantiation has no hardware evidence on any target).
+2. linux-gfx950: a validator run at `517c6a7` (the porter round's evidence is not a validator record).
+3. linux-gfx90a: instruction-identical device code (review above); a real run or a carry-forward with `--host-checked` per the review's host-code reading, a person's or the next validator's call.
+4. jeffdaily: the gfx950 operator host-path decision (porter round 2026-11-24 resumed, item 7) is still open.
+
+## Validation 2026-11-24 (linux-gfx1201, at `517c6a7`) -- PASS
+
+AMD Radeon AI PRO R9700, `gcnArchName` `gfx1201`, wave32, 31.9 GiB, `HIP_VISIBLE_DEVICES=1` (pinned by the job; that HIP device is PCI `c3:00.0`, which `amd-smi` lists as GPU 2, idle with no process before the timed runs; `amd-smi` GPU 1 is a different card, busy with another container's work, and was not used). PyTorch 2.16.0a0+git6c3af02 (HIP 7.16.26385) on the pip ROCm SDK, image Python 3.11 (`/opt/python-3.11-venv`), CMake 3.31.6. All GPU runs under `ulimit -c 0`. Fresh fork clone at `517c6a7` == `origin/moat-port` == `head_sha` == `reviewed_sha`, `git submodule update --init --depth 1`. Full run (not a carry-forward; `classify 9cb8bee 517c6a7` is `mixed`), same method as this platform's `9cb8bee` validation. This is the first hardware run of the capped wave32 code. Free disk before the build: 2.2 TB.
+
+### Build (README Linux block, `-DCMAKE_HIP_ARCHITECTURES=gfx1201`, `ninja -j $MAX_JOBS` = 24, after `rm -rf build`, `CMAKE_BUILD_TYPE` and `PYTORCH_ROCM_ARCH` unset)
+
+`utils/timeit.sh Quest compile -- bash agent_space/build.sh <fork>`: rc 0, 8/8, **15m36s wall** (27m14s at `9cb8bee`), 0 errors, 18 warning lines (the known nodiscard `hipError_t` host code), 0 `-Wpass-failed`, `CMAKE_BUILD_TYPE=Release` by default, `--offload-arch=gfx1201` on all 8 lines. From `.ninja_log`: **`batch_prefill.cu.o` 929 s** (1628 s at `9cb8bee` on this host, 0.57x; the porter's same-load pair on the MI355X host measured 0.53x); every other file 22-29 s. The harness compiles and kernel timing below ran beside the last ~10 minutes of it (host load average 3-5 on 48 cores), so 929 s is if anything an upper bound.
+
+### GPU tests (transformers 4.37.2, tokenizers 0.15.2, pytest 7.3.2; the 2026-11-23 job's `pylib-test`, read in place)
+
+`utils/timeit.sh Quest test -- bash agent_space/test.sh` (`cd <fork> && PYTHONPATH=<fork>:<pylib-test> python -m pytest quest/tests -p no:cacheprovider -q -rs`): **202 passed, 28 skipped, 0 failed** (17.2 s), the record. Per suite, each on its own: approx_attention 42, decode_attention 6, decode_launch_shape 3, estimate 9, prefill_attention 29 + 13 skipped (`qo_len > kv_len`), rope 64, topk 49 + 15 skipped (`k >= kv_len`).
+
+### fp64 reference harness
+
+1. The recorded harness (`notes-prefill-harness.md`, extracted verbatim; the one local change adds a `{16384, 16384}` shape to CFG 100 under `#ifdef BIG`), `ARCH=gfx1201 bash build.sh <fork> bin/c_<n> <n>`; device reports `wave=32 op_elems=8` (gfx12 WMMA). **CFG 0-11: 120/120** (each 10/10):
+
+| CFG | config | capped here? | max dO | max dLSE |
+|---|---|---|---|---|
+| 0 | fp16 hd128 nfx1 causal p16 | no | 1.11e-03 | 5.34e-04 |
+| 1 | fp16 hd128 nfx2 causal p16 | yes | 1.11e-03 | 5.34e-04 |
+| 2 | fp16 hd128 nfx2 non-causal p16 | yes | 9.98e-04 | 3.42e-04 |
+| 3 | fp16 hd64 nfx1 causal p16 | no | 1.05e-03 | 7.63e-04 |
+| 4 | fp16 hd128 GQA4 nfx2 causal p16 | yes | 1.36e-03 | 7.82e-04 |
+| 5 | bf16 hd128 nfx2 causal p16 | yes | 9.83e-03 | 6.48e-03 |
+| 6 | bf16 hd64 GQA4 nfx1 non-causal p16 | no | 6.30e-03 | 4.39e-03 |
+| 7 | fp16 hd128 nfx2 causal p1 | yes | 1.17e-03 | 6.50e-04 |
+| 8 | fp16 hd128 nfx1 causal p8 | no | 1.00e-03 | 9.02e-04 |
+| 9 | fp16 hd128 GQA8 nfx2 causal p32 | yes | 1.34e-03 | 7.83e-04 |
+| 10 | fp16 hd64 nfx2 causal p16 | yes (head 64) | 1.05e-03 | 7.63e-04 |
+| 11 | bf16 hd64 GQA4 nfx2 non-causal p8 | yes (head 64) | 7.40e-03 | 5.30e-03 |
+
+   Negative control `-DNEGCTRL=true` (reference with the opposite causal flag): CFG 0, 1 and 10 give 1/10 each (the 1 x 17 shape, where both rules agree). Resource use (`build.sh ... --cuda-device-only -c -Rpass-analysis=kernel-resource-usage`): CFG 1 both instantiations (nfz 4 and nfz 2) 256 VGPR, **176 B/lane** scratch, occupancy 5 (512 B/lane for nfz 4 at `9cb8bee`); CFG 10 both 214 VGPR, 0 scratch, occupancy 7; CFG 0 242/235 VGPR, 0 scratch. So the cap is in effect in the hardware build, as the porter's spill table says.
+2. The earlier harness of this platform (`prefill_ref.cu`, 10 configurations x 10 shapes, 2026-11-23), rebuilt against `517c6a7`: **100/100** (`check`). Layout negative control: scratch copy of the `517c6a7` headers with the gfx12 `acc_row` replaced by the gfx11 formula `2 * i + lane / 16`: **0/100**; the same tree with the recorded harness CFG 10 and 11: 0/10 each. So the check tells layouts apart at the capped head-64 configurations too.
+
+### Kernel alone: the capped case against the uncapped and hand-capped records
+
+32 heads x 128, fp16, causal, page 16, nfx 2 (forced in CFG 100; the earlier harness's `time` mode uses the dispatcher's nfx, 1 for 1 x 4096), hipEvent mean of 20 launches after 3 warmups. Three rounds each; `9cb8bee` is the 2026-11-23 job's `ref_9cb8bee` binary run interleaved with the `517c6a7` build in the same session, so both see the same GPU state:
+
+| qo x kv | `9cb8bee` today (3 runs) | `517c6a7` `time` (6 runs) | `517c6a7` CFG 100 (3 runs) | records: uncapped / hand-capped nfz 2 (2026-11-23) |
+|---|---|---|---|---|
+| 1 x 4096 (nfx 1 in `time`) | 0.252-0.266 | 0.251-0.277 | 0.399-0.408 (nfx 2) | 0.254 / 0.270 |
+| 128 x 4096 | 0.448-0.452 | 0.418-0.429 | 0.380-0.433 | 0.463 / 0.430 |
+| 1024 x 1024 | 0.279-0.297 | 0.255-0.287 | 0.266-0.267 | 0.294 / 0.252 |
+| 1024 x 4096 | 1.085-1.090 | 0.995-1.005 | 0.988-1.017 | 1.089 / 0.988 |
+| 4096 x 4096 | 2.471-2.495 | **2.093-2.107** | 2.071-2.099 | **2.44 / 2.07** |
+| 8192 x 8192 | 9.089-9.225 | 7.618-7.749 | 7.301-7.446 | 9.00 / 7.58 |
+| 16384 x 16384 | 35.10-35.26 | **27.91-28.33** | 28.57-28.76 | **34.9 / 27.8** |
+
+**The shipped cap reproduces the hand cap**: 4096^2 2.09 ms (record 2.07, uncapped today 2.48, -15 %), 16384^2 28.0 ms (record 27.8, uncapped today 35.1, -20 %). The capped head-64 nfx-2 case has no timing (no script covers it; Quest's models are head 128).
+
+### Prefill time against SDPA, through the operator (this platform's 2026-11-23 method)
+
+`agent_space/prefill_time.py` (the 2026-11-23 job's script on this host: `quest.utils.prefill_forward` against SDPA with `is_causal` where qo = kv and `causal_lower_right` where qo < kv; 32 heads x 128, fp16, page 16; CUDA-event mean of 20 calls, 5 for qo >= 8192, after 3 warmups), run twice, each wrapped `timeit.sh Quest test`; second run in brackets:
+
+| qo x kv | Quest prefill_forward | torch SDPA | ratio | max abs diff | ratio at `9cb8bee` (2026-11-23) |
+|---|---|---|---|---|---|
+| 1 x 4096 | 0.360 (0.367) ms | 0.116 (0.118) ms | 3.09 (3.11) | 6.1e-05 | 2.71 (3.09) |
+| 128 x 4096 | 0.522 (0.514) ms | 0.129 (0.128) ms | 4.05 (4.02) | 1.2e-04 | 4.25 (4.31) |
+| 1024 x 1024 | 0.324 (0.326) ms | 0.116 (0.118) ms | 2.79 (2.77) | 2.0e-03 | 2.95 (2.99) |
+| 1024 x 4096 | 1.071 (1.050) ms | 0.697 (0.690) ms | 1.54 (1.52) | 1.2e-04 | 1.63 (1.65) |
+| 4096 x 4096 | 2.084 (2.093) ms | 1.545 (1.542) ms | **1.35** (1.36) | 2.0e-03 | 1.60 |
+| 8192 x 8192 | 7.147 (7.134) ms | 6.844 (6.854) ms | 1.04 (1.04) | 2.0e-03 | 1.31 |
+| 16384 x 16384 | 29.293 (29.201) ms | 27.557 (27.564) ms | 1.06 (1.06) | 2.0e-03 | 1.29 |
+
+SDPA is unchanged from 2026-11-23 (1.545 vs 1.518 ms at 4096^2, 27.56 vs 27.49 at 16384^2); Quest moved 2.43 -> 2.08 ms and 35.5 -> 29.2 ms. The plan's target (4096^2 within 2x) holds with more margin: 1.35x. The short rows are still the operator's fixed host work per call (128 x 4096 at 4.0x).
+
+### End-to-end (transformers 4.45.2, tokenizers 0.20.3, accelerate 1.0.1, sentencepiece 0.2.0; the 2026-11-23 job's `pylib-e2e` and model, read in place)
+
+`NousResearch/Llama-2-7b-chat-hf` at `351844e7`, `do_sample` false, `example_textgen.py` with only `MODEL_PATH` changed; `--method hg`, `--method quest --token_budget 1024`, `--method quest --token_budget 128`, each wrapped `timeit.sh Quest test`: all rc 0, input length 103 (a 103 x 103 prefill, which takes the capped head-128 nfx-2 kernel). Text from "Input Sequence Length" on, Quest's two banner lines removed: md5 **`b900af27eeb4170a5c47bc5940a2ca60`** for all three, the same digest as the 2026-11-23 outputs on this host ("Reason: The rabbit is the only one who is not working hard. ... can also mean \"lazy.\""). **Byte-identical.**
+
+### CUDA gate, content, integrity
+
+- CUDA: no toolkit on this host. Recorded at `517c6a7` by the 2026-11-24 porter round on the gfx950 host (real nvcc 12.8, objects identical with process names masked) and checked by preprocessing in the review.
+- `jargon.py --port Quest`: clean (after `git fetch origin main:main` in the clone). `audit-commits Quest`: only the known `6e7d8db` gap. The ROCm build is in the README (Linux and Windows blocks); the build above is that command.
+- `git -C projects/Quest/src status --porcelain`: empty. No fork edit, no fork push, no GitHub write besides this project branch.
+
+State: linux-gfx1201 `completed` at `517c6a7` (wave32 gate).
+
+### Owed next (Quest at `517c6a7`)
+
+1. linux-gfx1100 and windows-gfx1151: first hardware run of the gfx11 capped cases (CFG 0, 8 head 128 nfx 1; CFG 10, 11 head 64 nfx 2) and of the deliberately uncapped head 128 nfx 2.
+2. linux-gfx950: validator run at `517c6a7`. linux-gfx90a: real run or carry-forward (see the gfx942 validation above).
+3. jeffdaily: the gfx950 operator host-path decision is still open.
+## Validation 2026-11-24 (linux-gfx950, at `517c6a7`) -- PASS
+
+Host: AMD Instinct MI355X (`gfx950:sramecc+:xnack-`), wave64, `HIP_VISIBLE_DEVICES=5` (pinned by the job; devices 0, 2, 3 and 4 belong to colleagues and were never touched; GPU 5 at 0 % GFX activity before the runs, while GPUs 2, 4 and 7 ran at 100 % for other containers). PyTorch 2.16.0a0+git6c3af02 / HIP 7.16.26385 (pip ROCm SDK), Python 3.11 (`/opt/python-3.11-venv`), all GPU runs under `ulimit -c 0`, builds at `MAX_JOBS`=64. Fresh fork clone in `projects/Quest/src` at `517c6a7` == `origin/moat-port` == `head_sha` == `reviewed_sha`, submodules initialised. Requested by jeffdaily: a full real run (not a carry-forward), same method and counts as the `9cb8bee` validation on this platform. This is the GPU the new 16x16x32 MFMA path (`QUEST_PREFILL_MMA` 2) targets; the porter round's evidence for it was not a validator record. Free disk before the build: 658 GB.
+
+- **Build**: `agent_space/quest/build_readme.sh` (the README Linux block verbatim with `-DCMAKE_HIP_ARCHITECTURES=gfx950`, after `rm -rf build`, `ninja -j $MAX_JOBS`), wrapped `utils/timeit.sh Quest compile`: rc 0, 8/8, 333 s, 0 errors, 18 warning lines (the known `nodiscard hipError_t` host code), `CMAKE_BUILD_TYPE=Release` from the default, `--offload-arch=gfx950` on all 8 compile lines (`ninja -t commands`).
+- **Tests**: `env PYTHONPATH=<fork>:<roles6d job>/pylib-test python -m pytest <fork>/quest/tests -p no:cacheprovider -v -rs` (transformers 4.37.2, pytest 7.3.2; the porter job's `pylib-test`, read in place), wrapped `timeit.sh Quest test`: **202 passed, 28 skipped, 0 failed** (22.1 s). approx_attention 42, decode_attention 6, decode_launch_shape 3, estimate 9, prefill_attention 29 + 13 skipped (`qo_len > kv_len`), rope 64, topk 49 + 15 skipped (`k >= kv_len`). Same as every record since `2b938d8`.
+- **fp64 reference harness** (`notes-prefill-harness.md`, CFG 0-11, built against this tree with `ARCH=gfx950`; `agent_space/quest/harness/checkall.sh <fork> fc`, wrapped `timeit.sh Quest test`; device reports `wave=64 op_elems=8`, the 16x16x32 path): **CFG 0-9 100/100**, and the review's CFG 10 and 11 (head 64, nfx 2) 10/10 each, so 120/120. Largest error per configuration over the 10 shapes, max |dO| / max |dLSE|: CFG 0 1.1e-3 / 5.3e-4; 1 1.1e-3 / 5.3e-4; 2 1.0e-3 / 3.4e-4; 3 1.1e-3 / 7.6e-4; 4 1.4e-3 / 7.8e-4; 5 (bf16) 9.8e-3 / 6.5e-3; 6 (bf16) 6.3e-3 / 4.4e-3; 7 1.2e-3 / 6.5e-4; 8 1.0e-3 / 9.0e-4; 9 1.3e-3 / 7.8e-4; 10 1.1e-3 / 7.6e-4; 11 (bf16) 7.4e-3 / 5.3e-3, all at or below the `9cb8bee` figures on this GPU. Negative control (`-DNEGCTRL=true`, the reference with the opposite causal flag) on CFG 0, 1 and 10: 1/10 each (the 1 x 17 shape, where both causal rules agree). The harness file is the recorded one with the porter's timing additions (CFG 101 = nfx 1 timing, an optional `qo` argument selecting one shape, 16384 x 16384, 1 s warmup and min of 7 loops per process); the check code is unchanged from the recorded copy.
+- **Kernel alone** (CFG 101 = nfx 1, the dispatcher's choice on gfx950 now, and CFG 100 = nfx 2 forced; 32 heads x 128, fp16, causal, page 16; `harness/ab.sh <qo> bin/t_101 bin/t_100`: 5 rounds, each binary once per round as its own process, best per binary), ms:
+
+| qo x kv | nfx 1 (dispatched) | porter round 2026-11-24 | nfx 2 forced | porter |
+|---|---|---|---|---|
+| 1 x 4096 | 0.147 | 0.147 | 0.267 | 0.267 |
+| 128 x 4096 | 0.163 | 0.149 | 0.285 | 0.274 |
+| 1024 x 4096 | 0.222 | 0.202 | 0.281 | 0.273 |
+| 4096 x 4096 | **0.412** | 0.414 | 0.545 | 0.544 |
+| 8192 x 8192 | **1.184** | 1.19 | 1.867 | 1.857 |
+| 16384 x 16384 | **4.253** | 4.32 | 5.790 | 5.788 |
+
+- **Through the operator** (`agent_space/quest/prefill_time.py`, the recorded script, best of 5 separate processes, each `MINMED=1 LOOP_MS=100 REPS=7 WARM_MS=1000`, wrapped `timeit.sh Quest test`, all rc 0; range across the 5 processes in parentheses; `pt_{1..5}.out`):
+
+| qo x kv | Quest `prefill_forward` | torch SDPA | ratio | porter (operator / SDPA / ratio) | max abs diff vs SDPA |
+|---|---|---|---|---|---|
+| 1 x 4096 | 0.262 (0.262-0.326) ms | 0.111 (0.111-0.195) ms | 2.36 | 0.232 / 0.106 / 2.19 | 6.1e-05 |
+| 128 x 4096 | 0.337 (0.337-0.453) ms | 0.147 (0.147-0.181) ms | 2.29 | 0.285 / 0.140 / 2.04 | 1.2e-04 |
+| 1024 x 1024 | 0.242 (0.242-0.374) ms | 0.048 (0.048-0.068) ms | 5.04 | 0.245 / 0.041 / 5.98 | 2.0e-03 |
+| 1024 x 4096 | 0.449 (0.449-0.523) ms | 0.131 (0.131-0.143) ms | 3.43 | 0.437 / 0.122 / 3.58 | 1.2e-04 |
+| 4096 x 4096 | **0.652** (0.652-0.759) ms | 0.235 (0.235-0.252) ms | **2.77** | 0.676 / 0.210 / 3.22 | 2.0e-03 |
+| 8192 x 8192 | **1.455** (1.455-1.531) ms | 0.782 (0.782-0.836) ms | **1.86** | 1.498 / 0.717 / 2.09 | 2.0e-03 |
+| 16384 x 16384 | **4.526** (4.526-4.664) ms | 2.818 (2.818-2.897) ms | **1.61** | 4.770 / 2.676 / 1.78 | 2.0e-03 |
+
+  Reading: the kernel and the operator reproduce the porter's figures (kernel within 1.6 % at the three large shapes, operator 3-5 % faster); SDPA was 5-12 % slower today than in the porter's run, so the ratios are lower than that round's for the large shapes, which is host variation, not the change. Against this run's SDPA the kernel alone is 1.75x at 4096^2, 1.51x at 8192^2 and 1.51x at 16384^2; through the operator 4096^2 is still 2.77x (the 2x target is met through the operator only from 8192^2 up). At `9cb8bee` on this GPU the operator was 1.204 / 3.548 / 10.53 ms (2026-11-23), so the change is 1.85x / 2.44x / 2.33x faster through the operator. The operator host-path decision (porter round 2026-11-24 resumed, item 7) stays with jeffdaily; nothing here changes its inputs.
+- **End-to-end**: `NousResearch/Llama-2-7b-chat-hf` at `351844e75ed0bcbbe3f10671b3c808d2b83894ee` (the earlier jobs' copies are gone, so it was downloaded again into `<job>/models` with `huggingface_hub.snapshot_download`: safetensors, json, tokenizer), `do_sample` false in `generation_config.json` (original kept as `.orig`), `agent_space/quest/e2e/example_textgen.py` (upstream's script with only `MODEL_PATH` changed), `PYTHONPATH=<fork>:<roles6d job>/pylib-e2e` (transformers 4.45.2): `--method hg`, `--method quest --token_budget 1024`, `--method quest --token_budget 128`, each wrapped `timeit.sh Quest test`, all rc 0, input length 103 (so the 103 x 103 prefill runs the new gfx950 kernel). Output with Quest's two banner lines removed (`grep -v '^Quest allocates\|^Token budget'`): md5 `b900af27eeb4170a5c47bc5940a2ca60` for all three, the digest of every earlier record ("Reason: The rabbit is the only one who is not working hard. ... can also mean \"lazy.\""). **Byte-identical.**
+- **CUDA gate**: not repeated; recorded at `517c6a7` by the porter round on this host (real nvcc 12.8, sm_80, both trees 8/8, objects byte-identical with per-process names masked), and the delta since is none.
+- **Content and integrity**: `jargon.py --port Quest` clean (after `git fetch origin main:main moat-port:moat-port` in the clone); the ROCm build is documented in `README.md` (Linux and Windows blocks) and the build above is that block; `audit-commits Quest` reports only the known `6e7d8db` gap; `git -C projects/Quest/src status --porcelain` empty. One `timeit.sh Quest test` entry with exit 127 in `stats.jsonl` is a harness invocation with a wrong relative path (rerun at once with the absolute path), not a test failure. No fork edit, no push to the fork, no GitHub write besides this project branch.
+
+State: linux-gfx950 `completed` at `517c6a7`.
+
+### Owed next (Quest at `517c6a7`)
+
+1. linux-gfx1201, linux-gfx1100, windows-gfx1151: first hardware runs of the capped wave32 code (the review's per-target harness list, CFG 10 and 11 included).
+2. linux-gfx90a: a real run or a carry-forward with `--host-checked`, per the review.
+3. jeffdaily: the gfx950 operator host-path decision; on today's numbers 4096^2 is 2.77x through the operator and 1.75x for the kernel alone.
+## Validation 2026-11-24 (linux-gfx1100, at `517c6a7`) -- PASS
+
+First hardware run of the capped wave32 code on gfx11. Host: AMD Radeon Pro W7800 48GB (gfx1100, wave32), `HIP_VISIBLE_DEVICES=3` (PCI 0x26; pinned by this job because devices 1 and 2 belong to other jobs; 0 % GFX activity before the runs), PyTorch 2.16.0a0+git6c3af02 / HIP 7.16.26385 (pip ROCm SDK), Python 3.11 (`/opt/python-3.11-venv`), all GPU runs under `ulimit -c 0`, builds within `MAX_JOBS` (10). Fork clone at `517c6a7` == `origin/moat-port` == `head_sha` == `reviewed_sha`, submodules initialised, `git status --porcelain` empty before and after. `classify Quest 9cb8bee 517c6a7` -> `mixed`, so a full run, with the method and counts of the `9cb8bee` validation on this platform. For like-for-like comparisons `9cb8bee` was also built here (`agent_space/quest/base`, a copy of the clone checked out at `9cb8bee`).
+
+### Build (README Linux block, fresh build directory)
+
+`agent_space/quest/build_readme.sh <tree>` (README block verbatim with `-DCMAKE_HIP_ARCHITECTURES=gfx1100`, after `rm -rf build`), the two trees started together with `ninja -j 5` each (10 jobs in total), fork wrapped `utils/timeit.sh Quest compile`: both rc 0, 8/8, 0 errors, 18 warning lines each (the pre-existing `nodiscard hipError_t` host code). Fork build wall 1887 s (the `9cb8bee` record here: 2840 s alone at `-j 32`).
+
+**Build time of `batch_prefill.cu`** (`.ninja_log`, the same two builds side by side, so both saw the same load): **`517c6a7` 1879.5 s, `9cb8bee` 3066.2 s (0.61x)**. Every other object takes 31-39 s in both trees. So the cap shortens the gfx1100 build of `batch_prefill.cu` by about 20 minutes, although the most expensive gfx11 instantiation (head 128 nfx 2, Q in LDS) is not capped: the capped head-128 nfx-1 and head-64 nfx-2 bodies were also spilling (176 and 260 B/lane before) and are cheaper to compile now. This answers the gfx11 half of the 2026-11-23 ruling's build-time question; the porter round expected no comparable gain on gfx11.
+
+### GPU tests (transformers 4.37.2, tokenizers 0.15.2, pytest 7.3.2: the 2026-11-23 job's `pylib-test` on this host, read in place)
+
+```
+env PYTHONPATH=<fork>:<val5 job>/pylib-test python3 -m pytest <fork>/quest/tests -p no:cacheprovider -v -rs
+```
+
+Wrapped `timeit.sh Quest test`: **202 passed, 28 skipped, 0 failed** (15.2 s). rope 64, estimate 9, decode_attention 6, approx_attention 42, decode_launch_shape 3, topk 49 + 15 skipped (k >= kv_len), prefill_attention 29 + 13 skipped (qo_len > kv_len). Same as at `9cb8bee`. Pytest's `qo_len` 13/24/51 cases go through the capped head-128 nfx-1 kernel, and `qo_len` >= 77 through the uncapped nfx-2 one.
+
+### fp64 reference harness (`notes-prefill-harness.md`, CFG 0-11, gfx11 WMMA on hardware)
+
+`prefill_harness.cu` and `build.sh` extracted verbatim from `notes-prefill-harness.md` into `agent_space/quest/harness`, built against the fork tree with `ARCH=gfx1100` (5-10 s per binary). Every binary reports `device mma shape wave=32 op_elems=16`, so the host applied the wave32 `kv_frags` rule.
+
+| CFG | case | cap on gfx11 | result | max abs err O / LSE |
+|---|---|---|---|---|
+| 0 | fp16 hd128 nfx1 causal p16 | capped | 10/10 | 1.1e-3 / 5.3e-4 |
+| 8 | fp16 hd128 nfx1 causal p8 | capped | 10/10 | 1.0e-3 / 9.0e-4 |
+| 10 | fp16 hd64 nfx2 causal p16 | capped | 10/10 | 1.1e-3 / 7.6e-4 |
+| 11 | bf16 hd64 GQA4 nfx2 non-causal p8 | capped | 10/10 | 7.4e-3 / 5.3e-3 |
+| 1 | fp16 hd128 nfx2 causal p16 | not capped (Q in LDS) | 10/10 | 1.5e-3 / 1.6e-3 |
+| 2 | fp16 hd128 nfx2 non-causal p16 | not capped | 10/10 | 1.5e-3 / 1.6e-3 |
+| 4 | fp16 hd128 GQA4 nfx2 causal p16 | not capped | 10/10 | 1.6e-3 / 2.2e-3 |
+| 5 | bf16 hd128 nfx2 causal p16 | not capped | 10/10 | 1.1e-2 / 1.4e-2 |
+| 7 | fp16 hd128 nfx2 causal p1 | not capped | 10/10 | 1.3e-3 / 2.1e-3 |
+| 9 | fp16 hd128 GQA8 nfx2 causal p32 | not capped | 10/10 | 1.8e-3 / 2.0e-3 |
+| 3 | fp16 hd64 nfx1 causal p16 | not capped | 10/10 | 1.1e-3 / 7.6e-4 |
+| 6 | bf16 hd64 GQA4 nfx1 non-causal p16 | not capped | 10/10 | 6.3e-3 / 4.4e-3 |
+
+**120/120.** Negative control (`-DNEGCTRL=true`, reference with the opposite causal flag) on CFG 0, 1, 8, 10 and 11: **1/10 each** (the 1 x 17 shape, where both causal rules agree; elsewhere max |dO| up to 0.22, |dLSE| up to 0.99). So the capped head-128 nfx-1 and head-64 nfx-2 instantiations, which had only emulation evidence before, are correct on real gfx11 hardware, register allocation and spill code included.
+
+Device code (`build_t.sh ... --cuda-device-only -S`, harness timing kernels, both trees): the uncapped head-128 nfx-2 kernel (CFG 100) is **instruction-identical** between `9cb8bee` and `517c6a7` (256 VGPR, 348 B/lane scratch, occupancy 5 in both; the whole-file diff is 14 lines: the `prefill_mma_shape` constant's two new fields and the `__hip_cuid` id). The capped head-128 nfx-1 kernel goes from 256 VGPR / 176 B/lane to 253 VGPR / **100 B/lane** (occupancy 5), as in the porter's spill table.
+
+### Kernel alone (harness CFG 100 = nfx 2 forced, and CFG 101 = the same case at nfx 1)
+
+CFG 101 is a timing-only copy of the harness (`agent_space/quest/harness/prefill_harness_t.cu`: one added `#elif CFG == 101` with `half, 1, 16, 1, 128, true`, and `#if CFG >= 100` for the timing branch). 32 heads x 128, fp16, causal, page 16, shuffled pages, mean of 20 launches after 3 warmups. Five rounds, each binary once per round in the order new/base, best per binary in ms. Rounds 3-5 included some samples 2-20x slower: an outside process (not in this container, 1.2 GB VRAM) appeared briefly on this card during them. Best-of-5 drops those samples.
+
+| qo x kv | `9cb8bee` nfx 2 | `517c6a7` nfx 2 (uncapped) | `9cb8bee` nfx 1 | `517c6a7` nfx 1 (capped) |
+|---|---|---|---|---|
+| 1 x 4096 | 0.560 | 0.586 | 0.355 | **0.334** |
+| 128 x 4096 | 0.563 | 0.587 | 0.393 | **0.373** |
+| 1024 x 1024 | 0.456 | 0.446 | 0.344 | **0.326** |
+| 1024 x 4096 | 2.549 | 2.532 | 2.040 | **1.937** |
+| 4096 x 4096 | 5.744 | 6.057 | 4.824 | **4.672** |
+| 8192 x 8192 | 22.17 | 22.14 | 18.46 | **16.86** |
+
+The capped nfx-1 kernel is 3-9 % faster than the uncapped one at every shape. The nfx-2 columns differ by up to 5 % in both directions, although the code is instruction-identical, so that is the run-to-run noise of this harness on this host. The `9cb8bee` validation's "kernel alone" column used the dispatcher's nfx rule (nfx 1 at qo = 1): its 0.356 ms at 1 x 4096 matches `9cb8bee` nfx 1 here (0.355). Side observation for the porter, not a gate: on gfx1100 the nfx-1 kernel is faster than nfx 2 at every shape here, 4.67 vs 6.06 ms at 4096 x 4096. The dispatcher picks nfx 2 for `qo * group > 64`, so it might do better with nfx 1 on gfx11. That needs measuring through the operator before any change.
+
+### Prefill time against SDPA (`agent_space/quest/prefill_time.py`, the script and method of the `9cb8bee` validation here)
+
+The 2026-11-23 job's script, copied unchanged: `quest.utils.prefill_forward` vs `F.scaled_dot_product_attention` with the same alignment (`is_causal` where qo = kv, `causal_lower_right` where qo < kv), causal, 32 heads x 128, fp16, page size 16, mean of 20 (5 for the large shapes) after 3 warmups. Three rounds, `517c6a7` and `9cb8bee` interleaved, each wrapped `timeit.sh Quest test` (`pt/{new,base}_{1,2,3}.out`). Median (range) over the three runs in ms; SDPA is the median over all six runs:
+
+| qo x kv | Quest `517c6a7` | Quest `9cb8bee` (same session) | torch SDPA | ratio | `9cb8bee` record (2026-11-23) | max abs diff vs SDPA |
+|---|---|---|---|---|---|---|
+| 1 x 4096 (capped nfx 1) | 0.444 (0.422-0.445) | 0.452 (0.443-0.470) | 0.178 | 2.49 | 0.450 | 6.1e-05 |
+| 128 x 4096 | 0.672 (0.671-0.673) | 0.670 (0.669-0.670) | 0.881 | 0.76 | 0.680 | 1.2e-04 |
+| 1024 x 1024 | 0.596 (0.588-0.600) | 0.590 (0.587-0.603) | 0.372 | 1.60 | 0.597 | 2.0e-03 |
+| 1024 x 4096 | 2.610 (2.549-2.611) | 2.586 (2.571-2.635) | 2.264 | 1.15 | 2.614 | 2.4e-04 |
+| 4096 x 4096 | 5.597 (5.591-5.748) | 5.658 (5.629-5.786) | 3.446 | 1.62 | 5.641 | 2.0e-03 |
+| 8192 x 8192 | 22.239 (21.661-22.267) | 21.932 (21.756-21.970) | 13.982 | 1.59 | 21.947 | 2.0e-03 |
+| 16384 x 16384 | 88.362 (88.106-89.414) | 89.003 (87.824-89.059) | 61.111 (60.6-82.5) | 1.45 | 89.782 | 2.0e-03 |
+
+The uncapped nfx-2 rows (128 x 4096 and up) match `9cb8bee` within noise, in this session and against the record, as expected for instruction-identical code. The capped 1 x 4096 row is the first timing of the capped one-tile case through the operator: 0.444 ms against 0.452 here and 0.450 in the record, about 2 % faster. That fits the kernel's 0.021 ms gain under a host-dominated operator time. SDPA at 16384^2 read 60.6-61.2 ms in four runs and 82.4-82.5 ms in the third round (both heads; the record had 82.4), so the 16384^2 ratio is 1.07-1.46 depending on SDPA's state. Every shape from 128 x 4096 up is within 2x of SDPA. 1 x 4096 is 2.5x, unchanged from `9cb8bee`: the operator's per-call host work, as recorded then.
+
+### End-to-end (transformers 4.45.2, tokenizers 0.20.3, accelerate 1.0.1: the 2026-11-23 job's `pylib-e2e`, read in place)
+
+`NousResearch/Llama-2-7b-chat-hf` at `351844e7`, read in place from the 2026-11-23 job's `models` (`do_sample` false), `agent_space/quest/e2e/example_textgen.py` (upstream's script with only `MODEL_PATH` changed), each wrapped `timeit.sh Quest test`:
+
+```
+env PYTHONPATH=<fork>:<val5 job>/pylib-e2e python3 example_textgen.py --method hg
+env PYTHONPATH=<fork>:<val5 job>/pylib-e2e python3 example_textgen.py --method quest --token_budget 1024
+env PYTHONPATH=<fork>:<val5 job>/pylib-e2e python3 example_textgen.py --method quest --token_budget 128
+```
+
+All rc 0, input length 103. Output from `Input Sequence Length` on, with Quest's two banner lines removed: md5 **`b900af27eeb4170a5c47bc5940a2ca60` for all three**. That is the digest of the `9cb8bee` outputs on this host and on MI300X/MI355X ("Reason: The rabbit is the only one who is not working hard. ... can also mean \"lazy.\""). **Byte-identical.** (A first attempt of these three runs exited 2 before starting: `timeit.sh` runs from the repository root, so a relative script path does not resolve. Rerun with the absolute path.)
+
+### CUDA gate
+
+Not run here (no CUDA toolkit on this host). It is recorded at `517c6a7` by the porter round on the gfx950 host: real nvcc 12.8, sm_80, both trees 8/8, objects byte-identical with nvcc's per-process names masked.
+
+### Content
+
+`jargon.py --port Quest` clean (after `git fetch origin main:main` in the clone); the README's ROCm section documents the build used here; `audit-commits` reports only the known `6e7d8db` gap; fork tree clean.
+
+### Owed next (Quest at `517c6a7`)
+
+1. linux-gfx1201 and windows-gfx1151: first hardware runs of the capped wave32 code (review 2026-11-24 lists the configurations).
+2. linux-gfx950: a validator run at `517c6a7`. linux-gfx90a: a real run or a carry-forward, as the gfx942 validation lists.
+3. Possible, not required: on gfx1100 the nfx-1 kernel beats nfx 2 at every shape timed (4.67 vs 6.06 ms at 4096^2, kernel alone). A gfx11-only dispatcher change to nfx 1 might bring the large shapes from about 1.6x to about 1.3x of SDPA. It would need operator-level timing and a fresh review.
+4. jeffdaily: the gfx950 operator host-path decision is still open.
+
+## Validation 2026-11-24 (linux-gfx90a, at `517c6a7`) -- PASS
+
+Host: AMD Instinct MI250X / MI250 (`gfx90a:sramecc+:xnack-`, wave64, 104 CUs per GCD, 64 GB), `HIP_VISIBLE_DEVICES=0` (pinned by the job; 0 % GFX activity and no VRAM in use before the runs; the other cards were not touched). PyTorch 2.16.0a0+git6c3af02 / HIP 7.16.26385 (pip ROCm SDK), image Python 3.11 (`/opt/python-3.11-venv`), all GPU runs under `ulimit -c 0`, builds within `MAX_JOBS` (64). Fresh fork clone in `projects/Quest/src` at `517c6a7` == `origin/moat-port` == `head_sha` == `reviewed_sha`, submodules initialised, `git status --porcelain` empty before and after. Free disk before the build: 550 GB. Requested by jeffdaily: a full real run (not a carry-forward).
+
+**Correction to the request.** The dispatch asked for "the same method and counts as the earlier validation here" at `9cb8bee`. No such validation exists: this platform's last record is `c9828e2` (2026-08-20, notes above), before `topk_filtering` and prefill existed on HIP. Nothing has run the gfx90a MFMA prefill (`QUEST_PREFILL_MMA` 1, the `v_mfma_f32_16x16x16bf16_1k` form only gfx90a uses) on hardware before this run. `classify Quest c9828e2 517c6a7` is `mixed`, covering the whole prefill and topk implementation, so a carry-forward was never available here. What this run uses instead: the method of the `517c6a7` validations on linux-gfx942 and linux-gfx1100 (README build, seven suites, the recorded fp64 harness, `prefill_time.py` with its default method, end-to-end). Since there are no earlier gfx90a timing figures to compare with, `9cb8bee` was also built on this host with the same README command (`agent_space/quest/base`, a copy of the clone checked out at `9cb8bee`). Both heads were timed interleaved in the same session.
+
+- **Build**: `agent_space/quest/build_readme.sh <tree> 32` (README Linux block verbatim with `-DCMAKE_HIP_ARCHITECTURES=gfx90a`, after `rm -rf build`, `ninja -j 32`; the two trees built side by side, 64 jobs in total), fork build wrapped `utils/timeit.sh Quest compile`: rc 0, 8/8, **1435 s**, 0 errors, 18 warning lines (the known `nodiscard hipError_t` host code), `CMAKE_BUILD_TYPE=Release` from the default, `--offload-arch=gfx90a` on all 8 compile lines. `batch_prefill.cu` is 1425 s of that; every other object takes 52 s or less. The `9cb8bee` build: rc 0, 8/8, `batch_prefill.cu` 1419 s, same warnings.
+- **Tests**: `env PYTHONPATH=<fork>:<job>/pylib-test python -m pytest <fork>/quest/tests -p no:cacheprovider -v -rs` (transformers 4.37.2, tokenizers 0.15.2, huggingface-hub 0.24.7, pytest 7.3.2; `pylib-test` installed with `$FLEET_VENV/bin/pip install --no-deps --target`), wrapped `timeit.sh Quest test`: **202 passed, 28 skipped, 0 failed** (25.1 s). rope 64, estimate 9, decode_attention 6, approx_attention 42, decode_launch_shape 3, topk 49 + 15 skipped (k >= kv_len), prefill_attention 29 + 13 skipped (qo_len > kv_len). This matches the record on every other platform. On gfx90a it is the first run of topk and prefill (at `c9828e2` both failed with `AttributeError`, 124 passed).
+- **fp64 reference harness** (`notes-prefill-harness.md`: `prefill_harness.cu` and `build.sh` extracted verbatim, `ARCH=gfx90a`, built against the fork tree; `agent_space/quest/harness/checkall.sh`, wrapped `timeit.sh Quest test`). Every binary reports `device mma shape wave=64 op_elems=4`. **CFG 0-9 100/100, and CFG 10 and 11 10/10 each, so 120/120.** Largest error per configuration over the 10 shapes, max |dO| / max |dLSE|: CFG 0 1.1e-3 / 5.3e-4; 1 1.1e-3 / 5.3e-4; 2 1.0e-3 / 3.4e-4; 3 1.1e-3 / 7.6e-4; 4 1.4e-3 / 7.8e-4; 5 (bf16) 9.8e-3 / 6.5e-3; 6 (bf16) 6.3e-3 / 4.4e-3; 7 1.2e-3 / 6.5e-4; 8 1.0e-3 / 9.0e-4; 9 1.3e-3 / 7.8e-4; 10 1.1e-3 / 7.6e-4; 11 (bf16) 7.4e-3 / 5.3e-3. Negative control (`-DNEGCTRL=true`) on CFG 0, 1 and 10: **1/10 each** (the 1 x 17 shape, where both causal rules agree; elsewhere max |dO| up to 3.3, |dLSE| up to 11). The bf16 configurations run the gfx90a-only form: CFG 5's device assembly (`build.sh ... 5 --cuda-device-only -S`) has 384 `v_mfma_f32_16x16x16bf16_1k`. So bf16 (CFG 5, 6, 11) passing is the first hardware evidence for that form.
+- **Kernel alone** (harness CFG 100: 32 heads x 128, fp16, causal, page 16, nfx 2 forced, mean of 20 launches; `harness/ab.sh`, 3 rounds, `9cb8bee` then `517c6a7` in each round, separate processes). Range over the 3 rounds, ms, `9cb8bee` / `517c6a7`: 1 x 4096 0.802-0.809 / 0.802-0.802; 128 x 4096 0.817-0.818 / 0.818-0.818; 1024^2 0.462-0.469 / 0.461-0.462; 1024 x 4096 1.717-1.720 / 1.717-1.718; 4096^2 3.135-3.137 / 3.133-3.135; 8192^2 10.28-10.30 / 10.29-10.29. **Identical within 0.3 %**, as the review's instruction-identical finding predicts.
+- **Prefill time through the operator against SDPA** (`agent_space/quest/prefill_time.py`, the recorded script with no environment variables, i.e. the 2026-11-20 MI300X method: causal, 32 heads x 128, fp16, page size 16, `is_causal` where qo = kv and `causal_lower_right` where qo < kv, mean of 20 (5 for the large shapes) after 3 warmups). Three rounds, `517c6a7` and `9cb8bee` interleaved, each wrapped `timeit.sh Quest test`, all rc 0 (`pt/{new,base}_{1,2,3}.out`). Median (range) over the three runs, ms. SDPA is the median over all six runs:
+
+| qo x kv | Quest `517c6a7` | Quest `9cb8bee` (same session) | torch SDPA | ratio | kernel alone (`517c6a7`) | max abs diff vs SDPA |
+|---|---|---|---|---|---|---|
+| 1 x 4096 | 0.638 (0.638-0.652) | 0.636 (0.636-0.636) | 0.272 | 2.35 | 0.802 (nfx 2 forced) | 6.1e-05 |
+| 128 x 4096 | 0.910 (0.903-0.911) | 0.906 (0.901-0.912) | 0.771 | 1.18 | 0.818 | 1.2e-04 |
+| 1024 x 1024 | 0.562 (0.559-0.563) | 0.562 (0.558-0.562) | 0.315 | 1.78 | 0.462 | 2.0e-03 |
+| 1024 x 4096 | 1.812 (1.808-1.826) | 1.811 (1.807-1.816) | 1.571 | 1.15 | 1.718 | 1.2e-04 |
+| 4096 x 4096 | **3.189** (3.184-3.194) | 3.191 (3.190-3.192) | 2.054 | **1.55** | 3.134 | 2.0e-03 |
+| 8192 x 8192 | 10.180 (10.176-10.226) | 10.167 (10.159-10.188) | 6.099 | 1.67 | 10.29 | 2.0e-03 |
+| 16384 x 16384 | 37.361 (37.306-37.476) | 37.425 (37.401-37.494) | 22.490 | 1.66 | -- | 2.0e-03 |
+
+  Do the timing rows match this platform's earlier figures? There are no earlier gfx90a prefill figures (see the correction above). Against `9cb8bee` built and timed in the same session, every row matches within 1 %, in both directions, through the operator and for the kernel alone. The change does not move gfx90a's prefill time, consistent with the instruction-identical device code. Every shape from 128 x 4096 up is within 2x of SDPA (4096^2 at 1.55x). 1 x 4096 is 2.35x, the operator's per-call host work, as on every other GPU. The plan's target and the 2026-11-23 ruling (prefill within 2x of SDPA) hold here. The 1 x 4096 kernel figure is nfx 2 forced (harness CFG 100); the operator picks nfx 1 there, which is why the operator reads faster than the kernel column.
+- **End-to-end**: `NousResearch/Llama-2-7b-chat-hf` at `351844e75ed0bcbbe3f10671b3c808d2b83894ee`, downloaded into `<job>/models` with `huggingface_hub.snapshot_download` (safetensors, json, tokenizer). `do_sample` is false in `generation_config.json` (original kept as `.orig`). Script: `agent_space/quest/e2e/example_textgen.py` (upstream's script with only `MODEL_PATH` changed), `PYTHONPATH=<fork>:<job>/pylib-e2e` (transformers 4.45.2, tokenizers 0.20.3, accelerate 1.0.1, sentencepiece 0.2.0, huggingface-hub 0.26.2). Runs: `--method hg`, `--method quest --token_budget 1024`, `--method quest --token_budget 128`, each wrapped `timeit.sh Quest test`, all rc 0, input length 103. Output from `Input Sequence Length` on, with Quest's two banner lines removed (`grep -v '^Quest allocates\|^Token budget'`): md5 **`b900af27eeb4170a5c47bc5940a2ca60` for all three**, the digest of every earlier record ("Reason: The rabbit is the only one who is not working hard. ..."). **Byte-identical.**
+- **CUDA gate**: not run here (no CUDA toolkit on this host). It is recorded at `517c6a7` by the porter round on the gfx950 host (real nvcc 12.8, sm_80, both trees 8/8, objects byte-identical with per-process names masked).
+- **Content and integrity**: `jargon.py --port Quest` clean (after `git fetch origin main:main` in the clone). The README's ROCm section documents the build used here. `audit-commits Quest` reports only the known `6e7d8db` gap. `git -C projects/Quest/src status --porcelain` empty at `517c6a7`. No fork edit, no push to the fork, no GitHub write besides this project branch.
+- **Two harness slips on this host, no effect on the evidence**: a first harness-build launch used a wrong per-binary log path, and the `pkill -f` used to stop it matched its own shell (exit 144). Its partial outputs were deleted and every binary was rebuilt from scratch before any run.
+
+State: linux-gfx90a `completed` at `517c6a7`.
+
+### Owed next (Quest at `517c6a7`)
+
+1. windows-gfx1151: first hardware run of the capped wave32 code on Windows (the review 2026-11-24 lists the configurations), queued last per the Windows-last rule.
+2. jeffdaily: the gfx950 operator host-path decision (porter round 2026-11-24 resumed, item 7) is still open.
