@@ -9328,3 +9328,5 @@ nvcc check: `cuda_pp.sh` (nvcc 12.8) of `2ce30148` against `4ae8babd`: 22 IDENTI
 - A gfx908 (MI100) hardware run by the coordinator is in progress and has shown tile test failures that are not yet explained, so one more porter round may follow.
 - Coordinator: re-time `test_tile_matmul.py` on the V100 with libmathdx (each fragment test now one case).
 - Validators revalidate at `4ae8babd` (26 Linux targets now).
+
+Addendum to the coordinator finding above (V100, same setup, each fragment test in its own process at `2ce30148`): float32 OK in 570 s, float16 OK in 774 s, float64 OK in 657 s, 2001 s in all. So at `2ce30148` every NVIDIA case passes (block sizes 32, 48, 64, 96) and the only CUDA-side problem left is the 33 minutes, which the reduced non-HIP case list addresses.
