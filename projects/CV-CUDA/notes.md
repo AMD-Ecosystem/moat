@@ -2404,3 +2404,9 @@ CUDA no-regression gate: NOT RUN here (no CUDA toolkit on this host). The gfx90a
 Docs: installation.rst "Building for AMD GPUs (ROCm)" unchanged this round. Jargon: `python3 utils/jargon.py --port CV-CUDA` reports only the known `b623dffa` hit ('fault-class', published June commit). Integrity: clean tree.
 Fix review PR draft: "Retested" now gives the gfx1201 counts at `310dd19d`, the "Upstream reply" says "Retested on MI250X (gfx90a) and Radeon AI PRO R9700 (gfx1201).", and the first "For jeff" bullet now names only gfx1100 as outstanding.
 State: linux-gfx1201 -> `completed` at `310dd19d`. linux-gfx1100 still last validated at `358edc33`.
+
+## Rulings by jeff 2026-11-24 (recorded by the checkup session)
+
+- Per-channel form for LinearBlend `uchar3` and LinearBlendPack `uchar4`: leave as is, not implemented.
+- Test copy races: the approved issue is filed upstream as https://github.com/CVCUDA/CV-CUDA/issues/309 (jeffdaily). The fix review draft and its `## Upstream reply` should point to #309 for the copy-race failures; the test fix itself is not part of this PR.
+- `v_fma_mixlo_f16` single rounding: already reported upstream with a fix in review, https://github.com/llvm/llvm-project/pull/236759 (ROCm backport request https://github.com/ROCm/llvm-project/issues/5339). No new issue; deferral `amdgpu-fma-mixlo-f16-single-rounding` marked filed with that URL; the HIP-path workaround stays. Unverified: #236759 keeps the fold when both operations carry `contract`, which HIP's default contraction may supply, so the workaround may still be needed after it lands. The "where to file the compiler bug" item leaves the draft's "For jeff" list.

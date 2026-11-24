@@ -59,10 +59,11 @@
       "component": "llvm-amdgpu",
       "summary": "AMDGPU backend folds fptrunc(fma(a,b,c)) f32->f16 into one v_fma_mixlo_f16, which rounds once to half instead of to float then half; 230 of 4194304 random inputs differ on gfx90a (AMD clang 24.0.0git d6f6cb69, HIP 7.16.26385), under every -ffp-contract setting. Reproducer in projects/CV-CUDA/notes.md (Fix round 2026-11-24).",
       "refs": [
-        "projects/CV-CUDA/notes.md"
+        "projects/CV-CUDA/notes.md",
+        "https://github.com/ROCm/llvm-project/issues/5339"
       ],
-      "status": "open",
-      "upstream_issue": null,
+      "status": "filed",
+      "upstream_issue": "https://github.com/llvm/llvm-project/pull/236759",
       "created_at": "2026-11-24T01:37:14Z",
       "decided": null
     }
