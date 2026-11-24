@@ -5844,6 +5844,31 @@ Checklist line for the issue's Tracking section (draft; nothing posted):
 - [ ] rocBLAS complex GEMM leaves columns past 2**21 unwritten on gfx12 (ROCm/rocm-libraries#14983): split the wide k-point products in pbc/df until it is fixed
 ```
 
+### (h) on MI300X (gfx942), 2026-11-24 (fleet job, linux-gfx942 MI300X, evidence for the draft above; nothing pushed, no `pr-1054-*` branch touched)
+Requested by jeff: the draft's second-GPU paragraph. The branch was read at cb7cd14e (`git ls-remote`/fetch; tip unchanged) and checked out detached in a scratch worktree beside a detached 871a54a7 worktree; nothing was committed or pushed on either.
+- **Environment.** AMD Instinct MI300X (`gcnArchName` b'gfx942:sramecc+:xnack-'), `HIP_VISIBLE_DEVICES=0` from the dispatcher, all GPU work under `ulimit -c 0`. TheRock ROCm SDK 10.1.0 pip, `LD_LIBRARY_PATH=$(rocm-sdk path --root)/lib`; job venv numpy 2.2.6, scipy 1.17.1, cupy-rocm-7-0 14.2.0, pyscf 2.14.0, pyscf-dispersion 1.7.0, geometric 1.1.1, basis-set-exchange 0.12, MCFun 0.2.6, h5py 3.16.0, pytest 9.2.0, pytest-timeout 2.4.0, cmake 3.31.6.
+- **Build, once, in the master worktree:** `GPU4PYSCF_BACKEND=hip HIP_ARCHITECTURES=gfx942 CMAKE_CONFIGURE_ARGS='-DCMAKE_HIP_FLAGS=-mllvm=-disable-machine-licm -DCMAKE_SHARED_LINKER_FLAGS=-mllvm=-disable-machine-licm' CMAKE_BUILD_ARGS='--verbose --parallel 28' python setup.py build_py`: exit 0 in 94 s, 11 libraries, `--offload-arch=gfx942` only, the flag on 96/96 HIP compile and 11/11 `--hip-link` lines. The branch changes only Python (`git diff --stat 871a54a7 cb7cd14e`: pbc/df/aft_jk.py, ft_ao.py, grad/krhf.py, grad/kuhf.py), so the branch worktree got copies of the 11 libraries and the generated `_build_config.py` (`BACKEND = 'hip'`).
+- **The gate is off here:** with `PYTHONPATH=<branch worktree>`, `gpu4pyscf.BACKEND` = 'hip' and `gpu4pyscf.pbc.df.ft_ao.COMPLEX_GEMM_MAX_N` = **None** (on master the name does not exist). **And the defect is absent on this GPU**, so off is right: the CuPy reproducer `(n, 6) @ (6, 6)` against NumPy, complex128 and complex64 at n = 2^21, 2^21 + 1 and 2^21 + 64, gives 0 wrong rows in every case (on the R9700 it gave 1 and 64).
+- **Tests:** all 62 pbc test files, one pytest process per file, CI marker selection (`-p no:xdist -m 'not slow and not benchmark and not special' -k 'not _high_cost'`, `OMP_NUM_THREADS=2`, `timeout -k 30 1800` per file, `--timeout 1500`), two files at a time per tree, both trees at once (`utils/timeit.sh gpu4pyscf test`, 605 s). Counts from junit:
+
+| directory | master 871a54a7 | branch cb7cd14e |
+|---|---|---|
+| pbc/df | 26/112/6/4 | 26/112/6/4 |
+| pbc/dft | 113/44/37/0 | 113/44/37/0 |
+| pbc/grad | 116/77/3/0 | 116/77/3/0 |
+| pbc/scf | 80/77/2/13 | 80/77/2/13 |
+| pbc/gw | 0/0/0/21 | 0/0/0/21 |
+| pbc/gto, hessian, lib, properties, tools, x2c | 67/5/11/0 | 67/5/11/0 |
+| **total (814 tests)** | **402/315/59/38** | **402/315/59/38** |
+
+  **Per test: 0 differences** (same outcome for all 814 test ids). test_multigrid_v2.py exits 5 on both (its one test is skipped: multigrid-v2 is off by default upstream).
+- **Limit of this evidence, stated in the paragraph:** on gfx942, 294 of master's failures stop at `assert np.all(nsp_max > 0)` in `ft_ao_scheme` (gpu4pyscf/pbc/df/ft_ao.py:759, cause A, fixed by #1056), and **the six target tests are among them, on both trees**. So on master alone these runs show that nothing changes, but they do not drive the changed products on this GPU; the paragraph says so rather than implying more.
+
+Paragraph for the draft body (after the test-plan table; ASCII, one line):
+
+```
+Also run on an AMD Instinct MI300X (gfx942, 64-wide wavefronts) with the same ROCm, packages, build (`HIP_ARCHITECTURES=gfx942`) and selection. That GPU does not have the defect (a complex `(n, 6) @ (6, 6)` is exact past n = 2**21), COMPLEX_GEMM_MAX_N is None there, and nothing changes: the 62 pbc test files give 402/315/59/38 on master and on this branch, with the same result for every test. On that GPU the six tests above, and most of the other pbc failures, stop earlier at the `ft_ao_scheme` assert that #1056 fixes, so they do not reach the changed products on master.
+
 ## Validation 2026-11-23 (validator, linux-gfx1201 Radeon AI PRO R9700, fork moat-port @ 7d87782) -- COMPLETED
 
 Same fleet job as the porter rounds above, after the follow-up review passed at 7d877821 (`reviewed_sha` == `head_sha`). Environment as in "Porter 2026-11-23 ... eighth fix"; `HIP_VISIBLE_DEVICES=1`, `ulimit -c 0`; the GPU answered throughout (every liveness check passed, no hang, no reset).
