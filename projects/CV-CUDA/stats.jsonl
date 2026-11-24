@@ -158,3 +158,9 @@
 {"kind":"session","ts":"2026-11-24T04:38:37Z","epoch":1795495117.334655,"event":"end","platform":"linux-gfx1201"}
 {"kind":"phase","ts":"2026-11-24T04:34:02Z","phase":"cuda-compile","seconds":201.714,"exit":0,"cmd":"bash -c for t in nvcv_standalone nvcv_standalone_static; do cmake --build $0 -j16 -t $t -- -k 0 || exit 1; done; cmake --build $0 -j16 -- -k 0 /var/lib/jenkins/fleet/jobs/mi355-20261123-202352-nvcc-cv-cuda-e7a9-prompt/cv/fork/build-cuda"}
 {"kind":"phase","ts":"2026-11-24T04:37:26Z","phase":"cuda-compile","seconds":202.163,"exit":0,"cmd":"bash -c for t in nvcv_standalone nvcv_standalone_static; do cmake --build $0 -j16 -t $t -- -k 0 || exit 1; done; cmake --build $0 -j16 -- -k 0 /var/lib/jenkins/fleet/jobs/mi355-20261123-202352-nvcc-cv-cuda-e7a9-prompt/cv/up/build-cuda"}
+{"kind":"session","ts":"2026-11-24T04:56:01Z","epoch":1795496161.765818,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-24T05:01:44Z","phase":"compile","seconds":267.628,"exit":0,"cmd":"cmake --build projects/CV-CUDA/src/build-hip -j64"}
+{"kind":"phase","ts":"2026-11-24T05:17:55Z","phase":"compile","seconds":15.986,"exit":0,"cmd":"cmake --build projects/CV-CUDA/src/build-hip -j64"}
+{"kind":"phase","ts":"2026-11-24T05:17:56Z","phase":"test","seconds":1.246,"exit":0,"cmd":"projects/CV-CUDA/src/build-hip/bin/cvcuda_test_unit"}
+{"kind":"phase","ts":"2026-11-24T05:17:58Z","phase":"test","seconds":2.088,"exit":1,"cmd":"projects/CV-CUDA/src/build-hip/bin/nvcv_test_cudatools_system"}
+{"kind":"phase","ts":"2026-11-24T05:28:23Z","phase":"test","seconds":624.376,"exit":1,"cmd":"projects/CV-CUDA/src/build-hip/bin/cvcuda_test_system"}
