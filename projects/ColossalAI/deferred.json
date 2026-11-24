@@ -52,6 +52,33 @@
       "upstream_issue": null,
       "created_at": "2026-11-23T23:12:27Z",
       "decided": null
+    },
+    {
+      "id": "colossalai-gemma4-cpu-ddp-equivalence-host-dependent",
+      "kind": "other",
+      "component": null,
+      "summary": "Upstream test fragility, pre-existing: tests/test_model_zoo/test_gemma4.py::test_gemma4_cpu_ddp_equivalence[1-e2b] (CPU only) fails deterministically on a Zen 3 (AVX2, no AVX-512) host: model.layers.1.mlp.up_proj.weight error 6.11e-07 vs baseline 3.75e-08 (16.3x, limit 2x). Identical failure and numbers at upstream da3df39e; passed on the gfx942 host. Not a port defect; host-CPU dependence is a hypothesis. Reporting upstream is a person's call.",
+      "refs": [
+        "projects/ColossalAI/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-24T05:39:28Z",
+      "decided": null
+    },
+    {
+      "id": "flash-attn-2.8.3-triton-amd-bwd-dout-strides",
+      "kind": "other",
+      "component": null,
+      "summary": "flash-attn 2.8.3.post2 Triton AMD backend (RDNA fa2 path): _bwd_preprocess reads dout with out's strides, so a non-contiguous dout gives wrong dq/dk (1.63 abs error; dv correct), and fwd returns rng_state=None without dropout, breaking torch.compile against the fake op. Both fixed on flash-attn main via ROCm/aiter f0966b0a; no release has them. Blocks ColossalAI's fa2 on gfx11/gfx12 with the released flash-attn; proposed port change in notes.md (gate the Triton backend on a newer flash-attn).",
+      "refs": [
+        "projects/ColossalAI/notes.md",
+        "https://github.com/Dao-AILab/flash-attention"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-24T05:39:28Z",
+      "decided": null
     }
   ]
 }

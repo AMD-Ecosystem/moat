@@ -489,3 +489,84 @@ Each new branch keys on `torch.version.hip`, which is `None` on a CUDA PyTorch b
 - Tests: the fp8 skips keep `get_device_capability()[0] < 9` on CUDA, `TRITON_CUDA_SUPPORT` keeps `version.parse(torch.version.cuda) > 11.4` after a short-circuited `hip is not None`, and the flash-decoding reference keeps `ref_dtype = dtype` on CUDA. The new `tests/test_kernels` files run on any GPU (`torch.cuda.is_available()`).
 
 Proposed fix: none needed. Optional, not a regression: `assert(false)` without a return in `CastFunctor<__nv_bfloat16, uint8_t>` (sm_75 path) gives the pre-existing `#940-D` warning in base and head alike; it is upstream code and out of the port's scope.
+## Validation 2026-11-24 (linux-gfx1100 fleet job, validator role, fork `moat-port` at `e2b767e8`)
+
+Verdict: **validation-failed** for linux-gfx1100 (wave32). Every 1-GPU batch was run. The kernels, Triton kernels, optimizers, fp8 and SDPA attention all pass. The failure is in the fa2 path that the port enables on gfx11: with the only released flash-attn (2.8.3.post2, Triton AMD backend), 2 of 185 strict fa2 acceptance tests fail. Both causes are bugs in flash-attn. With them fixed in a scratch copy of flash-attn, 185 of 185 pass, so the port's adapter code is correct. A source change is still needed before gfx11 fa2 can ship: see "Proposed change for the porter" below. No source was changed and nothing was pushed to the fork.
+
+### Environment
+
+- One Radeon RX 7900-class GPU (gfx1100, wave32, 44.98 GiB visible, `HIP_VISIBLE_DEVICES=0`, pinned by the dispatcher and kept). Host CPU: AMD Ryzen Threadripper PRO 5975WX (Zen 3, AVX2, no AVX-512).
+- TheRock `10.2.0a20261022` wheels in the job venv (no system ROCm), as in the porter's "Build recipe" with gfx1100 device packages: `rocm[libraries,devel]`, `rocm-sdk-device-gfx1100`, `torch==2.13.0+rocm10.2.0a20261022`, `amd-torch-device-gfx1100`, `torchvision==0.28.0+rocm...`, **plus `amd-torch-device-gfx110x==2.13.0+rocm10.2.0a20261022`** (see the host gotcha below). HIP 7.17.26422, triton 3.8.0+git66b3f9ff.rocm10.2.0a20261022, Python 3.11.17. The amdsmi `.pth` fix was applied, and `torch.cuda.device_count()` returned 1. Requirements were installed with the torch/triton/rocm pins as constraints (transformers 5.17.0, peft 0.21.2, bitsandbytes 0.50.2).
+- Build: `BUILD_EXT=1 PYTORCH_ROCM_ARCH=gfx1100 MAX_JOBS=32 $FLEET_VENV/bin/python -m pip install --no-build-isolation --no-deps -v -e .` built all seven extensions (17 `--offload-arch=gfx1100` compiles, 201 s). `git -C projects/ColossalAI/src status --porcelain` stays empty.
+- flash-attn `v2.8.3.post2` built in the job directory with the Triton backend: `FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE BUILD_TARGET=rocm FLASH_ATTENTION_FORCE_BUILD=TRUE $FLEET_VENV/bin/python -m pip wheel --no-build-isolation --no-deps -v . -w wheels` (pure Python, under a minute), installed with `--no-deps`. It imports only with `FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE` set at run time; without it, `import diffusers` (pulled in by `colossalai.inference`) fails with `No module named 'flash_attn_2_cuda'`. Every GPU and CPU run below sets it.
+- All runs: `ulimit -c 0`, `timeout`, upstream's pytest flags (`-v -s -ra --tb=short --maxfail=10 --durations=20`), `FAST_TEST=1`, and the file lists of `.github/scripts/ci/run_colossalai_batch.sh`, called with pytest directly. The CPU batch ran with `CUDA_VISIBLE_DEVICES= HIP_VISIBLE_DEVICES=` (device count 0) and upstream's `cpu_tracebacks` path, concurrently with the GPU batches.
+
+Host gotcha (TheRock torch wheels on RDNA3): `amd-torch-device-gfx1100` carries only `torch/.kpack/torch_gfx1100.kpack`. aotriton's kernel images (`torch/lib/aotriton.images/amd-gfx110x/...`) ship in the family wheel `amd-torch-device-gfx110x`. Without it, SDPA's flash and memory-efficient backends fail with `hipErrorInvalidImage` ("device kernel image is invalid") while the math backend works. Installing the family wheel fixed it (max error against the math backend: 9.8e-4 fp16).
+
+### Results at `e2b767e8` (one gfx1100 GPU)
+
+| batch | result | skips / notes |
+|---|---|---|
+| new `tests/test_kernels` (layernorm, both softmaxes, MoE) | 155 passed | none |
+| 2 single-GPU core | 23 passed, 2 skipped | upstream HF5 guards (`test_runtime_compatibility.py:46,100`) |
+| 3 adam kernels | 62 passed | none |
+| 4a fp8 | 1 passed, 21 skipped | 21: "Test requires an fp8 GEMM", the port's probe. `scaled_mm_fp8_formats()` returns `None` on gfx1100, and torch itself refuses `_scaled_mm` for both the OCP and FNUZ pairs ("only supported on ... ROCm MI300+"). Expected for gfx11 (porter's note). `test_fp8_cast` passes |
+| 4b inference CUDA kernels | 60 passed, 108 skipped | 108: upstream's unconditional `test_convert_fp8.py` skip |
+| 4c Triton kernels | 372 passed, 65 skipped | 64 "Alibi kernel does not support new kcache layout yet", 1 unconditional `skip("cuda error")` (both upstream) |
+| 4d smoothquant | 4 skipped | the tests import modules upstream removed; they skip on CUDA too |
+| 4e flash decoding | 1391 passed, 193 skipped, 0 failed | 144 "requires vllm" (vLLM comparison, not installed); 49 "Required GPU memory is larger than capacity" (measured below) |
+| attention `COLOSSALAI_TEST_ATTENTION_BACKEND=sdpa -k gpu` | 198 passed, 370 skipped, 87 deselected | skips are the other backends' variants |
+| attention `=fa2 -k gpu` | **2 failed**, 183 passed, 383 skipped, 87 deselected | failures analysed below |
+| 4f strict fa3 (`=fa3 -k gpu`) | 10 failed, 19 skipped (maxfail) | all `ModuleNotFoundError: No module named 'flash_attn_3'`, as on gfx942; fa3 is `scoped_out` (Q2 ruling) |
+| 1 CPU core (GPUs hidden) | 357 passed, 1 failed, 599 skipped | skips are device-required guards; the failure is pre-existing upstream (below). 832 s, inside upstream's 15-minute budget |
+| runtime (JIT) path: worktree at the head, no prebuilt kernels, scratch `HOME`; `tests/test_kernels`, adam kernels, rms_layernorm, silu_and_mul, kv_cache_memcpy | 270 passed, 1 failed | all seven extensions built at first use. The failure is `test_cpu_adam_kernel[fp16-fp16]`, the registered unseeded fragility `colossalai-cpu-adam-fp16-test-unseeded`; run alone it passes (12 passed, twice) |
+
+Not run here (this job has one GPU and must not take more; a later job with four GPUs on this host runs them): batch 5 (2 GPUs), batch 11 (2 GPUs, apex), batches 6, 7, 8, 9, 9q (4 GPUs). Batch 10 (8 GPUs) is wave64-only. `tests:distributed` and `tests:apex-gemini` stay `owed`. Note for that job: TheRock's index also publishes `apex` (`https://nightly.repo.amd.com/rocm/pytorch/whl-next/apex/`), which batch 11 needs, and the job also needs the `amd-torch-device-gfx110x` wheel.
+
+### fa2 failures: two flash-attn 2.8.3.post2 Triton-backend bugs, fixed on flash-attn main
+
+1. `test_attention_gpu_actual_kernel_and_error[False-fa2]` (dense): `out` and `grad/v` align, but `grad/q` (2.34e-1, 155x baseline) and `grad/k` (2.16e-1, 139x) fail. Reproduced without ColossalAI: `flash_attn_func` with a contiguous `dout` gives dq/dk/dv errors of 1.3e-2/9.9e-3/1.3e-2 against float64 SDPA, and with the same `dout` as a transposed view (strides `(2048, 128, 1024, 1)`) dq and dk are off by 1.63 while dv stays 1.3e-2. Cause: `flash_attn_triton_amd/bwd_prefill_split.py` (the default `BWD_MODE=split`; `bwd_prefill_onekernel.py` has the same code) `_bwd_preprocess` addresses `DO` with `O`'s strides (`DO += bid * stride_ob + hid * stride_oh + q_start * stride_om` and a shared `offs_do`), so delta = rowsum(dO * O) is computed from the wrong elements whenever dout's layout differs from out's. `maybe_contiguous` passes such a tensor through, because its last stride is 1. ColoAttention's fa2 path returns `out.transpose(1, 2)` (`colossalai/shardformer/layer/attn.py:879-881`). Any caller that consumes that `(B, H, S, D)` view directly feeds a transposed dout. The shardformer models (`_llama_tf5.py`, `_vit_tf4.py`, ...) call `.permute(...).contiguous()` first, so their dout reaches flash-attn contiguous and they do not hit this.
+2. `test_attention_gpu_compile_forward_backward[fa2]`: `TypeError: expected Tensor() for op: torch.ops.flash_attn._flash_attn_forward.default` at `assert_size_stride(buf4, (2,), (1,), ...)`. The Triton backend's `fwd`/`varlen_fwd` return `rng_state = None` when dropout is 0 (`interface_fa.py:81,430`), while the registered fake op returns a `(2,)` int64 tensor, so any `torch.compile(fullgraph=True)` graph over fa2 fails on the Triton backend.
+
+Proof that the port is otherwise correct: a scratch copy of the installed flash-attn with `_bwd_preprocess` given its own `dout` strides and `rng_state = torch.empty((2,), dtype=torch.int64, device=q.device)` in both places, put first on `PYTHONPATH`: the fa2 acceptance batch gives **185 passed**, 383 skipped, 87 deselected. The direct repro gives matching dq/dk for both dout layouts.
+
+Upstream status: flash-attn main (`b038b497`, 2026-11-22) has moved the Triton AMD backend into ROCm/aiter (submodule `third_party/aiter` at `f0966b0a`). At that aiter commit, `_bwd_preprocess` takes `stride_dob, stride_doh, stride_dom, stride_dod`, and `interface_v2.py` always returns a tensor `rng_state`. Both bugs are fixed there. No flash-attn release carries the fix: PyPI and the tags stop at 2.8.3.post2. No upstream report is needed.
+
+### Proposed change for the porter (not made here)
+
+The fa2 enablement on gfx11/gfx12 (`colossalai/kernel/kernel_loader.py:137-144`, `_ROCM_FA2_TRITON_ARCHS`) is correct code, but with flash-attn 2.8.3.post2 it yields wrong dq/dk for non-contiguous upstream gradients and breaks `torch.compile`. Options, smallest first:
+- (a) Admit the Triton backend (gfx11, gfx12) only when the installed flash-attn is newer than 2.8.3.post2, that is, a build of flash-attn main with the aiter backend. With 2.8.3.post2, gfx11/gfx12 fall back to SDPA (which passes, 198/198). Document in the ROCm install section that RDNA needs flash-attn built from main with `FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE` at build and run time. Then a wave32 revalidation runs fa2 against such a build.
+- (b) Keep 2.8.3.post2 and work around (1) in ColoAttention's ROCm Triton path, for example by making the incoming gradient contiguous (a small autograd identity around the flash output). This does not fix (2), so `torch.compile` over fa2 on RDNA would stay broken. Not recommended.
+- (c) Drop gfx11/gfx12 from the fa2 enablement entirely (SDPA only on RDNA). This narrows Jeff's Q2 ruling ("Triton backend on RDNA"), so it needs his decision.
+
+(a) keeps the Q2 scope and needs no workaround code. The CK path on gfx942 is unaffected (fa2 185/185 there).
+
+### Batch 1 failure: pre-existing upstream, host-dependent
+
+`tests/test_model_zoo/test_gemma4.py::test_gemma4_cpu_ddp_equivalence[1-e2b]` (CPU only, world size 1): `149/150 tensors aligned`, `model.layers.1.mlp.up_proj.weight baseline 3.75e-08 test_err 6.11e-07 ratio 16.30 FAIL (> 2x baseline error)`. Deterministic (3 of 3 reruns with identical numbers). Upstream base `da3df39e` in a separate worktree, same venv: identical failure and numbers, so it is not the port. It passed on the gfx942 host. The likely difference is the host CPU (this one is Zen 3 with AVX2 only), which changes the CPU kernels torch dispatches. That is a hypothesis, not verified. Registered as `colossalai-gemma4-cpu-ddp-equivalence-host-dependent`.
+
+### Flash decoding: measured memory need of the 49 skipped cases
+
+The test catches `torch.cuda.OutOfMemoryError` and skips. Each skipped case was rerun unchanged with `pytest.skip` replaced to print the caught error (script in the job's scratch area). Allocation the reference requested, by case (`KV_GROUP_NUM` 1/2/16 and `HEAD_SIZE` 64/128 share each row):
+
+| cases | alibi | dtype | kv length | batch | single allocation tried | already allocated |
+|---|---|---|---|---|---|---|
+| 12 | yes | fp16 | 16384 | 32 | 490.36 GiB | 15.6-34.8 GiB |
+| 24 | yes | fp16/fp32 | 8192 | 32 | 126.41 GiB | 4.1-14.2 GiB |
+| 12 | yes | fp16/fp32 | 16384 | 7 | 50.50 GiB | 7.3-10.7 GiB |
+| 1 | no | fp32 | 16384 | 32 | 7.83 GiB | 35.47 GiB (about 43.3 GiB total) |
+
+The alibi cases' single allocation is the test's float alibi mask (batch x heads x S x S), larger than this card's 44.98 GiB. The 490 GiB cases exceed any single GPU, so a whole MI300X skips them too. The one non-alibi case needs about 43.3 GiB because on ROCm its reference is float64 (the port's change, so the tolerance measures the kernel); it does not fit beside the reference's other buffers on 44.98 GiB. No test was shrunk.
+
+### Gates
+
+- CUDA no-regression: not rerun (no nvcc in this job); the porter's nvcc 12.9 compile at this head is the recorded evidence, and the real-nvcc mi355 compile is still owed elsewhere.
+- `python3 utils/jargon.py --port ColossalAI`: clean. Integrity: the fork checkout is clean at `e2b767e8`.
+
+## Lesson for cuda-to-rocm: TheRock torch device wheels split kernels between a chip wheel and a family wheel
+
+Belongs in linux-host-setup.md (pip-installed ROCm). With TheRock's per-architecture torch wheels, `amd-torch-device-gfx1100` holds only the torch kernel pack. aotriton's images, which back SDPA's flash and memory-efficient backends, ship in the family wheel `amd-torch-device-gfx110x`. With only the chip wheel, `scaled_dot_product_attention` fails with `hipErrorInvalidImage` ("device kernel image is invalid") on any input that picks those backends, while the math backend works. Install both wheels, or check `torch/lib/aotriton.images/` exists. (ColossalAI, torch 2.13.0+rocm10.2.0a20261022)
+
+## Lesson for cuda-to-rocm: flash-attn 2.8.3's Triton AMD backward reads dout with out's strides
+
+Belongs in libraries.md (FlashAttention on ROCm). In flash-attn 2.8.3.post2's Triton AMD backend (the RDNA path, `FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE`), the backward preprocess indexes `dout` with `out`'s strides. A non-contiguous `dout` with last stride 1 (for example, the gradient of `out.transpose(1, 2)`) passes `maybe_contiguous` and gives wrong dq and dk while dv stays correct. The same backend returns `rng_state=None` without dropout, which breaks `torch.compile` against the op's fake implementation. Both are fixed on flash-attn main, where the backend comes from ROCm/aiter; no release had the fix as of 2026-11. Test an fa2 integration on RDNA with a transposed upstream gradient and under `torch.compile`, not only with a contiguous `dout`. (ColossalAI)

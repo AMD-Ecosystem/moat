@@ -207,47 +207,47 @@
   "covered": [
     {
       "id": "extension:cpu_adam_x86",
-      "note": "Builds ahead of time and at runtime on ROCm (the runtime build passes with_cuda=True so load() hipifies it); batch 3 CPUAdam/HybridAdam pass on gfx942."
+      "note": "Builds ahead of time and at runtime on ROCm (the runtime build passes with_cuda=True so load() hipifies it); batch 3 CPUAdam/HybridAdam pass on gfx942. gfx1100 (wave32): batch 3 passes; built at runtime too."
     },
     {
       "id": "extension:fused_optim_cuda",
-      "note": "l2norm shuffles take the 32-thread warp mask; batch 3 FusedAdam passes on gfx942."
+      "note": "l2norm shuffles take the 32-thread warp mask; batch 3 FusedAdam passes on gfx942. gfx1100 (wave32): batch 3 FusedAdam passes."
     },
     {
       "id": "extension:layernorm_cuda",
-      "note": "Welford shuffles pass width 32; tests/test_kernels/test_layernorm_kernel.py 45/45 on gfx942 (42/45 fail without the width fix)."
+      "note": "Welford shuffles pass width 32; tests/test_kernels/test_layernorm_kernel.py 45/45 on gfx942 (42/45 fail without the width fix). gfx1100 (wave32): tests/test_kernels layernorm passes (155/155 for the directory)."
     },
     {
       "id": "extension:moe_cuda",
-      "note": "cub aliased to hipcub; tests/test_kernels/test_moe_kernels.py passes on gfx942."
+      "note": "cub aliased to hipcub; tests/test_kernels/test_moe_kernels.py passes on gfx942. gfx1100 (wave32): tests/test_kernels MoE passes."
     },
     {
       "id": "extension:inference_ops_cuda",
-      "note": "Inline PTX and cuda_fp8 E5M2 conversions replaced under USE_ROCM (bit-exact against torch.float8_e5m2), bf16 builders, CastFunctor for HIP bf16 lanes, LDS check; batches 4b and 4e pass on gfx942."
+      "note": "Inline PTX and cuda_fp8 E5M2 conversions replaced under USE_ROCM (bit-exact against torch.float8_e5m2), bf16 builders, CastFunctor for HIP bf16 lanes, LDS check; batches 4b and 4e pass on gfx942. gfx1100 (wave32): batches 4b (60 passed) and 4e (1391 passed, 0 failed) pass."
     },
     {
       "id": "extension:scaled_masked_softmax_cuda",
-      "note": "Fixed 32-thread warp on ROCm; tests/test_kernels/test_scaled_softmax_kernels.py passes on gfx942."
+      "note": "Fixed 32-thread warp on ROCm; tests/test_kernels/test_scaled_softmax_kernels.py passes on gfx942. gfx1100 (wave32): tests/test_kernels softmax passes."
     },
     {
       "id": "extension:scaled_upper_triangle_masked_softmax_cuda",
-      "note": "Same change; tests/test_kernels/test_scaled_softmax_kernels.py passes on gfx942."
+      "note": "Same change; tests/test_kernels/test_scaled_softmax_kernels.py passes on gfx942. gfx1100 (wave32): tests/test_kernels softmax passes."
     },
     {
       "id": "build:extension-loader",
-      "note": "AOT (BUILD_EXT=1, editable and the documented non-editable install from a fresh clone) and runtime builds work with ROCm torch; flags translated for hipcc; CUDA path compile-checked with nvcc (notes)."
+      "note": "AOT (BUILD_EXT=1, editable and the documented non-editable install from a fresh clone) and runtime builds work with ROCm torch; flags translated for hipcc; CUDA path compile-checked with nvcc (notes). gfx1100: AOT editable build and the runtime (JIT) build of all seven extensions work."
     },
     {
       "id": "python:attention-backends",
-      "note": "fa2 enabled on ROCm behind an AMD GPU check (Q2 ruling); strict fa2 acceptance 185 passed on gfx942 with flash-attn 2.8.3 (CK backend)."
+      "note": "fa2 enabled on ROCm behind an AMD GPU check (Q2 ruling); strict fa2 acceptance 185 passed on gfx942 with flash-attn 2.8.3 (CK backend). gfx1100: sdpa 198 passed; fa2 via flash-attn 2.8.3.post2's Triton backend fails 2 of 185 from two flash-attn bugs (validation-failed, see notes)."
     },
     {
       "id": "python:fp8",
-      "note": "torch._scaled_mm dtypes from a one-time device probe (FNUZ on gfx942); batch 4a 22 passed on gfx942. The compile gate (cuda_arch < 89) reads 94 on gfx942 and the compiled OCP casts match eager."
+      "note": "torch._scaled_mm dtypes from a one-time device probe (FNUZ on gfx942); batch 4a 22 passed on gfx942. The compile gate (cuda_arch < 89) reads 94 on gfx942 and the compiled OCP casts match eager. gfx1100: the probe returns None (torch refuses _scaled_mm on gfx11), fp8 GEMM tests skip by it; test_fp8_cast passes."
     },
     {
       "id": "python:triton-kernels",
-      "note": "num_warps capped from the device warp size (rms_layernorm); batch 4c 372 passed on gfx942."
+      "note": "num_warps capped from the device warp size (rms_layernorm); batch 4c 372 passed on gfx942. gfx1100: batch 4c 372 passed."
     },
     {
       "id": "python:accelerator-and-cli",
@@ -255,31 +255,31 @@
     },
     {
       "id": "tests:optimizer-kernels",
-      "note": "Batch 3: 62 passed on gfx942."
+      "note": "Batch 3: 62 passed on gfx942. gfx1100: 62 passed."
     },
     {
       "id": "tests:inference-cuda-kernels",
-      "note": "Batch 4b: 60 passed, 108 skipped (upstream's unconditional fp8 conversion skip); batch 4e: 1326 passed, 258 skipped (memory guard on the 24 GiB partition, upstream's long-sequence skip)."
+      "note": "Batch 4b: 60 passed, 108 skipped (upstream's unconditional fp8 conversion skip); batch 4e: 1326 passed, 258 skipped (memory guard on the 24 GiB partition, upstream's long-sequence skip). gfx1100: 4b 60 passed, 108 skipped; 4e 1391 passed, 193 skipped (144 vllm, 49 memory guard: 7.8-490 GiB single allocations measured, notes)."
     },
     {
       "id": "tests:inference-triton-kernels",
-      "note": "Batch 4c: 372 passed, 65 skipped (upstream's own unconditional skips)."
+      "note": "Batch 4c: 372 passed, 65 skipped (upstream's own unconditional skips). gfx1100: 372 passed, 65 skipped (same upstream skips)."
     },
     {
       "id": "tests:fp8",
-      "note": "Batch 4a: 22 passed on gfx942. Batch 7 (4 GPUs) belongs to the owed tests:distributed runs."
+      "note": "Batch 4a: 22 passed on gfx942. Batch 7 (4 GPUs) belongs to the owed tests:distributed runs. gfx1100: batch 4a 1 passed, 21 skipped by the fp8 GEMM probe (gfx11 has none)."
     },
     {
       "id": "tests:smoothquant",
-      "note": "Batch 4d: all four tests skip on every platform at this head; they import modules upstream removed (op_builder.smoothquant, inference.quant, int8_rotary_embedding_fwd)."
+      "note": "Batch 4d: all four tests skip on every platform at this head; they import modules upstream removed (op_builder.smoothquant, inference.quant, int8_rotary_embedding_fwd). gfx1100: 4 skipped, same reason."
     },
     {
       "id": "tests:single-gpu-core",
-      "note": "Batch 2: 23 passed, 2 skipped (upstream HF5 compatibility guards)."
+      "note": "Batch 2: 23 passed, 2 skipped (upstream HF5 compatibility guards). gfx1100: 23 passed, 2 skipped."
     },
     {
       "id": "tests:new-kernel-tests",
-      "note": "Added tests/test_kernels (layernorm, both softmaxes, MoE): 155 passed on gfx942."
+      "note": "Added tests/test_kernels (layernorm, both softmaxes, MoE): 155 passed on gfx942. gfx1100: 155 passed."
     },
     {
       "id": "docs:rocm-install",
