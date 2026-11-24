@@ -15,3 +15,6 @@
 {"kind":"phase","ts":"2026-11-23T22:38:19Z","phase":"compile","seconds":569.52,"exit":0,"cmd":"ninja -C projects/HierarchicalKV/src/build-hip-repro -j 64"}
 {"kind":"phase","ts":"2026-11-24T00:56:10Z","phase":"compile","seconds":569.17,"exit":0,"cmd":"ninja -C projects/HierarchicalKV/src/build-hip -j 96"}
 {"kind":"session","ts":"2026-11-24T02:59:56Z","epoch":1795489196.553643,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-24T03:06:51Z","epoch":1795489611.086819,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-24T03:22:38Z","phase":"compile","seconds":583.082,"exit":0,"cmd":"bash -c cmake -S projects/HierarchicalKV/src -B projects/HierarchicalKV/src/build-hip -G Ninja -DHKV_USE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_PREFIX_PATH=/var/lib/jenkins/fleet/jobs/mi300b-20261123-190153-review-hierarchicalkv-prompt/venv/lib/python3.11/site-packages/_rocm_sdk_devel > ../agent/cmake-hip.log 2>&1 && cmake --build projects/HierarchicalKV/src/build-hip -j 96 >> ../agent/cmake-hip.log 2>&1"}
+{"kind":"session","ts":"2026-11-24T03:31:30Z","epoch":1795491090.451023,"event":"end","platform":"linux-gfx942"}
