@@ -8,14 +8,10 @@
   "ext_type": "torch-extension",
   "stage": "porting",
   "adopted_at": "2026-11-05T22:45:32Z",
-  "updated_at": "2026-11-24T05:06:14Z",
+  "updated_at": "2026-11-24T05:06:37Z",
   "head_sha": "5c32be5ff0d0b55daa8f4ef9d73b2d43d346c8a8",
   "depends_on": [],
-  "porting": {
-    "arch": "linux-gfx942",
-    "since": "2026-11-24T00:49:18Z",
-    "holder": "3c62d5a5d771"
-  },
+  "porting": null,
   "waivers": {},
   "platforms": {
     "windows-gfx1151": {
@@ -105,8 +101,8 @@
     "at": "2026-11-05T23:06:07Z"
   },
   "porting_released": {
-    "arch": "linux-gfx90a",
-    "since": "2026-11-20T21:33:03Z",
-    "at": "2026-11-20T21:41:41Z"
+    "arch": "linux-gfx942",
+    "since": "2026-11-24T00:49:18Z",
+    "at": "2026-11-24T05:06:37Z"
   }
 }
