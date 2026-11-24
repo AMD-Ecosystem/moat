@@ -8885,3 +8885,7 @@ Head `4e0d02ab`, stage `porting`, lock held by the gfx90a porter job; gfx90a `va
 ## Ruling (Jeff Daily, 2026-11-24): contraction, option (a), candidate G
 
 Question: the coordinator summary of 2026-11-24 (porting session 33, the per-arch contraction and candidate G evidence sessions). Options put: (a) candidate G (hipRTC `-ffp-contract=on`, plus `#pragma clang fp contract(fast)` in `evaluate_node_solid_angle` only, guarded so it applies only when `fuse_fp` is on); (b) plain `-ffp-contract=on`; (c) keep `fast-honor-pragmas` and add a pragma region around the box-distance functions only. Jeff: "I choose a." This supersedes the 2026-11-20 ruling (b) `fast-honor-pragmas` for hipRTC kernels.
+
+## Ruling (Jeff Daily, 2026-11-24): gfx908 intermittent error 700
+
+Question: the coordinator note on gfx908 (MI100) at 4e0d02ab; options (a) ship gfx908 in the wheel, listed as built but not validated with the known issue; (b) investigate first (minimal non-Warp HIP program on the same nodes, node names recorded, bisect to the first faulting kernel); (c) drop gfx908 from the release targets. Jeff: "Start with (b), but if we can't figure it out, then (a)."
