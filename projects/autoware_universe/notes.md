@@ -538,3 +538,64 @@ Options for item 1:
 - **Binary equivalence on gfx942.** 4f3358e was built in a separate worktree (`<job>/sB`, a path of the same length as `<job>/s1`, because `CHECK_CUDA_ERROR` instantiates `cuda_check_error<char const(&)[N]>` on the `__FILE__` length). `utils/codeobj_diff.py <job>/sB/install/<pkg> <job>/s1/install/<pkg>` gives `verdict=identical` for all three packages (7 + 3 + 8 ELF files; exported symbols and device ISA identical). A first comparison from a path one character longer differed only in those `__FILE__`-length template names, which is how that cause was found.
 - **CUDA path.** The headers are force-included only on the `USE_HIP` branch (`$<$<COMPILE_LANGUAGE:HIP>:-include;...>`), so nothing a CUDA build compiles changed. This host has no nvcc, so the CUDA compile was not re-run; by the same reasoning the delta is invisible to nvcc.
 - **Commit hygiene.** Title 68 chars, `[ROCm]` right (HIP-only headers), AI disclosure present, fenced Test Plan, no trailer, ASCII, `jargon.py --port autoware_universe` clean.
+
+## Validation 2026-11-24 (validator, linux-gfx942 fleet job; AMD Instinct MI300X gfx942, HIP_VISIBLE_DEVICES=3 pinned by the dispatcher; fork `moat-port` at 129d61b)
+
+Verdict: **completed** (wave64). It is a full run, not a carry-forward: the platform came back from `validation-failed` at 9574fe1. Every GPU test of the three packages passes, every node was run end to end, and the ground-segmentation reference comparison is exact. Two probes exit non-zero, and both are known upstream behaviour, reproduced exactly as in earlier rounds (below). The fork clone is clean and checked out at `129d61b2dc9d63a7cab5d4b1e4bebf5f2c92030e`.
+
+### Environment
+
+As in `## Porter round 4` (same job):
+- TheRock ROCm 10.2.0 wheels in `$FLEET_VENV`, HIP 7.17.26434; no system ROCm.
+- `autoware_cuda_utils` from AMD-Ecosystem/autoware_cuda `992d7034b5396900593126e8f19a1982ae7bc682`; cuda_blackboard `9e0fb865cd2e38dcc0db5e0e55497f40fb71f733`. Both built inside the job directory.
+- `MAX_JOBS=48`. Every GPU step ran under `ulimit -c 0` and `timeout`.
+
+### Build
+
+Recipe of the Porter stage 1 section, with the fmt link workaround (environment only). rc 0, 1 min 38 s. All three packages configure with `cuda was not found, building <pkg> with HIP 7.17.26434`.
+
+### Tests (driver `agent_space/validate_all.sh`; per-step logs in `<job>/logs/val-*.log`)
+
+- **Preprocessor gtests**, `colcon test --packages-select autoware_cuda_pointcloud_preprocessor --ctest-args -R test_cuda --repeat until-fail:20`: test_cuda_combine_cloud_handler 8/8 and test_cuda_pointcloud_preprocessor 20/20, 20 `[  PASSED  ]` blocks each, "100% tests passed".
+- **Occupancy grid** (upstream tests disabled, #7724; built out of tree from the fork's test sources, `harness/occupancy_grid_map`), `--repeat until-fail:20`: "100% tests passed, 0 tests failed out of 6":
+  - test_utils, costmap_unit_tests, fusion_policy_unit_tests
+  - test_pointcloud_based_method (GPU node)
+  - test_synchronized_grid_map_fusion_node
+  - test_ogm_geometry
+- **Ground-segmentation reference comparison**, `harness/ground_segmentation`, built against the installed 129d61b library:
+  - `./gs_fixed 20 <seed>` for seeds 7, 11 and 23: 60 of 60 runs with 0 label mismatches, 0 missing, and identical to run 0. Label hashes `04516cba11e18f95`, `7cd4bb48f4483e7f` and `957f6d786c501316`, identical to every earlier round.
+  - Naive wave64 variant (`gs_naive 3 7`): 66,910 mismatches, all in the 180 odd sectors, hash `53c7d5f9646c3315` (unchanged), so the scene still detects the fault.
+  - The scenes dumped by this build (`gs_fixed dump <seed>`) are byte-identical to the round-3 copies.
+- **Each node end to end** (probes in the job's `agent_space/`, plain `PointCloud2` in and out):
+  - `cuda_voxel_grid_downsample_filter_node`:
+    - Power-of-two grid: 4096 of 4096 voxels, max centroid error 1.74e-6: PASS.
+    - 40x25x8 grid: 27,548 outputs for 8,000 voxels (probe rc 1). This is exactly the upstream radix `end_bit` bug (`cuda-voxel-downsample-radix-end-bit`; the CPU model predicts 27,548), not the port's.
+  - `cuda_pointcloud_preprocessor_node`, against the numpy kernel model:
+    - vx 0: 54,839 of 57,600 points (2,111 cropped, 806 ring outliers).
+    - vx 10 m/s: 54,837 points.
+    - Max error 3.81e-6 m both: PASS. The counts differ from round 2's 54,831 / 54,827 only because round 2 ran the same probe with seed 5 and this driver uses seed 7.
+  - `cuda_concatenate_and_time_sync_node` vs upstream's CPU node:
+    - Stationary: max GPU-vs-CPU difference 3.81e-6 m.
+    - vx 5 m/s with `lidar_r` 40 ms late: both nodes shift `lidar_r` by +0.200 m; max difference 3.81e-6 m.
+    - PASS both.
+  - `cuda_polar_voxel_noise_filter_node` vs the CPU node: identical point sets on seeds 3, 11 and 29 (66,373 / 66,442 / 66,259 kept).
+  - `cuda_polar_voxel_outlier_filter_node` vs the CPU node:
+    - Seeds 3 and 11: identical (47,064 / 46,925).
+    - Seed 29 (probe rc 1): the same count, 47,007, with the same one-point swap every earlier round saw. Re-running round 1's `ambig.py` shows both halves are voxel-edge rounding:
+      - The GPU-only point 60747 keeps its partner 60977, which lies 3.8e-6 voxel units below the 60 m radial edge. The CPU node bins 60977 into the next radial voxel, so the CPU drops 60747.
+      - The CPU-only point 14844 loses its partner 6876 under float32 arithmetic. 6876 is the scene's only point whose voxel differs between float32 and double, so the GPU drops 14844.
+    - Upstream design (the CUDA kernel uses the same float path), not a ROCm fault. Deterministic, and identical to rounds 1-3.
+  - `cuda_scan_ground_segmentation_filter_node` (shipped parameter file), harness scenes for seeds 7, 11 and 23: both outputs equal the CPU reference's ground and non-ground sets exactly (seed 7: 150,516 / 4,848), no duplicates: PASS.
+  - **Component container** with the ground-segmentation and preprocessor nodes, loaded in the order that works (`container_prefirst.launch.py`): ground segmentation passes twice and the preprocessor once. The other load order is still the upstream issue `autoware-gs-component-preloads-preprocessor-components`.
+  - **Occupancy grid, projective map** (`OccupancyGridMapProjectiveBlindSpot`, scan origin 1.8 m above base_link; covered by no upstream test):
+    - All five `map_projective::*` kernels launch, 5 frames each.
+    - Wall cells 99, behind and side cells 50, free cells to 5.5 m and unknown from there to the wall. This is what round 1 recorded and matched against a hand computation of upstream's projection formula.
+    - The round-3 copy of this probe (`test_ogm_proj.py`) still asserted the fixed map's free range (2-9 m), so its first run here failed on that assertion. A corrected copy (`test_ogm_proj_v.py`: free for 2-5.5 m, unknown for 5.5-9 m, other assertions unchanged) passes. The GPU output is the same in both runs.
+- **Non-GPU tests**, full `colcon test` of the three packages: copyright, cpplint and lint_cmake pass. The only failing xunit files are the two `cppcheck` results (binary not installed in this environment); xmllint does not run. Both are the environment gaps of every earlier round. Ground segmentation registers no tests.
+
+### Gates
+
+- **CUDA compile: not run here.** This host has no nvcc. The last real nvcc check is at 9574fe1 (`## CUDA no-regression compile check`). Since then the CUDA-visible changes are `bb4cd9a` (one copy-kind argument in a `.cu`) and `41440f4` (CMake inside `if(USE_HIP)`); `129d61b` and the README/comment commits touch nothing nvcc sees. The check is therefore owed at 129d61b on the mi355 host before this is brought to Jeff.
+- `jargon.py --port autoware_universe`: clean.
+- ROCm README sections are present in all three packages.
+- Fork clone clean at 129d61b (`git status --porcelain` empty).

@@ -8,7 +8,7 @@
   "ext_type": "cmake",
   "stage": "review-passed",
   "adopted_at": "2026-11-05T23:13:25Z",
-  "updated_at": "2026-11-24T02:16:24Z",
+  "updated_at": "2026-11-24T02:33:40Z",
   "head_sha": "129d61b2dc9d63a7cab5d4b1e4bebf5f2c92030e",
   "depends_on": [
     "autoware_cuda",
@@ -49,11 +49,11 @@
     "linux-gfx942": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": null,
+      "validated_sha": "129d61b2dc9d63a7cab5d4b1e4bebf5f2c92030e",
       "failed_sha": "9574fe17a463fa3384bfa0aa0f715923deb9787f",
       "started_at": "2026-11-23T21:41:30Z",
-      "completed_at": null,
-      "updated_at": "2026-11-24T02:16:24Z",
+      "completed_at": "2026-11-24T02:33:40Z",
+      "updated_at": "2026-11-24T02:33:40Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -68,7 +68,7 @@
         "last_session_at": null
       },
       "last_agent": "reviewer",
-      "state": "validation-failed"
+      "state": "completed"
     }
   },
   "license_spdx": "Apache-2.0",
