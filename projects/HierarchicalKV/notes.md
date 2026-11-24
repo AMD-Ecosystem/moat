@@ -486,7 +486,7 @@ What is known and what is not:
 
 Next steps for the porter (not done here):
 1. Run 815cfdc's `find_or_insert_ptr_test --gtest_filter=*multi_threads` 20 or more times to see whether it ever hangs (pre-existing runtime race versus regression).
-2. At a hang, find the owner of the HIP mutex: `AMD_LOG_LEVEL=4` or a debug-symbol `libamdhip64` and `rocgdb` `info threads` plus `print` of the mutex owner field (the futex word in the capture was owned by a thread id that had already exited, `expected=332869` in the join wait is the worker itself).
+2. At a hang, find the owner of the HIP mutex: `AMD_LOG_LEVEL=4` or a debug-symbol `libamdhip64` and `rocgdb` `info threads` plus `print` of the mutex owner field. The capture did not identify the owner: the worker waits on HIP mutex `0x7fbe58017cd0` (futex value 2, contended), and no other application thread was alive, but the mutex's owner field was not read.
 3. If it reproduces at 815cfdc or in a smaller program, file it against the HIP runtime (CLR) with this stack and register a `rocm-bug-report` deferral; a workaround in the port would be to synchronize before `cudaStreamDestroy` in the pool's users or to record pool events only on streams that outlive the query, which is a behaviour change to discuss first.
 
 Logs (container-local, not committed): `agent_space/val/` (`A-*.log`, `B2-*.log`, `B3-*.log`, `B3r-find_or_insert_ptr_test.log`, `diag-*.log`, `diag2-rg592-1.{log,smi,wchan}`).
