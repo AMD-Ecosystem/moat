@@ -1700,6 +1700,14 @@ Labels: none known for ROCm/llvm-project; check `gh label list --repo ROCm/llvm-
 
 `set-state anari-visionaray linux-gfx1201 delta-ported` (releases the lock, hands d7d363b9 to the reviewer). Every validated platform owes a run at d7d363b9 (the delta changes device code on every HIP target): linux-gfx90a, linux-gfx1100, windows-gfx1201; linux-gfx1201 is validated below in this job.
 
+## Review 2026-11-24 round 6 (linux-gfx1201, reviewer) -- moat-fix-10 fd2375aa..d7d363b9 -- PASS
+
+Scope: `git -C projects/anari-visionaray/src diff fd2375aa d7d363b` (renderer/common.h, +11/-3: sampleLight declared `VSNRAY_FORCE_INLINE` under `__HIP_DEVICE_COMPILE__`, `inline` otherwise, parameter continuation lines realigned), read with the pr-review checklist inline (no child agents in this harness), each candidate re-read against the code. No problems found in the delta.
+
+Checked and dropped: `VSNRAY_FORCE_INLINE` is `inline __attribute__((always_inline))` for clang (visionaray detail/macros.h), `__forceinline` for MSVC/Intel, so the declaration stays `inline` on every compiler and the Windows clang device pass accepts it; `__HIP_DEVICE_COMPILE__` is defined only in the HIP device pass, so nvcc, the CPU build and the HIP host pass see the unchanged `inline` declaration (CUDA path byte-identical after preprocessing); all three callers (Raycast_impl.cpp:85, Pathtrace_impl.cpp:310, VolumeIntegration.h:534) now inline it on HIP, the volume integrators included; the library builds with 0 errors and the ISA scan of every HIP TU for gfx1201 shows no long branch through s[30:31] in sampleLight; the style follows upstream's own `#ifdef __CUDACC__ static __noinline__` on getAttribute (common.h:331). Commit: title 44 chars with [ROCm] on a HIP-only change, rationale, AI disclosure, Test Plan with literal commands, no Co-Authored-By; `jargon.py --port anari-visionaray` clean.
+
+Not a finding in this delta, recorded for jeff: the same compiler defect remains in `basic_intersector<ISOSurface>::operator()` on gfx1201 (porter round 6 section, deferral `amdgpu-long-branch-clobbers-return-address`); no validated scene exercises ISO surfaces. CUDA compile check: last nvcc run at 6f1e7937; the deltas since (fd2375a, d7d363b) change only HIP-guarded code.
+
 ## Fix review PR draft
 
 Title: Merge upstream main into the HIP device PR (#10)
