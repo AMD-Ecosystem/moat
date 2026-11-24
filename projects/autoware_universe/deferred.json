@@ -5,14 +5,22 @@
       "id": "hip-memcpytosymbol-default-kind",
       "kind": "rocm-bug-report",
       "component": "HIP",
-      "summary": "hipMemcpyToSymbol and hipMemcpyToSymbolAsync return hipErrorInvalidMemcpyDirection for hipMemcpyDefault (HIP 7.17.26434, ROCm 10.2, gfx942), where CUDA documents cudaMemcpyDefault as accepted and recommended for cudaMemcpyToSymbol[Async]. Reproducer and evidence in the project notes, Validation 2026-11-23.",
+      "summary": "HIP symbol copies reject hipMemcpyDefault: hipMemcpyToSymbol, hipMemcpyToSymbolAsync (host or device source) and hipMemcpyFromSymbol all return hipErrorInvalidMemcpyDirection (21) for hipMemcpyDefault, while the explicit kinds succeed. CUDA documents cudaMemcpyDefault as accepted (and recommended on unified-addressing systems) for cudaMemcpyToSymbol[Async]/cudaMemcpyFromSymbol. Seen with HIP 7.17.26434, TheRock ROCm 10.2.0 wheels, AMD clang 24.0.0git, MI300X gfx942, amdgpu 6.16.13, kernel 6.8.0-134. ROCm bug report candidate, not filed: filing is a person's call. Minimal reproducer and output in the project notes, Porter round 2 (2026-11-24).",
       "refs": [
         "projects/autoware_universe/notes.md#validation-2026-11-23"
       ],
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-11-23T23:48:02Z",
-      "decided": null
+      "decided": null,
+      "summary_history": [
+        {
+          "summary": "hipMemcpyToSymbol and hipMemcpyToSymbolAsync return hipErrorInvalidMemcpyDirection for hipMemcpyDefault (HIP 7.17.26434, ROCm 10.2, gfx942), where CUDA documents cudaMemcpyDefault as accepted and recommended for cudaMemcpyToSymbol[Async]. Reproducer and evidence in the project notes, Validation 2026-11-23.",
+          "by": "porter agent (linux-gfx942 fleet job)",
+          "at": "2026-11-24T00:55:47Z",
+          "reason": "adds hipMemcpyFromSymbol, device-source copies and the full versions; the reproducer is now kept in the project notes instead of a job scratch directory"
+        }
+      ]
     },
     {
       "id": "cuda-voxel-downsample-radix-end-bit",
@@ -25,6 +33,19 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-11-23T23:48:02Z",
+      "decided": null
+    },
+    {
+      "id": "autoware-gs-component-preloads-preprocessor-components",
+      "kind": "other",
+      "component": null,
+      "summary": "Upstream behaviour, CUDA and ROCm alike: libcuda_ground_segmentation.so (ament_auto_add_library links every build dependency's libraries) has NEEDED entries for libcuda_pointcloud_preprocessor.so and the cuda_blackboard example component libraries. In one component container, loading CudaScanGroundSegmentationFilterNode before any autoware_cuda_pointcloud_preprocessor component makes the preprocessor component fail to load ('Failed to find class with the requested plugin name'), because the library was already dlopened as a dependency and class_loader never sees its factories. Loading the preprocessor first works. The CUDA link line is identical (nvcc 12.8 check), so this is not port-specific. Reporting it upstream is a person's call.",
+      "refs": [
+        "projects/autoware_universe/notes.md#porter-round-2-2026-11-24"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-24T00:55:53Z",
       "decided": null
     }
   ]

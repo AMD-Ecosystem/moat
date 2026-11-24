@@ -314,4 +314,89 @@ All three configure with `cuda was not found, building <pkg> with HIP 7.17.26434
 
 ## Lesson for cuda-to-rocm: hipMemcpyToSymbol rejects hipMemcpyDefault
 
-For `references/faults-memory-streams.md`. CUDA documents `cudaMemcpyDefault` as accepted (and recommended) for `cudaMemcpyToSymbol` and `cudaMemcpyToSymbolAsync`. HIP 7.17 (ROCm 10.2) returns `hipErrorInvalidMemcpyDirection` for `hipMemcpyDefault` on both, and accepts only an explicit `hipMemcpyHostToDevice` / `hipMemcpyDeviceToDevice`. The call compiles, so a port that only builds never sees it, and an error-check macro turns it into an abort at the first use. Grep the CUDA sources for `MemcpyToSymbol` with `Default` and change the kind at the call site to the real direction, which is behaviour-preserving on CUDA. Do not remap `cudaMemcpyDefault` in a compat header: other copies rely on it.
+For `references/faults-memory-streams.md`. CUDA documents `cudaMemcpyDefault` as accepted (and recommended) for `cudaMemcpyToSymbol` and `cudaMemcpyToSymbolAsync`. HIP 7.17 (ROCm 10.2) returns `hipErrorInvalidMemcpyDirection` for `hipMemcpyDefault` on both, and on `hipMemcpyFromSymbol` too, and accepts only an explicit `hipMemcpyHostToDevice` / `hipMemcpyDeviceToDevice` (`hipMemcpyDeviceToHost` from a symbol). The call compiles, so a port that only builds never sees it, and an error-check macro turns it into an abort at the first use. Grep the CUDA sources for `MemcpyToSymbol` with `Default` and change the kind at the call site to the real direction, which is behaviour-preserving on CUDA. Do not remap `cudaMemcpyDefault` in a compat header: other copies rely on it.
+
+## Porter round 2 (2026-11-24, porter agent, linux-gfx942 fleet job; AMD Instinct MI300X, HIP_VISIBLE_DEVICES=3 pinned by the dispatcher)
+
+Requested by Jeff Daily: fix the validator's downsample failure, then search all three stage-1 packages for every other call whose correctness is only checked at run time and run each node end to end on the GPU. Stage 1 only; every stage 2-4 surface entry stays `owed`. Fork `moat-port` = `9574fe1` + 3 commits, head **`fb4072979a73b23cf225e2bb3ecc52300d0be3b4`**, pushed. **This host has no nvcc: the CUDA compile check is owed again at fb40729** (mi355 host). By reading, the CUDA path changes only in `cudaMemcpyDefault` -> `cudaMemcpyHostToDevice` at one call site; the CMake edits are inside `if(USE_HIP)`.
+
+### What changed on the fork
+
+- `bb4cd9a` `fix(autoware_cuda_pointcloud_preprocessor): name the symbol copy kind` -- shared, no prefix: `cuda_voxel_grid_downsample_filter.cu:396` `cudaMemcpyDefault` -> `cudaMemcpyHostToDevice` (the source is always the host member `voxel_info_`, so CUDA does the same copy). Not done by remapping `cudaMemcpyDefault` in the compat header, as the validator advised.
+- `41440f4` `[ROCm] Compile the concatenate node with the host compiler` -- **a second run-time fault, found by running the node**: `cuda_concatenate_and_time_sync_node` died on its first frame with `symbol lookup error: libcuda_pointcloud_preprocessor.so: undefined symbol: _ZN24managed_transform_buffer22ManagedTransformBuffer12getTransformIN13geometry_msgs3msg17TransformStamped_ISaIvEEEEENSt9enable_ifIXsr3stdE9is_same_vIT_S6_EESt8optionalIS6_EE4typeE...`. The node source instantiates `concatenate_and_time_sync_node.ipp` (autoware_pointcloud_preprocessor), which calls `managed_tf_buffer_->getTransform<geometry_msgs::msg::TransformStamped>(...)`, whose return type is `std::enable_if_t<std::is_same_v<T, ...>, ...>`. clang mangles the qualified variable template as `Xsr3stdE9is_same_v...`, GCC 13 as `X9is_same_v...` (raw `nm -D` of both above), so the HIP-compiled reference never binds to the g++-built managed_transform_buffer. It links (shared libraries may have undefined symbols) and fails only when the call is first bound. The concatenate node source uses no libcu++/Thrust types, so on the HIP branch it now compiles with the host compiler (`list(REMOVE_ITEM ...)` from the HIP source list), as it does under CUDA; it gets `__HIP_PLATFORM_AMD__` and the `cuda_runtime.h` shim through `autoware_cuda_utils`/`hip::host`, and cuda_blackboard's headers already switch on that macro, so no force-include is needed for it.
+- `fb40729` `[ROCm] Say the compat header reaches only HIP sources` -- comment fix for the two comments that said every source.
+- Not committed to the fork (MOAT harness): `harness/ground_segmentation/harness.cpp` gains `gs_fixed dump <seed> <file>` (scene + CPU reference labels) for the node probe.
+
+### Run-time-only audit of the three packages
+
+Every CUDA runtime call that compiles whatever its arguments are was listed (`grep -rnoE 'cuda[A-Z]\w*'` over the three packages) and each pattern was exercised on the GPU exactly as the packages call it, in a HIP probe (`agent_space/rt_probe/rt.hip`, hipcc `--offload-arch=gfx942 -O2`):
+
+| Pattern (sites) | HIP 7.17.26434 result |
+| --- | --- |
+| `MemcpyToSymbol[Async]` with `Default` (1 site, the fixed one) | `hipErrorInvalidMemcpyDirection`, host and device source |
+| `MemcpyToSymbolAsync` `HostToDevice` / `DeviceToDevice`; `MemcpyFromSymbol` `DeviceToHost` | success; `MemcpyFromSymbol` `Default` also fails (no site uses it) |
+| `__constant__ double time_diff_threshold = 0.1` (undistort, never copied to) | kernel reads 0.1 |
+| `cudaMemcpy[Async]` with `Default` host<->device (none in the packages; checked anyway) | success |
+| `cudaSetDeviceFlags(cudaDeviceScheduleBlockingSync)` (preprocessor node), before and after a stream exists | success both |
+| `cudaMemPoolCreate` with `allocType Pinned`, `location {Device, cudaGetDevice()}`; `SetAttribute(ReleaseThreshold)`; `MallocFromPoolAsync`/`FreeAsync` incl. size 0 (downsample, polar filters, ground segmentation) | success; size 0 gives nullptr, freeing it succeeds |
+| `cudaMallocAsync`/`FreeAsync` on the default pool, incl. size 0 (ground segmentation `device_vector`) | success; `MemoryPoolsSupported` = 1 |
+| `cudaStreamCreate`, `cudaStreamCreateWithFlags(NonBlocking)` (OGM node, return unchecked), `cudaDeviceGetAttribute(MultiProcessorCount)` | success (304 CUs) |
+| zero-size grid launch (concat kernel guards it; others launch only with work) | `hipErrorInvalidConfiguration`, as CUDA |
+
+No events, graphs, managed memory, texture objects, `cudaFuncSetAttribute` or host registration in the three packages. Launch configurations: 256-thread blocks everywhere; the only dynamic shared memory is ground segmentation's `8 * (sizeof(Cell)+4) * gnd_cell_buffer_size` (a few hundred bytes). `ldd -r` over every stage-1 library and executable (run-time symbol resolution, the class of the second fault): after the fix 0 undefined symbols, except 4 cuda_blackboard symbols in `libcuda_ground_segmentation_lib.so`, which upstream does not link (its CUDA link line is the same, per the nvcc check) and which every consumer loads first; left alone.
+
+### Minimal reproducer for the HIP symbol-copy behaviour (deferral `hip-memcpytosymbol-default-kind`)
+
+HIP 7.17.26434 (TheRock ROCm 10.2.0 wheels, `rocm[devel,device-gfx942]==10.2.0`), AMD clang 24.0.0git (ROCm llvm-project bdc35841c97f), MI300X gfx942, amdgpu 6.16.13, Linux 6.8.0-134. The validator's reproducer:
+
+```
+#include <hip/hip_runtime.h>
+#include <cstdio>
+struct S { int a[42]; };
+__constant__ S s_dev;
+__global__ void k(int* o) { *o = s_dev.a[41]; }
+int main() {
+  S h{}; h.a[41] = 7; hipStream_t st; hipStreamCreate(&st);
+  const hipMemcpyKind kinds[] = {hipMemcpyDefault, hipMemcpyHostToDevice};
+  const char* names[] = {"hipMemcpyDefault", "hipMemcpyHostToDevice"};
+  for (int i = 0; i < 2; ++i) {
+    hipError_t e1 = hipMemcpyToSymbolAsync(HIP_SYMBOL(s_dev), &h, sizeof(S), 0, kinds[i], st);
+    hipError_t e2 = hipMemcpyToSymbol(HIP_SYMBOL(s_dev), &h, sizeof(S), 0, kinds[i]);
+    printf("%s: async=%s sync=%s\n", names[i], hipGetErrorName(e1), hipGetErrorName(e2));
+    (void)hipGetLastError();
+  }
+  int* o; hipMalloc(&o, 4); k<<<1,1,0,st>>>(o); int r = 0; hipMemcpy(&r, o, 4, hipMemcpyDeviceToHost);
+  printf("kernel read %d\n", r);
+}
+```
+`hipcc --offload-arch=gfx942 sym.hip -o sym && ./sym` prints `hipMemcpyDefault: async=hipErrorInvalidMemcpyDirection sync=hipErrorInvalidMemcpyDirection`, `hipMemcpyHostToDevice: async=hipSuccess sync=hipSuccess`, `kernel read 7`. This round's wider probe adds: a device source with `hipMemcpyDefault` -> same error; `hipMemcpyFromSymbol(..., hipMemcpyDefault)` -> same error; plain `hipMemcpy[Async]` with `hipMemcpyDefault` -> success. CUDA documents `cudaMemcpyDefault` as accepted for `cudaMemcpyToSymbol[Async]` and `cudaMemcpyFromSymbol`. Filing is Jeff's decision.
+
+### Environment (job directory only; nothing shared modified)
+
+TheRock ROCm 10.2.0 into `$FLEET_VENV` (same pip command as the earlier rounds; HIP 7.17.26434), plus colcon and the ROS Python build tools into the same venv. Dependency closure rebuilt from the validator's source trees (copied; boost, OpenCV, GMP, MPFR, GraphicsMagick re-extracted from the tarballs): system libraries 435 s, ROS 2 Jazzy underlay 232 s, overlay 74 packages 366 s, all rc 0, `MAX_JOBS=48` respected (6 workers x `-j8`). `autoware_cuda_utils` from AMD-Ecosystem/autoware_cuda at `992d7034b5396900593126e8f19a1982ae7bc682` (`-- cuda is not found, building autoware_cuda_utils with HIP 7.17.26434`; autoware_tensorrt_common COLCON_IGNOREd), cuda_blackboard at `9e0fb865cd2e38dcc0db5e0e55497f40fb71f733` (`-- cuda was not found, building cuda_blackboard with HIP 7.17.26434`). Same fmt link workaround as before (environment only).
+
+### Build and tests at fb40729 (all under `ulimit -c 0` and `timeout`)
+
+- Clean build of the three packages (recipe as in the Porter stage 1 section): rc 0, 1 min 39 s, each `cuda was not found, building <pkg> with HIP 7.17.26434`.
+- Preprocessor gtests 20x: test_cuda_combine_cloud_handler 8/8 and test_cuda_pointcloud_preprocessor 20/20, 20 `[  PASSED  ]` blocks each, 0 skipped.
+- Occupancy grid out-of-tree tests 20x (`harness/occupancy_grid_map`): test_utils, costmap_unit_tests, fusion_policy_unit_tests, test_pointcloud_based_method (GPU node), test_synchronized_grid_map_fusion_node, test_ogm_geometry: "100% tests passed, 0 tests failed out of 6".
+- Lint: copyright, cpplint, lint_cmake pass on all three; cppcheck (binary missing) and xmllint (not run) are the environment gaps of the earlier rounds.
+
+### Each node run end to end on the GPU (probes in the job's `agent_space/`, plain `PointCloud2` in and out)
+
+- `cuda_voxel_grid_downsample_filter_node`: 32x16x8 grid of 0.3x0.3x0.1 voxels, 6 points each, shuffled (24,576 points) -> 4096 outputs, one per voxel, max centroid error 1.74e-6: pass. The 40x25x8 grid reproduces the upstream radix `end_bit` bug exactly (27,548 outputs for 8000 voxels), as the validator traced; registered `cuda-voxel-downsample-radix-end-bit`, not the port's.
+- `cuda_pointcloud_preprocessor_node`: static TF base_link->lidar (1.0, 0.5, 2.0, yaw 30 deg), twist at 200 Hz, 32 rings x 1800 azimuth steps over a 100 ms sweep (PointXYZIRCAEDT, rings shuffled, time-ordered within a ring) with 15 spikes and 3 zero-distance returns per ring, negative crop box around the vehicle. Compared with a float32 numpy model of the kernels (stable sort by ring, transform, crop box, 2D undistortion, ring outlier filter): vx = 0: 54,831 of 57,600 points (2,111 cropped, 801 ring outliers), vx = 10 m/s: 54,827 (793 ring outliers), max error 3.81e-6 m both: pass. `cudaSetDeviceFlags` raised nothing.
+- `cuda_concatenate_and_time_sync_node` vs upstream's CPU `concatenate_and_time_sync_node`, same parameter file, both subscribed to the same two XYZIRC lidars (8192 points each, every point carries a unique id in intensity/channel, static TFs at +-40 deg yaw): at 9574fe1 + the downsample fix it died (symbol lookup error above); after `41440f4`: stationary, both equal the numpy transform within 3.8e-6 m; with vx = 5 m/s and `lidar_r` stamped 40 ms later, both shift `lidar_r` by +0.2000 m and leave `lidar_l` in place, GPU vs CPU max 3.81e-6 m, ids one to one, return types equal: pass.
+- `cuda_polar_voxel_{outlier,noise}_filter_node` vs the CPU nodes (validator's probe, 83,000 points, seeds 3/11/29): noise filter identical sets on all three; outlier filter identical on 3 and 11, seed 29 the same one-point float-versus-double voxel-edge swap the validator traced (upstream design).
+- `cuda_scan_ground_segmentation_filter_node` (shipped param file, which equals the harness parameters): harness scenes for seeds 7/11/23 (163,196 points) published to the node; its `output/pointcloud` and `output/ground_pointcloud` equal the CPU reference's non-ground and ground sets exactly (seed 7: 150,516 ground, 4,848 non-ground), no duplicates.
+- Occupancy grid pointcloud-based node: covered by test_pointcloud_based_method and test_ogm_geometry (above).
+- One component container (`launch_ros` ComposableNodeContainer) with the preprocessor and ground segmentation nodes: both pass their probes (ground segmentation twice, seeds 7 and 11). Loaded in the other order the preprocessor component does not load ("Failed to find class with the requested plugin name"): `libcuda_ground_segmentation.so` has a NEEDED entry for `libcuda_pointcloud_preprocessor.so` (upstream `ament_auto_add_library` links every build dependency's libraries, the same on CUDA), so class_loader never sees its factories. Registered `autoware-gs-component-preloads-preprocessor-components` (upstream, a person's call).
+
+### For the reviewer and validators
+
+- Review `9574fe1..fb40729`. The validator re-runs everything above at fb40729 plus the ground-segmentation reference comparison (`./gs_fixed 20 <seed>`, hashes in the Porter stage 1 section).
+- The wave32 validator needs the same: the node probes are what found the second fault, and unit tests do not load the concatenate component.
+
+## Lesson for cuda-to-rocm: host sources compiled as HIP can miss symbols in g++-built libraries
+
+For `references/build-cmake-link.md` (or `faults-*` if a run-time section fits better). When a port compiles ordinary host `.cpp` files as HIP (clang) and links them against libraries built with GCC, a few template signatures mangle differently: a return type of `std::enable_if_t<std::is_same_v<T, X>, ...>` is `Xsr3stdE9is_same_v...` from clang and `X9is_same_v...` from GCC 13. The shared library still links (undefined symbols are allowed in `.so` files), and the process dies with "symbol lookup error" only when the call is first bound, so unit tests that never reach that path pass. Run `ldd -r` on every built library and executable (it resolves all symbols eagerly and lists the missing ones), and compile as HIP only the sources that need a HIP compiler; leave sources that only call into host libraries on the host compiler, as the CUDA build does. (autoware_universe, ROCm 10.2, GCC 13.3.)

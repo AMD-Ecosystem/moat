@@ -778,11 +778,11 @@
   "covered": [
     {
       "id": "component:cuda_concatenate_and_time_sync_node",
-      "evidence": "built with HIP; test_cuda_combine_cloud_handler 8 GPU tests 20x pass; porter 2026-11-23 linux-gfx942 (MI300X) at fork 9574fe1 (notes.md, Porter stage 1 section)"
+      "evidence": "built with HIP; node source compiled with the host compiler on ROCm (clang/GCC mangling mismatch on managed_transform_buffer::getTransform made it die with a symbol lookup error at 9574fe1); test_cuda_combine_cloud_handler 8/8 20x; node run end to end against the CPU concatenate_and_time_sync_node, 2 lidars x 8192 points, stationary and with 40 ms motion compensation: identical to 3.8e-6 m, ids one to one; porter round 2 2026-11-24 linux-gfx942 (MI300X) at fork fb40729 (notes.md, Porter round 2 section)"
     },
     {
       "id": "component:cuda_pointcloud_preprocessor_node",
-      "evidence": "built with HIP; test_cuda_pointcloud_preprocessor 20 tests 20x pass; porter 2026-11-23 linux-gfx942 (MI300X) at fork 9574fe1 (notes.md, Porter stage 1 section)"
+      "evidence": "built with HIP; test_cuda_pointcloud_preprocessor 20 tests 20x pass; porter 2026-11-23 linux-gfx942 (MI300X) at fork 9574fe1 (notes.md, Porter stage 1 section); node run end to end (32 rings x 1800 points, crop box, 2D undistortion at 0 and 10 m/s, ring outlier filter) against a numpy model of the kernels: 54,831 / 54,827 points, max error 3.8e-6 m, also inside a component container with the ground segmentation node; porter round 2 2026-11-24 linux-gfx942 (MI300X) at fork fb40729 (notes.md, Porter round 2 section)"
     },
     {
       "id": "component:cuda_polar_voxel_noise_filter_node",
@@ -794,11 +794,11 @@
     },
     {
       "id": "component:cuda_voxel_grid_downsample_filter_node",
-      "evidence": "built with HIP (thrust::cuda aliased to thrust::hip, hipMemcpyToSymbolAsync template); compiled and linked, no upstream test exercises it; porter 2026-11-23 linux-gfx942 (MI300X) at fork 9574fe1 (notes.md, Porter stage 1 section)"
+      "evidence": "built with HIP; copy kind fixed to cudaMemcpyHostToDevice (HIP rejects hipMemcpyDefault for symbol copies); node run end to end: 32x16x8 voxel grid, 24,576 points -> 4096 outputs, max centroid error 1.7e-6; non-power-of-two grids hit the upstream radix end_bit bug (deferral cuda-voxel-downsample-radix-end-bit); porter round 2 2026-11-24 linux-gfx942 (MI300X) at fork fb40729 (notes.md, Porter round 2 section)"
     },
     {
       "id": "component:cuda_scan_ground_segmentation_filter_node",
-      "evidence": "built with HIP; filter library checked by the synthetic-scene harness against a CPU replica, 0 label differences; porter 2026-11-23 linux-gfx942 (MI300X) at fork 9574fe1 (notes.md, Porter stage 1 section)"
+      "evidence": "built with HIP; filter library checked by the synthetic-scene harness against a CPU replica, 0 label differences; porter 2026-11-23 linux-gfx942 (MI300X) at fork 9574fe1 (notes.md, Porter stage 1 section); node run end to end on the harness scenes (seeds 7/11/23, 163,196 points): ground and non-ground outputs equal the CPU reference sets; porter round 2 2026-11-24 linux-gfx942 (MI300X) at fork fb40729 (notes.md, Porter round 2 section)"
     },
     {
       "id": "feature:ground_segmentation-subwave-sector-kernel",
@@ -806,7 +806,7 @@
     },
     {
       "id": "feature:pointcloud_preprocessor-constant-symbols",
-      "evidence": "cudaMemcpyToSymbolAsync mapped to hipMemcpyToSymbolAsync (HIP's const T& template overload takes the symbol), no source edit; porter 2026-11-23 linux-gfx942 (MI300X) at fork 9574fe1 (notes.md, Porter stage 1 section)"
+      "evidence": "voxel_info_dev copy uses cudaMemcpyHostToDevice (shared one-line change, CUDA-identical); undistort time_diff_threshold is initialised statically and never copied (probe: reads 0.1 on the GPU); HIP symbol-copy behaviour registered as hip-memcpytosymbol-default-kind; porter round 2 2026-11-24 linux-gfx942 (MI300X) at fork fb40729 (notes.md, Porter round 2 section)"
     },
     {
       "id": "feature:pointcloud_preprocessor-libcuxx",
