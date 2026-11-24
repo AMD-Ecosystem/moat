@@ -9,7 +9,8 @@
 // (mean abs diff per channel, 0..255).
 // env: RUNS (default 8), ONLY (substring of scene names), RENDERER (renderer
 // subtype, default "default" = pathtrace), PPM_PREFIX (write the first run's
-// image per device to <prefix>-<device>.ppm).
+// image per device to <prefix>-<device>.ppm), NO_LIGHT=1 (surface scene
+// without its directional light), MODE (renderer "mode" parameter, e.g. Ng).
 #include <anari/anari.h>
 #include <chrono>
 #include <nanovdb/tools/CreatePrimitives.h>
@@ -55,15 +56,18 @@ static ANARIWorld buildTriangle(ANARIDevice d)
   ANARIWorld w = anariNewWorld(d);
   ANARIArray1D sa = anariNewArray1D(d, &s, nullptr, nullptr, ANARI_SURFACE, 1);
   anariSetParameter(d, w, "surface", ANARI_ARRAY1D, &sa);
-  ANARILight l = anariNewLight(d, "directional");
-  float dir[] = {0.f, 0.f, -1.f};
-  anariSetParameter(d, l, "direction", ANARI_FLOAT32_VEC3, dir);
-  anariCommitParameters(d, l);
-  ANARIArray1D la = anariNewArray1D(d, &l, nullptr, nullptr, ANARI_LIGHT, 1);
-  anariSetParameter(d, w, "light", ANARI_ARRAY1D, &la);
+  if (!getenv("NO_LIGHT")) {
+    ANARILight l = anariNewLight(d, "directional");
+    float dir[] = {0.f, 0.f, -1.f};
+    anariSetParameter(d, l, "direction", ANARI_FLOAT32_VEC3, dir);
+    anariCommitParameters(d, l);
+    ANARIArray1D la = anariNewArray1D(d, &l, nullptr, nullptr, ANARI_LIGHT, 1);
+    anariSetParameter(d, w, "light", ANARI_ARRAY1D, &la);
+    anariRelease(d, l); anariRelease(d, la);
+  }
   anariCommitParameters(d, w);
   anariRelease(d, va); anariRelease(d, ca); anariRelease(d, g); anariRelease(d, m);
-  anariRelease(d, s); anariRelease(d, sa); anariRelease(d, l); anariRelease(d, la);
+  anariRelease(d, s); anariRelease(d, sa);
   return w;
 }
 
@@ -184,6 +188,8 @@ static bool render(ANARIDevice d, ANARIWorld w, const float box[6], Img &out)
   ANARIRenderer r = anariNewRenderer(d, getenv("RENDERER") ? getenv("RENDERER") : "default");
   float bg[4] = {0, 0, 0, 1};
   anariSetParameter(d, r, "background", ANARI_FLOAT32_VEC4, bg);
+  if (const char *mode = getenv("MODE"))
+    anariSetParameter(d, r, "mode", ANARI_STRING, mode);
   anariCommitParameters(d, r);
   ANARIFrame f = anariNewFrame(d);
   unsigned size[2] = {W, H};

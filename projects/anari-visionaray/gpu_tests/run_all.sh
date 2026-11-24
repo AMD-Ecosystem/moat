@@ -5,10 +5,11 @@
 # usage: run_all.sh <anari-install> <anari-visionaray-install> <fork-src> [outdir]
 #
 # env: RUNS (default 8), TIMEOUT seconds per process (default 600),
+#      KILL_AFTER seconds between TERM and KILL (default 120),
 #      SCENES / RENDERERS (space-separated overrides), CXX (default c++).
 set -u
 ANARI=$1; AV=$2; SRC=$3; OUT=${4:-$PWD/gpu_tests_out}
-RUNS=${RUNS:-8}; TIMEOUT=${TIMEOUT:-600}
+RUNS=${RUNS:-8}; TIMEOUT=${TIMEOUT:-600}; KILL_AFTER=${KILL_AFTER:-120}
 # surface runs last: a case that hangs the GPU then cannot cost the other results.
 SCENES=${SCENES:-"volume-nearest volume-linear nanovdb-nearest nanovdb-linear gaussian-splat surface"}
 RENDERERS=${RENDERERS:-"default raycast"}
@@ -31,7 +32,7 @@ for r in $RENDERERS; do
     log=$OUT/$r-$sc.log
     t0=$(date +%s)
     RENDERER=$r ONLY=$sc RUNS=$RUNS PPM_PREFIX=$OUT/$r-$sc \
-      timeout -k 30 "$TIMEOUT" "$OUT/anari_validate" $devs > "$log" 2>&1
+      timeout -s TERM -k "$KILL_AFTER" "$TIMEOUT" "$OUT/anari_validate" $devs > "$log" 2>&1
     rc=$?
     t1=$(date +%s)
     case $rc in
