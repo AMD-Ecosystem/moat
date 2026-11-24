@@ -9087,3 +9087,15 @@ The stale error is not returned by `ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR`
 The size thresholds and the first kernel of each path come from the generic `radix_sort_impl`, but tuned configs can differ, so the single-block cutoff may be different on other arches. The mechanism (`execute_launch_plan` returning a leftover error on the first launch) is the same everywhere. So the report should say that any leftover HIP error makes rocPRIM device algorithms return after their first kernel launch, that the output can be correct, partial or never written depending on the size path, and that the reproducer needs a reference check rather than an inversion count over a zeroed buffer.
 
 Files (scratch, `agent_space/rp/`): the two sources, `probe.hip`, `*.run{1,2,3}.log`, `probe.log`.
+
+## Coordinator note (2026-11-24): the rocPRIM stale-error behavior is shared with CUB on CUDA
+
+Before drafting the approved rocPRIM report (`rocprim-stale-last-error-aborts-algorithm`), the same scenario was run on CUDA: Tesla V100-SXM2-32GB, driver 575.57.08, CUDA 12.9 nvcc, the CUB bundled with it; `cudaIpcGetEventHandle` on an event created without `cudaEventInterprocess` (returns 400 `cudaErrorInvalidResourceHandle`), then `cub::DeviceRadixSort::SortPairs` on pseudo-random int keys, output prefilled with 0xff and compared with `std::sort` (coordinator scratch `p6ev/reports/stale_cub.cu`, one bounded srun):
+
+| n | clean | after the failed runtime call | next sort |
+|---|---|---|---|
+| 1000 | cudaSuccess, 0 keys wrong | **cudaSuccess, 1000 of 1000 keys wrong** | cudaSuccess, 0 wrong |
+| 100000 | cudaSuccess, 0 | **cudaSuccess, 100000 of 100000 wrong** | cudaSuccess, 0 |
+| 4194304 | cudaSuccess, 0 | **cudaSuccess, 4194304 of 4194304 wrong** | cudaSuccess, 0 |
+
+So on CUDA a leftover runtime error also makes the next CUB sort produce no result, and CUB even returns `cudaSuccess`; rocPRIM at least returns the error (gfx90a evidence session: it returns from the first launch via `execute_launch_plan`; output unwritten above 1024 elements). The difference Warp hit was only that its HIP wrappers map CUDA driver-API calls (which never set the runtime's last error) to HIP runtime calls (which do), and `4e0d02ab` fixed that in the port. The earlier coordinator reproducer zeroed its output buffer, so its "0 out of order" after the failed call was an artifact; a report would need the corrected check. Recommendation for jeff: do not file; close the deferred item as not applicable (his decision).
