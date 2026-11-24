@@ -7,7 +7,7 @@
   "priority": 3.866,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:50Z",
-  "updated_at": "2026-11-24T06:21:58Z",
+  "updated_at": "2026-11-24T06:55:34Z",
   "head_sha": "517c6a746eebc5e0b5a6cc23416e1be089d95885",
   "depends_on": [],
   "waivers": {},
@@ -15,14 +15,13 @@
   "upstream_repo_id": 815507746,
   "stage": "review-passed",
   "platforms": {
-    "linux-gfx950": {
+    "linux-gfx1100": {
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": "517c6a746eebc5e0b5a6cc23416e1be089d95885",
-      "failed_sha": null,
-      "started_at": "2026-11-23T20:24:33Z",
-      "completed_at": "2026-11-24T06:21:58Z",
-      "updated_at": "2026-11-24T06:21:58Z",
+      "started_at": "2026-08-08T17:49:02Z",
+      "completed_at": "2026-11-24T06:55:34Z",
+      "updated_at": "2026-11-24T06:55:34Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -36,9 +35,10 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "state": "completed",
       "last_agent": "validator",
+      "state": "completed",
       "validated_prior": [
+        "c9828e2eb037b1052ac4d036389481949ee29c4a",
         "9cb8bee0b33326a6d5f177d4a2e466bcc7f0e963"
       ]
     },
@@ -69,6 +69,56 @@
         "c9828e2eb037b1052ac4d036389481949ee29c4a",
         "6e7d8db768950aab224fece523f1f640d2f5b6c9",
         "2b938d8ab5eea6b19d522a53681a68819bf04dca"
+      ]
+    },
+    "linux-gfx90a": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "c9828e2eb037b1052ac4d036389481949ee29c4a",
+      "started_at": "2026-06-04T21:24:50Z",
+      "completed_at": "2026-08-20T06:27:24Z",
+      "updated_at": "2026-08-20T06:27:24Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "state": "completed"
+    },
+    "linux-gfx950": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "517c6a746eebc5e0b5a6cc23416e1be089d95885",
+      "failed_sha": null,
+      "started_at": "2026-11-23T20:24:33Z",
+      "completed_at": "2026-11-24T06:21:58Z",
+      "updated_at": "2026-11-24T06:21:58Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "last_agent": "validator",
+      "validated_prior": [
+        "9cb8bee0b33326a6d5f177d4a2e466bcc7f0e963"
       ]
     },
     "linux-gfx942": {
@@ -127,55 +177,6 @@
         "2b938d8ab5eea6b19d522a53681a68819bf04dca",
         "9cb8bee0b33326a6d5f177d4a2e466bcc7f0e963"
       ]
-    },
-    "linux-gfx1100": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "9cb8bee0b33326a6d5f177d4a2e466bcc7f0e963",
-      "started_at": "2026-08-08T17:49:02Z",
-      "completed_at": "2026-11-23T18:10:14Z",
-      "updated_at": "2026-11-23T18:10:14Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "validator",
-      "state": "completed",
-      "validated_prior": [
-        "c9828e2eb037b1052ac4d036389481949ee29c4a"
-      ]
-    },
-    "linux-gfx90a": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "c9828e2eb037b1052ac4d036389481949ee29c4a",
-      "started_at": "2026-06-04T21:24:50Z",
-      "completed_at": "2026-08-20T06:27:24Z",
-      "updated_at": "2026-08-20T06:27:24Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "validator",
-      "state": "completed"
     }
   },
   "porting_released": {
