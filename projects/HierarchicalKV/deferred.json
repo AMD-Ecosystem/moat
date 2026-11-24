@@ -67,6 +67,21 @@
       "upstream_issue": "https://github.com/ROCm/rocm-systems/issues/14755",
       "created_at": "2026-11-24T09:26:51Z",
       "decided": null
+    },
+    {
+      "id": "hkv-remove-memory-pool-event-reanchor",
+      "kind": "other",
+      "component": null,
+      "summary": "Remove the HIP-only event re-anchor in MemoryPool (include/merlin/memory_pool.cuh: event_stream_, the cudaStreamWaitEvent plus second cudaEventRecord in put_raw, its create in the constructor and destroy in the destructor; fork commit 4033ed6) once the minimum ROCm the port supports contains ROCm/rocm-systems#15025, the fix for ROCm/rocm-systems#14755 (hipEventQuery reads the destroyed recording stream). 10.2.0 does not contain it. Ruled by Jeff Daily 2026-11-24 (option a). When removing: drop the four #ifdef MERLIN_HIP blocks and rerun the 30-run test_find_or_insert_multi_threads loop on the new minimum ROCm.",
+      "refs": [
+        "https://github.com/ROCm/rocm-systems/issues/14755",
+        "https://github.com/ROCm/rocm-systems/pull/15025",
+        "projects/HierarchicalKV/notes.md#porter-2026-11-24-round-4"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-24T18:22:19Z",
+      "decided": null
     }
   ]
 }

@@ -37,3 +37,4 @@
 {"kind":"phase","ts":"2026-11-24T09:08:35Z","phase":"compile","seconds":172.323,"exit":0,"cmd":"bash -c ninja -C projects/HierarchicalKV/src/build-hip -j 192 find_or_insert_ptr_test merlin_memory_pool_test > agent_space/b592.log 2>&1 & ninja -C agent_space/hkv815/build-hip -j 192 find_or_insert_ptr_test > agent_space/b815.log 2>&1; wait"}
 {"kind":"phase","ts":"2026-11-24T11:32:35Z","phase":"test","seconds":8225.325,"exit":0,"cmd":"agent_space/base/loop.sh 1 15 592"}
 {"kind":"phase","ts":"2026-11-24T11:46:37Z","phase":"test","seconds":9066.233,"exit":0,"cmd":"agent_space/base/loop.sh 2 15 815"}
+{"kind":"phase","ts":"2026-11-24T18:16:55Z","phase":"compile","seconds":574.487,"exit":0,"cmd":"cmake --build projects/HierarchicalKV/src/build-hip -j 96"}

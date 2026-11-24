@@ -696,3 +696,24 @@ Logs (container-local): `agent_space/base/` (`L<lane>-<head>-<n>.log`, `lane1.ou
 ## Ruling on the round-3 workaround (Jeff Daily, 2026-11-24)
 
 Option (a). Commit the drafted re-anchor workaround in `MemoryPool` as one `[ROCm]` commit on `moat-port`, then review and revalidate on linux-gfx942, including a 30-run loop of `FindOrInsertPtrTest.test_find_or_insert_multi_threads`. Keep the workaround until the minimum supported ROCm includes ROCm/rocm-systems#15025 (the fix for ROCm/rocm-systems#14755).
+
+## Porter 2026-11-24 round 4 (linux-gfx942 MI300X, porter role): event re-anchor workaround committed
+
+Requested by Jeff Daily (fleet job), implementing his ruling (a) above. One fork commit on `moat-port`: **`4033ed6` "[ROCm] Record memory pool events on a pool-owned stream"** (parent 592f800; no amend, rebase or force; pushed plainly, `git ls-remote` shows 4033ed6). It is the round-3 draft exactly, plus a removal note in the code comment and one line wrapped for the 80-column Google style:
+- `MemoryPool` constructor: `cudaStreamCreateWithFlags(&event_stream_, cudaStreamNonBlocking)` after the events are created (same current device as the events).
+- `~MemoryPool`: `cudaStreamDestroy(event_stream_)` after `await_pending`, the event destroys and `deplete_stock`.
+- `put_raw`, after `cudaEventRecord(ready_event, stream)`, still under `mutex_`: `cudaStreamWaitEvent(event_stream_, ready_event, 0)` and `cudaEventRecord(ready_event, event_stream_)`, with a comment naming ROCm/rocm-systems#14755 and saying it goes once the minimum supported ROCm contains #15025.
+- member `cudaStream_t event_stream_{nullptr}`.
+All four blocks are under `#ifdef MERLIN_HIP` (defined by `merlin/hip_compat.cuh`, which `memory_pool.cuh` reaches through `debug.hpp`). CUDA is unchanged.
+
+**Files the delta touches (for the CUDA compile recheck): `include/merlin/memory_pool.cuh` only** (20 added lines, nothing removed).
+
+Removal condition registered as deferral `hkv-remove-memory-pool-event-reanchor` (kind `other`).
+
+Toolchain: TheRock ROCm 10.2.0 wheels installed into the job venv (`$FLEET_VENV/bin/python -m pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ "rocm[libraries,devel,device-gfx942]==10.2.0"`); `rocm-sdk path --root` = `<job>/venv/lib/python3.11/site-packages/_rocm_sdk_devel`. Compiler the build invokes (`CMAKE_HIP_COMPILER`, and the first word of every ninja HIP command): `<sdk>/lib/llvm/bin/clang++`, AMD clang 24.0.0git (llvm-project bdc35841c97f), HIP 7.17.26434. Host C++ `/usr/bin/c++`. CMake 3.31.6, Ninja 1.13.0.
+
+Build and checks:
+- `cmake -S . -B build-hip -G Ninja -DHKV_USE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_PREFIX_PATH=$R` then `utils/timeit.sh HierarchicalKV compile -- cmake --build build-hip -j $MAX_JOBS`: 54/54, rc 0. No warning in `memory_pool.cuh`.
+- `merlin_memory_pool_test`: 6/6 (0.5 s).
+- `find_or_insert_ptr_test --gtest_filter=FindOrInsertPtrTest.test_find_or_insert_multi_threads`: 1/1 pass, 270 s (unpatched 255-300 s).
+- `utils/jargon.py --port HierarchicalKV`: clean. Fork tree clean apart from untracked `build-hip/`.
