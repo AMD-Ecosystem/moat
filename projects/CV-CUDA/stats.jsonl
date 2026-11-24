@@ -148,3 +148,11 @@
 {"kind":"phase","ts":"2026-11-24T04:09:46Z","phase":"test","seconds":1.968,"exit":1,"cmd":"projects/CV-CUDA/src/build-hip/bin/nvcv_test_cudatools_system"}
 {"kind":"phase","ts":"2026-11-24T04:20:06Z","phase":"test","seconds":620.016,"exit":1,"cmd":"projects/CV-CUDA/src/build-hip/bin/cvcuda_test_system"}
 {"kind":"session","ts":"2026-11-24T04:21:19Z","epoch":1795494079.40764,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-11-24T04:26:45Z","epoch":1795494405.33574,"event":"start","platform":"linux-gfx1201"}
+{"kind":"phase","ts":"2026-11-24T04:30:10Z","phase":"compile","seconds":131.085,"exit":0,"cmd":"cmake --build projects/CV-CUDA/src/build-hip -j24"}
+{"kind":"phase","ts":"2026-11-24T04:30:28Z","phase":"test","seconds":1.113,"exit":0,"cmd":"projects/CV-CUDA/src/build-hip/bin/cvcuda_test_unit"}
+{"kind":"phase","ts":"2026-11-24T04:30:31Z","phase":"test","seconds":2.809,"exit":1,"cmd":"projects/CV-CUDA/src/build-hip/bin/nvcv_test_cudatools_system"}
+{"kind":"phase","ts":"2026-11-24T04:37:14Z","phase":"test","seconds":403.254,"exit":1,"cmd":"projects/CV-CUDA/src/build-hip/bin/cvcuda_test_system"}
+{"kind":"phase","ts":"2026-11-24T04:37:41Z","phase":"test","seconds":0.873,"exit":1,"cmd":"projects/CV-CUDA/src/build-hip/bin/cvcuda_test_system --gtest_filter=OpColorTwistPlanarVarShape*:OpPadAndStack.integer_planar_interleaved_parity:*OpPadAndStackPlanar.varshape_matches_interleaved*:*OpPadAndStackF16.correct_output*:*OpGammaContrast.varshape_correct_output*"}
+{"kind":"phase","ts":"2026-11-24T04:37:43Z","phase":"test","seconds":1.31,"exit":0,"cmd":"projects/CV-CUDA/src/build-hip/bin/nvcv_test_cudatools_system --gtest_filter=InterpolationVarShapeWrapTest*"}
+{"kind":"session","ts":"2026-11-24T04:38:37Z","epoch":1795495117.334655,"event":"end","platform":"linux-gfx1201"}
