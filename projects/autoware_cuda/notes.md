@@ -536,3 +536,46 @@ Scope: `git diff 992d703...b60c8d7` on `moat-port` (b90fa9b code motion, eba7d90
 ### For a person
 
 - Carried unchanged from the porter's list: DCO sign-off, the copyright holder line, the upstream defects, and the cspell check. Also open item 1 (per-frame variable shapes; autoware_universe's plan still says it "depends on how round 2 implements profiles", so the decision is not recorded on that side).
+
+## CUDA 12.8 + TensorRT 10.8 compile check of round 2 (2026-11-24, linux-gfx950 fleet job, b60c8d7 against upstream a5929dd)
+
+Requested by Jeff Daily. Compile and link only: this job had no GPU and the host has no NVIDIA GPU, so run-time behaviour on CUDA is `cuda-not-validated`. Nothing was pushed to any fork. Result: **pass. The CUDA build of both packages at b60c8d7 matches upstream, apart from the intended differences listed below.**
+
+### Toolchain (job-local; nothing shared on the host modified)
+
+- nvcc V12.8.93 (`/usr/local/cuda`, put on PATH after `$FLEET_VENV/bin`), gcc 13.3.0, CMake 3.31.6, Python 3.11 (job venv, which holds `colcon-common-extensions vcstool empy==3.3.4 lark catkin_pkg pyyaml pytest setuptools`).
+- **TensorRT 10.8.0.43 for CUDA 12.8**, the official tar, which downloads without a login: `https://developer.download.nvidia.com/compute/machine-learning/tensorrt/10.8.0/tars/TensorRT-10.8.0.43.Linux.x86_64-gnu.cuda-12.8.tar.gz` (6.9 GB, sha256 `577d6d8af538153414b9867c666b4f65852fc2eb1e7c0ea3a206e5fafbc7d49e`). Extracted only `include/`, `targets/x86_64-linux-gnu/lib/` and `doc/`, then recreated the top-level `lib -> targets/x86_64-linux-gnu/lib` symlink (a `--wildcards 'TensorRT-*/lib/*'` extraction skips it, and FindTENSORRT looks in `$TENSORRT_ROOT/lib`). 10.8 is the TensorRT that Autoware pairs with CUDA 12.8. 10.13 tars also exist, but only for CUDA 12.9 and 13.0.
+- ROS 2 Jazzy from source with rclcpp, the round-2 recipe above: asio `asio-1-28-1` headers, TinyXML2 10.0.0 into a job prefix, `COLCON_IGNORE` in `eclipse-iceoryx` and `eclipse-cyclonedds`, `-DTRACETOOLS_DISABLED=ON`: 128 packages, 66 s. Workspace `src/` holds a fork worktree, `autoware_cmake` 9849ad2 and `tier4/tensorrt_cmake_module` c938430.
+
+### Build, the same command in two workspaces (fork worktrees at a5929dd and b60c8d7)
+
+```
+export PATH=$FLEET_VENV/bin:/usr/local/cuda/bin:$PATH
+export TENSORRT_ROOT=<job>/deps/trt/TensorRT-10.8.0.43
+source <ros2_jazzy>/install/setup.bash
+colcon build --packages-up-to autoware_cuda_utils autoware_tensorrt_common autoware_lint_common \
+  --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DCMAKE_VERBOSE_MAKEFILE=ON \
+    -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DPython3_EXECUTABLE=$FLEET_VENV/bin/python \
+    "-DCMAKE_CXX_FLAGS=-isystem $TENSORRT_ROOT/include"
+```
+
+- Without the `-isystem` flag, **both commits fail the same way**. TensorRT 10.8's own `NvInferRuntime.h` has unused parameters (lines 1007, 1074, 1190, 3915), and upstream's `-Wall -Wextra -Werror` turns them into errors because a tar install reaches the compiler through `-I` (24 errors per TU that includes it: 48 at a5929dd with 2 TUs, 72 at b60c8d7 with 3). With a packaged TensorRT in `/usr/include` the headers are system headers. The flag emulates that, and GCC then ignores the matching `-I`. Not a port issue. It would hit any upstream build against a tar TensorRT 10.8.
+- With the flag: rc 0 at both commits, 6 packages, `Found CUDA ... 12.8`, `Found CUDAToolkit ... 12.8.93`, `Found TENSORRT ... (found version "10.8.0")` with libnvinfer, libnvinfer_plugin and libnvonnxparser. No HIP or MIGraphX line. **0 compiler warnings** at both. Both build `libautoware_tensorrt_common.so` and link `autoware_tensorrt_common_test` and `test_autoware_cuda_utils`.
+- Warnings: an identical set at both commits. 20 nvcc deprecated-target notes, 4 CMP0146 FindCUDA dev warnings (line numbers shifted by the added option lines), 4 cmake_minimum_required deprecations (gtest_vendor and autoware_cmake), and 8 "manually-specified variables not used" (the `CMAKE_CXX_FLAGS` and `CMAKE_EXPORT_COMPILE_COMMANDS` given to packages without C++).
+
+### autoware_tensorrt_common, a5929dd vs b60c8d7
+
+- Compiler command lines (`compile_commands.json`, workspace path normalized): identical for `tensorrt_common.cpp`, `profiler.cpp`, `tensorrt_common_test.cpp` and gtest, including `-DTENSORRT_VERSION_MAJOR=10`, the TensorRT and CUDA include dirs, and `-fno-lto -O3 -DNDEBUG -std=c++17 -fPIC -Wall -Wextra -Wpedantic -Werror -Wno-deprecated-declarations`. The new `tensorrt_common_io.cpp` gets exactly the flags of `tensorrt_common.cpp`. Moving the `TENSORRT_VERSION_MAJOR` definition into the CUDA branch did not change the command line.
+- Link lines: identical apart from the extra `tensorrt_common_io.cpp.o`. `readelf -d` NEEDED entries are identical: libcudart.so.12, libnvinfer.so.10, libnvinfer_plugin.so.10, libnvonnxparser.so.10, libstdc++, libgcc_s, libc. The SONAME is unchanged.
+- Exported symbols (`nm -D --defined-only`): **the 157 strong (T) symbols are identical**, including all 46 `TrtCommon` members. 59 V symbols at both. Weak (W) symbols: 171 -> 169. The two missing are `LogStreamConsumerBuffer::putOutput()` (in-class definition in `logger.hpp`) and `ProfileDims::toString()` (in-class in `utils.hpp`): inline functions that GCC now inlines instead of emitting out of line after the code split. Any consumer that needs them emits its own copy, so this is not an ABI change. Accordingly there is one fewer undefined symbol (`std::stringbuf::str()`, which only the out-of-line `putOutput` used), and one local lambda in `setup()` is no longer emitted.
+- Class layout: all six public headers (`tensorrt_common.hpp`, `tensorrt_conv_calib.hpp`, `conv_profiler.hpp`, `logger.hpp`, `profiler.hpp`, `utils.hpp`), preprocessed with the library's own flags against the real TensorRT 10.8 headers (`g++ -E -P`): **byte-identical output at both commits**. No `MIGRAPHX` token appears, so the `#ifdef AUTOWARE_TENSORRT_COMMON_MIGRAPHX` member switch is inert on CUDA (bears on review finding 5: it shows the real-header path is unchanged, though it adds no guard). `-fsyntax-only` passes at both with `-Wno-narrowing`. Without it, both fail on the upstream `conv_profiler.hpp:98` int64-to-int narrowing, which consumers see only as a system header (as the round-2 test target's comment says).
+- Install tree (sha256 per file): identical except the two edited headers, the `.so`, the workspace-path ament files, `autoware_tensorrt_commonConfig.cmake` (the `_extras` list gains `check_gpu_backend.cmake`), and the new `share/autoware_tensorrt_common/cmake/check_gpu_backend.cmake` (`set(autoware_tensorrt_common_USE_HIP FALSE)`). The export target files and `ament_cmake_export_dependencies-extras.cmake` (CUDA, CUDAToolkit, rclcpp, tensorrt_cmake_module, TENSORRT) are byte-identical. Nothing under `migraphx/` is installed.
+- CUDA consumer probe, built against each install: an `ament_cmake_auto` package with `autoware_package()` (so `-Werror`), `find_package(CUDA)`, `cuda_add_library` for a `.cu` kernel, and a `.cpp` that includes `tensorrt_common.hpp`, `tensorrt_conv_calib.hpp`, `cuda_unique_ptr.hpp` and `stream_unique_ptr.hpp`, constructs `TrtCommon` and `TrtConvCalib`, and calls `setup`, `setTensorAddress`, `enqueueV3` and `getNbIOTensors`, plus an executable. Result: rc 0 at both, no warnings, no backend-check error. The executable resolves libautoware_tensorrt_common, libcudart.so.12, libnvinfer.so.10 and libnvinfer_plugin.so.10, and prints `sizeof(TrtCommon)=216` at both (run with no model, so nothing reaches a GPU). The probe ran under CMake 3.31.6, so it says nothing about review finding 9 (CMake 3.19 needed by the installed check). An `enable_language(CUDA)` variant of the probe fails at both commits with nvcc `style of line directive` errors under `autoware_package()`'s `-Wpedantic -Werror`, the probe artifact already recorded in round 1.
+
+### autoware_cuda_utils at b60c8d7 (unchanged since 992d703: `git diff --stat 992d703 b60c8d7 -- autoware_cuda_utils` is empty)
+
+Same result as the earlier checks: `Found CUDA ... 12.8`, CCCL 2.7.0 from `/usr/local/cuda/lib64/cmake/cccl`, no HIP line. 10 nvcc invocations (the 5 test `.cu`, 2 passes each), the same count as at a5929dd, with 0 compiler warnings. `test_autoware_cuda_utils` links at the same size as at a5929dd. The install differs from a5929dd only in the two edited headers, `autoware_cuda_utilsConfig.cmake` and the new `check_gpu_backend.cmake` (`USE_HIP FALSE`), as recorded at 0842236.
+
+### Not checked
+
+Run time on an NVIDIA GPU (`cuda-not-validated`): engine build, inference, and the 13 `autoware_tensorrt_common_test` cases. The lint tests (cppcheck and xmllint were not installed in this job, and `colcon test` was not run). TensorRT versions other than 10.8. A consumer under CMake older than 3.19. `build:cuda-path-nvcc-tensorrt` in surface.json was left for the porter or reviewer to update: this job edited only notes.md.
