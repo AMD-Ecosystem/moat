@@ -9486,3 +9486,60 @@ Porting session 31 pushed `fa20eb13..4ae8babd` while the runs above were under w
 ```
 
 The full suite was not repeated at `4ae8babd`. For the porter: commit the diff above (shared test code, no `[ROCm]` prefix). Its test plan is the four `-k fragment_shapes_<type>` runs on a 64 KiB device and on gfx950 (where nothing is skipped). For the coordinator: re-run the fragment tests on the gfx908 host with this fix; if error 700 remains there, it is a separate gfx908 defect, and `AMD_LOG_LEVEL=1 HIP_LAUNCH_BLOCKING=1` will name the faulting launch.
+
+## Review 2026-11-24, fourth round (linux-gfx950 MI355X, reviewer): `2ce30148..4ae8babd`
+
+Scope: porting session 31 on `release/1.14.0.amd0` (`fa20eb13` fast_math flags, `7b3e6a2b` GL global load, `de0c380b` gfx1250-strict target, `2fc6edd1` `build_lib.py --fast-math` flags, `4ae8babd` one fragment case on non-HIP devices), reviewed with the pr-review skill, plus the two items jeff named as owed. Every finding below was checked again against the code or a run. Lock taken with `set-state warp-1.14 linux-gfx950 reviewing` from `ported`. Fresh fork clone at `4ae8babd`. GPU runs used only `HIP_VISIBLE_DEVICES=1` (dispatcher pin) under `ulimit -c 0`, with the porter job's installed 4ae8babd wheel (installed `warp.so` sha256 equals the one in wheel `246cc460...`) and ROCm 10.2 SDK, both used read-only.
+
+### Summary
+
+The five commits implement jeff's rulings and the third review's finding 4 as asked, and I found no defect in them. Verdict: **Request Changes**, for the two owed items. Item 2 turns out to be a silent wrong-result defect in the HIP build, not a stray log line. Route: reviewer -> `changes-requested` -> porter, who enters with `set-state warp-1.14 <platform> porting` (never `port-lock --take`).
+
+### Changes requested
+
+1. **`warp/tests/tile/test_tile_matmul.py`: commit the 64 KiB guard from the evidence session's addendum (fp64 32x64x32 backward needs 81,920 bytes).** I checked whether the diff is right as written. Its logic is right; commit it with one change.
+   - It applies cleanly at `4ae8babd` (`git apply --check`).
+   - The size formula `2 * type_size * (M*K + K*N + M*N)` reproduces the measured `_smem_bytes` exactly for the five 16-aligned shapes. For 17x33x15 it is 36 bytes (fp16) and 48 bytes (fp64) below the measured size, and the 1,408-byte margin covers that.
+   - On gfx950 (160 KiB), 81,920 + 1,408 fits, so nothing is skipped. On non-HIP devices `fragment_cases` gives only 16x16x16, so nothing is skipped there either. The bf16 test is forward-only and needs no guard.
+   - Change: the new `shared_memory_fits` copies the `4 * block_dim + 1024` margin from `skip_if_shared_memory_exceeded` (`warp/tests/unittest_utils.py:218-228`, which this port added). Put a non-skipping predicate `shared_memory_fits(device, dynamic_bytes, block_dim)` in `unittest_utils.py`, have `skip_if_shared_memory_exceeded` call it, and call it from the fragment test with `max(block_dims)`. Then the margin lives in one place.
+   - Shared test code, so no `[ROCm]` prefix. Test plan as the evidence session wrote it: the four `-k fragment_shapes_<type>` runs on a 64 KiB device and on gfx950.
+
+2. **`warp/native/cuda_util.cpp` (HIP section, the `cu*_f` wrappers, e.g. `cuIpcGetEventHandle_f` at :447): a HIP call that fails leaves HIP's per-thread last error set, and the next hipCUB/rocPRIM call returns it without doing its work. A sort, scan, reduce or BVH build then silently gives a wrong result. CUDA does not have this problem.** This is the `Warp CUDA error 9 ... radix_sort_pairs_device, warp/native/sort.cu:84` line from the gfx942 evidence session.
+   - **Caller, named.** `warp/tests/cuda/test_ipc.py::test_ipc_event_missing_interprocess_flag` calls `wp.Event(interprocess=False).ipc_handle()` on purpose. It reaches `wp_cuda_ipc_get_event_handle` (`warp.cu:3161`), where `hipIpcGetEventHandle` returns 9 (hipErrorInvalidConfiguration).
+     - That test captures stderr, so Warp's own `error 9 ... warp.cu:3161` line never reaches the log, which is why the sort line looked unattributed.
+     - The error stays set as HIP's per-thread last error. The next hipCUB call in that process returns it, and Warp prints it at `sort.cu:84` (the `check_cuda` around `SortPairs`).
+     - Full default suite at `4ae8babd`, in 6 shards, calling `hipGetLastError()` through ctypes after every test (7562 tests): this test is the only one that leaves an error behind.
+   - **Why the result is wrong.** rocPRIM checks `hipGetLastError()` after each of its kernel launches and returns on any error (`ROCPRIM_DETAIL_HIP_SYNC_AND_RETURN_ON_ERROR`, `rocprim/common.hpp:30-35`). An error left over from an unrelated earlier call therefore stops the sort part-way. Warp's `check_cuda` only prints, so the caller goes on with the data.
+     - Through Warp at `4ae8babd`: `wp.utils.radix_sort_pairs` on 100,000 int32 keys gives 0 of 99,999 adjacent pairs out of order before the failed `ipc_handle()`, **50,107 out of order right after it** (with the same `sort.cu:84` line), and 0 on the next sort, because the first one consumed the error.
+     - In plain HIP (hipCUB `SortPairs`, ROCm 10.2, gfx950): after `hipIpcGetEventHandle` fails, `SortPairs` returns 9 and leaves 503 of 999, 49,892 of 99,999 and 2,096,613 of 4,194,303 pairs out of order, at n = 1,000, 100,000 and 4,194,304. Clean runs: 0.
+     - A failed `hipModuleLaunchKernel` (error 1) leaks into the next sort the same way. That covers the over-limit dynamic shared memory launch of item 1, and probably any other `cu*_f` call whose failure Warp tolerates. The GL registration that fails by design under headless EGL is one such call (not run here).
+     - The affected hipCUB users are `sort.cu`, `scan.cu`, `reduce.cu`, `runlength_encode.cu`, `sparse.cu`, and the HIP LBVH build in `bvh.cu`, which calls `cub::DeviceRadixSort::SortPairs` directly. I measured only the sort.
+   - **Why only HIP.** On CUDA these wrappers call the driver API (`cuIpcGetEventHandle`, `cuLaunchKernel`, ...). By CUDA's documented behaviour, driver API errors do not set the runtime's `cudaGetLastError`, so CUB never sees them. (Not run on NVIDIA here.) On HIP the same wrappers call HIP runtime functions, and each failure stays set until something calls `hipGetLastError()`. The behaviour difference is in this port's HIP mapping, not in upstream Warp.
+   - **Fix (the porter's choice).** In the HIP section, make a failed wrapper behave like the driver API: when the `hip*` result is not `hipSuccess`, clear it with `(void)hipGetLastError()` before returning the code. A helper used by every `cu*_f` wrapper (or by the ones that can fail at run time) does it in one place. Clearing it only inside `check_cu_result` would miss failures that are tested without `check_cu` (for example the shared memory attribute path). Add a regression test: after the failed `ipc_handle()` (or a refused launch), `wp.utils.radix_sort_pairs` must sort correctly on the same device. A natural place is the end of `test_ipc_event_missing_interprocess_flag`, or a HIP-gated test next to it. Run the nvcc check: the CUDA section must stay identical.
+   - **The question asked about `wp_launch_grid` (2a08c179): no invalid grid reaches HIP through it.**
+     - Every caller guards a zero count: `wp_launch_device` has `if (dim)`, and `wp_memset_device` has `else if (n)`.
+     - `wp_launch_device`'s `num_blocks` is an `int` from an `int` dim, so it is at most 8,388,608 blocks of 256. That is below the 16,777,215-block x limit, so the y split never happens there. Only the `size_t` memset, fill and copy paths can reach the split, and their y count is valid.
+     - A `<<<0>>>` launch gives 9 on HIP (measured: grid 0, block 0, block 1025 and 2^24 x 256 blocks all give 9, dynamic shared memory over the limit gives 1). CUDA also refuses a zero grid, so the zero-grid launches still in upstream code (`volume.cu:57` with `leaf_count` 0, `volume_builder.cu:345-350`) are not port divergences. They would leak into the next hipCUB call through the same mechanism, which the fix above does not cover. Neither ran in the suite.
+     - rocPRIM's radix sort returns `hipSuccess` at size 0 (`device_radix_sort.hpp:405`, `:811`; measured), so the zero-count sort reachable from `hash_grid_rebuild_device` is harmless.
+     - `wp_cuda_launch_kernel` failures come back as 1 from `hipModuleLaunchKernel`, never 9.
+
+### Checked, not findings
+
+- `fa20eb13`: the hipRTC options are the ruled three flags in place of `-ffast-math -fno-finite-math-only`. The NVRTC path (`warp.cu:4804-4805`) is unchanged.
+- `2fc6edd1`: only the HIP `-x hip` compile options change. Host C++ keeps `-ffast-math -DWP_FAST_MATH` as on CUDA (`build_dll.py:879-880`). The Windows `/fp:fast` path is unchanged.
+- `7b3e6a2b`: `<dlfcn.h>` is included for non-Windows (`cuda_util.cpp:15`) and `<mutex>` at :18. `std::call_once` runs the `dlopen` once. Both GL registration wrappers call it, and they are the only HIP GL entry points Warp uses. The comment describes the form that was committed.
+- `de0c380b`: the append applies only to the `dist_info.json` list. An explicit `--hip-arch` and the offload-arch fallback are unchanged. The release-notes target list counts 26.
+- `4ae8babd`: both fragment tests use `fragment_cases`. The non-HIP path is 16x16x16 at block_dim 32, the test ids are unchanged, and the coordinator's V100 check passed.
+- Commit hygiene: the titles are 58 to 68 characters, `[ROCm]` is on the four HIP-specific commits and not on the shared test commit, there is no Co-Authored-By, and there is no non-ASCII in the delta. `jargon.py --port warp-1.14` is clean, and `audit-commits` is OK. The branch is 0 commits behind `release-1.14`.
+- My per-test runner re-executed itself inside `test_ipc_multiprocess_write`'s spawned child (it had no `__main__` guard), so that shard printed twice, with spurious `test_ipc_multiprocess_write` and `test_constant_precision` failures. Run normally, `test_ipc.py` is 4 OK and `test_constant_precision.py` 46 OK.
+
+### Commands (scratch in this job's `agent_space/e9/`)
+
+```bash
+R=<porter job venv>/lib/python3.11/site-packages/_rocm_sdk_devel; C=${R%_devel}_core
+$R/lib/llvm/bin/clang++ -x hip --rocm-path=$R --offload-arch=gfx950 -O2 -w t2.hip -o t2 -L$C/lib -lamdhip64 -Wl,-rpath,$C/lib && ./t2   # hipIpcGetEventHandle -> 9, then hipCUB SortPairs unsorted
+# t.hip: <<<0,256>>>, <<<1,0>>>, <<<1,1025>>>, <<<2^24,256>>> -> 9; over-limit smem -> 1; stale error returned by the next SortPairs
+<porter venv>/bin/python -I lasterr_runner.py <shard> 6     # autodetect suite, hipGetLastError() via ctypes after every test
+<porter venv>/bin/python -I warp_repro.py                     # Warp: radix_sort_pairs after a failed Event.ipc_handle()
+git -C projects/warp-1.14/src apply --check testfix.diff      # the evidence session's addendum diff at 4ae8babd
+```
