@@ -110,6 +110,10 @@ evidence -- the suite is not slow, one test is stuck. ctest reports the hang as 
 against its default 1500 s cap, which reads like a slow test rather than a deadlock: a suite
 wall time sitting exactly at the cap with one test blamed is the tell. (colmap)
 
+A test with no GL in it that times out only in a parallel run may simply be slow: processes
+sharing one GPU slow each other down (diagnosis.md, "A sync-bound GPU test that passes alone
+can time out under `ctest -jN`").
+
 ### HIP and Vulkan in one process can oops the kernel on an old amdgpu-dkms
 
 A process that runs both HIP and RADV shares one amdgpu VM (libdrm hands both the same device
