@@ -1783,3 +1783,116 @@ Compared:
 
 This covers the CUDA side of every port change in 358edc33..8da17190 (NVCV_SHFL_MASK and explicit shuffle width 32, the `#else` CUDA lines kept beside each HIP alternative, the test min/max rename, the CMake test changes). The "CUDA nvcc compile ... is owed" items in the porter, validator and "For jeff" sections above are now settled by this entry. The fix review PR draft's line "Not yet run at this tip: ... a CUDA compile with nvcc" can drop the CUDA half.
 No platform state changed; nothing pushed to the fork.
+
+## Fix round 2026-11-24 (linux-gfx90a): the bit-exact failures at `8da17190` (porter; `8da17190..8f6c1884`)
+
+WHY: jeff ruled that the v0.19 round does not go to the maintainers with 185 failures in their own suite, and asked for another pass first: (1) make the HIP build produce the fused multiply-add results upstream's tests pin, by explicit per-site spelling, never by a global setting, with the CUDA build unchanged; (2) find the cause of each of the 17 deterministic single-bit cases; (3) confirm the copy-race diagnosis properly and draft an upstream issue if the port does not contribute.
+
+Lock: `set-state CV-CUDA linux-gfx90a porting --agent porter` took it cleanly (released by the previous gfx90a job at 22:11Z on 11-23). Fresh fork clone of `moat-fix-293` at `8da17190`; git-lfs's own pre-push hook moved aside to `pre-push.lfs` again so `protect-fork` could install; `git lfs pull upstream` for the stub libraries; local `main` set to `upstream/main` (`3c06df7f`). Build: the build-hip recipe from "Fix round 2026-11-23" unchanged, `HIP_VISIBLE_DEVICES=3` (dispatcher pin), every GPU run under `ulimit -c 0`. The previous job's failure lists (`fail_on/fast/off/final`) were still on this host and were used as the baseline sets; a fresh baseline run of the 185 at `8da17190` gave 182 failures (the other 3 are race-family members that vary run to run).
+
+### Commits on moat-fix-293 (`8da17190..8f6c1884`, pushed)
+- `c610c9ca` [ROCm] Spell out the multiply-adds nvcc fuses in the cuda_tools wraps -- `MathOps.hpp` gains `NVCV_CUDA_MULADD(a,b,c)`, `NVCV_CUDA_ADDMUL(c,a,b)`, `NVCV_CUDA_MULACC(acc,a,b)` and the HIP-device-only helper `nvcv::cuda::detail::HipFma`; `InterpolationWrap.hpp` / `InterpolationVarShapeWrap.hpp` LINEAR/CUBIC/AREA accumulations use them; `InterpolationWrap.hpp` now includes `MathOps.hpp` (it already used its operators through other headers).
+- `ff752787` [ROCm] Fuse multiply-adds in ConvertTo, Normalize and BrightnessContrast -- 1 + 8 + 1 sites.
+- `f2ea4e0a` [ROCm] Fuse multiply-adds in the resize kernels as nvcc does -- OpResize.cu, ResizeTapCommon.cuh, OpRandomResizedCrop.cu, OpPillowResize.cu, OpHQResizeKernel.cuh.
+- `7f87d4ba` [ROCm] Fuse multiply-adds in the filter, warp and rotate kernels -- FilterCommon.cuh, OpAverageBlur.cu, WarpSampleCommon.cuh, OpRotate.cu.
+- `8f6c1884` [ROCm] Keep float rounding before half conversion on AMDGPU -- `SaturateCastImpl.hpp` (HIP-device specialization of `SaturateCastImpl<__half, float>`) and `OpTvResize.cu` `StoreValue<__half>`.
+clang-format 14.0.6 (upstream's pin, in FLEET_VENV) applied to the changed lines only (`git clang-format HEAD`); in MathOps.hpp it touched only the new block.
+
+### How the macros keep the CUDA build unchanged
+On the HIP device pass (`__HIP_DEVICE_COMPILE__`) the macros call `HipFma`, which evaluates `std::fma` per element for float/double element types where the product has the sum's element type, and the plain expression otherwise (integers, or a float product added to a double). Everywhere else -- the CUDA build, nvcc's host pass, the HIP host pass, g++ TUs -- they expand to `((A) * (B) + (C))`, `((C) + (A) * (B))`, `((ACC) += (A) * (B))`: each call site's original expression, operand order included, with redundant parentheses only. So under nvcc every rewritten site parses to the same expression tree as before. The `#else` branch of the host pass matters too: the first version fused on the HIP host pass as well, and three host-evaluated cudatools tests (`InterpolationWrap{2D,3D,4D}Test/6.correct_grid_unaligned_values_in_host`, CUBIC long3) failed against their unfused host gold; restricting the fused form to the device pass fixed them (85/85).
+
+### Finding 1: nvcc fuses the RIGHT product of `a*b + c*d`; clang `-ffp-contract=on` fuses the LEFT
+clang's front end, for `a*b + c*d` in one expression, emits `fmuladd(a, b, c*d)` (it tries the left operand first). The CUDA results require the opposite, `fma(c, d, a*b)`:
+- Rotate: the fused planar cubic kernel computes `x*c0 + y*(-c1)` in one expression; the interleaved kernel computes `col + y*(-c1)` with `col = x*c0` hoisted, which can only fuse the right product. Upstream's bit-exact `OpRotatePlanar.*tensor_matches_interleaved` passes on CUDA, so nvcc fuses the right product (or nothing). Spelling the planar coordinate with `NVCV_CUDA_ADDMUL(x*c0, y, -c1)` fixed all 7 Rotate failures (86/86 Rotate tests).
+- Upstream's own golds agree: the Pillow oracle accumulates `sum = std::fma(k[t], v, sum)` from 0 (the first two taps are `fma(k1, v1, k0*v0)`), and WarpAffine's kernel pins `__fmaf_rn(fx, c0, fy*c1) + c2` with a comment that it is pinned, i.e. not what nvcc picks by itself.
+- So every sum of two products is written `ADDMUL(a*b, c, d)`: LinearBlend/LinearBlendPack/LinearBlendW, the var-shape bilinear blends in OpResize.cu (5) and OpRandomResizedCrop.cu (5). Switching these from left to right changed no test outcome on HIP (both paths of each parity test share the helper), so the choice rests on the evidence above, not on these tests. Whether nvcc picks the right product at these exact sites is still unverified: it needs an SASS read on the nvcc host (below).
+This corrects the lesson recorded on 11-23 ("nvcc fuses multiply-add across inlined helpers"), which was right about the cross-helper fusion but silent on which product is fused.
+
+### Finding 2: the AMDGPU backend folds `fptrunc(fma(...))` into one `v_fma_mixlo_f16` (a ROCm compiler defect)
+`v_fma_mixlo_f16` rounds once, to half; the source asks for a rounding to float and then to half. Reproducer (agent_space/powprobe/mixlo.hip, 4194304 random inputs in [0,16)): `o[i] = __float2half_rn(__fmaf_rn(a[i], b[i], c[i]))` compiles to one `v_fma_mixlo_f16`; the same code with `asm("" : "+v"(v))` between the fma and the conversion compiles to `v_fmac_f32` + `v_cvt_f16_f32` -- **230 of 4194304 results differ**. The fold fires under `-ffp-contract=off`, `on` and `fast` alike, so it is not contraction. AMD clang 24.0.0git (ROCm/llvm-project d6f6cb69), HIP 7.16.26385, gfx90a. In CV-CUDA it explained `OpTvResize/3.planar_matches_interleaved_reformat_exactly` and `OpTvResize.interleaved_float_nonfinite_matches_planar_bitexactly` (only the two `FilterPlanarNonAA<__half>` instantiations contained the fold: 2 `v_fma_mixlo_f16` among 647 mix instructions in the TU) and `OpCvtColorPlanarTensorHalf.tensor_matches_interleaved/75e54741` (LRGB2Lab F16; OpCvtColor.cu had 536 `v_fma_mixlo_f16`). Workaround in `8f6c1884`: an empty asm on the float operand, HIP device pass only, in `SaturateCastImpl<__half, float>` and TvResize's `StoreValue<__half>`. After it: TvResize 124/124, CvtColor case fixed. Registered as deferral `amdgpu-fma-mixlo-f16-single-rounding` (rocm-bug-report, component llvm/AMDGPU). Not covered: CvtColor's `TorchVisionGray<__half>` spells `__float2half_rn(__fmaf_rn(...))` directly and is still exposed to the fold; no test fails on it, so it was left as is and is listed for the reviewer.
+
+### Group 1: contraction (fusion), 163 of the 185
+The 11-23 notes counted "about 75" here; that was only the tests `-ffp-contract=fast` fixes. A second set of 76 failed under `on` and `fast` and passed only under `off` (planar-vs-interleaved parity where the two paths fuse differently, or not at all) -- the same class -- plus 10 of the "17 deterministic". Mechanism: the cuda_tools operators make `alpha * src + beta` into `operator+(operator*(alpha, src), beta)`; nvcc fuses after inlining, clang only within one expression, so a scalar instantiation fused and a float3/float4/uchar3 one did not. Sites, by test family (each converted site is a multiply-accumulate on compound element types in a kernel the failing family runs; scalar-only instantiations compile to the same fma either way):
+- ConvertTo `Convertor::operator()` (5 tests: ConvertToGold x2, ConvertToLifetime x3); Normalize InvStdDevMul and the 7 interleaved/var-shape `(x - base) * mul * scale + shift` sites (2); BrightnessContrast `ApplyBrightnessContrast` (2: /42, /43 S64 varshape vs the nested std::fma oracle).
+- Resize: LinearBlend, LinearBlendPack, LinearBlendW; cubic `sum +=` (tensor and planar), area `acc +=`/`out = out + ...` (tensor, fractional, var-shape), the var-shape bilinear blends; RandomResizedCrop bilinear (5) and cubic (3); Pillow horizontal/vertical/fused/paired accumulations incl. 4 multi-line `s0 = s0 + k * px` statements; HQResize vertical `tmp` accumulation.
+- InterpolationWrap.hpp (20) / InterpolationVarShapeWrap.hpp (15) LINEAR, CUBIC and AREA accumulations -- these fixed WarpAffine tensor/varshape correct_output (10; the gold is literally the MULACC chain), WarpAffinePlanar, WarpPerspectivePlanar, the area-resize planar cases.
+- FilterCommon (Filter2D, tiled, sliding window), AverageBlur (Gaussian, Conv2D, AverageBlur planar parity); WarpSampleCommon cubic samplers; Rotate uchar3 linear fast path (MULACC) and planar cubic coordinate (ADDMUL, Finding 1).
+Before: 163 failing (182-185 per run with the others). After: **0** of the 163 fail.
+
+### Group 2: the 17 deterministic single-bit cases
+- 10 x `OpWarpAffine.{tensor,varshape}_correct_output` (8 listed in the 17 plus 2 fast-fixed): fusion in InterpolationWrap / InterpolationVarShapeWrap LINEAR (Group 1). Fixed.
+- 6 x `OpPillowResizeBitExact[Pitched].u8_matches_scalar_oracle`: fusion in the Pillow accumulations; the oracle is a std::fma chain. Fixed.
+- 1 x `OpHQResizeTensorBatch.nchw_inner_samples_repeated_async_matches_tensor`: fusion in the HQResize vertical accumulation (`OpHQResizeKernel.cuh` `tmp`). Fixed.
+- 1 x `OpCvtColorPlanarTensorHalf.tensor_matches_interleaved/75e54741`: the `v_fma_mixlo_f16` fold (Finding 2). Fixed by the workaround.
+- 1 x `OpGammaContrast.varshape_correct_output/d1d45083`: **still fails, cause not found within budget.** Facts: U8 single channel, image 1 of 2, one pixel (index 218), device 96 vs gold 95; fails under every contraction setting and under `AMD_SERIALIZE_COPY=3`, so it is neither fusion nor a copy race. The op is `SaturateCast<uchar>(pow(x/255, g) * 255)` with upstream's `__powf` for x >= 0; with the image's gamma (`0x1.eda552p-1`) device `powf` and `__powf` (OCML) differ from host `std::pow` in the last bit for 49 of 256 inputs, but no input flips its u8 result, and no input lands near a .5 boundary at 95/96 (x=92 gives 95.42, x=93 gives 96.42). So a 95-vs-96 difference means the device and the gold evaluated different inputs or a different gamma, not a pow rounding difference; the debugging print of the input byte at the same index (137, which maps to 140) did not reconcile it either. Next step for whoever picks it up: dump the kernel's (x, gamma) for that output pixel on device.
+
+### Group 3: test-fixture copy races, 18 tests (13-15 fail in any one run)
+Confirmed in code, by an ordering argument, and by experiment; the port contributes nothing (the fixtures call `cudaMemcpy2DAsync`, which the compatibility header maps straight to `hipMemcpy2DAsync`; the port changes neither test file).
+- `tests/cvcuda/system/TestOpPadAndStack.cpp` `RunPadAndStackPlanarParity` (lines 230-242): per batch it builds `auto hwc = MakePlanarParityInput<T>(...)` and calls `UploadImage(srcIImgs.back(), hwc, ...)` and `UploadImage(srcPImgs.back(), InterleavedToPlanar(hwc, ...), ...)`; `UploadImage` (lines 163-178) issues `cudaMemcpy2DAsync(..., src, ..., cudaMemcpyHostToDevice, stream)` from that pageable buffer and returns. The planar temporary dies at the end of that statement and `hwc` at the end of the loop iteration; the stream is synchronized only after both PadAndStack launches (line 259). Affects `OpPadAndStackPlanar.varshape_matches_interleaved/*` (9) and `OpPadAndStack.integer_planar_interleaved_parity` (1).
+- Same file, `OpPadAndStackF16` (lines 782-791): `const std::vector<uint8_t> srcHalf = test::FloatToHalfBytes(srcFloat);` is loop-local and is the source of `cudaMemcpy2DAsync`; the sync is after the launch. Affects `OpPadAndStackF16.correct_output/*` (4).
+- `tests/cvcuda/system/TestOpColorTwist.cpp` (lines 345-363): the interleaved upload reads `srcHwc[z]`, which lives to the end of the test, but the planar uploads read `planes`, a loop-local `std::vector` from `DeinterleaveToPlanes`, freed at the end of each iteration; only the planar side goes wrong, as expected. Affects `OpColorTwistPlanarVarShape/{0..3}` (4).
+Ordering: enqueue the 2D copy (returns at once on HIP), destroy the source (heap block freed and reused by the next iteration's allocation), the copy engine reads the block later, the kernel consumes corrupted input. Experiment at `8f6c1884`'s tree: a throwaway edit that only keeps each source buffer alive until the end of the test (no synchronization added) made all 14 tests failing in that run pass, 3 of 3 runs; reverted. `AMD_SERIALIZE_COPY=3` does the same without touching the test (diagnostic only; not set in any build or test script).
+CUDA is exposed to the same bug and tolerates it: NVIDIA's API sync behavior page documents only that a pageable async copy "might be synchronous" and that the driver "may" stage it through pinned memory; it does not promise the source is consumed before `cudaMemcpy2DAsync` returns. CUDA's driver does stage pageable host-to-device 2D copies before returning in practice, which is why upstream CI passes. HIP's 2D copy returns before reading the source (measured, cuda-to-rocm faults-memory-streams.md). Same class as the documented `InterpolationVarShapeWrap.correct_shift` cudatools residual.
+Before: 18 race members, 13-15 failing per run. After: unchanged (not a port defect; upstream test bug). Draft upstream issue below.
+
+#### Draft upstream issue (for jeff to consider; not filed)
+Title: tests: async 2D uploads read pageable buffers after they are freed (PadAndStack, ColorTwist)
+
+Body:
+Three system tests upload host data with `cudaMemcpy2DAsync` from a pageable `std::vector` that is destroyed before the stream is synchronized: `RunPadAndStackPlanarParity` in `tests/cvcuda/system/TestOpPadAndStack.cpp` (`hwc` and the `InterleavedToPlanar(...)` temporary passed to `UploadImage`), the `OpPadAndStackF16` test in the same file (`srcHalf`), and the planar var-shape test in `tests/cvcuda/system/TestOpColorTwist.cpp` (`planes`). The CUDA documentation does not guarantee that an asynchronous copy from pageable memory has read its source when the call returns ("might be synchronous"), so the tests depend on the current driver's staging behavior. On a runtime where the copy really is asynchronous the copy reads freed memory and the parity checks fail intermittently with varying values. Keeping each source buffer alive until after `cudaStreamSynchronize` (for example by storing it in a vector declared before the loop, as `TestOpColorTwist.cpp` already does for `srcHwc`) fixes it without adding synchronization. Found while running the suite on AMD GPUs, where all affected tests pass once the buffers are kept alive.
+
+### Results at `8f6c1884` (clean build-hip, pre-push)
+```
+projects/CV-CUDA/src/build-hip/bin/cvcuda_test_unit             # 63 passed / 1 skipped (StreamIdTest.HandleReuse) / 0 failed
+projects/CV-CUDA/src/build-hip/bin/nvcv_test_cudatools_system   # 1182 / 1188; 6 failed = 5x InterpolationVarShapeWrapTest.correct_shift (fixture race) + TypeTraitsMakeTypeVectorTest/3
+projects/CV-CUDA/src/build-hip/bin/cvcuda_test_system           # 7797 passed / 18 skipped / 18 failed of 7833 (was 7630 / 18 / 185)
+```
+The 18: 17 copy-race members (ColorTwistPlanarVarShape x3, PadAndStack.integer_planar_interleaved_parity, PadAndStackF16 x5, PadAndStackPlanar x8) and `OpGammaContrast.varshape_correct_output/d1d45083`. No failure outside the baseline sets.
+
+| group (at `8da17190`) | before | after |
+|---|---|---|
+| contraction / fusion | 163 | 0 |
+| f16 conversion fold (compiler) | 3 (TvResize x2, CvtColor F16) | 0 |
+| GammaContrast d1d45083 | 1 | 1 (cause not found) |
+| test-fixture copy races | 18 members, 13-15 per run | 18 members, 13-17 per run (upstream test bug) |
+
+Reproducer for Finding 2 (`hipcc --offload-arch=gfx90a -O3 mixlo.hip`):
+```
+#include <hip/hip_runtime.h>
+#include <hip/hip_fp16.h>
+#include <cstdio>
+#include <cstdlib>
+__global__ void folded(const float *a, const float *b, const float *c, __half *o, int n)
+{ int i = blockIdx.x * blockDim.x + threadIdx.x; if (i < n) o[i] = __float2half_rn(__fmaf_rn(a[i], b[i], c[i])); }
+__global__ void separate(const float *a, const float *b, const float *c, __half *o, int n)
+{ int i = blockIdx.x * blockDim.x + threadIdx.x; if (i < n) { float v = __fmaf_rn(a[i], b[i], c[i]); asm volatile("" : "+v"(v)); o[i] = __float2half_rn(v); } }
+int main()
+{
+    const int n = 1 << 22; float *h = (float *)malloc(3 * n * sizeof(float)); srand(1);
+    for (int i = 0; i < 3 * n; ++i) h[i] = (rand() / (float)RAND_MAX) * 16.f;
+    float *d; __half *o1, *o2; hipMalloc(&d, 3 * n * sizeof(float)); hipMalloc(&o1, n * 2); hipMalloc(&o2, n * 2);
+    hipMemcpy(d, h, 3 * n * sizeof(float), hipMemcpyHostToDevice);
+    folded<<<n / 256, 256>>>(d, d + n, d + 2 * n, o1, n); separate<<<n / 256, 256>>>(d, d + n, d + 2 * n, o2, n);
+    unsigned short *r1 = (unsigned short *)malloc(n * 2), *r2 = (unsigned short *)malloc(n * 2);
+    hipMemcpy(r1, o1, n * 2, hipMemcpyDeviceToHost); hipMemcpy(r2, o2, n * 2, hipMemcpyDeviceToHost);
+    int diff = 0; for (int i = 0; i < n; ++i) diff += r1[i] != r2[i];
+    printf("%d of %d results differ\n", diff, n);   // 230 of 4194304 on gfx90a
+}
+```
+`--cuda-device-only -S` shows `v_fma_mixlo_f16` in `folded` and `v_fmac_f32` + `v_cvt_f16_f32` in `separate`.
+
+### CUDA comparison owed
+No nvcc on this host. The nvcc host owes, at `8f6c1884`: a full CUDA build compared with `8da17190` (and upstream `3c06df7f`) as on 11-23, and an SASS read (`cuobjdump -sass`) of a few rewritten sites to confirm the expressions compile to the same instructions as before: LinearBlend (OpResize.cu), the Rotate planar coordinate (OpRotate.cu), `Convertor::operator()` (OpConvertTo.cu). Files to compare: `src/cvcuda/include/cvcuda/cuda_tools/{MathOps.hpp,InterpolationWrap.hpp,InterpolationVarShapeWrap.hpp,detail/SaturateCastImpl.hpp}`, `src/cvcuda/priv/{OpConvertTo.cu,OpNormalize.cu,OpBrightnessContrast.cu,OpResize.cu,ResizeTapCommon.cuh,OpRandomResizedCrop.cu,OpPillowResize.cu,OpHQResizeKernel.cuh,FilterCommon.cuh,OpAverageBlur.cu,WarpSampleCommon.cuh,OpRotate.cu,OpTvResize.cu}`.
+
+### Jargon
+`python3 utils/jargon.py --port CV-CUDA`: only the pre-existing hit in published commit `b623dffa` (June, `fault-class`); this round's five commits and their diff are clean, and each message was checked on stdin (`jargon.py - < msg`).
+
+State: `advance-head CV-CUDA 8f6c1884...` (linux-gfx90a and linux-gfx1100 now owe revalidation; the review at `8da17190` no longer covers the head), deferral `amdgpu-fma-mixlo-f16-single-rounding` registered (rocm-bug-report). Porter hands the delta to the reviewer as `delta-ported`.
+
+## Lesson for cuda-to-rocm: matching nvcc's fused multiply-adds site by site
+(belongs in faults-numerics.md, "Contraction and rounding"; refines the 2026-11-23 lesson above, which it should replace when promoted)
+When bit-exact tests pin nvcc's results and no global `-ffp-contract` setting is clean, spell the fused operation out at the sites, on the HIP device pass only. Three rules decide the spelling. (1) nvcc fuses `a * b + c` after inlining, so a multiply and an add in different inlined functions (vector-type operator libraries: `operator+(operator*(alpha, v), beta)`) still fuse; clang `-ffp-contract=on` fuses only within one source expression, so a helper instantiated for `float` fuses and the same helper for `float3` does not, and planar-versus-interleaved parity tests then differ in the last bit. (2) For a sum of two products, `a * b + c * d`, clang's front end fuses the LEFT product (`fmuladd(a, b, c * d)`) and nvcc's result keeps the left product rounded and fuses the RIGHT one: a kernel computing `x * c0 + y * c1` agrees bit for bit with one computing `col + y * c1` from a precomputed `col = x * c0` only under right-product fusion, and upstream golds written as an accumulation from zero (`sum = fma(k, v, sum)`) encode the same order. So write the sum as `fma(c, d, a * b)`, and a longer sum as a left-to-right chain of such fmas. (3) Keep host code unfused: `__host__ __device__` functions are also compiled for the host, where the CUDA build's host compiler does not contract, and host-evaluated golds expect that. A macro that expands to an explicit per-element fma under `__HIP_DEVICE_COMPILE__` and to the original expression, operand order included, everywhere else leaves the CUDA build with the same expression trees. Find the sites by scanning device code for `acc += a * b`, `acc = acc + a * b` (including statements split over lines and inside one-line `for` bodies) and blends written as one expression; a test-by-test pass then confirms each family. (CV-CUDA v0.19, gfx90a: 163 bit-exact failures to 0.)
+
+## Lesson for cuda-to-rocm: AMDGPU folds a float-to-half conversion into the preceding fma
+(belongs in faults-numerics.md, next to the contraction entries; also a ROCm bug to report)
+`__float2half_rn(__fmaf_rn(a, b, c))` -- and any float-to-half conversion of an fma result, including a contracted `a * b + c` -- can compile to one `v_fma_mixlo_f16`, which rounds once to half where the source rounds to float and then to half. On gfx90a with AMD clang 24 (HIP 7.16) 230 of 4194304 random inputs give a different half than the same code with the conversion kept separate, under every `-ffp-contract` setting. Symptom: F16 outputs one half-precision unit off between two kernels that compute the same thing (the fold fires in one instantiation and not the other), or against a CUDA reference. Check the ISA for `v_fma_mixlo_f16`/`v_fma_mixhi_f16`. Workaround: an empty asm on the float operand before the conversion, device pass only (`asm("" : "+v"(x));`), which costs nothing and keeps the two roundings. (CV-CUDA TvResize and CvtColor F16, 2026-11.)

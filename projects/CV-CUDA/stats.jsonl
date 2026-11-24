@@ -109,3 +109,12 @@
 {"kind":"session","ts":"2026-11-23T22:13:09Z","epoch":1795471989.761558,"event":"end","platform":"linux-gfx90a"}
 {"kind":"phase","ts":"2026-11-23T22:22:18Z","phase":"cuda-compile","seconds":199.527,"exit":0,"cmd":"bash -c cmake --build ../cvcc/up/build-cuda -j16 -- -k 0 > ../cvcc/up.build.log 2>&1"}
 {"kind":"phase","ts":"2026-11-23T22:25:40Z","phase":"cuda-compile","seconds":201.551,"exit":0,"cmd":"bash -c cmake --build ../cvcc/fork/build-cuda -j16 -- -k 0 > ../cvcc/fork.build.log 2>&1"}
+{"kind":"session","ts":"2026-11-23T22:51:26Z","epoch":1795474286.952299,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-23T22:56:42Z","phase":"compile","seconds":264.676,"exit":0,"cmd":"cmake --build projects/CV-CUDA/src/build-hip -j64"}
+{"kind":"phase","ts":"2026-11-24T01:02:39Z","phase":"test","seconds":1.176,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261123-144434-fix-cv-cuda-failures-prompt/moat/agent_space/wt-CV-CUDA/projects/CV-CUDA/src/build-hip/bin/cvcuda_test_unit"}
+{"kind":"phase","ts":"2026-11-24T01:02:42Z","phase":"test","seconds":1.979,"exit":1,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261123-144434-fix-cv-cuda-failures-prompt/moat/agent_space/wt-CV-CUDA/projects/CV-CUDA/src/build-hip/bin/nvcv_test_cudatools_system"}
+{"kind":"phase","ts":"2026-11-24T01:13:07Z","phase":"test","seconds":625.477,"exit":1,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261123-144434-fix-cv-cuda-failures-prompt/moat/agent_space/wt-CV-CUDA/projects/CV-CUDA/src/build-hip/bin/cvcuda_test_system"}
+{"kind":"phase","ts":"2026-11-24T01:25:28Z","phase":"compile","seconds":268.606,"exit":0,"cmd":"cmake --build projects/CV-CUDA/src/build-hip -j64"}
+{"kind":"phase","ts":"2026-11-24T01:25:51Z","phase":"test","seconds":1.177,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261123-144434-fix-cv-cuda-failures-prompt/moat/agent_space/wt-CV-CUDA/projects/CV-CUDA/src/build-hip/bin/cvcuda_test_unit"}
+{"kind":"phase","ts":"2026-11-24T01:25:53Z","phase":"test","seconds":1.947,"exit":1,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261123-144434-fix-cv-cuda-failures-prompt/moat/agent_space/wt-CV-CUDA/projects/CV-CUDA/src/build-hip/bin/nvcv_test_cudatools_system"}
+{"kind":"phase","ts":"2026-11-24T01:36:16Z","phase":"test","seconds":622.977,"exit":1,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261123-144434-fix-cv-cuda-failures-prompt/moat/agent_space/wt-CV-CUDA/projects/CV-CUDA/src/build-hip/bin/cvcuda_test_system"}
