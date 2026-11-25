@@ -239,3 +239,58 @@ then 1.14's `cuda_pp.sh` (warp-1.14 notes, session 19) for `06a3f7c6` and `85ad2
 
 ### Stage
 The full suite passes from the installed wheel on gfx942 (8111 tests, OK), so the stage moves to `ported`. Open for jeff: Q7 above (floating-point bit ranges), not part of any ruling yet.
+
+## CUDA compile check (mi355), 85ad22eb
+
+Requested by jeff Daily, before review. No GPU used; no lock taken, no state changed. Fresh clone of AMD-Ecosystem/warp (`GIT_LFS_SKIP_SMUDGE=1`), detached at `85ad22eb`; a second worktree at pristine `release-1.15` = `ffa038b1` (equal to NVIDIA/warp `release-1.15`). nvcc 12.8.93 (`/usr/local/cuda`), g++ 13, job venv Python 3.11.
+
+**Verdict: no CUDA break, and no unintended change to CUDA device code.** One edge case is noted for the reviewer at the end (carried from 1.14, not new here).
+
+### 1. Builds
+| Build | 85ad22eb | release-1.15 |
+|---|---|---|
+| `python build_lib.py --cuda-path /usr/local/cuda --no-use-libmathdx -j 32` (13 `.cu` units, sm_52 to sm_120 + compute_75/120 PTX; host `.cpp` compiled with `-Werror`) | "Warp build succeeded" | "Warp build succeeded" |
+| `cmake -S . -B <dir> -G Ninja -DWARP_CUDA_PATH=/usr/local/cuda` (defaults: libmathdx ON, 0.3.1 from packman; `CMAKE_CUDA_ARCHITECTURES` 75-virtual) | configures, exit 0 | configures, exit 0 |
+| `cmake --build <dir> --parallel 32` | 39/39, rebuild "no work to do" | 39/39 |
+
+Warnings: the build_lib warning lines of head and base are identical once paths are normalized. There are only two: nvcc's "offline compilation for architectures prior to 75 will be removed" and "Could not find or load the NVIDIA CUDA driver" (this host has no NVIDIA GPU). The CMake builds have no warnings. So there are no new warnings in changed files. This host also has `hipcc` and `rocm-sdk` on PATH (the image venv), so the passing configure also shows that the new `warp_check_rocm_only_host()` stays quiet on a host where nvcc is found.
+
+### 2. Preprocessed CUDA units (`cuda_pp.sh`, warp-1.14 session 19 recipe, sm_90, no libmathdx)
+Run for `ffa038b1`, `06a3f7c6` and `85ad22eb`, plus 1.14's `3601b2d0` (release-1.14) and `66ba4ffb` (1.14 port), so that the carried port can be separated from this line's changes. All 14 `.cu` units compiled at every revision (apic.cu included this time). Normalization: the outdir prefix removed, and `__LINE__` values after `"tree/warp/native/<file>", ` replaced by `L`. Comparison: token-level (GNU diff over one token per line), so clang-format line splits do not count.
+
+**06a3f7c6 -> 85ad22eb (round 2):** device (`cpp1`) units: 12 of 14 identical, `warp` LINE-ONLY. `bvh_cubql` differs only by `sah_builder.h` going back to upstream's text: `const int sortBeginBit = 32; ... (numPrims, sortBeginBit, 64, s)` becomes `(numPrims, 32, 64, s)`, the same value. Host (`cpp4`) units: the same two changes, plus `(const Texture*)tex.tex` -> `(const Texture*)(tex.tex)` in the 9 CPU samplers of `texture.h`, a textual no-op. The `texture.h` CUDA sampler arm is otherwise identical: `WP_TEXTURE_SOFTWARE_FALLBACK` never reaches CUDA, and `WP_TEXTURE_OBJECT(handle)` is `(handle)` on CUDA. Intended, as the porter's handoff predicted.
+
+**release-1.15 -> 85ad22eb, every difference in CUDA code, by class.** Release-1.14 and release-1.15 ship identical cuBQL. In 1.14 the cuBQL builder was compiled inside `bvh.cu`, and in 1.15 it is compiled inside the new `bvh_cubql.cu`, so 1.15's `bvh_cubql` unit was compared against 1.14's `bvh` unit.
+1. Carried from the 1.14 port, the same text that 1.14's nvcc checks covered, applied at the extra sites 1.15 grew (more shuffle overloads, float2/float4 samplers):
+   - `0xFFFFFFFFu`/`0xffffffffu` -> `0xFFFFFFFF` (`WP_TILE_SYNC_MASK`; both are `unsigned int`).
+   - `unsigned int` masks -> `tile_mask_t` (`typedef unsigned int` on CUDA), and `1 << lane` -> `tile_mask_t(1) << lane`: same value once ANDed with the unsigned mask.
+   - `T warp_sum {}` / `T block_sum {}` value initialization.
+   - `32` -> `(256 < 32 ? 256 : 32)` and `31` -> `32 - 1` (both constant-fold to the same value).
+   - `__shfl_up_sync(..., warp_id)` -> `..., warp_id, 32)` (explicit default width).
+   - `(tex.tex)` parenthesized in the `tex1D/2D/3D[Lod]` calls (`WP_TEXTURE_OBJECT`).
+   - The copy kernels' `size_t` index expressions parenthesized.
+   - `__host__ __device__` on the no-libmathdx `tile_matmul`/`adj_tile_matmul[_acc]` stubs.
+   - New host declarations in `warp.h` (`wp_is_hip_enabled`, `wp_hip_runtime_version`, `wp_cuda_device_get_arch_name`, `wp_cuda_device_is_texture_hardware_supported`, `wp_hip_compile_program`).
+   - The cuBQL backports of NVIDIA/cuBQL#34 and #35 (1.14 commits `9674c7c7`, `2eec289e`): `TempNode` layout, `atomic_grow` by value, block size 128 for `initState`/`initPrims`/`updatePrims`, the build loop's early-exit check moved after the event sync plus `CUBQL_CUDA_SYNC_CHECK_STREAM`, `StreamSynchronize` before `Malloc` in `DeviceMemoryResource`, and the CPU builder's empty-input guard. `git diff 66ba4ffb 85ad22eb -- warp/native/cuBQL` is only `sah_builder.h`, now upstream's text.
+
+   These are real CUDA behavior changes only in the cuBQL part, and they are upstream cuBQL's own fixes, reviewed with 1.14. Intended.
+2. This line's own changes, each intended and CUDA-equivalent:
+   - The `warp_shuffle_down` overloads' `int mask` -> `tile_mask_t mask` (header and codegen's struct overload, consistently; the value goes to `__shfl_down_sync`'s unsigned mask either way).
+   - `sparse.cu` `BlockIterator::operator-(difference_type)` (a new member).
+   - `deterministic.cu` `run_to_run_reduce_by_key`: on CUDA its body is `return cub::DeviceReduce::ReduceByKey(temp, temp_size, keys, unique, values, aggregates, num_runs, op, count, stream);`, the same arguments as the two call sites it replaces (the binned-accumulator calls stay direct). `deterministic.cu` is new in 1.15, so its other differences are the class 1 header text.
+
+No other difference exists in any `cpp1`/`cpp4` unit.
+
+### 2b. Host `.cpp` files (not covered by cuda_pp; g++ commands from the build log with `-E -P`)
+- `cuda_util.cpp`: with the two new unguarded `#include <mutex>`/`<unordered_map>` removed from a copy, its CUDA preprocessing equals release-1.15's apart from line numbers and the shared header text above. Everything else added is under `WP_ENABLE_HIP`.
+- `warp.cpp`: the version string is `1.15.0+rocm10.2.0` in the CUDA build too (as in 1.14; matches `warp/config.py`), and `wp_is_hip_enabled() { return 0; }` is added.
+- `texture.cpp` on CUDA: the `wp_texture_software_*` dispatch at create/destroy/get-level/copy/object-create/object-destroy (the 1.14 pattern, now with mip levels). The copy's memory-type switch is factored into `texture_memory_type()`: 1/2/3 map to HOST/DEVICE/ARRAY and anything else is refused, which is the same as upstream's `static_cast` followed by the three-way `if`. The `static_cast` -> C cast changes are equivalent.
+- `texture_software.cpp`: a new translation unit on CUDA, read in full as compiled. It is inert on NVIDIA. `wp_texture_software_enabled` is `!wp_cuda_device_is_texture_hardware_supported(ordinal, ndim)`, and on CUDA both device flags keep their default 1 (only the HIP branch of `init_cuda_driver` sets them). With no software array ever created, `owns`/`owns_copy` see an empty set (one mutex lock per call). The 1.15 changes (`levels[]` views in one allocation, `get_mip_level`, the unified `wp::Texture` constructor with `mip_data[l] = texels + mip_offsets[l]`, the bit-0 tag) are correct as written: `new SoftwareTextureArray()` value-initializes `levels[]`; `~Texture()` frees only `data`, which is restored to the host buffer before return, so the device level pointers are never freed on the host; destroy untracks and deletes each view; object destroy masks bit 0 before freeing.
+
+### For the reviewer (not a break, carried from 1.14)
+On CUDA, `wp_texture_software_enabled` also returns true when `wp_cuda_context_get_device_ordinal(context)` is -1 (a context Warp cannot resolve). A CUDA texture would then take the software path, and CUDA kernels cannot sample it. Python always passes a registered device context, and in that state the hardware path would fail as well. `texture_software.cpp` is identical in this respect at `66ba4ffb`. Guarding `wp_texture_software_enabled` with `#if WP_ENABLE_HIP` (return false otherwise) would make the CUDA path exactly upstream's. This is a reviewer's call; nothing was changed.
+
+### Not done here
+The V100/libmathdx runtime list in the porter's handoff (`test_utils.py`, `test_texture.py`, `test_cluster_dim.py` on an sm_90+ GPU for the cluster tests, `test_deterministic_scatter.py`, `test_bvh.py`, `test_tile_oob.py`, `test_graph.py`, `test_tile_struct.py`) needs an NVIDIA GPU and is still owed. The CMake build above did compile the libmathdx path (sm_75 PTX).
+
+Scripts: `agent_space/cuda_pp.sh` (verbatim from warp-1.14 session 19); `agent_space/tokcmp.py` (token-level delta of a 1.15 unit pair minus the 1.14 delta of its counterpart unit). These are container-local.
