@@ -1597,6 +1597,8 @@ Recommendation: Approve.
 
 ## Lesson for cuda-to-rocm: a code generator's device-pass guards live in strings, and only fail when a model uses them
 
+Promoted to cuda-to-rocm/references/build-headers-macros.md in f3bbd68e.
+
 Belongs in `references/build-headers-macros.md`, next to the `__CUDA_ARCH__` table entry. A project that generates CUDA at run time (here a simulator that turns model equations into `.cu` files) keeps its `#if defined(__CUDA_ARCH__)` device/host selections in Python string templates, one per generated function. A header grep of the source tree does not see them as code, and each one only reaches the compiler when a user's model calls that function, so a HIP port can pass a test set of ordinary models for months while every model with a lookup table, a per-element random draw or a binomial sample fails to compile ("reference to __host__ variable ... in __global__ function"). Grep the generator's Python for the macro names as well as the headers, and make the port's GPU tests call every function implementation the generator can emit, not just representative models. If all the snippets pass through one assembly function, widening the condition there, only when the HIP backend is selected, leaves the CUDA output byte-identical, which is easy to prove by generating projects with both trees and diffing them. (brian2cuda, 2026-11)
 
 ## Validation 2026-11-23 (linux-gfx90a) -- PASS at 77e096c
