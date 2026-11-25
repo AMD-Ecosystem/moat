@@ -382,3 +382,93 @@ then 1.14's `cuda_pp.sh` (warp-1.14 notes, session 19) for `06a3f7c6` and `4aa22
 
 ### Stage
 The full suite passes from the installed wheel on gfx942. The stage was never left (`ported`); the lock taken for this round was released with `port-lock --release` (commit "warp-1.15: fork-write lock released").
+
+
+## Porting session 4 (2026-11-25, linux-gfx942 MI300X, porter): signed zeros in floating-point range sorts
+
+Requested by jeff Daily after the coordinator's V100 run (fork test at `4aa22f6d` against upstream warp-lang 1.15.0: `test_radix_sort_pairs_float_bit_range` 48 GPU failures, CPU passes; CUB 200802 keeps `-0.0`/`+0.0` in input order and keeps their bits in every range). Lock: as in session 3 (`set-state ... porting` is illegal from `ported`), `port-lock warp-1.15 --take linux-gfx942` with the stage left at `ported`, released at the end. Fork `release/1.15.0.amd0` `4aa22f6d..ac56e32a` (pushed, `advance-head` recorded).
+
+### rocPRIM's full-width float sort, measured
+`agent_space/repro/zeros.hip` (ROCm 10.2, rocPRIM 4.8, MI300X), `rocprim::radix_sort_pairs` over [0, 32) on keys `{1.0, -0.0, +0.0, -1.0, +0.0, -0.0, inf, -inf}`, values = index:
+```
+values: 7 3 1 2 4 5 0 6
+keys:   ff800000 bf800000 80000000 00000000 00000000 80000000 3f800000 7f800000
+```
+So rocPRIM's full-width float sort already does what CUB does: the four zeros come out in input order 1, 2, 4, 5 (equal and stable) and each keeps its bits. The coordinator's inference that it orders `-0.0` before `+0.0` came from the round-3 test passing on HIP, but that test had no full-width range; the updated test has one, with 64 zeros of both signs spread through inputs of up to 2^21 + 3 keys, and rocPRIM passes it at every size (so both rocPRIM's onesweep and its merge-sort finisher handle the zeros). Only the round-3 encode path differed from CUDA (48 failures on the V100 = exactly its 48 partial-range sub-cases; the round-3 build fails the same 48 here with the new test).
+
+### The fix (`8ef864ec`, `sort.cu`, HIP only)
+- Encoding maps both zeros to `+0.0`'s radix pattern (`sign`), so every zero compares equal in every range. Encoded keys equal `sign` exactly for the zeros (no other float encodes to it), so zeros can be found after the sort.
+- Restoring the bits: the stable sort keeps the zeros in input order, so output zero k is input zero k. Before the sort, a flag pass (fused into the encode kernel) and `cub::DeviceSelect::Flagged` compact the signs of the input zeros in input order; after it, a mark pass and `cub::DeviceScan::ExclusiveSum` give each output zero its rank, and the decode kernel writes `-0.0` or `+0.0` from the compacted signs. Every other key decodes exactly as before. Four temporary buffers (`int` flags and ranks, `uint8_t` signs) plus scratch, through `ScopedTemporary` on the current stream (capture-safe, like `sparse.cu`).
+- Considered and rejected: carrying a marker in bits outside the sorted range (every bit pattern is a legal float, so any marker collides with some real key, and a full-width range has no spare bits); an index payload with a gather of keys and values (random-access gathers of both arrays plus extra copies, and a sort payload change for 8-byte values); widening the payload with a flag byte (moves more bytes in every radix pass, 8 passes for float64). The compaction costs two scans of `n` ints regardless of key width.
+- Full-width sorts still go straight to rocPRIM (already CUB's behavior); integer sorts untouched.
+
+### Cost (MI300X, `agent_space/q5/fperf.py`, GPU time per `radix_sort_pairs`, median of 15, round-3 and round-4 trees interleaved twice; data without zeros, so the restore is pure overhead)
+| n | type | full width | [1, w) round 3 | [1, w) round 4 |
+|---|---|---|---|---|
+| 2^20 | float32 | 0.25-0.27 ms | 0.245-0.249 | 0.312-0.326 |
+| 2^20 | float64 | 0.29-0.30 | 0.304-0.305 | 0.370-0.383 |
+| 2^24 | float32 | 0.535-0.538 | 0.621-0.623 | 0.813-0.823 |
+| 2^24 | float64 | 1.43-1.45 | 1.735-1.737 | 1.931-1.944 |
+
+Partial-range sorts cost about 0.07 ms more at 2^20 (+27% for float32) and 0.2 ms more at 2^24 (+31% float32, +12% float64) than in round 3, and +52% / +34% over the full-width sort at 2^24. Full-width timings unchanged.
+
+### Test (`ac56e32a`)
+`_radix_sort_bits(keys, w, negative_zero_is_zero)`: with the flag, `-0.0` is ordered as `+0.0` before encoding. The float test uses it for CUDA devices (CUB's order, original key bits compared), and the old encoding for the CPU device; adds the full-width range `(0, w)`; spreads 64 zeros of both signs (alternating) through every input besides `0.0, -0.0, inf, -inf` at the front. 56 sub-cases per device (2 types, 4 sizes, 7 ranges). On gfx942: CPU and GPU pass; `test_utils.py` 84 OK. On the round-3 build (scratch worktree at `4aa22f6d`, same test file): CPU passes, GPU fails 48 (the partial ranges).
+
+### Upstream difference (CPU against CUDA), recorded, not changed
+Warp's CPU radix sort orders `-0.0` before `+0.0` (it sorts the sign-flipped encoding without treating the zeros as equal), in partial ranges and at full width; CUB on CUDA, and rocPRIM, treat them as equal. Upstream Warp's own behavior, so the test keeps the CPU expectation and Warp's CPU sort is unchanged. Possibly worth an upstream note to NVIDIA/warp by a person; not drafted.
+
+### Feature request draft, updated (replaces the session-3 draft; still not filed)
+The signed-zero point does not apply: rocPRIM's full-width float sort treats `-0.0` and `+0.0` as equal and keeps their bits, as CUB does (measurement above). The request is therefore only the refused ranges, with the zero handling stated as part of what is asked for. Labels: `Feature Request`, `project: rocprim`. Deferred item `rocprim-radix-sort-float-bit-range` unchanged.
+
+Title: `[rocPRIM] radix_sort: support bit ranges for floating-point keys`
+
+====
+`rocprim::radix_sort_keys` and `radix_sort_pairs` (and hipCUB's `DeviceRadixSort`, which calls them) return `hipErrorInvalidValue` for floating-point keys whenever the bit range is not the full key width (`rocprim/device/device_radix_sort.hpp`, the `is_floating_point<key_type>` check). CUB accepts any `[begin_bit, end_bit)` for `float` and `double` keys and sorts them by the selected bits of their radix encoding (negative values with every bit flipped, others with the sign bit set), treating `-0.0` as `+0.0` and keeping each key's bits, as rocPRIM's full-width float sort already does. CUDA code that passes a bit range for floating-point keys therefore fails on ROCm.
+
+Reproducer (ROCm 10.2, rocPRIM 4.8, MI300X):
+
+```cpp
+#include <hip/hip_runtime.h>
+#include <rocprim/rocprim.hpp>
+#include <cstdio>
+
+int main()
+{
+    const size_t n = 1024;
+    float* keys_in;
+    float* keys_out;
+    (void)hipMalloc(&keys_in, n * sizeof(float));
+    (void)hipMalloc(&keys_out, n * sizeof(float));
+    for (unsigned int begin_bit : {0u, 1u}) {
+        size_t bytes = 0;
+        hipError_t err = rocprim::radix_sort_keys(nullptr, bytes, keys_in, keys_out, n, begin_bit, 32u);
+        printf("float keys, bits [%u, 32): %s\n", begin_bit, hipGetErrorName(err));
+    }
+    return 0;
+}
+```
+
+```
+float keys, bits [0, 32): hipSuccess
+float keys, bits [1, 32): hipErrorInvalidValue
+```
+
+Request: accept bit ranges for floating-point keys, with the same digit extraction the full-width sort uses (so `-0.0` sorts as `+0.0` and keys keep their bits). Our workaround today encodes the keys as unsigned integers in place, sorts those over the range, and restores the zeros' signs afterwards from their input order, which costs two extra passes over the keys and two scans.
+====
+
+### Evidence at the final head `ac56e32a` (gfx942, MI300X)
+| Run | Result |
+|---|---|
+| full default suite from the installed wheel (built from the tree, gfx942 library, sha256 `42d7e348...b9fa40f6`), outside the tree, fresh kernel cache (`suitewheel.sh r4full1`) | Ran 8113 tests in 590.1 s, FAILED (failures=2, skipped=117) |
+| the two failures | `test_async` `copy_c2f_h2d_SrcPoolOff_DstPoolOff_NoStream_NoGrad_NoGraph_AccessNone` and `copy_s2c_d2d_SrcPoolOff_DstPoolOff_Stream0_NoGrad_Graph_AccessSrcDst`: the known pool-off copy flake (ROCm/rocm-systems#16355); `-p test_async.py` alone from the same wheel: **2373 OK** |
+| `-p test_utils.py` (tree) | 84 OK (float test 56 sub-cases per device) |
+| `jargon.py --port warp-1.15`, `prose.py` | clean |
+| clang-format 22.1.2 (`sort.cu`), ruff 0.15.9 (`test_utils.py`) | clean |
+| integrity | no modified tracked file; wheel uninstalled from the job venv afterwards |
+
+### CUDA compile, for the coordinator (updated for the final head)
+From a clone at `ac56e32a` on the mi355 host: `python build_lib.py --cuda-path /usr/local/cuda --no-use-libmathdx -j 32` and the CMake configure line of round 2; `cuda_pp.sh` for `06a3f7c6` and `ac56e32a`. This round's native change is all inside `#if WP_ENABLE_HIP` in `sort.cu` (kernels, `radix_sort_pairs_float_range_device`, the `temp_buffer.h` and `<type_traits>` includes), so `sort.cu`'s CUDA expansion should match `85ad22eb`'s apart from line numbers. For the V100 run: `python -m warp.tests -s autodetect -p test_utils.py -k float_bit_range` with this `test_utils.py` against upstream warp-lang 1.15.0 should now pass on the GPU (CUB's order is the expectation) and on the CPU (the CPU sort's own order).
+
+### Stage
+The full suite passes from the installed wheel on gfx942 apart from the known `test_async` flake, which passes alone. The stage was not left (`ported`); the lock taken for this round is released with `port-lock --release`.
