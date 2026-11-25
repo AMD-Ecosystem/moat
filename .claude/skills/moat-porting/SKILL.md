@@ -313,6 +313,11 @@ This is a docs, diff, and review checkout, not a build checkout -- a compile nee
   literally in the query: a write whose target it cannot read is refused, and so are
   gh aliases and extensions. `python3 utils/gh_guard.py --explain -- <gh arguments>`
   says how a call would be judged without making it.
+- `git lfs install --local` in a fork clone stops with "Hook already exists: pre-push"
+  once `protect-fork` has installed the freeze hook, and a submodule update that needs LFS
+  then leaves pointer files. Run `GIT_LFS_SKIP_SMUDGE=1 git submodule update --init ...`,
+  then inside the LFS submodule `git lfs install --local --skip-repo && git lfs pull`.
+  Never `git lfs update --force`, which replaces the freeze hook. (oidn)
 - A `moatlib.py` refusal is one line starting `moatlib:` and exit 1. It is an answer,
   not a crash; `MOAT_TRACEBACK=1` shows the traceback when it is one.
 - `timeit.sh` and `session.sh` refuse a `projects/<name>` that does not exist (exit

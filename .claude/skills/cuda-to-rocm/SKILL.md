@@ -90,7 +90,7 @@ AMD-native target is not the same verdict as "no target exists"; say which.
 | CMake, link or load errors: `LANGUAGE HIP`, `-fgpu-rdc`, OpenMP, RUNPATH, LibTorch, installed packages, submodules | `references/build-cmake-link.md` |
 | anything on Windows: SDK install, clang drivers, CRT and link errors, DLL loading, Windows-only wrong results, debugging | `references/windows.md` (link wrapper for a clang-cl host with `-fgpu-rdc`: `assets/hip_link_win.py`) |
 | a CUDA library to replace, or a missing routine or mode: cuBLAS, cuSOLVER, cuDNN, cuSPARSE, Thrust/CUB, cuRAND, NCCL, RAPIDS, nvJPEG, NVDEC, NVML | `references/libraries.md` |
-| a device query that answers differently, `clock64`, occupancy, kernels compiled at run time (PTX, NVRTC), an integrated APU | `references/platform-limits.md` |
+| a device query that answers differently, `clock64`, occupancy, a grid too large to launch, kernels compiled at run time (PTX, NVRTC, Triton), an integrated APU | `references/platform-limits.md` |
 | a failure you cannot place yet, or a suspected ROCm bug | `references/diagnosis.md` |
 | correct results but far slower than the CUDA build: profiling, kernel ISA, emulated packed intrinsics | `references/performance.md` |
 | what counts as validated; compiling the CUDA path with nvcc | `references/validation.md` |
@@ -363,10 +363,14 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - Choosing the NVIDIA or AMD build of a library at run time
 - A scalar's WIDTH follows the compute/scale type, not the matrix type
 - hipBLASLt epilogues are not cuBLASLt's, per type and per format
+- PyTorch's ROCm MX GEMM wants unswizzled scales, M, N and K in multiples of 32, and no bias
 - Generic GEMM on CK device operations
+- Composable Kernel older than tag rocm-7.2.0 races on gfx11 LDS barriers
 - Fused FP16 attention (cuDNN SDPA, flash attention): MIOpen has no path, CK's FMHA does
+- PyTorch's fused SDPA on gfx1100 fails at head dims 257 to 512 with an unrelated HIP error
 - rocBLAS `gemv` over more than 65535 batches returns wrong entries, and `cupy.einsum` ...
 - On gfx12, rocBLAS complex GEMM with n > 2^21 leaves columns unwritten
+- Some MIOpen convolution solvers are not run-to-run reproducible; establish the noise ...
 - A "find the best algorithm" call WRITES to the tensor named as its output
 - MIOpen honours only a unit alpha and a zero beta for 2D convolution, pooling and bias
 - MIOpen runs a convolution only on a handle where Find ran for it
@@ -415,9 +419,12 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - A refused shared-memory opt-in trips the last-error check placed before the project's own ...
 - AMD's 64 KB LDS breaks "half the per-SM shared memory" tile heuristics, and the ...
 - gfx12 work-group IDs y and z are 16 bits: a grid y or z above 65536 is rejected or ...
+- HIP limits each grid dimension to fewer than 2^32 work-items, not to 2^31 - 1 blocks
 - Runtime PTX plus the CUDA Driver API is a THIRD build class
 - NVRTC (CUDA C++ generated at run time) ports to hipRTC
 - Runtime-compiled kernels inherit nothing from the host build
+- Triton on AMD accepts `input_precision='tf32'` only on gfx942
+- CUDA-namespaced libdevice calls and hard-coded FP8 types
 - An integrated APU reports the whole shared memory pool as device memory
 - An integrated APU can crash the device linker under build parallelism
 - A low-CU integrated GPU can outrun a fixed upstream test timeout without any fault
@@ -488,5 +495,6 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - Headless Vulkan on a Linux GPU host: Xvfb plus Mesa's software WSI
 - Driving a compute demo whose only entry point is an interactive GL window
 - A GPU test that hangs only under `ctest -jN` is usually the software GL stack
+- Headless EGL on an Instinct host lists every GPU before the software device
 - HIP and Vulkan in one process can oops the kernel on an old amdgpu-dkms
 <!-- index:end -->

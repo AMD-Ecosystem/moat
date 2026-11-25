@@ -109,6 +109,18 @@ back to a plain GEMM plus a small kernel. hipBLASLt cannot read a layout's TYPE 
 (`hipblasLtMatrixLayoutGetAttribute` returns invalid attribute) and fixes the compute type at
 descriptor creation, so a shim has to remember both. (oneflow)
 
+**PyTorch's ROCm MX GEMM wants unswizzled scales, M, N and K in multiples of 32, and no
+bias.** `torch.nn.functional.scaled_mm(..., ScalingType.BlockWise1x32, ...)` on ROCm (gfx950,
+hipBLASLt rocRoller, torch 2.12) rejects cuBLAS's `SWIZZLE_32_4_4` scale layout; it needs
+`NO_SWIZZLE` with plain row-major `[M, K/32]` e8m0 scales (transposed scales run but return
+garbage). M, N and K must all be multiples of 32: pad the activation rows with zeros, not only
+the scales. A `bias=` argument fails at the heuristic query (`HIPBLAS_STATUS_INVALID_VALUE`),
+and the output must be BF16 or FP16. So a CUDA MXFP8 linear ports as: quantize to row-major
+scales, pad rows to 32, GEMM without bias, slice, add the bias. Per-tensor FP8 `_scaled_mm`
+takes `float8_e4m3fnuz` (max 240) on gfx942 and only `float8_e4m3fn` (max 448) on gfx950 and
+gfx12, so pick the e4m3 type per device (as PyTorch's own tests do with `e4m3_type`) instead
+of hard-coding either. (Matrix-Game)
+
 **Generic GEMM on CK device operations.** For CUTLASS-style row-major GEMMs with fused
 epilogues: `DeviceGemmMultipleD_Xdl_CShuffle` on CDNA (FP16/BF16/FP32),
 `DeviceGemmMultipleD_Wmma_CShuffleV3` on RDNA3/4 (FP16/BF16; its `MakeArgumentPointer` takes
@@ -120,6 +132,27 @@ vectors). The DL operation has no K padding (needs M, N, K tile multiples) and i
 epilogue gave wrong results on gfx950: run it on zero-padded copies and combine `beta * C` in
 a small store kernel. CK's `ck/config.h` is generated: `configure_file` its `config.h.in` with
 `CK_ENABLE_FP16/BF16/FP32`, `CK_ENABLE_DL_KERNELS`, `CK_USE_XDL`, `CK_USE_WMMA`. (TornadoVM)
+
+One XDL instance can serve every CDNA generation. An instance taken from a gfx950 example
+(K1=16, sized for the double-rate MFMA) looks gfx950-only, but CK picks the MFMA instruction
+per offload target at compile time (`xdlops_gemm.hpp`, `GetMfma<half_t,32,32>`:
+`mfma_f32_32x32x16f16` under `__gfx950__`, `mfma_f32_32x32x8f16` otherwise; KPack only has to
+be a multiple of `k_per_blk`), and `IsSupportedArgument` checks only `is_xdl_supported()` plus
+layout and vector conditions. Compile the same instance for every CDNA target and confirm it
+from the code objects (disassemble per target; check `.wavefront_size`, LDS and scratch)
+before adding a K1=8 tile, which is a tuning choice, not a correctness need. (oidn, CK
+3e6d21ad, ROCm 10.2)
+
+**Composable Kernel older than tag rocm-7.2.0 races on gfx11 LDS barriers.** A project that
+vendors or pins such a CK and runs its WMMA (or any LDS-staged) kernels on RDNA3/RDNA3.5
+(gfx11xx) can get wrong, nondeterministic results, while the same code is correct on gfx10,
+gfx12 and CDNA. `ck::block_sync_lds()` there emits `__builtin_amdgcn_s_waitcnt(0xc07f)`, the
+gfx9/gfx10 encoding of `lgkmcnt(0)`, which on gfx11 decodes to `vmcnt(48) lgkmcnt(7)`, so
+`s_barrier` does not wait for LDS operations. Disassemble the gfx11 code object and look for
+`s_waitcnt vmcnt(48) lgkmcnt(7)` right before `s_barrier`; the symptoms also go away at device
+`-O0`. Fixed in CK #3103 (331273b, in rocm-7.2.0); moving the pin to a 7.2.x tag is enough.
+Hand-written `s_waitcnt` immediates are architecture-specific in general: gfx9/10, gfx11 and
+gfx12 each encode the counters differently. (oidn)
 
 **Fused FP16 attention (cuDNN SDPA, flash attention): MIOpen has no path, CK's FMHA does.**
 MIOpen's find-2.0 MHA problem (`miopenCreateMhaProblem`, ROCm 10.1 SDK) offers only the
@@ -137,6 +170,16 @@ define `USE_NEW_UNIFIED_FRAMEWORK=0` (CK develop's unified framework needs a sin
 target, and `CK_CMAKE_GPU_TARGET_IDS` takes the first for every pass, failing the gfx11
 device pass). 139 FP16 inference instances for
 nine architectures build in about 2.5 minutes at 128 jobs. (TornadoVM)
+
+**PyTorch's fused SDPA on gfx1100 fails at head dims 257 to 512 with an unrelated HIP error.**
+On gfx1100 with torch 2.12 (ROCm 10.2), `F.scaled_dot_product_attention` takes the AOTriton
+flash or memory-efficient kernel for those head dims, and the launch fails with `CUDA error:
+profiler is not initialized` (`hipErrorProfilerNotInitialized`), after which the context is
+unusable. Head dims up to 256 are fine; above 512 the dispatcher finds no kernel and falls back
+to the math path. VAEs with single-head spatial attention over the full channel count (head
+dim 512) hit it. Rerun the call under `with sdpa_kernel([SDPBackend.MATH])` to tell it from a
+real fault, and route such calls to the math path, chunked if the [L, L] matrix is large.
+(Matrix-Game)
 
 **rocBLAS `gemv` over more than 65535 batches returns wrong entries, and `cupy.einsum` reaches it.**
 Root cause (https://github.com/ROCm/rocm-libraries/issues/14819): for transA=N and m < 2n, rocBLAS
@@ -199,6 +242,20 @@ result cost 1.5x, the outermost-axis split costs 1.1x to 1.5x at 3.5M to 6.9M co
 the regression tests so CI on any GPU checks the split. (gpu4pyscf)
 
 ## MIOpen
+
+**Some MIOpen convolution solvers are not run-to-run reproducible; establish the noise floor
+before comparing two code paths.** A video model that repeated bit-exactly on gfx950 and
+gfx1100 gave a different output on every run on gfx942 (about 34 dB PSNR between identical
+runs), which made every A/B comparison there ambiguous. MIOpen (PyTorch's `cudnn` backend on
+ROCm) chose `ConvAsmImplicitGemmGTCDynamicFwdXdlopsNHWC` for some bf16 convolutions on gfx942:
+a batch-1 3x3 512->256 conv differed on every call, by up to one bf16 ulp, while the same conv
+at batch 12, or as 1x1, was exact. To find the layer, register forward hooks on every leaf
+module, run the same input twice in one process and report the first module whose output
+differs; then repeat that layer alone at the observed shape. `MIOPEN_ENABLE_LOGGING=1
+MIOPEN_LOG_LEVEL=6` prints the chosen solver. `torch.backends.cudnn.deterministic = True`
+makes MIOpen choose a deterministic solver (`GemmFwdRest` there) at no measurable cost in that
+model; set it for A/B validation, and run the reference twice before reading any difference as
+real. (Matrix-Game)
 
 **A "find the best algorithm" call WRITES to the tensor named as its output.** MIOpen's
 `miopenFindConvolution{Forward,BackwardData,BackwardWeights}Algorithm` benchmark by running

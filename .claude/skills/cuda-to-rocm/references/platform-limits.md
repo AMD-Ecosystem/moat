@@ -7,6 +7,7 @@ Contents:
 
 - Device queries and counters
 - Runtime-compiled kernels
+- Triton kernels
 - Integrated APUs
 <!-- toc:end -->
 
@@ -189,6 +190,29 @@ own that needs more than 65536 work-groups in y or z must fold them into x. A li
 it too: rocBLAS complex GEMM does (libraries.md, "On gfx12, rocBLAS complex GEMM with n > 2^21
 leaves columns unwritten"). (gpu4pyscf)
 
+**HIP limits each grid dimension to fewer than 2^32 work-items, not to 2^31 - 1 blocks.**
+CUDA counts blocks (2^31 - 1 in x, 65,535 in y and z); HIP counts `gridDim * blockDim` per
+dimension, which must stay below 2^32. A launch that runs on CUDA then fails on AMD only at
+large sizes and nothing runs: `hipLaunchKernel` returns `hipErrorInvalidConfiguration`,
+`hipModuleLaunchKernel` `hipErrorInvalidValue`, and Triton reports `Triton Error [HIP]: Code:
+1, Messsage: invalid argument`, often from inside autotuning and sometimes wrapped as
+`SystemError: <built-in method __reversed__ of list object ...> returned a result with an
+exception set`. Measured on ROCm 10.2: on MI300X grid 33,554,431 x block 128 runs and
+33,554,432 x 128 is rejected, with both launch APIs; on MI355X `grid=(1,4194303) x
+block=(1,1024)` runs and `(1,4194304) x (1,1024)` is rejected, while `grid=(1,33554432) x
+(128,1)` runs, so y is not capped at the 65,535 blocks `maxGridSize` reports (on gfx9; gfx12
+is, previous entry). A launch whose total across dimensions exceeds 2^32 is fine. Flat 1D
+grids with small tiles and an extra multiplier (a neighbor count, a batch) reach the limit
+first. Fix: keep the large program count on axis 0, at most `(2^32 - 1) / blockDim.x` there,
+put the overflow on a second axis whose block dimension is 1, compute the program index as
+`pid0 + pid1 * num_programs0`, and mask the programs that overrun the last row. Do this only
+on HIP, or keep the axis-1 count at or below 65,535: moving the large count itself to axis 1
+trades the HIP failure for a CUDA one. A capped grid with a grid-stride loop is the other
+option, and the usual one in HIP C++. In Triton the grid callable sees only the kernel
+arguments, not `num_warps`, so size axis 0 for the largest work-group (1024 work-items).
+Pruning autotune configs does not fix it: past some size every config is too large.
+(FlexGEMM)
+
 ## Runtime-compiled kernels
 
 **Runtime PTX plus the CUDA Driver API is a THIRD build class** beyond Strategy A and B.
@@ -303,6 +327,36 @@ working directory. Before concluding that a cache-clearing test cleared
 anything, find the `.bin` files.
 
 (diff-surfel-tracing: OptiX to HIP RT, gfx942.)
+
+## Triton kernels
+
+Triton compiles kernels at run time, so its AMD faults appear on first use, often from inside
+autotuning, and only on the architectures a kernel was never run on.
+
+### Triton on AMD accepts `input_precision='tf32'` only on gfx942
+
+A kernel that runs on CUDA and on MI300X fails to compile on every other AMD GPU (MI200,
+MI355, every RDNA part) with `CompilationError: ... input_precision must be one of ('ieee',
+'bf16x3', 'bf16x6'). Got tf32`, even when the `tl.dot` operands are fp16. Triton's AMD backend
+(3.9, `backends/amd/compiler.py`) adds `'tf32'` to the allowed dot precisions only for
+gfx942. A project with an `allow_tf32` switch that passes `input_precision='tf32' if
+allow_tf32 else 'ieee'` breaks wherever a user, a benchmark or a default turns the switch on,
+and validating only on MI300X hides it. Ask Triton for the target's accepted set once on the
+host, `'tf32' in triton.compiler.make_backend(triton.runtime.driver.active.get_current_target()).parse_options({}).allowed_dot_input_precisions`,
+which follows Triton's own per-target rule (and honors `TRITON_OVERRIDE_ARCH`), and pass the
+result into the kernels as a `tl.constexpr`. The deprecated `tl.dot(allow_tf32=...)` makes the
+same choice in the kernel, but `TRITON_F32_DEFAULT` overrides it, which would change the CUDA
+path. (FlexGEMM)
+
+### CUDA-namespaced libdevice calls and hard-coded FP8 types
+
+Triton's AMD backend refuses `tl.extra.cuda.libdevice.*` ("Implicit conversion of CUDA
+__nv_tanhf device function has been dropped"). `triton.language.extra.libdevice` dispatches per
+backend and compiles to the same PTX on NVIDIA. Likewise, an FP8 quantizer that casts to the
+literal `tl.float8e4nv` with 448 clamps cannot emit gfx942's FNUZ format: cast to
+`y_ptr.dtype.element_ty` and pass the format's maximum as a `tl.constexpr`, so the host-side
+tensor dtype decides. The NVIDIA build then compiles to identical PTX (compare with the debug
+sections stripped). (Matrix-Game)
 
 ## Integrated APUs
 

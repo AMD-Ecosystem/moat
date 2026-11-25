@@ -215,8 +215,8 @@ runs for many minutes -- normalise each element with `file(TO_CMAKE_PATH)`. (LEA
 GNU-style `clang++` is the one that works on every CMake version; make the project choose it,
 do not document a workaround.** Decision rule: default the project to the GNU-style driver
 for every language, which works from CMake 3.29 on; all-`clang-cl` is a valid second choice
-from CMake 4.0 (natural when the rest of the build passes MSVC-style flags) and fails on
-3.31; any other mix fails, except LibTorch's own setup. "Keep one clang driver across every
+from CMake 4.3 (natural when the rest of the build passes MSVC-style flags) and fails on
+3.31 through 4.2; any other mix fails, except LibTorch's own setup. "Keep one clang driver across every
 CMake language" below has the version table. `Platform/Windows-Clang.cmake`
 is include-guarded and picks MSVC-style or GNU-style rules for ALL languages from whichever
 language includes it first (MSVC-style if any language's frontend variant is MSVC). So with
@@ -267,10 +267,13 @@ line, giving `clang++: error: no such file or directory: '/machine:x64'`.
 
 Which driver to pick depends on the CMake version, so check it first:
 
-- **CMake 4.x: either works.** All-`clang-cl` is fine, and is what a project whose other
-  dependencies are MSVC-built will want. (UCM's recorded gfx1151 recipe; re-confirmed on
-  dietgpu with CMake 4.3.2.)
-- **CMake 3.31: `clang-cl` cannot be the HIP compiler.** `Windows-Clang-HIP.cmake` never
+- **CMake 4.3 or newer: either works.** All-`clang-cl` is fine, and is what a project whose
+  other dependencies are MSVC-built will want. (UCM's recorded gfx1151 recipe; re-confirmed
+  on dietgpu with CMake 4.3.2.) 4.3's `Windows-MSVC.cmake` is also the first to fill the
+  `MSVC_RUNTIME_LIBRARY` flags for HIP.
+- **CMake 3.31 through 4.2: `clang-cl` cannot be the HIP compiler.** A 4-line reproducer
+  with clang-cl for C, C++ and HIP fails `enable_language(HIP)` on CMake 3.31.0, 4.0.3, 4.1.2
+  and 4.2.3, and works on 4.3.2 (Open3D). On 3.31, `Windows-Clang-HIP.cmake` never
   populates `CMAKE_HIP_SIMULATE_VERSION`, so configure dies inside `Windows-MSVC.cmake`
   with "MSVC compiler version not detected properly". Use the GNU-driver
   `clang`/`clang++` for all three instead -- it still targets the MSVC ABI, so MSVC-built
@@ -446,6 +449,14 @@ runtime's, and, for a library found through `pkg_search_module` instead of `find
 fixes are typically still needed in the project's own CMake (`if(MSVC)` against `if(WIN32)`,
 clang-only warning suppressions): small, guarded to Windows and clang, and safe to commit;
 Open3D needed five. (Open3D)
+
+Grep a bundled dependency for `if(MSVC)` and `NOT MSVC` gates that really mean "Windows".
+Draco, as bundled by assimp 6.x for glTF, names its static target `draco_static` unless
+`MSVC`, while assimp references `draco` on every Windows build (`IF(MSVC OR WIN32)`); and
+Draco adds `_FILE_OFFSET_BITS=64` for every non-MSVC 64-bit build, which selects `ftello`,
+absent from the UCRT. Both fire with the GNU-style clang driver. Patch assimp to key the
+target name on `MSVC` and skip the large-file defines on `WIN32` (Draco then uses
+`_ftelli64`). (Open3D)
 
 ### TheRock clang 23 can hang in x86 register allocation
 

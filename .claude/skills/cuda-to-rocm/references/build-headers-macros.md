@@ -709,6 +709,13 @@ of the INSTALLED wrapper with the two includes reordered and puts it on the incl
 ahead of the resource dir -- the upstream fix, applied locally, with the language standard
 untouched.
 
+The asset's `execute_process` probe can also be written as two `try_compile(...
+SOURCE_FROM_CONTENT ... NO_CACHE HIP_STANDARD 23)` calls, which reuse the project's own HIP
+compiler settings. Keep `<hip/hip_runtime.h>` in the probe: a bare `__global__` fails the host
+pass ("Can't find declaration for hipLaunchKernel") and makes the shim look ineffective. In a
+target that mixes HIP and C++ sources, append the shim's `-I` to `CMAKE_HIP_FLAGS` so it
+reaches HIP translation units only. (CubbyFlow)
+
 Measured alternatives, all tried against ROCm 7.14 on gfx1151:
 
 | Approach | Compiles at C++23 | Keeps C++23 language | Keeps C++23 STL |
