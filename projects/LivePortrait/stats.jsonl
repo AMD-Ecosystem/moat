@@ -40,3 +40,9 @@
 {"kind":"phase","ts":"2026-11-24T01:36:51Z","phase":"test","seconds":197.623,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/rx7900-20261123-163241-val-liveportrait-w32-prompt/moat/../scripts/gradio.sh"}
 {"kind":"phase","ts":"2026-11-24T02:04:20Z","phase":"test","seconds":2498.505,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/rx7900-20261123-163241-val-liveportrait-w32-prompt/moat/../scripts/precision.sh"}
 {"kind":"session","ts":"2026-11-24T02:07:25Z","epoch":1795486045.903648,"event":"end","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-25T20:05:23Z","phase":"compile","seconds":21.701,"exit":0,"cmd":"bash -c cd projects/LivePortrait/src/src/utils/dependencies/XPose/models/UniPose/ops && MAX_JOBS=4 python setup.py build install"}
+{"kind":"phase","ts":"2026-11-25T20:05:58Z","phase":"test","seconds":3.843,"exit":0,"cmd":"timeout 900 python ../lp-win/xpose_driver.py /d/Develop/moat/agent_space/wt-LivePortrait/projects/LivePortrait/src/src/utils/dependencies/XPose/models/UniPose/ops"}
+{"kind":"phase","ts":"2026-11-25T20:06:23Z","phase":"test","seconds":10.587,"exit":0,"cmd":"timeout 900 python ../lp-win/xpose_1025.py /d/Develop/moat/agent_space/wt-LivePortrait/projects/LivePortrait/src/src/utils/dependencies/XPose/models/UniPose/ops"}
+{"kind":"phase","ts":"2026-11-25T20:09:02Z","phase":"test","seconds":0.662,"exit":2,"cmd":"timeout 1800 python inference.py"}
+{"kind":"phase","ts":"2026-11-25T20:12:35Z","phase":"test","seconds":202.714,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/lp-win/run_in_src.sh /d/Develop/moat/agent_space/lp-win/h_default.log 1800 python inference.py"}
+{"kind":"session","ts":"2026-11-25T20:45:56Z","epoch":1795639556.529309,"event":"end","platform":"windows-gfx1151"}

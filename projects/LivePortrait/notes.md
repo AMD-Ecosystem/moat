@@ -445,3 +445,82 @@ Synthetic reproducer (the issue's code at magnitudes 16000 / 30000 / 40000, empt
 - `python3 utils/jargon.py --port LivePortrait`: clean. Docs: both READMEs describe the default (readme.md line 142).
 - Integrity: `git status --porcelain --untracked-files=no` empty at `874215c`; untracked files are hipify build output only (weight symlinks removed).
 - `benchmark:speed` stays `owed` in surface.json (not re-run here; the validator does not rule it).
+
+## Validation 2026-11-25 (windows-gfx1151, validator role): head 874215c, windows gate
+
+AMD Radeon 8060S (gfx1151, RDNA3.5, wave32, 40 CUs, shared system memory), Windows 11 laptop, MSVC 14.44 BuildTools. Fork `moat-port` at `874215c` (= `head_sha` = `reviewed_sha`), built in `projects/LivePortrait/src`. Verdict: **pass**. **The fix is visible on this card:** the previous default Animals FP16 command overflows here (black boxes); at the head the documented command, with no MIOpen variable set by the user, gives no non-finite value and no dark block, and MIOpen chooses no Winograd solver in that process. One GPU process at a time, every run under `timeout`, no hang and no wedge; the host did not crash.
+
+### Environment (everything under `agent_space/lp-win`, nothing on C:)
+
+- Python 3.12 (python.org, no spaces in path), fresh venv. Same torch build as the Linux validations, which the nightly index also publishes for Windows: `pip install --pre --index-url https://nightly.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple "torch[device-gfx1151]==2.16.0a0+rocm10.2.0a20261022" "torchvision==0.30.0a0+rocm10.2.0a20261022" "rocm[libraries,devel,device-gfx1151]==10.2.0a20261022"` (HIP 7.17.26422, AMD clang 24.0.0git; `python -m rocm_sdk test`: 27 tests OK, 1 skipped). torch sees `AMD Radeon(TM) 8060S Graphics`; a fp16 matmul and fp16 Conv2d were finite before anything else ran. Every process prints a MIOpen "LGBM metadata load failed ... picker will abstain" warning (the wheel lacks `lgbm_model_meta.json`); harmless.
+- Dependencies: `requirements_rocm.txt` (onnxruntime 1.27.0 on win32, onnx 1.16.1, numpy 1.26.4, opencv 4.10.0.84) plus the gradio pins the Linux runs needed (`huggingface_hub<1`, `fastapi==0.115.2`, `pydantic==2.10.6`, `no_proxy=127.0.0.1,localhost`).
+- ONNX Runtime has no GPU provider on Windows (the helper falls back as documented): every run logs `['CPUExecutionProvider']` for all 3 sessions. So face detection and landmarks are on CPU here; the portrait networks (appearance extractor, motion extractor, warping, SPADE generator, stitching) run on the GPU.
+- ffmpeg/ffprobe 9.1 (Gyan full build via `winget install Gyan.FFmpeg --location <dir>`; the README's Windows link points to unvetted binaries on a third-party Hugging Face repo, which this job did not download). Weights: `snapshot_download('KwaiVGI/LivePortrait', ...)` (2.0 GB), copied into `pretrained_weights/` and removed afterwards.
+- Instrumentation (host-local, not committed): the same kind of wrapper as the Linux runs (global forward hooks; per run: count of `SPADEDecoder` outputs that are non-finite, first Conv2d whose inputs are finite and output is not, in-process value of `MIOPEN_DEBUG_CONV_WINOGRAD`, ORT providers; saves the first N generator outputs; sets no MIOpen variable), `MIOPEN_LOG_LEVEL=5` for "FW Chosen Algorithm", and comparers for generator tensors (x255) and decoded video ("dark block" = 16x16 block mean < 8 in the candidate and > 40 in the reference). Job-local `MIOPEN_USER_DB_PATH`.
+
+### Does the README's Windows route work as written?
+
+Mostly, with two findings (neither is a ROCm defect, neither changes the port):
+1. `pip install -r requirements_rocm.txt` fails on Windows with Python 3.12: `requirements_base.txt` pins `lmdb==1.4.1`, which has no cp312 Windows wheel; the sdist build needs `patch-ng` and then fails with "Applying patch failed". The README says Python 3.11 or newer, so 3.12 is within it. `lmdb` is not imported anywhere in the source (`grep -rn lmdb --include=*.py` finds nothing). Worked around here by installing everything else plus `lmdb 1.7.5` (wheel); nothing changed in the fork. Proposed change if a person wants it: loosen the pin to `lmdb>=1.4.1` (CUDA users on Windows with 3.12 hit the same failure, so it is upstream drift, not ROCm).
+2. "install the ROCm PyTorch wheels for your GPU as described in the ROCm documentation" names no index; this job used the same nightly index and version as the Linux validations (needed to compare line by line). A user reading the sentence cold does not learn that gfx1151 needs the `[device-gfx1151]` extra.
+Also: behind a corporate TLS proxy `huggingface_hub` needed `pip-system-certs`.
+
+### X-Pose op (Animals mode, `ops/`)
+
+`MAX_JOBS=4 python setup.py build install` with `DISTUTILS_USE_SDK=1`, `CC=CXX=clang-cl`, `ROCM_HOME` = venv `_rocm_sdk_devel`, `PYTORCH_ROCM_ARCH=gfx1151`, MSVC `link.exe` first on PATH: rc 0 in 22 s, 176 warnings (deprecations), `MultiScaleDeformableAttention.cp312-win_amd64.pyd` carrying a `hip-amdgcn-amd-amdhsa--gfx1151` offload bundle. The README's `python setup.py build install` works unchanged on Windows.
+
+`ops/test.py`, reduced (its own functions called from a driver): forward double True (max abs 8.67e-19, rel 2.35e-16) and float True (4.66e-10, 1.13e-07), identical to gfx942/gfx1100; `check_gradient_numerical` True for D = 30, 32, 64, 71 (peak GPU memory 0.06 GiB) and D = 1025 (peak 13.2 GiB, 11 s). `gradcheck(fast_mode=True)`: D = 1025 and 3096 fail only the reentrancy check ("Backward is not reentrant") and are True with `nondet_tol=1e-12`; D = 2048 True both ways: the same pattern as every Linux platform (atomicAdd ordering). **Reduced:** slow-mode gradcheck for D = 2048 and 3096 was not run: its dense double Jacobians are 7.5 GiB each (37.5 GiB in use) on the Linux hosts, which is the tens-of-GiB allocation this laptop must not run (shared system memory); it also ran out of memory on the 24-48 GB Linux cards. The fast-mode checks cover the same shapes.
+
+### Humans mode (`inference.py`, README commands, MIOpen variable unset in the process)
+
+| run | rc | wall |
+|---|---|---|
+| `python inference.py` (s0/d0, fp16), cold MIOpen db | 0 | 203 s |
+| `-s s9.jpg -d d0.mp4`, cold | 0 | 227 s |
+| same, warm db | 0 | 59 s / 48 s |
+| `-s s13.mp4 -d d0.mp4` | 0 | 74 s |
+| `-s s9.jpg -d d12.jpg` | 0 | 27 s |
+| `-s s9.jpg -d d0.pkl` | 0 | 49 s |
+| `-s s9.jpg -d talking.pkl` | 1 | `KeyError: 'c_d_eyes_lst'`, upstream data (every platform) |
+| `--no_flag_use_half_precision` (cold FP32 find) | 0 | 201 s |
+| `--flag_force_cpu --no_flag_use_half_precision` (torch on CPU, ONNX CPU) | 0 | 184 s |
+| `--flag_do_torch_compile` | 0 | 55 s: inductor logs `ModuleNotFoundError: No module named 'triton'` (no Triton in the Windows venv) and the run falls back to eager; output finite. The option has no effect on this platform; the Linux runs compile (177-550 s). Not a port change. |
+
+Humans mode is unchanged by the delta: the variable is unset in those processes and MIOpen picks `ConvWinoFuryRxS<2-3>` x18 and `ConvBinWinogradRxSf2x3g1` x1 (Winograd allowed), with no non-finite output. 78 of 78 generator calls finite in every Humans run.
+
+FP16 vs FP32 vs CPU, source s9, `d0.mp4` (generator: first 8 frames, 3x512x512, x255; video 78 frames): GPU FP32 vs CPU FP32 generator max 0.125 / mean 0.0002; GPU FP16 vs CPU FP32 generator max 20.7 / mean 0.128 (Linux s9: max 15.9-20.9, mean 0.11-0.13); video GPU FP32 vs CPU mean 0.471 / p99 4 / max 28, GPU FP16 vs CPU mean 0.725 / p99 5 / max 22, GPU FP16 vs FP32 mean 0.720 / max 26; 0 dark blocks in all three. Only one source was compared here (the Linux runs used four); the other sources were not run to keep GPU time on the laptop down.
+
+### Animals mode: the change
+
+`python inference_animals.py -s assets/examples/source/s39.jpg -d assets/examples/driving/wink.pkl --driving_multiplier 1.75 --no_flag_stitching` (57 frames), wrapper + `MIOPEN_LOG_LEVEL=5`, `MIOPEN_DEBUG_CONV_WINOGRAD` removed from the environment unless stated. "Previous code" is `git show 00f208c:inference_animals.py` as an untracked copy (removed afterwards). Reference A2 is head FP32. A0, A1, A3 share one fresh MIOpen db; A4 and A2 another.
+
+| run | in-process value | Winograd solvers chosen (of 55 problems) | non-finite generator outputs | first non-finite module | vs FP32: generator max / mean (16 frames) | vs FP32: video mean / max / dark blocks | wall |
+|---|---|---|---|---|---|---|---|
+| A0 previous code, FP16 default, empty db | unset | `ConvWinoFuryRxS<2-3>` x18, `ConvBinWinogradRxSf2x3g1` x1, `ConvBinWinogradRxSf3x2` x1 | 40 of 57 (31457280 values); 1 "invalid value encountered in cast" | `spade_generator.G_middle_5.conv_1` (Conv2d, input absmax 38336, 2048 non-finite outputs) | 9.1 / 0.29 (finite part; 1572864 non-finite) | **96.05 / 252 / 36333** (black boxes) | 238 s |
+| A1 head, FP16 default, db holding A0's Winograd records | `'0'` | none | 0 of 57 | none | 10.4 / 0.34 | 1.35 / 29 / 0 | 38 s |
+| A2 head, `--no_flag_use_half_precision` (reference) | `'0'` | none | 0 | none | -- | -- | 92 s |
+| A3 head, FP16, user sets `MIOPEN_DEBUG_CONV_WINOGRAD=1` | `'1'` | `ConvWinoFuryRxS<2-3>` x18, `ConvBinWinogradRxSf3x2` x3 | 40 of 57 (31457280 values); 1 cast warning | `G_middle_5.conv_1` (input absmax 38336, 2048 non-finite) | 9.0 / 0.29 (finite part) | 96.05 / 252 / 36333 | 36 s |
+| A4 head, FP16 default, empty db | `'0'` | none | 0 | none | 11.3 / 0.38 | 1.37 / 43 / 0 | 215 s |
+| P0, P1 head, plain documented command: no wrapper, no MIOpen variable in the environment (checked), db with A4's records | (not printed) | -- | -- | -- | -- | 1.35 / 26 and 1.37 / 30 / **0** each; no cast warning | 34 s, 34 s |
+
+So, on this card: the default really is in effect in the Animals process (in-process value `'0'`, no Winograd solver for any of the 55 problems); a value the user sets wins (A3 reproduces A0: same 36333 dark blocks, same first layer and magnitude); a db holding Winograd records does not defeat it (A1); and the plain documented command gives clean output (P0/P1). The first bad layer, its input magnitude (38336) and the dark-block count match the porter's gfx1100 report (36307), the gfx942 run (36301) and the gfx1100 validator (36315). With Winograd allowed MIOpen picks the Fury solver for this layer on gfx1151 as on gfx1100, so gfx1151 is another platform where the fix is visible. Wall times: default 38 s vs `=1` 36 s in single, non-alternated runs (not a cost measurement).
+
+### Gradio (`app.py`, `app_animals.py`)
+
+`app.py` HTTP 200 after ~6 s; `app_animals.py` HTTP 200 after ~8 s (after the gradio pins, which are upstream drift). One Animals request through `gradio_client` (`/gpu_wrapped_execute_video`, s39.jpg + wink.pkl, Pickle tab, multiplier 1.75, crop on, stitching off): returned the three outputs, no Winograd solver chosen, no cast warning; video vs the CLI FP32 run mean 1.37/255, max 27, 0 dark blocks. Servers stopped by `timeout` and `kill`; no leftover process.
+
+### Not run
+
+- `speed.py` (aborts under inductor on Linux; no Triton here). `benchmark:speed` stays `owed` in surface.json.
+- Slow-mode gradcheck at D = 2048 and 3096 (memory; see above). Humans comparisons for sources s0, s5, s7 (time).
+- CUDA no-regression compile: not re-run on this host. The delta `00f208c..874215c` changes no compiled file; the nvcc 12.8 build at `00f208c` (gfx950 review) still covers every compiled source.
+
+### Gates
+
+- `python utils/jargon.py --port LivePortrait`: clean. Docs: both READMEs describe the ROCm build and the default (readme.md lines 131-142, 203).
+- Integrity: `git status --porcelain --untracked-files=no` empty at `874215c`; untracked files are hipify build output only (`src/hip/` and `*_hip.*` generated by the extension build).
+- Nothing pushed to the fork.
+
+### Lesson for cuda-to-rocm: no ONNX Runtime GPU provider and no Triton on Windows ROCm, so those paths degrade silently
+
+For `windows.md`. On Windows ROCm PyTorch: (1) PyPI `onnxruntime` has only the CPU provider and `onnxruntime-migraphx` is Linux-only, so a project that selects a provider by `torch.version.hip` must fall back to CPU there and say so; check `session.get_providers()`. (2) The nightly Windows torch wheel carries no Triton, so `torch.compile` with the inductor backend logs `No module named 'triton'` and falls back to eager (rc 0, correct output, no speedup); a clean exit does not mean compile worked. (3) A pinned old `lmdb` (or any sdist-only pin) has no cp312 Windows wheel and its sdist needs a patch tool; check pins against the Windows Python before blaming ROCm. (LivePortrait)
