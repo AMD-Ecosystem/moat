@@ -1,0 +1,324 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "d971d02a0b29",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [
+      "include/tensorview/contexts/cuda_blas.h",
+      "include/tensorview/core/defs.h",
+      "include/tensorview/core/mp_helper.h",
+      "include/tensorview/cuda/device_ops.h",
+      "include/tensorview/cuda/kernel_utils.h",
+      "include/tensorview/cuda/launch.h",
+      "include/tensorview/cuda/nvrtc.h",
+      "include/tensorview/gemm/arch/memory_sm75.h",
+      "include/tensorview/gemm/cutlass_compat.h",
+      "include/tensorview/gemm/dtypes/half.h",
+      "include/tensorview/hash/hash.cu.h",
+      "include/tensorview/parallel/kernel1d.h",
+      "include/tensorview/parallel/ops.h",
+      "include/tensorview/simple_ops.h",
+      "include/tensorview/tensor.h"
+    ],
+    "markers": {
+      "warp_intrinsic": 22,
+      "kernel": 19,
+      "device_code": 42,
+      "launch": 1,
+      "driver_api": 1,
+      "runtime_ptx": 13
+    },
+    "libraries": {
+      "thrust": 13,
+      "curand": 11,
+      "cublas": 15,
+      "cutlass": 3
+    }
+  },
+  "components": [
+    {
+      "id": "option:CUMM_DISABLE_CMAKE_INSTALL",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "disable cumm install"
+    },
+    {
+      "id": "build:hip-target",
+      "kind": "build",
+      "where": "cumm/constants.py, cumm/common.py, setup.py, cumm/__init__.py",
+      "doc": "HIP build target through pccm/ccimport (.cu -> clang++ bound to amdclang++), ROCm discovery, gfx arch list, amdhip64/hiprtc link, Linux and Windows"
+    },
+    {
+      "id": "build:cmake-export",
+      "kind": "build",
+      "where": "CMakeLists.txt, cmake/cummConfig.cmake.in",
+      "doc": "HIP branch of the exported cumm::cumm INTERFACE target"
+    },
+    {
+      "id": "build:wheel",
+      "kind": "packaging",
+      "where": "setup.py, tools/",
+      "doc": "cumm-rocm<major> wheel script and name; no NVIDIA redistributables copied"
+    },
+    {
+      "id": "library:core_cc",
+      "kind": "python_extension",
+      "where": "setup.py:184, cumm/tensorview_bind.py, cumm/csrc/arrayref.py",
+      "doc": "prebuilt pybind module (tensorview bindings, NVRTC wrapper, CompileInfo) built for HIP; import and tensor round trip"
+    },
+    {
+      "id": "runtime:compile-info-arch",
+      "kind": "runtime",
+      "where": "cumm/common.py:492-677",
+      "doc": "CompileInfo and arch identity by gcnArchName on HIP; no CC tuple selection; HIP family availability helper"
+    },
+    {
+      "id": "headers:tensorview-runtime",
+      "kind": "headers",
+      "where": "include/tensorview/{core/common.h,cuda/*,tensor.h,tensorview.h,contexts/*,profile/*,tools.h,simple_ops.h,hash/ops.h}",
+      "doc": "CUDA runtime/driver API, curand, cublasLt, thrust, cuComplex through a host-includable compat header"
+    },
+    {
+      "id": "headers:compiler-identity",
+      "kind": "headers",
+      "where": "include/tensorview/core/defs.h",
+      "doc": "__HIPCC__ and __HIPCC_RTC__ branches; extended-lambda traits; device-compile helper"
+    },
+    {
+      "id": "headers:warp-ops",
+      "kind": "device",
+      "where": "include/tensorview/parallel/ops.h, cuda/device_ops.h",
+      "doc": "32-lane logical warp ops correct on wave64 and wave32; atomicAggInc warp_res initialisation"
+    },
+    {
+      "id": "headers:inline-ptx",
+      "kind": "device",
+      "where": "include/tensorview/gemm/arch/{memory,semaphore,transpose}.h, gemm/math/numeric_convert.h",
+      "doc": "PTX replaced by C++/HIP atomics on HIP; host-only fallbacks not taken in the HIP device pass"
+    },
+    {
+      "id": "headers:hash",
+      "kind": "device",
+      "where": "include/tensorview/hash/",
+      "doc": "hash tables (64-bit CAS) on HIP"
+    },
+    {
+      "id": "runtime:hiprtc",
+      "kind": "runtime_compile",
+      "where": "include/tensorview/cuda/nvrtc.h, cuda/driver.h, cumm/nvrtc/, cumm/gemm/nvrtc_code.py, cumm/conv/nvrtc_code.py, cumm/inliner/",
+      "doc": "NVRTC + driver API path ported to hipRTC + hipModule (ConstantMemory, KernelAndCPU, Direct; DynamicParallism refused on HIP)"
+    },
+    {
+      "id": "runtime:hiprtc-std",
+      "kind": "runtime_compile",
+      "where": "include/tensorview/core/rtc_std.h, core/hiprtc_std.h (new)",
+      "doc": "RTC standard-library headers for hipRTC in new Apache-2.0 files; the four GPL nvrtc headers stay unmodified"
+    },
+    {
+      "id": "generator:simt-gemm",
+      "kind": "generator",
+      "where": "cumm/gemm/kernel.py, gemm/blockmma/mma.py, gemm/arch/memory.py, gemm/algospec/simt.py, gemm/wmma/simt.py",
+      "doc": "SIMT GEMM families (f32, f16, SimtDP4A s8) incl. shuffle and split-K: body gates, wave64 prologue, PTX loads, 64-bit masks"
+    },
+    {
+      "id": "generator:simt-conv",
+      "kind": "generator",
+      "where": "cumm/conv/kernel.py, conv/sparse_iters.py, conv/input_iters.py, conv/algospec/simt.py",
+      "doc": "SIMT implicit-GEMM conv (fwd/dgrad/wgrad, dense and sparse mask iterators)"
+    },
+    {
+      "id": "generator:amd-mfma",
+      "kind": "generator",
+      "where": "cumm/gemm, cumm/conv (new modules)",
+      "doc": "MFMA family (CDNA wave64: gfx90a, gfx942, gfx950), fp16 and bf16, gemm and conv (jeff's Option B ruling 2026-11-23)"
+    },
+    {
+      "id": "generator:amd-wmma-gfx11",
+      "kind": "generator",
+      "where": "cumm/gemm, cumm/conv (new modules)",
+      "doc": "WMMA family, RDNA3/3.5 operand layout (gfx1100-gfx1102, gfx1151), fp16 and bf16, gemm and conv (Option B)"
+    },
+    {
+      "id": "generator:amd-wmma-gfx12",
+      "kind": "generator",
+      "where": "cumm/gemm, cumm/conv (new modules)",
+      "doc": "WMMA family, RDNA4 operand layout (gfx1200, gfx1201), fp16 and bf16, gemm and conv (Option B)"
+    },
+    {
+      "id": "generator:launch-smem",
+      "kind": "generator",
+      "where": "cumm/gemm/main.py, cumm/conv/main.py",
+      "doc": "dynamic shared-memory opt-in and the 64 KiB per-block limit on HIP"
+    },
+    {
+      "id": "test:test_tensors",
+      "kind": "test",
+      "where": "test/test_tensors.py",
+      "doc": "existing"
+    },
+    {
+      "id": "test:math",
+      "kind": "test",
+      "where": "test/math/",
+      "doc": "existing, inliner through hipRTC, np.allclose"
+    },
+    {
+      "id": "test:reduce",
+      "kind": "test",
+      "where": "test/reduce/test_reduce.py",
+      "doc": "existing, inliner through hipRTC"
+    },
+    {
+      "id": "test:cutest_nvrtc_std",
+      "kind": "test",
+      "where": "test/cutest_nvrtc_std.py",
+      "doc": "existing, RTC std headers"
+    },
+    {
+      "id": "test:gemm-harness",
+      "kind": "test",
+      "where": "test/test_gemm.py (new)",
+      "doc": "authored GPU gemm harness, all families, prebuilt and hipRTC routes"
+    },
+    {
+      "id": "test:conv-harness",
+      "kind": "test",
+      "where": "test/test_conv.py (new)",
+      "doc": "authored GPU conv harness"
+    },
+    {
+      "id": "test:tensorview-gpu",
+      "kind": "test",
+      "where": "test/test_tensorview_gpu.py (new)",
+      "doc": "authored tensorview runtime, hash and reduce harness"
+    },
+    {
+      "id": "test:cpu-only",
+      "kind": "test",
+      "where": "CPU-only install",
+      "doc": "non-GPU regression: CPU-only build imports, llvmlite JIT, generation without GPU"
+    },
+    {
+      "id": "check:cuda-no-regression",
+      "kind": "check",
+      "where": "mi355 nvcc",
+      "doc": "nvcc compile and CUDA generated-source diff vs upstream"
+    },
+    {
+      "id": "platform:windows",
+      "kind": "platform",
+      "where": "windows-gfx1151",
+      "doc": "MSVC host + amdclang++ device build, hipRTC DLL discovery"
+    },
+    {
+      "id": "generator:nvidia-tensorop",
+      "kind": "generator",
+      "where": "cumm/gemm/{algospec/volta.py,algospec/turing.py,wmma/volta.py,wmma/turing.py,volta_*,turing_*,layout_tensorop.py,arch/tensorop.py,arch/ldmatrix.py,arch/cpasync.py,blockmma/mma_multistage.py,blockmma/mma_async.py}",
+      "doc": "NVIDIA tensor-core families"
+    },
+    {
+      "id": "generator:legacy-dev",
+      "kind": "generator",
+      "where": "cumm/gemm/legacy, conv/legacy, gemm/dev, gemm/dev_gemm.py, develop/",
+      "doc": "legacy and developer code"
+    },
+    {
+      "id": "tool:cutlasstest",
+      "kind": "tool",
+      "where": "cumm/gemm/cutlasstest.py",
+      "doc": "CUTLASS comparison script"
+    },
+    {
+      "id": "tool:services-nvrtc",
+      "kind": "tool",
+      "where": "cumm/services/nvrtc.py",
+      "doc": "tensorpc remote compile service"
+    },
+    {
+      "id": "tool:cudasim-new-families",
+      "kind": "tool",
+      "where": "cumm/cudasim",
+      "doc": "Python simulation of the new AMD families"
+    },
+    {
+      "id": "backend:metal",
+      "kind": "backend",
+      "where": "AppleMetalImpl, CummMetalModule",
+      "doc": "Apple Metal backend"
+    },
+    {
+      "id": "test:test_metal",
+      "kind": "test",
+      "where": "test/test_metal.py",
+      "doc": "Metal tests"
+    },
+    {
+      "id": "tool:dev-scripts",
+      "kind": "tool",
+      "where": "test/dev.py, test/llvm_debug.py, test/constexpr_dev.py, test/cutest_nvrtc_cpu.py, cumm/gemm/main_real*.py, cumm/conv/main_real*.py",
+      "doc": "developer scripts without assertions"
+    },
+    {
+      "id": "feature:dynamic-parallelism",
+      "kind": "feature",
+      "where": "NVRTCMode.DynamicParallism",
+      "doc": "device-side launch mode"
+    },
+    {
+      "id": "feature:int8-tf32-matrix",
+      "kind": "feature",
+      "where": "Turing/Ampere imma and tf32 mma",
+      "doc": "int8 and tf32 matrix-instruction kernels"
+    }
+  ],
+  "covered": [],
+  "scoped_out": [
+    {
+      "id": "generator:nvidia-tensorop",
+      "reason": "NVIDIA-only instructions (mma.sync, ldmatrix, cp.async) with no HIP spelling; not generated in HIP builds and replaced by generator:amd-mfma / amd-wmma-*; the CUDA path keeps them unchanged"
+    },
+    {
+      "id": "generator:legacy-dev",
+      "reason": "not imported by the build, by spconv or by the tests (legacy/dev code; gemm/frozen stays because gemm/gather.py imports it and is covered with the SIMT shuffle kernels)"
+    },
+    {
+      "id": "tool:cutlasstest",
+      "reason": "compares against a local CUTLASS checkout; CUDA-only by purpose"
+    },
+    {
+      "id": "tool:services-nvrtc",
+      "reason": "already broken upstream (passes headers in the params slot) and used by nothing in cumm or spconv"
+    },
+    {
+      "id": "tool:cudasim-new-families",
+      "reason": "the asyncio simulator is a visualisation aid for the NVIDIA families; the new AMD classes need no simulation to build or run"
+    },
+    {
+      "id": "backend:metal",
+      "reason": "Apple-only backend, untouched by the port; regression guarded by the generated-source diff (no change under __APPLE__/__METAL_VERSION__)"
+    },
+    {
+      "id": "test:test_metal",
+      "reason": "needs macOS with MPS; not runnable on AMD hosts"
+    },
+    {
+      "id": "tool:dev-scripts",
+      "reason": "print-only developer drivers; their coverage moves into the authored harness (test:gemm-harness, test:conv-harness)"
+    },
+    {
+      "id": "feature:dynamic-parallelism",
+      "reason": "HIP has no device runtime; the mode is refused on HIP with a clear error, and nothing in cumm or spconv uses it by default (ConstantMemory)"
+    },
+    {
+      "id": "feature:int8-tf32-matrix",
+      "reason": "jeff's 2026-11-23 ruling names fp16 and bf16 for the AMD matrix families; int8 and tf32 GEMMs run on the SIMT kernels on HIP (correct, slower); extension is jeff's call (notes.md question)"
+    },
+    {
+      "id": "option:CUMM_DISABLE_CMAKE_INSTALL",
+      "reason": "install toggle with no CUDA content; unchanged"
+    }
+  ],
+  "owed": [],
+  "removed_from_floor": []
+}

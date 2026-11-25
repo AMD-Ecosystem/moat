@@ -220,3 +220,26 @@ repository page, description and search show only the default branch. When a can
 port repository looks empty or identical to upstream, list its branches
 (`gh api repos/<owner>/<repo>/branches`) and compare each tip to upstream before
 concluding there is no prior work. Seen on a spconv/cumm FlyDSL rewrite (2026-11).
+
+## Planning -- 2026-11-25, linux-gfx90a (fleet job, headless)
+
+Plan written to `plan.md`; surface accounting in `surface.json` (39 components, `surface.py check cumm` clean). Read-only analysis of upstream `d971d02a0`, pccm `860790f` (PyPI 0.4.16) and ccimport `f5af43d` (PyPI 0.4.4), cloned into the job's `agent_space`; nothing built, fork untouched.
+
+Decisions in the plan:
+- Build class: pccm/ccimport code generation (`set-ext-type cumm pccm`). Strategy-A-shaped: a HIP build target at the flag level, CUDA spelling kept, one compat header, fixes behind `__HIP_PLATFORM_AMD__`, no build-time hipify.
+- ccimport stays unmodified (jeff's ruling): `.cu` is mapped to the logical compiler `clang++` through `build_pybind(suffix_to_compiler=...)`, `clang++` is bound to `amdclang++` through `CCIMPORT_COMPILER_LINKER_MAP`, and HIP flags go in the `clang++` bucket. `PCCMExtension` cannot carry `suffix_to_compiler`, so `setup.py` gets its own `build_ext` on HIP. One Windows unknown: ccimport's default meta adds `-fPIC` for `clang++` on every OS (`writer.py:940`); if an msvc-target clang rejects it, a fix needs either a launcher in cumm or a ccimport change, which reopens the ruling (question 3 below).
+- Biggest silent risk found: `include/tensorview/core/defs.h:17` does not recognise hip-clang (`__HIP__`/`__HIPCC__`), so every tensorview device macro falls to the host branch. The study did not see it because its shim hipified the headers.
+- The GPL nvrtc headers stay byte-identical: a new `core/rtc_std.h` dispatcher selects a new clean-room `core/hiprtc_std.h` under `__HIPCC_RTC__`, and the includers (all Apache files) are repointed. Under hipRTC the GPL `type_traits.h`/`limits.h` come out empty anyway (guarded by `__CUDACC_RTC__`).
+- Option B: two new generator families, MFMA (CDNA wave64, warp = one 64-lane wavefront) and WMMA (RDNA wave32; gfx11 and gfx12 layouts selected per device pass), fp16/bf16 with fp32 accumulate, gemm and conv. They reuse the SIMT input and output stages and add a warp MMA, LDS-to-fragment warp iterators and D-layout output iterators. Estimate 3,000-5,000 generator lines; whole port 45-70 files, 4,500-8,000 lines, 6-10 porter rounds.
+- Upstream has no assertion-bearing GPU tests; the port ships a pytest harness (`test/test_gemm.py`, `test/test_conv.py`, `test/test_tensorview_gpu.py`). wave32 needs both a gfx11 and a gfx12 run to cover both WMMA layouts.
+
+Corrections to the study, at this revision: the probe's `asm_block` sites in `mask_iters.py` and `input_iters.py` are dead code (commented out or after `return`); the live generator PTX is `gemm/arch/memory.py:59` (emitted by both branches of its `#if`) and four sites in `conv/sparse_iters.py` (293, 327, 886, 917). The commented C++ next to the sparse_iters sites writes 0 when the predicate is false, while the PTX leaves the destination unchanged; keep the PTX semantics. `include/tensorview/gemm/arch/memory.h` load/store PTX has no arch guard at all and sits on the SIMT epilogue path.
+
+Dependencies: `depends_on` stays `[ccimport]` (dispositioned already supported, so it does not block). No new hard dependency. pccm is a PyPI build requirement, not a MOAT project. ROCm components used: amdhip64, hipRTC, rocThrust, hipRAND (tensor.h random fill), hipBLASLt (debug-only cublasLt context). Optional, test-time only: numpy (already required), numba (imported by `test/math/test_array.py`), llvmlite (CPU JIT tests), torch (optional conv reference; the harness falls back to numpy).
+
+### Questions for jeff (none blocks the porter)
+
+1. int8 and tf32 matrix kernels. The ruling names fp16 and bf16, so int8 (spconv's int8 inference path, Turing/Ampere `imma` on CUDA) and tf32 stay on the SIMT kernels on HIP: correct, slower. AMD has int8 matrix instructions on every target (MFMA i8, WMMA iu8). Extend the families to int8 now, or later?
+2. SimtDP4A acceleration with `__builtin_amdgcn_sdot4`/`sudot4` (availability differs by target). Planned off.
+3. Windows `-fPIC`: tested first in the Windows round; only a question if clang rejects it.
+4. Wheel venue and gfx list for `cumm-rocm7`, after the port is complete.

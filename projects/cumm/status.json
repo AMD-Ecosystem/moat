@@ -5,19 +5,15 @@
   "fork_url": "https://github.com/AMD-Ecosystem/cumm",
   "fork_default_branch": "main",
   "priority": 0.0,
-  "ext_type": "unknown",
-  "stage": "planning",
+  "ext_type": "pccm",
+  "stage": "planned",
   "adopted_at": "2026-11-20T20:55:39Z",
-  "updated_at": "2026-11-25T23:34:35Z",
+  "updated_at": "2026-11-25T23:48:30Z",
   "head_sha": null,
   "depends_on": [
     "ccimport"
   ],
-  "porting": {
-    "arch": "linux-gfx90a",
-    "since": "2026-11-25T23:34:35Z",
-    "holder": "3abe99d640b0"
-  },
+  "porting": null,
   "waivers": {},
   "platforms": {
     "linux-gfx942": {
@@ -50,7 +46,7 @@
       "failed_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-11-25T23:34:35Z",
+      "updated_at": "2026-11-25T23:48:30Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -89,5 +85,10 @@
     "at": "2026-11-23T18:49:49Z",
     "tier": 3,
     "note": "Cleared 2026-11-23 with a condition: the port must not modify the four GPL-3.0-or-later WITH GCC-exception-3.1 files (include/tensorview/core/nvrtc_std.h and core/nvrtc/core.h, limits.h, type_traits.h). A hipRTC path goes in new files under the project's own license. Not a legal opinion."
+  },
+  "porting_released": {
+    "arch": "linux-gfx90a",
+    "since": "2026-11-25T23:34:35Z",
+    "at": "2026-11-25T23:48:30Z"
   }
 }
