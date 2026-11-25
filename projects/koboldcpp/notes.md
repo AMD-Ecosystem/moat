@@ -179,13 +179,19 @@ T1 overlay recipe above; T2/T3 harness scripts, the legacy-model converter and t
 
 ## Lesson for cuda-to-rocm: hipblasGemmEx rejects HIPBLAS_COMPUTE_32F_FAST_16F for FP16 inputs
 
+Promoted to cuda-to-rocm/references/libraries.md in 9d8549ee.
+
 For `references/libraries.md` (cuBLAS section). Symptom: a cuBLAS-to-hipBLAS shim that maps `CUBLAS_COMPUTE_32F_FAST_16F` to `HIPBLAS_COMPUTE_32F_FAST_16F` (the natural spelling once HIP 6.5 introduced `hipblasComputeType_t`) fails at run time with `HIPBLAS_STATUS_NOT_SUPPORTED` (7) on an FP16 x FP16 -> FP32 `hipblasGemmEx`, while the CUDA build of the same code runs (not re-verified against current cuBLAS here). Cause: hipBLAS's header documents FAST_16F as "32-bit input can use 16-bit compute" (`hipblas-common.h`), and the rocBLAS backend and does not take it with 16-bit inputs. Fix: map it to `HIPBLAS_COMPUTE_32F` for those GEMMs (before HIP 6.5 the shims used `HIPBLAS_R_32F`, which is why older builds worked). Seen with ROCm 10.2 (HIP 7.17) on gfx942 (koboldcpp legacy GGML v2 path). Check every compute-type enum a shim maps, not just the ones the main path uses.
 
 ## Lesson for cuda-to-rocm: rocminfo prints pool sizes as "N (0xH) KB"
 
+Promoted to cuda-to-rocm/references/platform-limits.md in 9d8549ee.
+
 For `references/platform-limits.md` (device queries). Symptom: a launcher that scrapes `rocminfo` for VRAM finds nothing on ROCm 10.1/10.2 (koboldcpp: "Unable to detect VRAM", no GPU auto-selection). Cause: rocminfo writes `Size: 25163776 (0x17ff800) KB` with a space before the parenthesis; parsers written against `25163776(0x17ff800) KB` (regex `(\d+)\(0x`) miss it. Fix: allow optional whitespace (`(\d+)\s*\(0x[0-9a-fA-F]+\)\s*KB`), or query the HIP runtime (`hipMemGetInfo`) instead of scraping text. rocminfo also ignores `HIP_VISIBLE_DEVICES` (it lists every agent), so it is a poor source for the devices a process will see.
 
 ## Lesson for moat-porting: TheRock ROCm 10.x release wheels live on stable.repo.amd.com
+
+Promoted to moat-porting/SKILL.md in 9d8549ee.
 
 For the "Fleet hosts" section. `repo.amd.com/rocm/whl/<family>/` stops at 7.13 and `repo.amd.com/rocm/whl-multi-arch/` at 7.14.1; the ROCm 10.x release wheels are on `https://stable.repo.amd.com/rocm/whl-next/` (nightlies on `nightly.repo.amd.com/rocm/whl-next/`). A job dispatched with `FLEET_VENV` may install them into that venv (`$FLEET_VENV/bin/python -m pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ "rocm[libraries,devel]==10.2.0" "rocm-sdk-device-<gfx>==10.2.0"`); the job guard refuses an install outside it, and also refuses any shell command whose text merely contains the two words of a pip install, even inside a grep pattern.
 
