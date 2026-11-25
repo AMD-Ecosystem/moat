@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "setuptools-cuda",
   "adopted_at": "2026-06-04T01:07:42Z",
-  "updated_at": "2026-11-25T18:24:07Z",
+  "updated_at": "2026-11-25T18:39:05Z",
   "head_sha": "279816eb40309950d964a98df7d85c408811b9cf",
   "depends_on": [],
   "pr_url": "https://github.com/CERN/TIGRE/pull/747",
@@ -124,10 +124,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "2132d4e5cdd0bce5dec1250151465f172226546b",
+      "validated_sha": "279816eb40309950d964a98df7d85c408811b9cf",
       "started_at": "2026-06-04T01:41:19Z",
-      "completed_at": "2026-11-25T00:31:15Z",
-      "updated_at": "2026-11-25T18:24:07Z",
+      "completed_at": "2026-11-25T18:39:05Z",
+      "updated_at": "2026-11-25T18:39:05Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -141,23 +141,14 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "reviewer",
+      "last_agent": "validator",
       "failed_sha": "5a3da55948d954ca9184c0b4793bbb2be95490e9",
       "validated_prior": [
-        "f779703298570f752da7c3994db3fc9903b9bf1c",
         "c0151501c2a97922e9afea20007f3d049d0a815a",
         "183c2a453248ce6da0a12c3ac242a90cb5489a51",
-        "719b396fed5a5be993c96aa9a48d3a8d75943eb9"
-      ],
-      "carry_forward": {
-        "from": "719b396fed5a5be993c96aa9a48d3a8d75943eb9",
-        "to": "2132d4e5cdd0bce5dec1250151465f172226546b",
-        "method": "binary-equiv",
-        "class": "mixed",
-        "detail": "setup.py Windows-only build_ext -j guard (IS_WINDOWS gate, message text); gfx90a clean builds of 719b396f and 2132d4e5 at the same path: codeobj_diff identical and all 8 .so byte-identical, so host co",
-        "at": "2026-11-25T00:31:15Z",
-        "host_checked": true
-      }
+        "719b396fed5a5be993c96aa9a48d3a8d75943eb9",
+        "2132d4e5cdd0bce5dec1250151465f172226546b"
+      ]
     },
     "linux-gfx1100": {
       "state": "completed",
