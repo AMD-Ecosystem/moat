@@ -7,7 +7,7 @@
   "priority": 3.866,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:50Z",
-  "updated_at": "2026-11-25T23:08:18Z",
+  "updated_at": "2026-11-25T23:08:51Z",
   "head_sha": "2a3e44f0150db42e31b02850cbdb051737ead280",
   "depends_on": [],
   "waivers": {},
@@ -236,5 +236,10 @@
     "head_sha": "2a3e44f0150db42e31b02850cbdb051737ead280",
     "content_sha256": "fee932e6eb813d5e66d750c3cc77076464cda02f7e01fe3af07f48bacc367c8b",
     "review_pr": "https://github.com/AMD-Ecosystem/Quest/pull/2"
-  }
+  },
+  "pr_url": "https://github.com/mit-han-lab/Quest/pull/34",
+  "pr_number": 34,
+  "pr_opened_at": "2026-11-25T23:08:51Z",
+  "pr_state": "open",
+  "published_sha": "2a3e44f0150db42e31b02850cbdb051737ead280"
 }
