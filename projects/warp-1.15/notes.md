@@ -25,3 +25,9 @@ Trial merge (scratch clone `agent_space/trial`, push URL invalid, never pushed):
 `surface.json`: `python3 utils/surface.py generate warp-1.15` (43 CUDA files, 19 components; the floor now includes 1.15's new top-level CMake build) extended to 79 components (1.14's ids kept, plus deterministic mode, clusters, lean launches, mipmaps, managed memory, the radix-sort bit range, the CMake HIP question, the release-tag workflows, the NVIDIA-libmathdx and 64 KiB test duties); 77 owed, 2 scoped out by binding 1.14 rulings (conditional graph nodes, Clang-CUDA JIT), the two cuBQL CMake targets removed from the floor with a reason; `surface.py check warp-1.15`: fully accounted for.
 
 Survey method: the 1.14..1.15 diff was read in four parts (host runtime, device headers, AOT kernels, build/packaging/tests); every finding the plan relies on was re-read in source, and HIP API facts were checked against the ROCm 10.1 SDK headers on this host (to be re-checked on 10.2 by the porter).
+
+## Rulings
+
+### Ruling on plan Q1, how the 1.14 port is carried (jeff, 2026-11-24)
+
+(a), two merges. First `git merge -s ours release-1.14` on `release/1.15.0.amd0`, then `git merge release/1.14.0.amd0`; later 1.14 commits arrive as further merges. Recorded in `plan.md` (Q1 marked ruled; the carry section and Phase 0 state the two merges as decided). Q2 to Q6 remain open; they block only the phases the plan names (Q2 Phase 1's cluster work, Q3 Phase 3's mipmap part, Q4 Phase 6, Q5 Phase 2's sort work) and the release (Q6), not the start of porting, so the stage moves to `planned`. The porter still waits for warp-1.14 to pass Linux revalidation at its final head.

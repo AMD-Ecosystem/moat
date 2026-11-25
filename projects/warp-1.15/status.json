@@ -6,18 +6,14 @@
   "fork_default_branch": "release-1.15",
   "priority": 0.0,
   "ext_type": "python-build-nvrtc",
-  "stage": "planning",
+  "stage": "planned",
   "adopted_at": "2026-11-24T19:54:09Z",
-  "updated_at": "2026-11-24T19:58:21Z",
+  "updated_at": "2026-11-25T00:36:31Z",
   "head_sha": null,
   "depends_on": [
     "warp-1.14"
   ],
-  "porting": {
-    "arch": "linux-gfx942",
-    "since": "2026-11-24T19:58:21Z",
-    "holder": "5616df38123c"
-  },
+  "porting": null,
   "waivers": {},
   "platforms": {
     "linux-gfx950": {
@@ -49,7 +45,7 @@
       "failed_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-11-24T19:58:21Z",
+      "updated_at": "2026-11-25T00:36:31Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -101,5 +97,10 @@
     "viable": true,
     "summary": "Warp release-1.15 line: release/1.15.0.amd0 on AMD-Ecosystem/warp, built on the warp-1.14 port, with ROCm 10.2 wheels; started by ruling 2026-11-24",
     "at": "2026-11-24T19:55:27Z"
+  },
+  "porting_released": {
+    "arch": "linux-gfx942",
+    "since": "2026-11-24T19:58:21Z",
+    "at": "2026-11-25T00:36:31Z"
   }
 }
