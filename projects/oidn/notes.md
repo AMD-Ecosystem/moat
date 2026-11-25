@@ -157,9 +157,13 @@ oidnDenoise -d hip --hdr ... --alb ... --nrm ... -w smoke.tza -r <cpu output wit
 
 ## Lesson for cuda-to-rocm: one Composable Kernel XDL tile can serve every CDNA generation
 
+Promoted to cuda-to-rocm/references/libraries.md in 0bd85094.
+
 Belongs in `references/libraries.md`, "Generic GEMM on CK device operations". Symptom: a CK XDL instance taken from a gfx950 (double-rate MFMA) example looks gfx950-only (K1=16), and porters reach for a second K1=8 tile for gfx90a/gfx942. Cause: CK picks the MFMA instruction per offload target at compile time (`xdlops_gemm.hpp` `GetMfma<half_t,32,32>`: `mfma_f32_32x32x16f16` under `__gfx950__`, `mfma_f32_32x32x8f16` otherwise; KPack only has to be a multiple of `k_per_blk`), and `IsSupportedArgument` checks only `is_xdl_supported()` plus layout/vector conditions. Fix: compile the same instance for all CDNA targets and prove it from the code objects (disassemble per target, check `.wavefront_size`, LDS, scratch) before adding tiles; a K1=8 tile is a tuning choice, not a correctness need. Seen on oidn, CK pin 3e6d21ad (2025-04), ROCm 10.2.
 
 ## Lesson for moat-porting: `git lfs install --local` in a fork clone collides with the fork pre-push hook
+
+Promoted to moat-porting/SKILL.md in 0bd85094.
 
 Belongs in "Fleet hosts" or "Traps in MOAT's own tools". After `protect-fork`, `git lfs install --local` stops with "Hook already exists: pre-push" (and a submodule update that needs LFS then leaves pointer files). Use `GIT_LFS_SKIP_SMUDGE=1 git submodule update --init ...`, then inside the LFS submodule `git lfs install --local --skip-repo && git lfs pull`; never `git lfs update --force`, which would replace the freeze hook. (oidn)
 
@@ -435,6 +439,8 @@ Moving the submodule to CK `rocm-7.2.4` builds without source changes and fixes 
 ====
 
 ## Lesson for cuda-to-rocm: Composable Kernel before rocm-7.2.0 races on gfx11 LDS barriers
+
+Promoted to cuda-to-rocm/references/libraries.md in 0bd85094.
 A project that vendors or pins Composable Kernel older than tag rocm-7.2.0 and runs its WMMA (or any LDS-staged) kernels on RDNA3/RDNA3.5 (gfx11xx) can get wrong, nondeterministic results, while the same code is correct on gfx10, gfx12 and CDNA. `ck::block_sync_lds()` there emits `__builtin_amdgcn_s_waitcnt(0xc07f)`: the gfx9/gfx10 encoding of `lgkmcnt(0)`, which on gfx11 decodes to `vmcnt(48) lgkmcnt(7)`, so `s_barrier` does not wait for LDS operations. Diagnose by disassembling the gfx11 code object and looking for `s_waitcnt vmcnt(48) lgkmcnt(7)` right before `s_barrier`. Symptoms also go away at device `-O0`. Fixed in CK #3103 (331273b, rocm-7.2.0); moving the pin to a 7.2.x tag is enough for OIDN (no source change). Hand-written `s_waitcnt` immediates are architecture-specific in general: gfx9/10, gfx11 and gfx12 each encode the counters differently.
 
 ## Correspondence 2026-11-25: PR 302 author agrees to our commits on their branch
