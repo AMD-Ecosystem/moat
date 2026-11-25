@@ -216,9 +216,13 @@ Validator notes: the head is already validated by this porter's runs on gfx950, 
 
 ## Lesson for cuda-to-rocm: PyTorch's ROCm MX GEMM wants unswizzled scales, 32-aligned M, no bias
 
+Promoted to cuda-to-rocm/references/libraries.md in 0bd85094.
+
 For `libraries.md` (BLAS, hipBLASLt section). `torch.nn.functional.scaled_mm(..., ScalingType.BlockWise1x32, ...)` on ROCm (gfx950, hipBLASLt rocRoller, checked in torch 2.12) rejects cuBLAS's `SWIZZLE_32_4_4` scale layout. It needs `NO_SWIZZLE` with plain row-major `[M, K/32]` e8m0 scales (transposed scales run but return garbage). M, N and K must all be multiples of 32: pad the activation rows with zeros, not only the scales. A `bias=` argument fails at the heuristic query (`HIPBLAS_STATUS_INVALID_VALUE`), and the output must be BF16 or FP16. So a CUDA MXFP8 linear ports as: quantize to row-major scales, pad rows to 32, GEMM without bias, slice, add the bias. Separately, per-tensor FP8 `_scaled_mm` takes `float8_e4m3fnuz` (max 240) on gfx942 and only `float8_e4m3fn` (max 448) on gfx950 and gfx12, so pick the e4m3 type per arch (as PyTorch's tests do with `e4m3_type`) instead of hard-coding either.
 
 ## Lesson for cuda-to-rocm: Triton's CUDA-namespaced libdevice and hard-coded FP8 types
+
+Promoted to cuda-to-rocm/references/platform-limits.md in 0bd85094.
 
 For `strategy-b-torch.md` (or wherever Triton kernels are covered). Triton's AMD backend refuses `tl.extra.cuda.libdevice.*` ("Implicit conversion of CUDA __nv_tanhf device function has been dropped"). `triton.language.extra.libdevice` dispatches per backend and compiles to the same PTX on NVIDIA. Likewise, a Triton FP8 quantizer that casts to the literal `tl.float8e4nv` with 448 clamps cannot emit gfx942's FNUZ format. Cast to `y_ptr.dtype.element_ty` and pass the format's max as a constexpr, so the host-side tensor dtype decides; the NVIDIA build then compiles to identical PTX (verified by stripping debug sections and comparing).
 
@@ -359,6 +363,8 @@ Verdict for linux-gfx950: **pass**. Unit tests 81/81. All six generic and RTX pr
 
 ## Lesson for cuda-to-rocm: building AITER from source replaces the environment's Triton
 
+Promoted to cuda-to-rocm/references/strategy-b-torch.md in 0bd85094.
+
 For `libraries.md` (or wherever AITER is covered). ROCm/aiter's `setup.py` (seen at v0.1.30, torch 2.9.1 or newer) uninstalls whatever Triton is installed (`triton`, `pytorch-triton-rocm`, `triton-rocm`, ...) and installs its own pin from pypi.amd.com, even under `pip wheel --no-deps`. A ROCm environment whose PyTorch was built against a specific Triton then silently runs on a different one. Here, flash-attention's Triton AMD backend broke at import (`ValueError: key contains names that are not kernel arguments`). Set `AITER_USE_SYSTEM_TRITON=1` when building AITER to keep the installed Triton. Then check `python -c "import triton; print(triton.__version__, triton.__file__)"` before trusting any later run.
 
 ## Validation 2026-11-24 (validator, linux-gfx1100, job rx7900-20261123-164859)
@@ -465,6 +471,8 @@ Verdict for linux-gfx1100: **pass** (wave32 gate).
 
 ## Lesson for cuda-to-rocm: ROCm fused SDPA on gfx1100 fails at head dims 257..512 with a bogus HIP error
 
+Promoted to cuda-to-rocm/references/libraries.md in 0bd85094.
+
 For `diagnosis.md` (or wherever attention backends are covered). On gfx1100 with torch 2.12 (TheRock ROCm 10.2), `F.scaled_dot_product_attention` takes the AOTriton flash or memory-efficient kernel for head dims 257 to 512. The launch then fails with `CUDA error: profiler is not initialized` (`hipErrorProfilerNotInitialized`), a code that says nothing about attention, and the context is unusable afterwards. Head dims up to 256 and above 512 are fine; above 512 the dispatcher reports no kernel and falls back to MATH. VAEs with single-head spatial attention over the full channel count (Wan2.x VAE, head dim 512 or 640) hit it. To tell it from a real fault, rerun the call under `with sdpa_kernel([SDPBackend.MATH])`. Work around by routing such calls to MATH, chunked if the [L, L] matrix is large.
 
 ## Server session (validator, linux-gfx950, 2026-11-24)
@@ -519,6 +527,8 @@ The client is a script, not a browser. It does what the page does through the se
 2. Disk on the mi355 host. `/` (3.5 TB overlay) hit 100% during this job and broke one run plus a profiler attempt. The four finished Matrix-Game job directories (planner/porter `122610`, `130701`, `144930`, review/validator `153422`) hold about 460 GB between them, mostly duplicate MG-3/MG-4 weights. Removing them is your call. This job's directory holds about 10 GB (mostly the venv) and reads the `153422` MG-4 weights.
 
 ## Lesson for cuda-to-rocm: headless EGL on an Instinct host lists every GPU before the software device
+
+Promoted to cuda-to-rocm/references/linux-host-setup.md in 0bd85094.
 
 For `linux-host-setup.md` (or wherever headless rendering next to GPU compute is covered). A CUDA project that renders offscreen through `EGL_EXT_platform_device` (enumerate with `eglQueryDevicesEXT`, take the first device that `eglInitialize` accepts) assumes the NVIDIA EGL device is the GL device. On a Linux host with AMD Instinct GPUs (gfx942, gfx950), Mesa lists one EGL device per DRM node, including the per-partition XCP nodes, so a host with 8 GPUs can expose dozens, and the software (llvmpipe) device comes last. Instinct parts have no graphics pipeline, so radeonsi rejects each of them, and a loop capped at 16 devices never reaches llvmpipe and fails with "no EGL device initialized". The same loop also opens the DRM nodes of GPUs that belong to other jobs. To get llvmpipe without editing the project, run only the rendering process with an `LD_PRELOAD` shim that returns 0 from `drmGetDevices2` (and, as a guard, refuses opens under `/dev/dri`). Mesa then offers exactly one device, `EGL_MESA_device_software`. Neither `LIBGL_ALWAYS_SOFTWARE=1` nor `EGL_PLATFORM=surfaceless` changes the device list (Mesa 25.2). Do not apply the shim to the compute process: HIP needs its render node.
 
@@ -661,6 +671,8 @@ Verdict for linux-gfx942: **pass**.
 - The tree is clean at `6d94b2f`, and `jargon.py --port Matrix-Game` is clean.
 
 ## Lesson for cuda-to-rocm: tell MIOpen's non-deterministic conv solvers from a real fault before comparing runs
+
+Promoted to cuda-to-rocm/references/libraries.md in 0bd85094.
 
 For `diagnosis.md` (or wherever run-to-run reproducibility checks are covered).
 - What happened: a video model that repeats bit-exactly on gfx950 and gfx1100 gave a different output on every run on gfx942 (about 34 dB PSNR between identical runs). Without a known noise floor, every A/B comparison on that host was ambiguous.
