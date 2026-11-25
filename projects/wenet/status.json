@@ -6,12 +6,16 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "python-torch",
-  "stage": "changes-requested",
+  "stage": "porting",
   "adopted_at": "2026-11-06T03:22:49Z",
-  "updated_at": "2026-11-24T19:55:45Z",
+  "updated_at": "2026-11-25T01:10:37Z",
   "head_sha": "22ca0ec5f3e6abea53b9d6cd92ae8118f961383c",
   "depends_on": [],
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx942",
+    "since": "2026-11-25T01:10:37Z",
+    "holder": "5d19833dbdb6"
+  },
   "waivers": {},
   "platforms": {
     "windows-gfx1151": {
@@ -44,7 +48,7 @@
       "failed_sha": null,
       "started_at": "2026-11-23T19:44:05Z",
       "completed_at": null,
-      "updated_at": "2026-11-24T19:55:45Z",
+      "updated_at": "2026-11-25T01:10:37Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -58,7 +62,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "reviewer"
+      "last_agent": "porter"
     }
   },
   "license_spdx": "Apache-2.0",
