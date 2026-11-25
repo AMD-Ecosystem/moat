@@ -7,7 +7,7 @@
   "priority": 6.146,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T00:04:57Z",
-  "updated_at": "2026-11-25T01:12:42Z",
+  "updated_at": "2026-11-25T17:55:19Z",
   "head_sha": "2f25788dce71ec94799164d08ce90d5d48bdb5b3",
   "pr_url": "https://github.com/arrayfire/arrayfire/pull/3708",
   "pr_number": 3708,
@@ -219,7 +219,7 @@
   "fix": {
     "branch": "moat-sync-b11d700",
     "base_sha": "83be197816b2ce57303c29dda35b7c56d8d9209b",
-    "review_pr": null,
+    "review_pr": "https://github.com/AMD-Ecosystem/arrayfire/pull/2",
     "opened_at": "2026-11-23T21:44:18Z",
     "kind": "sync",
     "upstream_sha": "b11d7007980bee208f8e1c89dfbd9131790110f8"
