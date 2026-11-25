@@ -39,6 +39,19 @@
       "upstream_issue": null,
       "created_at": "2026-11-25T18:48:36Z",
       "decided": null
+    },
+    {
+      "id": "rocprim-radix-sort-float-bit-range",
+      "kind": "rocm-bug-report",
+      "component": "rocprim",
+      "summary": "Feature request for ROCm/rocm-libraries (rocPRIM): radix_sort_keys/pairs (and hipCUB DeviceRadixSort) return hipErrorInvalidValue for floating-point keys with any bit range other than the full width (rocprim/device/device_radix_sort.hpp:796-799, ROCm 10.2), where CUB sorts the keys' radix encoding over the range. warp-1.15 works around it in sort.cu (encode, unsigned sort, decode). Draft in warp-1.15 notes, round 3; to be shown to jeff before filing.",
+      "refs": [
+        "projects/warp-1.15/notes.md#porting-session-3"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-25T20:48:08Z",
+      "decided": null
     }
   ]
 }

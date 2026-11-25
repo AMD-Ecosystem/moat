@@ -298,3 +298,87 @@ Scripts: `agent_space/cuda_pp.sh` (verbatim from warp-1.14 session 19); `agent_s
 ## Ruling on Q7, floating-point keys with a bit range (jeff, 2026-11-25)
 
 (a): on HIP, map float32/float64 keys to their unsigned radix encoding (sign-flip), sort the requested range as unsigned integers through the corrected comparator, and map back; add float range tests. Also: file a feature request on ROCm/rocm-libraries for rocPRIM to accept bit ranges on floating-point keys as CUB does (draft shown to jeff before filing; registered as a deferred item on warp-1.15).
+
+## Porting session 3 (2026-11-25, linux-gfx942 MI300X, porter): ruling Q7 and the CUDA-check guard
+
+Requested by jeff Daily. **Lock:** `set-state warp-1.15 linux-gfx942 porting` was refused (`illegal transition ported -> porting`; the only exit from `ported` is `reviewing`). The instruction was to re-take the lock before the reviewer starts, so I took it with `moatlib.py port-lock warp-1.15 --take linux-gfx942` (the lock was free; the stage stayed `ported`) and release it with `port-lock --release` at the end of this session. Faking a review (`reviewing` -> `changes-requested` -> `porting`) to get there was not an option. MOAT gap: no command reopens `ported` for the porter before review; worth a `moat-porting` note (below).
+
+Fork `release/1.15.0.amd0` `85ad22eb..4aa22f6d` (pushed, `advance-head` recorded):
+- `16b91828` [ROCm] Sort floating-point keys over partial bit ranges on AMD GPUs (`sort.cu`, HIP only): in `radix_sort_pairs_device`, for a floating-point key type with `n > 0` and a range other than `[0, width)`, the keys are encoded in place (`radix_sort_float_encode`: sign bit set -> `~key`, else `key | sign`), sorted through the same template as `uint32_t`/`uint64_t` over the same range (stable rocPRIM radix sort; the comparator specializations of `1713eb55` cover `[b, width)`), and decoded (`key & sign ? key ^ sign : ~key`). Two raw launches on Warp's current stream (256 threads; `wp_launch_device` needs `get_current_context`, which `sort.cu` does not see), each checked with `cudaGetLastError()`. Every caller (Python, APIC replay `apic.cu:659-664`, internal sorts) goes through this template. Full-width float sorts and every integer sort are untouched. `-0.0` and `+0.0` encode to different values, exactly as the mapping in the ruling and as Warp's CPU sort does (the CPU path passes the same test); note that recent CUB maps `-0.0` to `+0.0` while sorting, so a range that distinguishes the two zeros could order them differently from CUB on NVIDIA. Not handled; it only matters for data holding both zeros under a bit range that separates them.
+- `3b43b3ac` Test radix sorts of floating-point keys over bit ranges (`test_utils.py`): `test_radix_sort_pairs_float_bit_range`, float32 and float64, ranges `[1,w) [w/2,w) [w-1,w) [0,w-1) [4,w-4) [3,w/2)`, n = 1025, 4097, 2^20, 2^21 + 3, repeated keys, `0.0, -0.0, inf, -inf` included, values and key bits against a stable NumPy sort of the encoded bits (`_radix_sort_bits` extended to floats). Warp's sort API is pairs-only, so "keys and pairs" is covered by checking both outputs. Before the fix: CPU OK, GPU 48 of 48 sub-cases fail; after: all pass. `test_utils.py` 84 OK.
+- `4aa22f6d` [ROCm] Compile the software texture path for HIP builds only: `texture_software.cpp` body under `WP_ENABLE_CUDA && WP_ENABLE_HIP`, its include and the six dispatch points in `texture.cpp` under `WP_ENABLE_HIP`. A small change (14 lines of guards), so done as asked; the CUDA build of `texture.cpp` now preprocesses like the 1.14 port's version of the file (the 1.14 port's own `texture_memory_type` translation and cast changes remain; they predate this line and were CUDA-checked on 1.14). `test_texture.py` 133 OK (9 skipped).
+
+### Cost of the floating-point range sort (MI300X, `agent_space/q5/fperf.py`, GPU event time of one `radix_sort_pairs`, median of 15)
+| n | type | full width | [1, w) | [0, w-1) | uint64/uint32 [1, w) | uint full |
+|---|---|---|---|---|---|---|
+| 2^20 | float32 | 0.249 ms | 0.248 | 0.248 | 0.238 | 0.238 |
+| 2^20 | float64 | 0.293 | 0.306 | 0.306 | 0.290 | 0.284 |
+| 2^24 | float32 | 0.534 | 0.626 | 0.615 | 0.525 | 0.524 |
+| 2^24 | float64 | 1.443 | 1.731 | 1.746 | 1.523 | 1.534 |
+
+At 2^20 the two elementwise passes are within noise (+0 to +4%); at 2^24 a partial-range sort costs +17% (float32) and +20% (float64) over the full-width float sort, about 0.09 and 0.2 ms, the encode and decode passes over 64 and 128 MiB.
+
+### Draft feature request for jeff (not filed; per the ruling, shown to jeff before filing)
+Searched first (read-only): `gh search issues --repo ROCm/rocm-libraries` for radix sort floating-point bit ranges found nothing. Proposed labels (looked up with `gh label list`): `Feature Request`, `project: rocprim`. Registered as deferred item `rocprim-radix-sort-float-bit-range` (warp-1.15).
+
+Title: `[rocPRIM] radix_sort: support bit ranges for floating-point keys`
+
+====
+`rocprim::radix_sort_keys` and `radix_sort_pairs` (and hipCUB's `DeviceRadixSort`, which calls them) return `hipErrorInvalidValue` for floating-point keys whenever the bit range is not the full key width (`rocprim/device/device_radix_sort.hpp`, the `is_floating_point<key_type>` check). CUB accepts any `[begin_bit, end_bit)` for `float` and `double` keys and sorts them by the selected bits of their radix encoding (negative values with every bit flipped, others with the sign bit set), so CUDA code that passes a bit range for floating-point keys fails on ROCm.
+
+Reproducer (ROCm 10.2, rocPRIM 4.8, MI300X):
+
+```cpp
+#include <hip/hip_runtime.h>
+#include <rocprim/rocprim.hpp>
+#include <cstdio>
+
+int main()
+{
+    const size_t n = 1024;
+    float* keys_in;
+    float* keys_out;
+    (void)hipMalloc(&keys_in, n * sizeof(float));
+    (void)hipMalloc(&keys_out, n * sizeof(float));
+    for (unsigned int begin_bit : {0u, 1u}) {
+        size_t bytes = 0;
+        hipError_t err = rocprim::radix_sort_keys(nullptr, bytes, keys_in, keys_out, n, begin_bit, 32u);
+        printf("float keys, bits [%u, 32): %s\n", begin_bit, hipGetErrorName(err));
+    }
+    return 0;
+}
+```
+
+```
+float keys, bits [0, 32): hipSuccess
+float keys, bits [1, 32): hipErrorInvalidValue
+```
+
+Request: accept bit ranges for floating-point keys, sorting the radix encoding over the range as CUB does. The workaround we use today is to encode the keys as unsigned integers in place, sort those over the same range, and decode them, which costs two extra passes over the keys.
+====
+
+## Lesson for moat-porting: `ported` has no way back to `porting` for a porter round requested before review
+Reference: `## Traps in MOAT's own tools`. A person asked for another porter round on a project already at `ported`, before any reviewer started. `set-state <name> <platform> porting` refuses (`ported` -> `reviewing` is the only transition), and the honest alternatives are `port-lock --take` (a person's command, taking the free lock while the stage stays `ported`) or walking through a review that did not happen. This round used `port-lock --take` on the person's instruction and `port-lock --release` at the end; `advance-head` worked under that lock. A `ported -> porting` transition for the lock holder, or a documented recipe, would remove the guesswork. (warp-1.15)
+
+### Evidence at the final head `4aa22f6d` (gfx942, MI300X)
+| Run | Result |
+|---|---|
+| full default suite from the installed wheel (built from the tree at `4aa22f6d`, gfx942 library, sha256 `c3e2a33a...5e434ec9`), cwd outside the tree, fresh kernel cache (`suitewheel.sh r3full1`) | **Ran 8113 tests in 567.3 s, OK (skipped=117)** |
+| `-p test_utils.py` (source tree) | 84 OK |
+| `-p test_texture.py` (source tree) | 133 tests, OK (skipped=9) |
+| `jargon.py --port warp-1.15` / `prose.py` on the three bodies | clean / clean |
+| clang-format 22.1.2, ruff 0.15.9 | clean on `sort.cu`, `texture.cpp`, `texture_software.cpp`, `test_utils.py` |
+| integrity | no modified tracked file |
+
+The wheel was uninstalled from the job venv afterwards.
+
+### CUDA compile, for the coordinator (updated for the final head)
+On the mi355 host (nvcc 12.8), from a clean clone or worktree of AMD-Ecosystem/warp at `4aa22f6d`:
+```
+python build_lib.py --cuda-path /usr/local/cuda --no-use-libmathdx -j 32
+cmake -S . -B _build/cmake -G Ninja -DWARP_CUDA_PATH=/usr/local/cuda
+```
+then 1.14's `cuda_pp.sh` (warp-1.14 notes, session 19) for `06a3f7c6` and `4aa22f6d`. This round's native changes are all under `WP_ENABLE_HIP` (`sort.cu`: the encode/decode kernels, the `<type_traits>` include and the float branch; `texture.cpp`: the guards; `texture_software.cpp`: the body), so `sort.cu`'s CUDA expansion should be identical to `85ad22eb`'s apart from line numbers, `texture_software.cpp` should now compile to an empty unit on CUDA, and `texture.cpp`'s CUDA expansion should have no software-texture calls. The rest of the round-2 handoff above still applies (texture.h arms, warp.cu HIP-only additions, the CMake ROCm check on a CUDA host). For the V100/libmathdx run add `test_utils.py -k float_bit_range` (the CPU and CUDA sorts must match the encoded-bit reference; on NVIDIA, CUB's `-0.0` handling may differ in the `0.0, -0.0` elements if the test catches it, which would be worth knowing).
+
+### Stage
+The full suite passes from the installed wheel on gfx942. The stage was never left (`ported`); the lock taken for this round is released with `port-lock --release`.
