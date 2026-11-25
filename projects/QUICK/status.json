@@ -1,0 +1,181 @@
+{
+  "schema_version": 3,
+  "name": "QUICK",
+  "upstream_url": "https://github.com/merzlab/QUICK",
+  "fork_url": "https://github.com/AMD-Ecosystem/QUICK",
+  "fork_default_branch": "master",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "adopted_at": "2026-06-05T00:05:54Z",
+  "updated_at": "2026-11-19T23:10:30Z",
+  "head_sha": "378bd83a8ef13d97c4a2e2207c59774329f34009",
+  "depends_on": [],
+  "waivers": {
+    "windows": {
+      "reason": "Upstream QUICK does not support Windows: its README lists \"Supported platforms: Linux (x86 and ARM), macOS (x86 and ARM)\", so there is no Windows CUDA build for a HIP port to stand beside. Secondary obstacle: QUICK is a mixed Fortran/HIP build and the Windows ROCm SDK ships no working Fortran compiler (flang.exe there is a clang driver), reported as https://github.com/ROCm/TheRock/issues/7596 and unanswered. The HIP work is validated at head d369e07 on linux-gfx90a (wave64) and linux-gfx1100 (wave32).",
+      "suggested_at": "2026-08-20T07:52:03Z",
+      "approved_by": "jeffdaily",
+      "at": "2026-11-18T15:20:49Z"
+    }
+  },
+  "license_spdx": "MPL-2.0",
+  "upstream_repo_id": 172423631,
+  "stage": "review-passed",
+  "platforms": {
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "378bd83a8ef13d97c4a2e2207c59774329f34009",
+      "started_at": "2026-11-19T21:40:50Z",
+      "completed_at": "2026-11-19T21:43:50Z",
+      "updated_at": "2026-11-19T22:34:44Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "reviewer",
+      "failed_sha": "a49289d5269210de98e5a97387c0d69d0c321a51",
+      "validated_prior": [
+        "d369e07",
+        "349fb05f985c7c12262b26336dd473ae76ad6b03"
+      ],
+      "carry_forward": {
+        "from": "349fb05f985c7c12262b26336dd473ae76ad6b03",
+        "to": "378bd83a8ef13d97c4a2e2207c59774329f34009",
+        "method": "squash",
+        "detail": "tree-identical squash of the validated head",
+        "at": "2026-11-19T22:34:44Z"
+      }
+    },
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "378bd83a8ef13d97c4a2e2207c59774329f34009",
+      "started_at": "2026-06-05T00:11:32Z",
+      "completed_at": "2026-11-19T19:42:29Z",
+      "updated_at": "2026-11-19T22:34:44Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "failed_sha": "4b17590a1e7e9b7bb047fa9fbac6aec158f26a5b",
+      "validated_prior": [
+        "d369e071b2fbf5641fe239dcb4aab54334719aa5",
+        "a49289d5269210de98e5a97387c0d69d0c321a51",
+        "349fb05f985c7c12262b26336dd473ae76ad6b03"
+      ],
+      "carry_forward": {
+        "from": "349fb05f985c7c12262b26336dd473ae76ad6b03",
+        "to": "378bd83a8ef13d97c4a2e2207c59774329f34009",
+        "method": "squash",
+        "detail": "tree-identical squash of the validated head",
+        "at": "2026-11-19T22:34:44Z"
+      }
+    },
+    "windows-gfx1101": {
+      "blocked": true,
+      "blocked_reason": "Windows host has no MSVC-ABI Fortran compiler; QUICK is a mixed Fortran/HIP build (.f90 modules, gfortran, rocBLAS/rocSOLVER Fortran bindings) -- not buildable on Windows.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-08T01:43:25Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1201": {
+      "blocked": true,
+      "blocked_reason": "Windows host has no MSVC-ABI Fortran compiler; QUICK is a mixed Fortran/HIP build (.f90 modules, gfortran, rocBLAS/rocSOLVER Fortran bindings) -- not buildable on Windows.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-08T01:43:25Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1151": {
+      "blocked": true,
+      "blocked_reason": "No usable Fortran compiler on Windows, verified directly on this host rather than assumed. QUICK is a mixed Fortran/HIP build whose .f90 modules must link against the HIP/clang-cl side, so it needs an MSVC-ABI Fortran compiler. TheRock's Windows ROCm SDK ships lib/llvm/bin/flang.exe and amdflang.exe advertising 'AMD flang version 23.0.0git / Target: x86_64-pc-windows-msvc', which looks like exactly that -- but they are not Flang. Verified 2026-08-20: flang.exe is BYTE-IDENTICAL to clang.exe (md5 4146b241ae49296481b7bb54db9a7da2, 108,242,944 bytes both); 'flang.exe -fc1 -help' prints 'OVERVIEW: clang LLVM compiler' and rejects -fc1 as an unknown argument; compiling a four-line .f90 fails because the driver spawns itself with frontend flags it cannot parse; and no flang_rt runtime libraries and no Fortran .mod files (iso_fortran_env, __fortran_builtins) are packaged anywhere under the SDK. Registered as ROCm packaging bug report therock-windows-flang-is-clang. Scope note, stated plainly: NO build was attempted on this host, because the Fortran prerequisite was checked first and is absent, so the Fortran half could not have compiled. NOT necessarily a permanent platform limit: Intel ifx (oneAPI Fortran) targets the MSVC ABI and interoperates with MSVC-ABI C/C++ objects, and nobody has tried it -- that is the open question the suggested windows waiver should be judged against. Note wave64 is ALSO unsatisfied at head, so windows is not the only gate outstanding here.",
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-08-21T04:35:13Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
+  "porting_released": {
+    "arch": "linux-gfx1100",
+    "since": "2026-11-19T21:43:07Z",
+    "at": "2026-11-19T21:43:31Z"
+  },
+  "reviewed_sha": "378bd83a8ef13d97c4a2e2207c59774329f34009",
+  "porting": null,
+  "review_pr": "https://github.com/AMD-Ecosystem/QUICK/pull/1",
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-11-19T23:03:15Z",
+    "head_sha": "378bd83a8ef13d97c4a2e2207c59774329f34009",
+    "content_sha256": "7934332cf74d3d612b04b41c5c820153a1682cf444cfad7004aa4b2ed6099d53",
+    "review_pr": "https://github.com/AMD-Ecosystem/QUICK/pull/1"
+  },
+  "pr_url": "https://github.com/merzlab/QUICK/pull/521",
+  "pr_number": 521,
+  "pr_opened_at": "2026-11-19T23:10:30Z",
+  "pr_state": "open",
+  "published_sha": "378bd83a8ef13d97c4a2e2207c59774329f34009"
+}
