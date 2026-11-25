@@ -95,8 +95,9 @@ spellings, so one command decides it without any header:
       | grep IMAGE_SUPPORT      # gfx942: __HIP_NO_IMAGE_SUPPORT 1 and __HIP_NO_IMAGE_SUPPORT__ 1
                                 # gfx90a, gfx1100: nothing
 
-It is not only a compile-time macro. On the hardware (MI300X, ROCm 7.14), `hipMallocArray`
-and `hipCreateTextureObject` both return `hipErrorNotSupported` ("operation not supported"),
+It is not only a compile-time macro. On the hardware (MI300X, ROCm 7.14 and later),
+`hipDeviceAttributeImageSupport` is 0, and `hipMallocArray` and `hipCreateTextureObject` (even
+for a linear resource) both return `hipErrorNotSupported` ("operation not supported"),
 while `hipDeviceAttributeTexturePitchAlignment` still reports 256: a pitch-alignment query
 is NOT a capability probe, and a port that trusts it builds a pitch and then fails at
 creation (`hipDeviceAttributeImageSupport` is the query that answers). Check this BEFORE
