@@ -6,16 +6,12 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "cmake",
-  "stage": "porting",
+  "stage": "ported",
   "adopted_at": "2026-11-11T18:07:23Z",
-  "updated_at": "2026-11-25T19:05:29Z",
+  "updated_at": "2026-11-25T19:12:41Z",
   "head_sha": "a072da81bf39155c46553fd7d1db054077d6b337",
   "depends_on": [],
-  "porting": {
-    "arch": "linux-gfx942",
-    "since": "2026-11-25T18:24:22Z",
-    "holder": "9eeaf3d34208"
-  },
+  "porting": null,
   "waivers": {
     "windows": {
       "reason": "Linux-only ROS 2 packages (ament/colcon, rclcpp, autoware_cmake, Ubuntu-targeted Autoware stack); no ROS 2 Autoware toolchain on Windows. Same ground as the windows waiver Jeff Daily approved for autoware_universe, whose hard dependency this is.",
@@ -79,7 +75,7 @@
       "failed_sha": null,
       "started_at": "2026-11-23T22:51:19Z",
       "completed_at": null,
-      "updated_at": "2026-11-25T18:24:22Z",
+      "updated_at": "2026-11-25T19:12:41Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -115,8 +111,8 @@
   },
   "porting_released": {
     "arch": "linux-gfx942",
-    "since": "2026-11-24T23:06:47Z",
-    "at": "2026-11-24T23:17:03Z"
+    "since": "2026-11-25T18:24:22Z",
+    "at": "2026-11-25T19:12:41Z"
   },
   "reviewed_sha": "992d7034b5396900593126e8f19a1982ae7bc682"
 }
