@@ -314,6 +314,16 @@ artifact is present, never that it is the whole difference. Only the same-direct
 LLVM tools under `<sdk>/lib/llvm/bin` and no `/opt/rocm`. (TurboFNO, gfx90a, a ROCm 7.14
 TheRock nightly, 2026-08)
 
+The CUDA side has its own traps. nvcc's device code can differ between identical compiles:
+cicc (CUDA 12.8) gave 4 distinct PTX outputs from 6 identical invocations on one preprocessed
+file (an Eigen eigensolver kernel file; register numbering, and one pair of scalar loads
+against a vector load). So a PTX or cubin difference before and after a change is not proof
+that the device code changed. Compare the preprocessed input first (`nvcc --keep`, the
+`.cpp1.ii`); if it matches, or differs only by unused code, run cicc several times on each
+input and see whether the output sets overlap. Build both trees at the same absolute path
+here too: nvcc's internal-linkage symbol names hash the path and the file content, so every
+such symbol differs otherwise. (GPU_IPC)
+
 ## What a pass does not prove
 
 ### A passing assertion COUNT is not a list of what was tested

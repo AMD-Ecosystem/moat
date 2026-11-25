@@ -141,6 +141,10 @@ Limiting inlining does not help when the out-of-line device function is large by
 
 An `HSA_STATUS_ERROR_MEMORY_APERTURE_VIOLATION` is reported imprecisely. Run the process under `rocgdb -batch -ex 'set amdgpu precise-memory on' -ex run -ex 'x/12i $pc-40' -ex 'p/x $v20'` (rocgdb ships in TheRock's `bin/`) to stop on the exact instruction and read its registers per lane. In gpu4pyscf the faulting op was `global_atomic_add v1, v20, v1, s[20:21]` (the persistent-kernel `atomicAdd(head, 1)`). Its zero offset register v20 held garbage in lane 0 only, and `llvm-objdump -d` of the extracted code object showed v20 set to 0 once and then reused as the destination of a predicated `global_load_dwordx2 v[20:21]` inside the loop. Rebuilding with `-mllvm -disable-machine-licm` in `CMAKE_HIP_FLAGS` made results match the CPU reference to 1e-13. `-O1` did not help. The defect was TheRock ROCm 10.1 (AMD clang 24.0.0git) MachineLICM, and the same pattern appears in gfx90a code from that compiler, so it is a toolchain fault, not an architecture fault. It does not reproduce on every target, though: the same compiler and committed flags ran correctly on gfx1100, so before adding the flag, test whether each arch shows the fault with one run of the failing case (a d-shell calculation there). Under `-fgpu-rdc` device codegen runs at link time, and CMake's HIP link rule reuses `CMAKE_HIP_FLAGS`, so that one setting reaches both; a copy in `CMAKE_SHARED_LINKER_FLAGS` can be silently overwritten by the project (gpu4pyscf's own `set(CMAKE_SHARED_LINKER_FLAGS ...)` did) and protects nothing, so confirm with a verbose build that every compile and link line carries the flag. Whether a port carries a compiler workaround is for the people who own the port to decide; once decided, put it under the HIP build only with a comment naming the compiler version and the arches affected, and the condition for removing it. (gpu4pyscf)
 
+### Before removing a compiler workaround, rerun the whole suite on the new release
+
+**A newer ROCm that contains the upstream fix for a miscompile does not prove the workaround can go.** Build without the flag on the new release and run the full GPU test selection, not only the reproducer or the case that first crashed. In gpu4pyscf, ROCm 10.2's compiler contained the LLVM fix for 10.1's MachineLICM register clobber (previous entry): the original aperture violation was gone and a static check of the kernel was clean, yet `-mllvm -disable-machine-licm` was still needed. 10.2 had a different miscompile in the same kernels, which gave wrong nuclear gradients with no error on gfx942 (only the gradient tests saw it) and hung the GPU in the same J/K gradient path on gfx90a. To tell compiler from runtime, run the new compiler's build on the old runtime and the old compiler's build on the new runtime, and rebuild with the workaround flag on the new compiler: if the flag alone restores the results, the fault is still in codegen. (gpu4pyscf)
+
 ### A fault inside a vendored JIT entry point: rebuild-with-a-forced-throw beats a debugger
 
 When a crash's stack bottoms out inside a vendored dependency's own runtime-JIT call (for
@@ -200,6 +204,12 @@ Windows runners do), and neither is a port defect:
   suites that precede it with `--gtest_filter` to find the one that leaves the state
   behind, and check that the port does not touch either file before you record it.
 
+### A sync-bound GPU test that passes alone can time out under `ctest -jN`
+
+Processes that submit to one GPU at the same time slow each other down more than linearly, so a test that synchronizes every step can pass alone and hit its timeout in a parallel run with no hang and no port fault. On a Radeon gfx1201 (ROCm 10.1), a loop of small kernels plus a small synchronous device-to-host copy took 30 us per iteration in one process and 135-139 us per iteration in each of two or four concurrent processes; an idle second context cost nothing, only concurrent submission did. ESPResSo's `lb_pressure_tensor` (10000 sample steps, each synchronized) passed in 77-147 s alone and timed out at 1200 s under `ctest -L gpu -j 8`.
+
+Before treating such a timeout as a hang, rerun the test alone, then run two copies at once. A pass alone plus a superlinear slowdown with two copies is GPU sharing. The fix is to run the GPU tests serially (`ctest -j1` for the GPU label, or a `RESOURCE_LOCK` test property shared by the GPU tests), not a longer timeout or a code change. A test that is stuck rather than slow under `ctest -jN` is a different case (linux-host-setup.md, "A GPU test that hangs only under `ctest -jN` is usually the software GL stack"), and so is one that is too slow even alone (platform-limits.md, "A low-CU integrated GPU can outrun a fixed upstream test timeout without any fault"). (ESPResSo)
+
 ## Memory measurements
 
 ### A free-memory leak check measures the whole GPU, not your process
@@ -221,6 +231,34 @@ free memory before an allocation and asserts it comes back afterwards can then f
 fixed amount on its first run in a process and pass on repeats. Check with
 `--gtest_repeat=3` in one process before calling it a leak: a leak grows each
 repetition, a first-use cost appears once. (LichtFeld-Studio)
+
+### A fixed "leak" after the first launch of a spilling kernel is the scratch allocation growing
+
+A "no leak over N calls" test can fail on one AMD architecture by a fixed amount (25.75 MB in
+one case) that does not change with problem size, while each operation warmed up on its own
+shows zero drift. The first launch of a kernel that needs more private (scratch) memory per
+lane than any kernel before it makes the HIP runtime grow the queue's scratch allocation,
+sized per lane times the maximum number of resident waves, and keep it. Kernels tuned for
+NVIDIA's 255 registers per thread (a fully unrolled column of 8 accumulators) can exceed the
+128 VGPRs clang allows on gfx90a for a kernel without `__launch_bounds__` and spill hundreds
+of registers (platform-limits.md, "A kernel launched with fewer than 1024 threads needs
+`__launch_bounds__` on HIP to get its registers"). Separate the first call from the steady
+state, and read `.private_segment_fixed_size`, `.vgpr_count` and `.vgpr_spill_count` for each
+kernel from `hipcc --cuda-device-only -S`. Remove the spill rather than the test: a smaller
+unroll (4 voxels per thread instead of 8 was also about 2x faster on MI250X) or
+`__launch_bounds__` with the real block size (no spill, but slower there). Wave32 RDNA did
+not spill on the same kernel. (TIGRE cone backprojectors)
+
+### O_DIRECT I/O fails with EINVAL on a container's overlay filesystem
+
+A storage test that opens its files with `O_DIRECT` in a directory under the test's working
+directory can fail with `pwrite ... errno=22 (Invalid argument)` when that directory is on a
+container's overlay root, and pass on the same host from tmpfs or a real ext4/xfs mount. It
+looks like a GPU or pinned-buffer fault because the write source is a staged device buffer.
+Rerun the failing cases from a tmpfs working directory (`cd /dev/shm/<dir> && <test binary>
+--gtest_filter=...`), and check whether the project's CPU-only (simulated-device) build fails
+the same cases on the same filesystem. If both point at the filesystem, it is the host
+environment, not the port. (unified-cache-management)
 
 ## Multi-GPU hosts
 

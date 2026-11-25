@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "matrix-game-sageattention-rocm",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "Matrix-Game-4's three -sage presets (rtx5090-sage, rtx5080-sage, rtx5070ti-sage) call SageAttention 2.2 CUDA kernels (sageattention._fused quant_per_block_int8_fuse_sub_mean_cuda / scale_fuse_quant_cuda / transpose_pad_permute_cuda / quant_per_warp_int8_cuda and sm89_compile.qk_int8_sv_f8_accum_f16_fuse_v_scale_attn_inst_buf, built with Matrix-Game's current-stream patch). No ROCm build of SageAttention exists: EmbeddedLLM/SageAttention-rocm is an unmodified copy of thu-ml/SageAttention 2.0.0-beta (no HIP changes on any branch; setup.py refuses without CUDA_HOME), and the sm89 attention kernel the presets use is not in 2.0.0-beta at all. Needs a SageAttention 2.2 HIP/ROCm port (inline PTX mma.sync e4m3/s8/s4, ldmatrix, cp.async; wgmma on sm90) as a separate intake. Scoped out of the Matrix-Game port by Jeff's Q2 = B ruling (2026-11-23); evidence in projects/Matrix-Game/notes.md (SageAttention check).",
+      "refs": [
+        "projects/Matrix-Game/notes.md",
+        "https://github.com/EmbeddedLLM/SageAttention-rocm",
+        "https://github.com/thu-ml/SageAttention/tree/v2.2.0"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-23T20:55:24Z",
+      "decided": null
+    },
+    {
+      "id": "pytorch-rocm-sdpa-gfx1100-headdim-257-512",
+      "kind": "rocm-bug-report",
+      "component": "pytorch-aotriton",
+      "summary": "PyTorch ROCm SDPA on gfx1100 (torch 2.12.0+rocm10.2.0a20261015, TheRock): the FLASH_ATTENTION and EFFICIENT_ATTENTION backends (AOTriton) accept head dims 257..512 and then fail at launch with 'torch.AcceleratorError: CUDA error: profiler is not initialized' (hipErrorProfilerNotInitialized, a misleading code); sticky, so the process is lost. Seen at head dims 288/320/384/512, any length (64..3520), bf16/fp16/fp32, B=1. Head dims <=256 work (max err vs MATH <=1e-3); 1024 correctly says 'No available kernel' and the default path falls back to MATH. Expected: report no kernel so the dispatcher falls back. Hits Matrix-Game-3's Wan2.2 VAE AttentionBlock (single head, head_dim 512 decoder / 640 encoder) on RDNA3, so upstream MG-3 cannot decode on gfx1100 at all. Repro: scaled_dot_product_attention(q,k,v) with q=k=v=randn(1,1,3520,384,bf16) on gfx1100. Not yet checked on a newer torch or on gfx12/CDNA.",
+      "refs": [
+        "projects/Matrix-Game/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-24T02:03:58Z",
+      "decided": null
+    }
+  ]
+}

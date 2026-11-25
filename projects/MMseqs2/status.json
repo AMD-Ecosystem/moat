@@ -1,0 +1,261 @@
+{
+  "schema_version": 3,
+  "name": "MMseqs2",
+  "upstream_url": "https://github.com/soedinglab/MMseqs2",
+  "fork_url": "https://github.com/AMD-Ecosystem/MMseqs2",
+  "fork_default_branch": "master",
+  "priority": 0.0,
+  "ext_type": "cmake",
+  "adopted_at": "2026-06-04T04:24:21Z",
+  "updated_at": "2026-11-20T21:25:59Z",
+  "head_sha": "a25e69fd18da153ae99c19cff08a3237a48d270d",
+  "depends_on": [],
+  "waivers": {
+    "windows": {
+      "reason": "Upstream MMseqs2 does not build on Windows: its database and file reading rely on Linux-only memory mapping (mmap) with no Windows path. jeff split Windows support (libmarv DLL 7c39308d, mmseqs CLI guards 54edbc78, plus a Windows file-I/O port) into a separate feature, deferral mmseqs2-windows-support, so the GPU-coverage PR tree carries no Windows commits and has nothing to build on Windows.",
+      "suggested_at": "2026-11-13T05:51:20Z",
+      "approved_by": "jeffdaily",
+      "at": "2026-11-13T05:51:21Z"
+    }
+  },
+  "license_spdx": "MIT",
+  "upstream_repo_id": 63755587,
+  "stage": "review-passed",
+  "platforms": {
+    "linux-gfx950": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "a25e69fd18da153ae99c19cff08a3237a48d270d",
+      "failed_sha": null,
+      "started_at": "2026-11-13T02:48:10Z",
+      "completed_at": "2026-11-13T18:45:54Z",
+      "updated_at": "2026-11-13T18:45:54Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "last_agent": "validator"
+    },
+    "linux-gfx1201": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "a25e69fd18da153ae99c19cff08a3237a48d270d",
+      "failed_sha": null,
+      "started_at": "2026-11-13T04:20:12Z",
+      "completed_at": "2026-11-13T18:00:46Z",
+      "updated_at": "2026-11-13T18:13:08Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator:claude",
+      "state": "completed"
+    },
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": "2026-11-13T08:18:11Z",
+      "completed_at": null,
+      "updated_at": "2026-11-13T08:19:01Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "porter"
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "75a9b029",
+      "started_at": null,
+      "completed_at": "2026-06-23T22:43:21Z",
+      "updated_at": "2026-06-23T22:43:21Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "75a9b029",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:43:21Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "a25e69fd18da153ae99c19cff08a3237a48d270d",
+      "started_at": null,
+      "completed_at": "2026-11-20T21:25:59Z",
+      "updated_at": "2026-11-20T21:25:59Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "validated_prior": [
+        "75a9b029"
+      ]
+    },
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "a25e69fd18da153ae99c19cff08a3237a48d270d",
+      "started_at": "2026-06-04T05:24:44Z",
+      "completed_at": "2026-11-13T18:08:31Z",
+      "updated_at": "2026-11-13T18:13:08Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-13T17:34:17Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "reviewer"
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "75a9b029",
+      "started_at": null,
+      "completed_at": "2026-06-23T22:43:21Z",
+      "updated_at": "2026-06-23T22:43:21Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "carry_forward": {
+        "to": "75a9b029",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:43:21Z"
+      }
+    }
+  },
+  "porting_released": {
+    "arch": "linux-gfx942",
+    "since": "2026-11-13T17:15:45Z",
+    "at": "2026-11-13T17:34:17Z"
+  },
+  "fork_branch": "moat-gpu-coverage-v2",
+  "fork_branch_ruling": {
+    "branch": "moat-gpu-coverage-v2",
+    "previous": "moat-gpu-coverage",
+    "by": "jeffdaily",
+    "at": "2026-11-13T18:15:38Z",
+    "reason": "same tree as moat-gpu-coverage af0688d8; gfx90a commit message reworded so it no longer refers to the previous commit"
+  },
+  "review_pr": "https://github.com/AMD-Ecosystem/MMseqs2/pull/2",
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-11-13T20:42:29Z",
+    "head_sha": "a25e69fd18da153ae99c19cff08a3237a48d270d",
+    "content_sha256": "27864cb32a586b2e2dcf16b23f258795216ea31c38aa3c2943e2026b38318403",
+    "review_pr": "https://github.com/AMD-Ecosystem/MMseqs2/pull/2"
+  },
+  "pr_url": "https://github.com/soedinglab/MMseqs2/pull/1174",
+  "pr_number": 1174,
+  "pr_opened_at": "2026-11-13T20:50:08Z",
+  "pr_state": "merged",
+  "published_sha": "a25e69fd18da153ae99c19cff08a3237a48d270d",
+  "landed_via": {
+    "url": "https://github.com/soedinglab/MMseqs2/commit/21691c1f7f7b5743feb80e237c20440a60075fcf",
+    "commit": "21691c1f7f7b5743feb80e237c20440a60075fcf",
+    "merged_at": "2026-11-15T10:08:04Z",
+    "carried": "content-differs",
+    "by": "jeffdaily",
+    "at": "2026-11-19T01:39:52Z",
+    "note": "Maintainer closed PR 1174 saying he pulled the relevant changes into their own repository and synced. Compared 2026-11-18 against upstream master: the four gfx90a/gfx950 tuning files are identical; untuned GPUs are mapped to a related tuned table instead of our generic default; the signed-char clamp is fixed by an unsigned cast instead of our HIP per-byte min. An arch outside the gfx9/10/11/12 families is refused at configure time, where ours ran untuned."
+  },
+  "pr_merged_at": "2026-11-15T10:08:04Z"
+}

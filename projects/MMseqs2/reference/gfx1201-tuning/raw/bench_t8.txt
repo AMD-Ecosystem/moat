@@ -1,0 +1,14 @@
+2026-11-13T07:52:31Z generic load: 1.31 1.58 1.32
+generic rc=0 wall=8.210222954 s rows=200000 md5sorted=461eebd479a2aeca4dfb3283d7e2e9b0
+2026-11-13T07:52:39Z tuned load: 1.26 1.56 1.32
+tuned rc=0 wall=8.390086075 s rows=200000 md5sorted=461eebd479a2aeca4dfb3283d7e2e9b0
+2026-11-13T07:52:48Z generic load: 1.22 1.54 1.31
+generic rc=0 wall=8.250642153 s rows=200000 md5sorted=461eebd479a2aeca4dfb3283d7e2e9b0
+2026-11-13T07:52:56Z tuned load: 2.04 1.71 1.37
+tuned rc=0 wall=8.388251534 s rows=200000 md5sorted=461eebd479a2aeca4dfb3283d7e2e9b0
+2026-11-13T07:56:26Z g1100 load: 1.63 2.20 1.68
+g1100 rc=0 wall=8.757267375 s rows=200000 md5sorted=461eebd479a2aeca4dfb3283d7e2e9b0
+2026-11-13T07:56:35Z generic load: 1.58 2.18 1.68
+generic rc=0 wall=8.269013198 s rows=200000 md5sorted=461eebd479a2aeca4dfb3283d7e2e9b0
+2026-11-13T07:56:44Z g1100 load: 1.49 2.14 1.67
+g1100 rc=0 wall=8.791676241 s rows=200000 md5sorted=461eebd479a2aeca4dfb3283d7e2e9b0
