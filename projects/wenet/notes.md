@@ -688,3 +688,48 @@ Checked and clean (child and reviewer):
 - The verdict above (pass with body corrections, not changes requested) is the reviewer's call under your ruling (a); see the first paragraph.
 
 Still owed elsewhere: the CUDA configure/build recheck (see Porter round 6, "Files the delta since be6ad97 touches that a CUDA build reads").
+
+## Validation 2026-11-25, linux-gfx942 at 73d889f (fleet job `mi300c-20261124-163116-fix5-wenet-prompt`, validator)
+
+**Device.** `HIP_VISIBLE_DEVICES=2` (the job's pin, kept). This host runs in CPX partition mode, so the pinned device is **a 38-CU, 24 GiB slice of an MI300X**, not the whole GPU. torch reports `AMD Instinct MI300X`, `gfx942:sramecc+:xnack-`, `multi_processor_count` 38, `total_memory` 24.00 GiB; `amd-smi static -g 2 --partition`: `PARTITION_ID: 2`. All GPU commands ran under `ulimit -c 0` with a `timeout`.
+
+**Result: pass.** Fork clone at `head_sha` 73d889f; `git status --porcelain` shows only the untracked `runtime/libtorch/wetext-fd9026c/`; `jargon.py --port wenet` clean; the ROCm build is documented in `runtime/libtorch/README.md` (and CN) and the install in `README.md`.
+
+### README main route (Python 3.11)
+
+Fresh `/usr/bin/python3.11 -m venv --clear "$FLEET_VENV"` (pip 24.0, setuptools 79.0.1), with the README's AMD GPU commands verbatim (`agent_space/readme-main.sh`, log `<job>/logs/readme-main-py311.log`): all rc 0. Result: torch 2.8.0+rocm6.4, torchaudio 2.8.0+rocm6.4, pytorch-triton-rocm 3.4.0, deepspeed 0.20.1, numpy 2.4.6, openai-whisper 20231117. `pip check` reports only `openai-whisper 20231117 requires triton, which is not installed` (by design: the README installs whisper with `--no-deps`). SoX 14.4.2 (job build) is on `LD_LIBRARY_PATH` through `envA.sh`.
+
+- **GPU sanity** (`agent_space/probe/sanity.py`, log `sanity-main-py311.log`): `torch 2.8.0+rocm6.4 hip 6.4.43482`, 1 device `AMD Instinct MI300X`; backends `['sox', 'soundfile']`; `torchaudio.info` works; sox speed 1.1 takes 68496 samples to 62269; `torch.compile` vs eager GELU on `cuda:0` differ by at most 2.4e-7; whisper imports; `SANITY OK`.
+- **Upstream pytest** (`python -m pytest -q -p no:cacheprovider test`, `PYTHONPATH=<src>`, transformers 4.40.1 and matplotlib pre-installed in the venv so that no test pip-installs anywhere): **78 passed, 1 failed, 0 skipped** in 52.6 s (log `pytest-main-py311.log`). The one failure is `test/wenet/utils/test_init_model.py:55` `NotImplementedError`: an example config whose tokenizer the test does not handle. It is the same pre-existing failure as in rounds 1 and 3, and not GPU-related. The shared `/opt/python-3.11-venv` still has no transformers, tokenizers or matplotlib afterwards.
+- **Training on the GPU** (new harness `agent_space/harness/prep.py`, `train.sh`, rebuilt from the round 3 description because the earlier harness was container-local). The data is 64 + 64 train and 8 + 8 cv copies of the two in-tree wavs; the English clip has the placeholder label "HELLO WORLD". 23 units, json CMVN from `tools/compute_cmvn_stats.py`, configs from `examples/aishell/s0/conf` with batch 8, 20 epochs = 320 steps, warmup 100, lr 1e-3 and `speed_perturb` on. torch_ddp on 1 GPU, RCCL backend, `torchrun --rdzv_backend=static --master_addr=127.0.0.1`. No tracebacks:
+
+| run | cv_loss epoch 0 -> 19 | cv acc epoch 19 |
+|---|---|---|
+| conformer fp32 | 27.59 -> 0.930 | 0.96 |
+| conformer `--use_amp` (fp16) | 29.02 -> 1.31 | 0.96 |
+| conformer `--dtype bf16` | 27.59 -> 0.732 | 0.96 |
+| u2++ conformer fp32 | 97.05 -> 7.12 | 0.92 |
+
+- **Recognition, cuda vs cpu** (`agent_space/harness/decode.sh`: `recognize.py --device cuda --gpu 0` and `--device cpu --gpu -1`, 16 cv utterances, beam 10, `epoch_19.pt`): **identical hypotheses on both devices for all 8 combinations** (conformer and u2++, each with ctc_greedy_search, ctc_prefix_beam_search, attention and attention_rescoring). On the aishell clip the conformer gives `广州市房地产中介协会分析` with attention and attention_rescoring (exact), and `广州市房地产介协会分析` with the CTC modes. The u2++ toy model is weaker (its attention mode is exact; the CTC modes and rescoring give English fragments) and identical across devices.
+
+### C++ runtime on the ROCm route with `LIBTORCH_PATH` (`agent_space/build-rocm.sh val 73d889f`, `timeit.sh wenet compile`)
+
+Built from `git archive 73d889f` (tree 30049435) in `<job>/work/tree-val`. `cmake -S runtime/libtorch -B <job>/work/build-val -DGPU=ON -DLIBTORCH_PATH=<job>/deps/torch-724-unpacked/torch -DBUILD_TESTING=ON -DFETCHCONTENT_SOURCE_DIR_WETEXTPROCESSING=<wetext fd9026c>`. `LIBTORCH_PATH` is the `torch` directory of `torch==2.8.0+rocm7.2.4.lw.gitd618db82` (the README's ROCm 7.2.4 wheel, unpacked rather than installed so that the venv keeps the main route). ROCm 7.2.4 is the private prefix with `ROCM_PATH` exported (`envB.sh`); CMake is 3.31.6; `cmake --build -j192`. Configure: `HIP VERSION: 7.2.53211`, `Found Torch: <wheel>/lib/libtorch.so`, and no LibTorch zip fetched (only boost, gflags, glog, googletest, openfst). The build produced the five binaries and the four test executables.
+
+- **Compilers actually invoked:** `CMAKE_C_COMPILER=/usr/bin/cc`, `CMAKE_CXX_COMPILER=/usr/bin/c++` (GNU 13.3.0-6ubuntu2~24.04.1) for every source; no `link.txt` or `flags.make` names hipcc or a clang (wenet has no HIP sources). `HIP_HIPCC_EXECUTABLE` (found by the wheel's LoadHIP) is the ROCm 7.2.4 prefix's hipcc and is never run. The TheRock ROCm 10.2 SDK (installed as asked, Porter round 6) is not used by any build.
+- **Unit tests** (run directly, since upstream has no `enable_testing()`): `utils_test` 1/1, `feature_pipeline_test` 2/2 and `ctc_prefix_beam_search_test` 1/1 pass. `post_processor_test` 0/2: `ProcessSpacekMandarinEnglishTest` and `ProcessSpacekIndoEuropeanTest` fail the same way in a be6ad97 build with the downloaded CPU LibTorch (re-checked in Porter round 6). This is pre-existing text post-processing, not GPU and not LibTorch.
+- **`decoder_main` on the GPU**, with TorchScript exports (`wenet/bin/export_jit.py`, venv torch 2.8) of the trained models and units `lang_char.txt`:
+  - conformer, `--chunk_size -1`: `广州市房地产中介协会分析`, the same as `recognize.py` attention_rescoring on cuda.
+  - u2++, `--chunk_size -1` and `16`: `hell`. `recognize.py` attention_rescoring gives `HELL`, and the runtime's post-processor lowercases English.
+  - GPU hidden (`HIP_VISIBLE_DEVICES=-1`): aborts with `CUDA is not available!` (rc 134). That is the GPU build's guard, so a run that succeeds loads the model on the GPU.
+  - `rocprofv3 --kernel-trace` on the conformer run: **1255 kernel dispatches** (`work/rocprof/run_kernel_trace.csv`), transcript exact. rocprofv3 needed `libhsa-amd-aqlprofile64.so.1`, which is not in the 69 debs: `hsa-amd-aqlprofile_1.0.0.70204-93~24.04_amd64.deb` was fetched from the same repository, its sha256 75747b26...1864 matched the signature-checked `Packages`, and it was unpacked into the prefix.
+  - `decoder_main` NEEDs `libtorch.so libtorch_cpu.so libtorch_hip.so libc10.so libhipblaslt.so.1 librocm_smi64.so.1`.
+
+### Not run in this validation, with reasons
+
+- **The README ONNX route** (`export_onnx_gpu.py`/`recognize_onnx_gpu.py` on onnxruntime-migraphx). It is not in the set Jeff named for this job, and the delta since its last runs (Porter rounds 2-4, at 6860e5f and earlier) touches only `runtime/core/cmake/libtorch.cmake` and the runtime READMEs, which neither script reads. Disk on this shared host was also short: it hit 0 bytes free once during training, fixed by pruning this job's checkpoints, and the ONNX route would put a second torch into the venv.
+- **Round 1's deeper harness** (FSDP, DeepSpeed ZeRO 1-3, LoRA, k2 transducer, the 93-config forward/backward sweep, the CLI transcribe with a downloaded WenetSpeech model). It is not part of the named set, and none of it is touched by any commit since round 1 (the Python changes are only the two ONNX scripts).
+- **2-GPU DDP.** The job is pinned to one GPU slice.
+- **The CUDA configure/build** (no nvcc here). It is owed on an nvcc host; the file list is in Porter round 6.
+
+Disk note for the next job on this host: 20 epoch checkpoints of the toy conformer are 3.6 GB per run; keep only the last one.

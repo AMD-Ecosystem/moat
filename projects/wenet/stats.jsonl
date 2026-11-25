@@ -115,3 +115,12 @@
 {"kind":"phase","ts":"2026-11-25T01:02:41Z","phase":"test","seconds":180.688,"exit":0,"cmd":"bash agent_space/real-seq.sh real-base-314 be6ad97"}
 {"kind":"phase","ts":"2026-11-25T01:04:09Z","phase":"compile","seconds":64.181,"exit":0,"cmd":"bash agent_space/build-rocm.sh porter worktree"}
 {"kind":"session","ts":"2026-11-25T01:10:37Z","epoch":1795569037.65558,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-25T01:34:19Z","phase":"test","seconds":131.904,"exit":0,"cmd":"bash agent_space/harness/train.sh /var/lib/jenkins/fleet/jobs/mi300c-20261124-163116-fix5-wenet-prompt/work/val train_conformer conformer-fp32 29511"}
+{"kind":"phase","ts":"2026-11-25T01:35:57Z","phase":"test","seconds":87.858,"exit":0,"cmd":"bash agent_space/harness/train.sh /var/lib/jenkins/fleet/jobs/mi300c-20261124-163116-fix5-wenet-prompt/work/val train_conformer conformer-amp 29512 --use_amp"}
+{"kind":"phase","ts":"2026-11-25T01:37:13Z","phase":"test","seconds":76.442,"exit":0,"cmd":"bash agent_space/harness/train.sh /var/lib/jenkins/fleet/jobs/mi300c-20261124-163116-fix5-wenet-prompt/work/val train_conformer conformer-bf16 29513 --dtype bf16"}
+{"kind":"phase","ts":"2026-11-25T01:37:18Z","phase":"test","seconds":4.754,"exit":1,"cmd":"bash agent_space/harness/train.sh /var/lib/jenkins/fleet/jobs/mi300c-20261124-163116-fix5-wenet-prompt/work/val train_u2++_conformer u2pp-fp32 29514"}
+{"kind":"phase","ts":"2026-11-25T01:39:44Z","phase":"test","seconds":80.584,"exit":0,"cmd":"bash agent_space/harness/train.sh /var/lib/jenkins/fleet/jobs/mi300c-20261124-163116-fix5-wenet-prompt/work/val train_u2++_conformer u2pp-fp32 29514"}
+{"kind":"phase","ts":"2026-11-25T01:40:26Z","phase":"test","seconds":36.214,"exit":0,"cmd":"bash agent_space/harness/decode.sh /var/lib/jenkins/fleet/jobs/mi300c-20261124-163116-fix5-wenet-prompt/work/val conformer-fp32 epoch_19.pt"}
+{"kind":"phase","ts":"2026-11-25T01:41:01Z","phase":"test","seconds":34.761,"exit":0,"cmd":"bash agent_space/harness/decode.sh /var/lib/jenkins/fleet/jobs/mi300c-20261124-163116-fix5-wenet-prompt/work/val u2pp-fp32 epoch_19.pt"}
+{"kind":"phase","ts":"2026-11-25T01:43:02Z","phase":"compile","seconds":110.311,"exit":0,"cmd":"bash agent_space/build-rocm.sh val 73d889fe1d3ed4cb16dde1797758fdc92e210a31"}
+{"kind":"session","ts":"2026-11-25T01:56:26Z","epoch":1795571786.446504,"event":"end","platform":"linux-gfx942"}
