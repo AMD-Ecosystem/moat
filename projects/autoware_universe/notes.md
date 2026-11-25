@@ -219,9 +219,13 @@ All 23 stage-1 components `covered` with evidence; `feature:agnocast` moved to `
 
 ## Lesson for cuda-to-rocm: libhipcxx headers need a HIP compiler
 
+Promoted to cuda-to-rocm/references/libraries.md in 9d8549ee.
+
 For `references/libraries.md`. libcu++ (`cuda::std::optional`, `cuda::proclaim_return_type`, `<cuda/functional>`) maps to libhipcxx, which recent ROCm SDKs ship under `include/hipccl` (`find_package(libhipcxx)`, target `libhipcxx::libhipcxx`; it provides the `cuda/std/...` spellings). Unlike libcu++ under g++, its headers do not compile with a plain host compiler (`'__host__' does not name a type`), so a host `.cpp` that includes a header exposing `cuda::std` types must be compiled as HIP too, or the ABI of those types would differ between translation units. A `namespace cuda::std = ::std` shim is not a substitute in device code: libstdc++'s `std::optional::value()` calls a host-only throw helper that hip-clang rejects. Also include `<cuda/std/cmath>` / `<cuda/std/functional>` explicitly in a compat header when the sources rely on CCCL including them transitively (`cuda::std::abs(float)` is otherwise ambiguous).
 
 ## Lesson for cuda-to-rocm: CMAKE_COMPILE_WARNING_AS_ERROR outranks -Wno-error
+
+Promoted to cuda-to-rocm/references/build-cmake-link.md in 9d8549ee.
 
 For `references/build-cmake-link.md`. A project that sets `CMAKE_COMPILE_WARNING_AS_ERROR` (Autoware's `autoware_package()` does on CMake >= 3.24) gets `-Werror` appended after every target compile option, so `target_compile_options(t PRIVATE -Wno-error)` has no effect. When `.cu` sources move from nvcc (which never saw the flag through `CUDA_NVCC_FLAGS`) to the HIP language, upstream kernel warnings become errors; set the target property `COMPILE_WARNING_AS_ERROR OFF` on the HIP kernel target instead.
 
@@ -269,6 +273,8 @@ About 2 min per workspace at `-j21`. Not checked: anything at run time, the lint
 
 ## Lesson for moat-porting: ROS 2 from debs on a fleet host with no root
 
+Promoted to moat-porting/SKILL.md in 9d8549ee.
+
 The fleet container blocks mounts in user namespaces (`unshare -Urm` then `mount` gives "cannot mount read-only"), so overlaying debs onto `/usr` and `/opt` is out. What works: a private apt (`APT_CONFIG` with `Dir::State::Lists`/`Dir::Cache` in the job dir, `Dir::State::status "/var/lib/dpkg/status"` so only missing packages download, `Debug::NoLocking`, ROS key passed with `signed-by`), `apt-get install --download-only`, `dpkg-deb -x` each deb into `<job>/root`, then repair: (1) rewrite `/opt/ros/jazzy` to the job path in the text files; (2) rewrite `/usr/...` paths that exist only in the job tree; (3) in CMakePackageConfigHelpers configs, where the `_realOrig` path was rewritten, also rewrite the `set(PACKAGE_PREFIX_DIR "/usr")` that follows, and in Qt5 configs the `"/usr/lib/x86_64-linux-gnu/../../"` prefix; (4) point dangling `.so` dev symlinks at the host's runtime libraries; (5) symlink in host entries missing from the job tree's `lib/x86_64-linux-gnu`, `share` and `include` (dev packages such as Qt need their host runtime libraries beside them), **but not** the host's top-level `include/*.h` or the `c++`/`sys`/`linux`/`asm-generic` directories: FindCUDA turns every include dir into `-I`, so a mirrored `math.h` lands ahead of libstdc++'s wrapper and CCCL's `<cmath>` fails ("the global scope has no fpclassify"); do not set `CPATH` to it either; (6) delete any released package that the build replaces from source when its headers are unscoped (autoware_point_types), so the stale copy cannot shadow the new one. Also: colcon hangs (pipe write blocked, 0 CPU) with `CMAKE_VERBOSE_MAKEFILE=ON` on these packages, because one output line exceeds asyncio's 64 KiB reader limit. Take nvcc command lines from FindCUDA's `*.cu.o.<config>.cmake` scripts instead. The CUDA install on the mi355 host has no `nvdisasm`; `apt-get download cuda-nvdisasm-12-8` into the job dir and set `NVDISASM_PATH` for `cuobjdump -sass`.
 ## Validation 2026-11-23 (validator, linux-gfx942 fleet job; AMD Instinct MI300X gfx942, HIP_VISIBLE_DEVICES=3 pinned by the dispatcher; fork `moat-port` at 9574fe1)
 
@@ -313,6 +319,8 @@ All three configure with `cuda was not found, building <pkg> with HIP 7.17.26434
 - `jargon.py --port autoware_universe`: clean. README ROCm sections present in all three packages. Fork clone clean at 9574fe1 (`git status --porcelain` empty).
 
 ## Lesson for cuda-to-rocm: hipMemcpyToSymbol rejects hipMemcpyDefault
+
+Promoted to cuda-to-rocm/references/faults-memory-streams.md in 9d8549ee.
 
 For `references/faults-memory-streams.md`. CUDA documents `cudaMemcpyDefault` as accepted (and recommended) for `cudaMemcpyToSymbol` and `cudaMemcpyToSymbolAsync`. HIP 7.17 (ROCm 10.2) returns `hipErrorInvalidMemcpyDirection` for `hipMemcpyDefault` on all three of `hipMemcpyToSymbol`, `hipMemcpyToSymbolAsync` and `hipMemcpyFromSymbol`. The explicit direction works (tested: `hipMemcpyHostToDevice` and `hipMemcpyDeviceToDevice` to a symbol, `hipMemcpyDeviceToHost` from one). The call compiles, so a port that only builds never sees it, and an error-check macro turns it into an abort at the first use. Grep the CUDA sources for `MemcpyToSymbol` with `Default` and change the kind at the call site to the real direction, which is behaviour-preserving on CUDA. Do not remap `cudaMemcpyDefault` in a compat header: other copies rely on it.
 
@@ -398,6 +406,8 @@ TheRock ROCm 10.2.0 into `$FLEET_VENV` (same pip command as the earlier rounds; 
 - The wave32 validator needs the same: the node probes are what found the second fault, and unit tests do not load the concatenate component.
 
 ## Lesson for cuda-to-rocm: host sources compiled as HIP can miss symbols in g++-built libraries
+
+Promoted to cuda-to-rocm/references/build-cmake-link.md in 9d8549ee.
 
 For `references/build-cmake-link.md`, beside its undefined-symbol and load-time failures. When a port compiles ordinary host `.cpp` files as HIP (clang) and links them against libraries built with GCC, a few template signatures mangle differently: a return type of `std::enable_if_t<std::is_same_v<T, X>, ...>` is `Xsr3stdE9is_same_v...` from clang and `X9is_same_v...` from GCC 13. The shared library still links (undefined symbols are allowed in `.so` files). Under the default lazy binding the process dies with "symbol lookup error" only when the call is first bound, so unit tests that never reach that path pass; with `-Wl,-z,now` or `LD_BIND_NOW=1` it fails at load instead. Run `ldd -r` on every built library and executable (it resolves all symbols eagerly and lists the missing ones). It also lists symbols a plugin library legitimately leaves to the process that loads it (this port has four such in a library its consumers always load after their provider), so look at each hit rather than fixing them all. Compile as HIP only the sources that need a HIP compiler; leave sources that only call into host libraries on the host compiler, as the CUDA build does. (autoware_universe, ROCm 10.2, GCC 13.3.)
 
@@ -698,9 +708,13 @@ All three configure with `cuda was not found, building <pkg> with HIP 7.17.26434
 
 ## Lesson for cuda-to-rocm: ld.lld rejects underlinked g++ shared libraries that GNU ld accepted
 
+Promoted to cuda-to-rocm/references/build-cmake-link.md in 9d8549ee.
+
 For `references/build-cmake-link.md`. A HIP executable links with the ROCm SDK's clang, and the TheRock SDK's clang uses ld.lld. ld.lld rejects any undefined symbol in a linked shared library that no input on the link line defines (`undefined reference ... (disallowed by --no-allow-shlib-undefined)`). The CUDA build links the same executable with GNU ld, which accepts it. A host library that uses a dependency without linking it (no `NEEDED` entry, e.g. a g++-built library calling fmt) therefore breaks only the ROCm link, and only for executables that link it directly (here, unit tests). Diagnose with `readelf -d <lib> | grep NEEDED`. Confirm with `-DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=bfd`: if GNU ld links it, the library is underlinked. The proper fix is to link the dependency to that library. Otherwise add it to the affected HIP targets in the build files, guarded to the HIP build. A linker flag in a validation recipe is not a fix. (autoware_universe, TheRock ROCm 10.2, Ubuntu noble libfmt 9.1.)
 
 ## Lesson for moat-porting: ROS 2 from debs, three more traps
+
+Promoted to moat-porting/SKILL.md in 9d8549ee.
 
 Extends `## Lesson for moat-porting: ROS 2 from debs on a fleet host with no root`.
 - **ROCm runtime shadowing.** When symlinking host libraries into the unpacked tree, skip the host's Ubuntu ROCm runtime (`libhsa-runtime64.so.1`, `libamdhip64.so.5`, `libhsakmt.so.1`), and put `$ROCM_SDK/lib` first in `LD_LIBRARY_PATH`. Otherwise GNU ld resolves `libamdhip64.so.7`'s dependency against ROCm 5.7's `libhsa-runtime64.so.1` and fails with `undefined reference to hsa_amd_vmem_*@ROCR_1`. CMake package configs in the tree also compute their prefix from their own location, so their libraries must exist there: symlinking the host's `.so` files in is what makes `fmt::fmt` and the like resolve.
@@ -767,6 +781,8 @@ for `autoware_cuda_pointcloud_preprocessor`, `autoware_ground_segmentation_cuda`
 - Validators: build with the README command from an empty workspace (as above), and run the GPU tests and node probes. Run the preprocessor gtests either from a Release build or with the upstream test above excluded, and record which. A wave32 run should check the same README command; gfx1100's earlier README reproduction must have passed `-DAUTOWARE_CUDA_USE_HIP=ON`, because without it the generate step fails first.
 
 ## Lesson for cuda-to-rocm: FindCUDA leaves NOTFOUND variables behind on a machine without CUDA
+
+Promoted to cuda-to-rocm/references/build-cmake-link.md in 9d8549ee.
 
 For `references/build-cmake-link.md`. When a CMake project calls the legacy `find_package(CUDA)` and falls back to a HIP branch on `NOT CUDA_FOUND`, FindCUDA on a machine with no CUDA still leaves `CUDA_LIBRARIES` (`CUDA_CUDART_LIBRARY-NOTFOUND`) and `CUDA_INCLUDE_DIRS` (`CUDA_TOOLKIT_INCLUDE-NOTFOUND`) set. Any target line shared by both backends that uses them (`target_link_libraries(t ${CUDA_LIBRARIES} ...)`, often in tests) makes the generate step fail: "The following variables are used in this project, but they are set to NOTFOUND". The failure does not appear when the configure skips `find_package(CUDA)` (for example under a "use HIP even if CUDA is found" option), so a port tested only that way can ship a documented command that fails. Empty every FindCUDA result variable that a line shared by both backends uses (here `CUDA_LIBRARIES` and `CUDA_INCLUDE_DIRS`; FindCUDA leaves its other library results, such as `CUDA_CUBLAS_LIBRARIES`, NOTFOUND too) on the HIP branch, or move those lines into the CUDA branch, and test the build command exactly as documented, on a machine without CUDA. (autoware_universe, CMake 3.31, FindCUDA under CMP0146 OLD.)
 
