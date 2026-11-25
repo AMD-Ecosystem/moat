@@ -1111,3 +1111,93 @@ All runs above are at 886c3529 as requested. The scratch slowdown of the checked
 - **Runtime issue:** file the small device-to-host copy visibility issue on ROCm/rocm-systems (labels `bug`, `project: clr`), the draft above with the review's corrections (gfx942 stale=0 in all eight cases, rate "about 1 in 9,000 to 17,000", cause cited at develop `3c589064`). Issue URL to be added here once filed.
 - **Fence:** keep the `__threadfence_system()` in `bpSignalComplete` unconditionally on every AMD architecture until the minimum supported ROCm contains a fix for that issue. On gfx942 it costs about 6 us per signal, three signals per step, with no measurable effect on harness runtime.
 - **NVIDIA comparison (Tesla V100-SXM2-32GB, sm_70, driver 575.57.08, the CUDA harness tarballs built at 42d4c033; 5 release and 5 checked runs in a bounded Slurm allocation):** the three deformable checks vary run to run on CUDA as on gfx942 and gfx1201, so that variation is upstream behavior (order-dependent float atomics), not a port defect. Two checks fail in all 10 V100 runs with identical values: `particles on SDF` lowest particle height -10.9376 m (limit 0.98) and `large-face convex` GPU vs CPU max position difference 0.0193625 m (limit 0.01); every AMD run passes both. Ruling: record as upstream CUDA behavior on Volta; no diagnosis job and no harness change.
+## Validation 2026-11-25 at 42d4c033 (linux-gfx1201, validator, headless fleet job gfx1201-20261124-163356-val2-physx-w32-prompt)
+
+Fork `moat-port` at **42d4c033**, fresh clone (`GIT_LFS_SKIP_SMUDGE=1`) into `projects/PhysX/src`, detached at 42d4c033, built from scratch in this job. Afterwards `git status --porcelain` shows only untracked `physx/bin/` and `physx/lib/` (build output). Device: the dispatcher's pin `HIP_VISIBLE_DEVICES=1`, one **AMD Radeon AI PRO R9700 (gfx1201, RDNA4, wave32, 64 CUs)**; the host's other three GPUs belong to other jobs. Recipe as in "Validation 2026-11-24 (linux-gfx1201 ...)" (the failed one at 886c3529) and "Validation 2026-11-24 at 42d4c033 (linux-gfx942 ...)", so the three compare line by line. **Verdict: completed.** Every check that failed at 886c3529 passes in every run here, plain and under every interposer mode that exposed the race; the runtime defect is still present on this card and removing the fence brings the failure back, so the fence is what fixed it.
+
+### Toolchain
+- `$FLEET_VENV/bin/python -m pip install --index-url https://nightly.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple "rocm[libraries,devel]==10.2.0a20261022" "rocm-sdk-device-gfx1201==10.2.0a20261022"` into the job venv; `rocm-sdk path --root` (run once) = `<job>/venv/lib/python3.11/site-packages/_rocm_sdk_devel`, `.info/version` 10.2.0, `hipconfig --version` 7.17.26422; manifest: TheRock `f93a7c76`, rocm-systems pin `1a455a9b` (the same build as the diagnosis round). The image's venv layer still carries ROCm 10.1 wheels (`pip list` shows them beside the 10.2 ones); nothing in any build tree names them.
+- **Compiler the builds invoked:** `CMAKE_HIP_COMPILER=<root>/lib/llvm/bin/amdclang++` (AMD clang 24.0.0git `2792f8ceeb5a`) in `compiler/linux-gcc-rocm-{release,checked}/CMakeCache.txt` and in every other build below (direct configure, standalone GPU library, pvddom workflow, the A/B tree), found through `rocm-sdk` with `ROCM_PATH`/`HIP_PATH` unset. In each `compile_commands.json` all 61 `.cu` entries start with that path and carry `--offload-arch=gfx1201` (no other arch), `-fno-strict-aliasing`, `-Xclang -no-enable-noundef-analysis` and **`-O3` (checked included; no `-O0` anywhere)**; 0 of 829 (release) / 838 (checked) host entries carry the noundef flag. Host `/usr/bin/c++` (gcc 13.3.0), CMake 3.31.6 from the job venv. `ldd libPhysXGpu_64.so` resolves `libamdhip64.so.7` from the same root. `hipcc` for the reproducer is `<job>/venv/bin/hipcc`, driving `<root>/lib/llvm/bin/clang-24`.
+- `$FLEET_VENV/bin` first on PATH, `MAX_JOBS=12` (exported), `ulimit -c 0`, `timeout` around every GPU run. Snippet dependencies built from source into `<job>/deps/prefix`: libglvnd v1.7.0 (meson, `-Degl=false -Dgles1=false -Dgles2=false -Dheaders=true`), GLU glu-9.0.3 (meson, `-Dgl_provider=glvnd`), freeglut v3.6.0 (CMake, demos and static off); meson from the job venv; packman cache `<job>/deps/packman-repo`.
+
+### Builds (all exit 0, from scratch)
+```
+cd physx
+./generate_projects.sh linux-gcc-rocm
+cmake -DCMAKE_HIP_ARCHITECTURES=gfx1201 compiler/linux-gcc-rocm-release
+cmake -DCMAKE_HIP_ARCHITECTURES=gfx1201 compiler/linux-gcc-rocm-checked
+make -C compiler/linux-gcc-rocm-release -j12
+make -C compiler/linux-gcc-rocm-checked -j12
+```
+61 HIP objects in each, 0 errors, 2524 / 2527 warning lines (the classes recorded before). Also built, all exit 0: the INSTALL_ROCm.md direct configure (`cmake -S physx -B <dir> -DPHYSX_PRESET=linux-gcc -DPX_USE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1201 -DCMAKE_BUILD_TYPE=release`, full build; writes `physx/lib/bin/`), the standalone GPU library (`cmake -S physx/source/compiler/cmakegpu ... -DCMAKE_HIP_ARCHITECTURES=gfx1201`, `--target PhysXGpu`), and the CPU-only preset under `env -i PATH=/usr/bin:/bin` ("CUDA disabled - building CPU-only configuration", `PX_USE_HIP=OFF`). md5 of both `libPhysXGpu_64.so` and both `SnippetGpuParity_64` under `physx/bin/` unchanged by these builds.
+
+**Fence in the ISA:** `bpSignalComplete` in both builds' `broadphase.cu` code object is `global_wb scope:SCOPE_SYS; s_wait_storecnt 0; global_inv scope:SCOPE_SYS; ... global_store_b32` (`llvm-objdump -d` of the unbundled gfx1201 object).
+
+### LDS, scratch and launches on gfx1201 (wave32 review points)
+Per-kernel metadata of all 61 code objects per config (`agent_space/lds.py`: `.hip_fatbin` unbundled with `clang-offload-bundler`, `llvm-readelf --notes`), 488 kernels each: **no kernel above 64 KB LDS.** Largest `.group_segment_fixed_size`: `sb_meshContactGenLaunch` 64496, `midphaseGeneratePairs` 61440, `sb_heightfieldContactGenLaunch` 60400, `convexHeightFieldMidphase` 57856, `convexCoreTetmeshNphase_Kernel32` 56128, identical in release and checked (at 886c3529 checked differed because it was -O0). Scratch: 42 kernels per config, 7 with a dynamic stack, largest `convexCoreTetmeshNphase_Kernel32` 4448 bytes, identical in both configs (at -O0 most checked kernels had dynamic stacks). **No launch failure anywhere:** all 139 parity logs report `PhysX errors reported 0`, and no parity, snippet or stderr log contains "Failed to load", "Failed to initialize cuda context", "incompatible", a `hipError`, a memory fault or a 7xx error.
+
+### Parity harness (SnippetGpuParity, 48 checks)
+Interposer: the diagnosis round's `syncshim.cpp`, copied unchanged from that job's `agent_space` on this host, built `g++ -O2 -fPIC -shared -I<root>/include syncshim.cpp -o libsyncshim.so -L<root>/lib -Wl,-rpath,<root>/lib -lamdhip64 -ldl`. The modes are the ones that made the race show on this card at 886c3529 (read from that validation's logs): release failed with `SHIM_STATS=1` (count plus `hipPointerGetAttributes` on every async copy, also the diagnosis's mode) and with `SHIM_MODE=dtod SHIM_STATS=1`; checked failed with plain interposition (`SHIM_MODE=none`, 9 checks) and with `SHIM_MODE=htod` (18 checks). It is in the path: `SHIM htod=31811 dtoh=22716 launch=536099` per release run.
+
+| Build | Mode | Runs | Result | Per run |
+|---|---|---|---|---|
+| release | plain | 10 | 48 / 0 each | 14-22 s |
+| checked (-O3) | plain | 10 | 48 / 0 each | 12-18 s (223-380 s at -O0, 886c3529) |
+| release | `SHIM_STATS=1` | 10 | 48 / 0 each | |
+| release | `SHIM_MODE=dtod SHIM_STATS=1` | 10 | 48 / 0 each | |
+| release | `SHIM_MODE=none` | 10 | 48 / 0 each | |
+| release | `SHIM_MODE=htod` | 10 | 48 / 0 each | |
+| checked | `SHIM_STATS=1` | 10 | 48 / 0 each | |
+| checked | `SHIM_MODE=dtod SHIM_STATS=1` | 10 | 48 / 0 each | |
+| checked | `SHIM_MODE=none` | 10 | 48 / 0 each | |
+| checked | `SHIM_MODE=htod` | 10 | 48 / 0 each | |
+| release | `SHIM_MODE=htod GPU_FORCE_BLIT_COPY_SIZE=0` (control, below) | 20 | 48 / 0 each | |
+| release | `LD_PRELOAD=<root>/lib/libamdhip64.so` | 1 | 48 / 0 | |
+| release / checked | under `rocprofv3 --kernel-trace` | 1 / 1 | 48 / 0, 632,206 / 632,200 dispatches (gfx942: 632,176) | |
+
+123 runs of the fork build, all 48 / 0 (plus the 10 A/B fence runs below). No skips: the harness has no skip path. **The checks that failed at 886c3529** (stacks, articulation GPU vs CPU, all 8 SDF mesh, all 8 primitives on mesh, aggregate pile, large-face convex, many slabs, contact overflow) **pass in every run and print one value each across all of them.**
+
+### Value by value (`agent_space/compare_parity.py`)
+- **41 of 48 checks print the same value in all 100 series runs**, release and checked, plain and perturbed, **and the same value in 25 earlier passing gfx1201 logs** (2 release runs of the 886c3529 validation, 23 fixed-head runs of the diagnosis round), and equal every value the gfx942 notes print: free fall 4.00586e-4 m, stacks 9.54951e-4 m, tower top error 4.93288e-4 m, articulation 4.73016e-6 m, SDF dense / 8 / 16 / 32-bit 2.06819e-4 / 7.45855e-5 / 1.04807e-3 / 8.6733e-4 m, large SDF 1.72706e-3 m, aggregate pile lowest box 0.499998 m, contact overflow 20, largest cooked face 31, PhysX errors 0. The gfx942 job kept no full logs on a host reachable from here, so the comparison with gfx942 is at the precision its notes print.
+- **In the 20 plain runs only the three known deformable checks vary.** Under the interposer, two more patterns appear, both already seen on gfx942 and both far inside their limits:
+
+| Check | 20 plain runs | all 100 series runs | gfx942, 21 runs at 42d4c033 | Limit |
+|---|---|---|---|---|
+| deformable: lowest vertex height (m) | -6.74481e-08 to -6.74336e-08 (3 distinct) | -6.74554e-08 to -6.74263e-08 (5 distinct) | -6.74481e-08 to -6.74336e-08 (3); the gfx942 evidence run's 50 release runs: the same 5 as here | > -0.02 |
+| articulation lever: extra bend (rad) | 0.190300 to 0.190821 | 0.190297 to 0.190907 | 0.190338 to 0.190852 | 0.06 to 0.5 |
+| articulation lever: load stays on the arm (m) | 0.840719 to 0.843069 | 0.840075 to 0.843116 | 0.840445 to 0.842855 | > 0.8 |
+| deformable: highest vertex height (m) | 0.997733 always | 0.997732 once (checked, htod), else 0.997733 | 0.997734 once, else 0.997733 | 0.8 to 1.1 |
+| particles on SDF: lowest / highest / mean (m) | 1.08333 / 2.23371 / 1.65427 always | that set, or exactly 1.09418 / 2.23391 / 1.65502 in 8 of 80 interposer runs (release htod 3, checked htod 2, checked dtod 2, checked stats 1) | the same second set, exactly, in 12 of 33 runs with 3 or 8 copies sharing a whole MI300X (evidence run), never alone | > 0.98 / < 2.9 / < 2 |
+
+- **The second particle set is not the runtime defect:** with the defective copy path switched off (`GPU_FORCE_BLIT_COPY_SIZE=0`, every small device-to-host copy goes to SDMA) and the mode that showed it most (release `SHIM_MODE=htod`), it still appeared (1 of 20 runs, the same exact values), and gfx942, which the defect does not affect, shows the same values under GPU sharing. It is a timing-dependent branch in upstream's particle path (one exact alternative, not a spread), identical across architectures. Not investigated further; nothing in the port touches it. The deformable spreads are the order-dependent float atomics recorded in the gfx942 validation; the open question for Jeff there (NVIDIA comparison or a ruling) stands as written.
+
+### Standalone reproducer, same ROCm 10.2 build
+`d2h_visibility` from the issue draft (source checked identical to the draft in notes.md), `hipcc -O2 --offload-arch=gfx1201`, 200,000 iterations each (`agent_space/repro/run-gfx1201.log`): **kernel signal: 512 B stale=4, 4 KiB stale=76, 16 KiB stale=146, 64 KiB stale=0; writevalue: 512 B stale=198,363, 4 KiB 197,419, 16 KiB 198,661, 64 KiB 0; with `GPU_FORCE_BLIT_COPY_SIZE=0`: writevalue 512 B 0, kernel 512 B 0.** The defect is still present on this card at this build (the diagnosis round saw 12 to 23 per 200,000 with the kernel signal and over 99% with writevalue), so the harness passes because of the fence, not because the runtime changed.
+
+### Fence A/B on this card (local copy, nothing pushed)
+A detached local worktree of 42d4c033 (`agent_space/ab-src`, removed afterwards), configured and built with the same preset commands: release tree as is ("fence"), then the one `__threadfence_system();` line deleted and `PhysXGpu` rebuilt ("no fence"), each copied with the release `bin/` into its own directory (the library resolves through the executable's `$ORIGIN` RUNPATH, checked with `LD_DEBUG=libs`). `utils/codeobj_diff.py`: only `libPhysXGpu_64.so` differs, in device ISA. Runs alternated fence / no fence:
+- First set (1 s timer, host heavily loaded by other jobs): fence 11, 11, 20, 22, 20 s, all 48 / 0; **no fence 29, 22, 23, 27, 26 s, and 2 of 5 runs failed `many slabs` (GPU vs CPU 19.6301 m, plate height error 19.6302 m)**, the exact signature of the 886c3529 failures and of the diagnosis's unfixed -O3 checked run, in plain release without any interposer.
+- Timing set (ns timer, host load 4.4 to 8.0): **fence 25.67, 24.59, 23.48, 24.61, 25.07 s (mean 24.68); no fence 26.31, 24.74, 23.11, 27.04, 22.35 s (mean 24.71)**, all 10 48 / 0. **No measurable cost.** Per-run times here are longer than the 12 to 22 s of the series because other jobs loaded the host CPU at the time (GPU 1 was otherwise idle); the pairs ran back to back.
+- No-fence total: 2 of 10 release runs failed. Fence total in this tree: 0 of 10.
+
+### GPU snippets (traced with `rocprofv3 --kernel-trace`, relinked without rendering with the earlier jobs' `headless.py`; 600 s timeout each)
+- Release, **14 of 14 exit 0 with dispatches**: HelloGRB 18,153, DeformableSurface 33,954, DeformableVolume 93,827, DeformableVolumeAttachment 112,194, DeformableVolumeKinematic 104,215, DeformableSurfaceSkinning 35,357, DeformableVolumeSkinning 94,027, PBF 33,346, PBFMultiMat 28,625, Isosurface 32,113, RBDirectGPUAPI 18,538, DirectGPUAPIArticulation 116,765, SDF GPU copy 53,939, GpuParity 632,206 (48 / 0). SDF as shipped: exit 0 with 0 dispatches, expected (upstream `gUseGPU = false`); the GPU copy is a local copy of `SnippetSDF.cpp` with `gUseGPU = true` (`agent_space/sdfgpu.py`). OmniPvdMultiGeom is not built in release (upstream drops it). Every count equals gfx942's at 42d4c033 except Kinematic (gfx942 104,265), SurfaceSkinning (35,359) and GpuParity (632,176), all within 0.05%; HelloGRB, PBF and SDF GPU, which differed at 886c3529 on this card, are now equal.
+- Checked, **16 of 16 exit 0**: the same 14 (Kinematic 104,194, SurfaceSkinning 35,350, GpuParity 632,200 and 48 / 0, the rest equal to release), SDF as shipped 0 dispatches, OmniPvdMultiGeom (`--omnipvdfile=<path>`) 443,411 (gfx942 443,244). At 886c3529 checked HelloGRB dispatched 12,670, RBDirectGPUAPI 17,830 and DirectGPUAPIArticulation 108,514 (missing contacts); now they equal release.
+- HelloGRB release with `LD_PRELOAD=<root>/lib/libamdhip64.so`: exit 0.
+
+### Non-GPU regression set
+- Non-GPU snippets, release: **55 of 56 exit 0**, the seven Vehicle snippets with `--vehicleDataPath=physx/snippets/media/vehicledata`, LoadCollection after `--generateExampleFiles` on `collection.bin`, `collection.xml`, `collectionA.bin collectionB.bin`, `collectionA.xml collectionB.xml` (59 invocations, all exit 0). **Skipped: SnippetProfilerConverter**, which prints only its usage (`--srcFile=<filename> --dstFile=<filename>`) and exits 1 without a raw profiler capture as input; a CPU tool the port does not touch (as on gfx942 and at 886c3529).
+- pvddom workflow CTest (`cmake -S physx/pvddom/workflow -B <dir> -G Ninja -DCMAKE_BUILD_TYPE=checked -DPX_GENERATE_GPU_PROJECTS=ON -DPX_USE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1201`; `ctest --test-dir <dir> -C checked`): **5/5 pass**, `ovd_sdk_gpu_capture` a real pass run with `-DGPU=ON` ("Independent captures equal, controlled change first differs at frame 6, ... GPU=ON").
+- pvddom unit CTest (`cmake -S physx/pvddom -B <dir> -G Ninja -DPVDRUNTIME_ROOT=physx/pvdruntime -DPVDDOM_BUILD_TESTS=ON -DPVDDOM_BUILD_INSPECTION=ON -DPVDDOM_BUILD_TOOLS=ON`): **372/372 pass**.
+- CPU-only preset with no ROCm or CUDA on PATH: configures and builds.
+
+### CUDA gate
+Not run here (no nvcc and no conda on this host). At 42d4c033 the CUDA path was built with nvcc 12.8 on the mi355 host in "CUDA harness build for an NVIDIA run 2026-11-24" (release and checked, 61 `.cu.o` each, 0 errors), which is a full CUDA compile of this head; the delta from 886c3529 is `__HIP_PLATFORM_AMD__`- and `PX_USE_HIP`-guarded (see the review).
+
+### Content checks
+- `jargon.py --port PhysX`: 14 hits, all in 13 upstream `ovphysx/` files identical to upstream 7d6f6ac8 (`git diff --quiet 7d6f6ac8 42d4c033 -- <file>` for each; Question A of the first porter round). `jargon.py -C projects/PhysX/src --diff 7d6f6ac8..42d4c033` and `--commits 7d6f6ac8..42d4c033`: clean.
+- ROCm build documentation: `INSTALL_ROCm.md`, commands run as written above. **For the porter (not a gate):** its second paragraph still says "RDNA builds compile but have not been tested yet"; with this validation, RDNA4 (gfx1201) is tested. Updating that sentence is a documentation delta that `carry-forward source-class` covers.
+- Integrity: `git -C projects/PhysX/src status --porcelain` shows only untracked `physx/bin/` and `physx/lib/`; HEAD 42d4c033. The A/B edit lived only in the removed local worktree.
+
+## Lesson for moat-porting: `utils/timeit.sh` runs its command from the MOAT checkout root
+`timeit.sh` does `cd "$(dirname "$0")/.."` before running the wrapped command, so a relative script path or a tool that works on the current directory runs in the wrong place. Seen in this validation: `(cd <build> && utils/timeit.sh ... -- ctest -C checked)` printed "No tests were found!!!" and exited 0 because ctest ran in the MOAT root, and `utils/timeit.sh ... -- python3 run_snippets.py` failed with "can't open file". Pass absolute paths and directory options instead (`ctest --test-dir <build>`, `make -C <dir>`, `cmake --build <dir>`, an absolute script path), and treat an exit 0 with "No tests were found" as a failure to run, not a pass.

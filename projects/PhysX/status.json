@@ -8,7 +8,7 @@
   "ext_type": "cmake",
   "stage": "review-passed",
   "adopted_at": "2026-11-06T11:13:50Z",
-  "updated_at": "2026-11-24T21:35:49Z",
+  "updated_at": "2026-11-25T01:38:01Z",
   "head_sha": "42d4c033f715aca0a267f68c85cf9c1c4510ad43",
   "depends_on": [],
   "porting": null,
@@ -67,11 +67,11 @@
     "linux-gfx1201": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": null,
+      "validated_sha": "42d4c033f715aca0a267f68c85cf9c1c4510ad43",
       "failed_sha": "886c3529d1dadf8353df4f98f1b95df33d0bd6ca",
       "started_at": "2026-11-24T16:39:47Z",
-      "completed_at": null,
-      "updated_at": "2026-11-24T18:57:03Z",
+      "completed_at": "2026-11-25T01:38:01Z",
+      "updated_at": "2026-11-25T01:38:01Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -85,7 +85,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "state": "validation-failed",
+      "state": "completed",
       "last_agent": "validator"
     }
   },
