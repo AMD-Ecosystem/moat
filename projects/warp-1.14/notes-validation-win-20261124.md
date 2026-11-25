@@ -37,3 +37,71 @@ No other test file has a repeat loop of more than a few hundred GPU launches, an
 Per file, tests run / skipped (all OK):
 
 test_adam.py 6/0; test_allocation_tracker.py 34/0; test_allocator.py 16/3; test_apic.py 52/0; test_apic_mesh.py 12/0; test_arithmetic.py 126/0; test_array.py 139/0; test_array_fill_capture.py 3/0; test_array_reduce.py 16/0; test_assert.py 11/0; test_async.py 2373/0; test_atomic.py 164/0; test_atomic_bitwise.py 6/0; test_atomic_cas.py 48/0; test_bf16.py 48/5; test_block_dim_dispatch.py 2/0; test_bool.py 14/0; test_builtins_resolution.py 48/0; test_bvh.py 13/0; test_capture_mode.py 2/0; test_clang_cuda.py 7/6; test_closest_point_edge_edge.py 28/0; test_codegen.py 117/0; test_codegen_instancing.py 80/0; test_coloring.py 3/0; test_compilation.py 3/0; test_compile_consts.py 33/0; test_composite_component_adjoint.py 18/0; test_conditional.py 50/0; test_conditional_captures.py 32/16; test_constant_precision.py 46/0; test_context.py 1/0; test_copy.py 10/0; test_cpu_precompiled_headers.py 3/0; test_ctypes.py 36/0; test_cuda_arch_suffix.py 10/10; test_dense.py 2/0; test_devices.py 14/0; test_diagnostics.py 14/0; test_dlpack.py 16/0; test_enum.py 14/0; test_fabricarray.py 19/0; test_factory_style_array_annotations.py 25/0; test_fast_math.py 14/1; test_fastcall.py 9/0; test_fem_examples.py 23/0; test_fem_field.py 6/0; test_fem_fp64.py 16/0; test_fem_geometry.py 22/1; test_fem_integrate.py 17/0; test_fem_linalg.py 5/0; test_fem_multi_env.py 10/1; test_fem_quadrature.py 5/0; test_fem_shape.py 4/0; test_fixedarray.py 20/0; test_fp16.py 6/0; test_func.py 35/0; test_future_annotations.py 2/0; test_generics.py 36/0; test_grad.py 41/0; test_grad_customs.py 17/0; test_grad_debug.py 16/0; test_graph.py 35/3; test_grouped_bvh.py 11/0; test_hash_grid.py 23/0; test_implicit_init.py 21/0; test_import.py 2/0; test_indexedarray.py 38/1; test_intersect.py 2/0; test_ipc.py 4/4; test_iter.py 2/0; test_jax.py 0/0; test_kernel_cache.py 5/0; test_launch.py 32/0; test_lerp.py 2/0; test_linear_solvers.py 34/0; test_logger.py 34/0; test_lvalue.py 29/0; test_map.py 45/0; test_marching_cubes.py 17/0; test_mat.py 134/0; test_mat_assign_copy.py 6/0; test_mat_basics.py 121/0; test_mat_constructors.py 54/0; test_mat_elementwise_ops.py 110/0; test_mat_linalg.py 154/0; test_mat_lite.py 6/0; test_math.py 16/0; test_mempool.py 7/2; test_mesh.py 16/0; test_mesh_query_aabb.py 15/0; test_mesh_query_point.py 9/0; test_mesh_query_ray.py 9/0; test_module_aot.py 23/3; test_module_contamination.py 2/0; test_module_hashing.py 8/0; test_module_parallel_load.py 5/0; test_modules_lite.py 4/0; test_multigpu.py 5/5; test_noise.py 14/0; test_occupancy.py 6/0; test_operators.py 20/0; test_options.py 22/0; test_overwrite.py 25/0; test_paddle.py 0/0; test_peer.py 4/2; test_pinned.py 1/0; test_print.py 10/8; test_quat.py 167/0; test_quat_assign_copy.py 6/0; test_rand.py 10/0; test_reload.py 14/0; test_rounding.py 2/0; test_runlength_encode.py 16/0; test_scalar_ops.py 44/0; test_sgd.py 14/0; test_smoothstep.py 2/0; test_snippet.py 12/0; test_sparse.py 47/0; test_spatial.py 201/0; test_spatial_assign_copy.py 6/0; test_special_values.py 74/0; test_static.py 28/0; test_streams.py 25/3; test_struct.py 46/0; test_subscript_types.py 44/0; test_tape.py 19/0; test_template_launch_bounds.py 36/0; test_texture.py 120/1; test_tile.py 126/0; test_tile_atomic_bitwise.py 3/0; test_tile_cholesky.py 33/0; test_tile_cholesky_no_mathdx.py 16/0; test_tile_empty.py 20/0; test_tile_fft.py 20/8; test_tile_fft_no_mathdx.py 16/0; test_tile_func_arg.py 27/0; test_tile_fused_ops.py 36/0; test_tile_large_offsets.py 1/0; test_tile_load.py 64/0; test_tile_mathdx.py 6/0; test_tile_matmul.py 26/0; test_tile_matmul_no_mathdx.py 22/0; test_tile_mlp.py 3/1; test_tile_reduce.py 62/2; test_tile_shared_memory.py 30/2; test_tile_solve.py 5/1; test_tile_solve_no_mathdx.py 28/0; test_tile_sort.py 2/0; test_tile_stack.py 40/0; test_tile_view.py 16/1; test_torch.py 34/0; test_transient_module.py 2/0; test_triangle_closest_point.py 2/0; test_tuple.py 16/0; test_types.py 53/0; test_unified_memory.py 27/8; test_unique_module.py 23/0; test_unpack.py 32/0; test_utils.py 62/0; test_vec.py 89/0; test_vec_assign_copy.py 8/0; test_vec_constructors.py 26/0; test_vec_lite.py 6/0; test_vec_scalar_ops.py 402/0; test_verify_fp.py 4/2; test_version.py 4/0; test_volume.py 59/0; test_volume_write.py 5/0; 
+
+### Step 5: the held tests (2026-11-24)
+
+Commands: `agent_space/p6ev/heldrun.sh` over `heldlist.txt` (one line per test): from the directory outside the tree, venv with the installed wheel, `ulimit -c 0`, `WARP_CACHE_PATH` emptied before each test, a `progress.log` line before each test, `timeout 900 python -m warp.tests -s autodetect -p <file> -k <exact test name> -m 2`; after each test the script checks the log for hipError/`Warp CUDA error`/device-lost lines, rc 124, and a new Display event 4101 (TDR) and would stop at the first. TdrDelay and TdrDdiDelay are 0x3c (60 s) in the registry. Pillow was added to the venv for the two examples that need it.
+
+Wall time per test (ms, process wall including start-up and module build), all rc=0 and `Ran 1 test ... OK`, none skipped:
+
+- test_copy_large_stride_cpu_cpu: 10505 ms
+- test_copy_large_stride_cpu_cuda0: 10188 ms
+- test_copy_large_stride_cuda0_cpu: 5623 ms
+- test_copy_large_stride_cuda0_cuda0: 2306 ms
+- test_fill_large_cuda_0: 7884 ms
+- test_large_array_excessive_ndarray: 1628 ms
+- test_large_array_excessive_numpy: 1594 ms
+- test_large_array_excessive_zeros_cpu: 2271 ms
+- test_large_array_excessive_zeros_cuda_0: 1611 ms
+- test_large_launch_max_blocks_cpu: 2465 ms
+- test_large_launch_max_blocks_cuda_0: 2537 ms
+- test_large_arrays_cpu: 61341 ms
+- test_large_arrays_cuda_0: 6140 ms
+- test_large_launch_large_kernel_cuda_0: 2678 ms
+- test_large_launch_very_large_kernel_cuda_0: 8284 ms
+- test_core.example_custom_allocator_cuda_0: 2233 ms
+- test_core.example_dem_cpu: 16219 ms
+- test_core.example_dem_cuda_0: 31128 ms
+- test_core.example_fft_poisson_navier_stokes_2d_cuda_0: 5329 ms
+- test_core.example_fluid_cpu: 8649 ms
+- test_core.example_fluid_cuda_0: 3842 ms
+- test_core.example_graph_capture_cpu: 3662 ms
+- test_core.example_graph_capture_cuda_0: 3372 ms
+- test_core.example_marching_cubes_cuda_0: 6205 ms
+- test_core.example_mesh_cpu: 3495 ms
+- test_core.example_mesh_cuda_0: 4206 ms
+- test_core.example_mesh_intersect_cpu: 4415 ms
+- test_core.example_mesh_intersect_cuda_0: 4735 ms
+- test_core.example_nvdb_cpu: 5974 ms
+- test_core.example_nvdb_cuda_0: 4474 ms
+- test_core.example_raycast_cpu: 3131 ms
+- test_core.example_raycast_cuda_0: 3320 ms
+- test_core.example_raymarch_cpu: 4382 ms
+- test_core.example_sample_mesh_cpu: 3021 ms
+- test_core.example_sample_mesh_cuda_0: 3481 ms
+- test_core.example_sph_cpu: 6076 ms
+- test_core.example_torch_cpu: 8716 ms
+- test_core.example_torch_cuda_0: 9713 ms
+- test_core.example_wave_cpu: 4061 ms
+- test_core.example_wave_cuda_0: 3606 ms
+- test_optim.example_diffray_cpu: 8445 ms
+- test_optim.example_diffray_cuda_0: 51314 ms
+- test_optim.example_fluid_checkpoint_cuda_0: 10621 ms
+- test_optim.example_navier_stokes_perturbation_cuda_0: 6125 ms
+- test_optim.example_particle_repulsion_cuda_0: 3362 ms
+- test_tile.example_tile_block_cholesky_cpu: 3761 ms
+- test_tile.example_tile_block_cholesky_cuda_0: 4949 ms
+- test_tile.example_tile_cholesky_cpu: 3007 ms
+- test_tile.example_tile_cholesky_cuda_0: 3123 ms
+- test_tile.example_tile_convolution_cuda_0: 3240 ms
+- test_tile.example_tile_fft_cuda_0: 3247 ms
+- test_tile.example_tile_filtering_cuda_0: 3262 ms
+- test_tile.example_tile_matmul_cpu: 3221 ms
+- test_tile.example_tile_matmul_cuda_0: 3161 ms
+- test_tile.example_tile_mcgp_cpu: 11900 ms
+- test_tile.example_tile_mcgp_cuda_0: 5271 ms
+- test_tile.example_tile_mlp_cuda_0: 8162 ms
+- test_tile.example_tile_nbody_cpu: 2112 ms
+- test_tile.example_tile_nbody_cuda_0: 3189 ms
+- test_tile.example_tile_stream_compaction_cuda_0: 3043 ms
+- test_core.example_sph_cuda_0: 29370 ms

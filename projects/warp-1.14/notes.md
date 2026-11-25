@@ -8601,3 +8601,13 @@ Full table in `notes-validation-win-20261124.md`. `device.free_memory` reports 1
 - Skips (100): by reason in `notes-validation-win-20261124.md`; they are the known ones (no second GPU, no MathDx, conditional graph nodes, peer/IPC/mempool access, ml_dtypes/rmm absent, 64 KiB shared memory, Windows stdout capture, NVRTC items).
 - Not seen: the session-13 test_mesh refit-graph crash, any flake, any `Warp CUDA error` line while tests pass.
 - Held for Jeff: `test_large.py`, `test_examples.py`, `test_array.py::test_fill_large_cuda_0`, `test_copy.py::test_copy_large_stride_*` (4), and the windowed OpenGL run. The platform is not validated at this head until they are decided.
+
+### Step 5: the held tests ran (2026-11-24, windows-gfx1151, `66ba4ffb`, same installed wheel and venv)
+
+TdrDelay and TdrDdiDelay are 60 s in the registry (Jeff's change). 61 tests, each in its own process (`python -m warp.tests -s autodetect -p <file> -k <exact name> -m 2`, `ulimit -c 0`, fresh kernel cache, a log line before each, stop on the first HIP error, TDR event or timeout): **61 of 61 `Ran 1 test ... OK`, rc=0, none skipped, no HIP error line, no timeout, no Display 4101 (TDR) event, 458 s of wall time in total.** Per-test wall times and the command are in `notes-validation-win-20261124.md`.
+- `test_copy.py::test_copy_large_stride` x4 (cpu_cpu, cpu_cuda0, cuda0_cpu, cuda0_cuda0): OK, 10.5, 10.2, 5.6 and 2.3 s.
+- `test_array.py::test_fill_large_cuda_0` (8.6 GB, more than 2^32 threads): OK, 7.9 s.
+- `test_large.py`, 10 tests: all OK. `test_large_arrays_cuda_0` 6.1 s (`..._cpu` 61.3 s, host RAM), `test_large_launch_large_kernel_cuda_0` (2^33 threads) 2.7 s, `test_large_launch_very_large_kernel_cuda_0` (5.5e11 threads, grid-stride) 8.3 s.
+- `test_examples.py`, 46 examples (cpu and cuda:0, `example_sph_cuda_0` last): all OK; longest `optim.example_diffray_cuda_0` 51.3 s, `core.example_dem_cuda_0` 31.1 s, `core.example_sph_cuda_0` 29.4 s.
+
+With these, every test file of the suite has passed on this laptop at `66ba4ffb` from the installed wheel (169 files plus the 61 held tests, 7549 + 61 tests, 0 failures). Not recorded completed: the windowed OpenGL run with Jeff present is still to come.
