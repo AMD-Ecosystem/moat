@@ -8,7 +8,7 @@
   "ext_type": "python-torch",
   "stage": "review-passed",
   "adopted_at": "2026-11-06T03:22:49Z",
-  "updated_at": "2026-11-25T01:56:20Z",
+  "updated_at": "2026-11-25T20:40:47Z",
   "head_sha": "73d889fe1d3ed4cb16dde1797758fdc92e210a31",
   "depends_on": [],
   "porting": null,
@@ -59,6 +59,29 @@
         "last_session_at": null
       },
       "last_agent": "validator",
+      "state": "completed"
+    },
+    "linux-gfx1100": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "73d889fe1d3ed4cb16dde1797758fdc92e210a31",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-11-25T20:40:47Z",
+      "updated_at": "2026-11-25T20:40:47Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
       "state": "completed"
     }
   },
