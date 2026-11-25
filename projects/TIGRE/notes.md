@@ -2466,3 +2466,8 @@ GPU host: AMD Instinct MI250X / MI250 gfx90a, TheRock ROCm SDK 10.1, `HIP_VISIBL
 - **windows-gfx1151 (laptop): full run at 2132d4e5** with `TIGRE_BACKEND=hip` (codeobj_diff cannot judge PE binaries, and windows has not validated since c015150). Also run `python setup.py build_ext --inplace -j 8`. It should print `TIGRE: building the extensions one at a time (build_ext -j is not supported on Windows).` and finish cleanly. That checks a7997d3d plus 2132d4e5 on Windows for the first time. windows-gfx1201 or windows-gfx1101 would satisfy the gate equally.
 - Not needed: nvcc 12.8 recheck (see above), linux-gfx90a and linux-gfx1201 (carried forward). gfx942 is still blocked (texture API).
 - For jeff: the fix review PR draft ("Fix review PR draft") is updated for 2132d4e5. The `## Upstream reply` gains one sentence on the Windows `-j` behavior. The reply had no such sentence before; one was added because the request expected one. Drop it if you would rather not mention it. The reply names only the MI250X and the R9700. Its "Not yet run at this head: Windows" line must be filled in from the Windows record before the PR opens. No upstream issue was drafted, per your ruling.
+
+## Rulings 2026-11-24 (jeff, via the checkup session)
+- `fmaxf` in `maxdistanceCuboid` stays unguarded shared host code, as published and as the maintainer reviewed it; CUDA behavior and device code are identical.
+- The `build_ext -j` race is not filed upstream. Instead every Windows build serializes when `-j` is passed (2132d4e5, CUDA included); Linux stays parallel.
+- No robust sample count is suggested upstream; deferral `tigre-parallel-interp-sample-count-knife-edge` closed as not-applicable by jeffdaily.

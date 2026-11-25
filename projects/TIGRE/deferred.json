@@ -71,7 +71,7 @@
         "projects/TIGRE/notes.md, Validation 2026-11-20 (linux-gfx942)",
         "projects/TIGRE/probe/fullturn_cpu_ref.py"
       ],
-      "status": "open",
+      "status": "not-applicable",
       "upstream_issue": null,
       "created_at": "2026-11-20T23:10:49Z",
       "decided": null,
@@ -82,7 +82,13 @@
           "at": "2026-11-24T19:21:28Z",
           "reason": "nvcc's contraction is now read from PTX: it matches RDNA, not the strict-IEEE order, so CUDA passes and the port now matches it"
         }
-      ]
+      ],
+      "closed": {
+        "as": "not-applicable",
+        "reason": "jeff ruled 2026-11-24 not to suggest a robust sample count upstream: the HIP build now matches nvcc's evaluation and passes, CUDA passes, and a change would alter upstream CUDA numerics unasked.",
+        "by": "jeffdaily",
+        "at": "2026-11-25T00:41:55Z"
+      }
     }
   ]
 }
