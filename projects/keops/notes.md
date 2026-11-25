@@ -159,6 +159,8 @@ R 4.4.3 and the rkeops dependencies from conda-forge into `agent_space/r-env` (m
 
 ## Lesson for cuda-to-rocm: hipRTC rejects NVRTC's --include-path= spelling
 
+Promoted to cuda-to-rocm/references/platform-limits.md in f3bbd68e.
+
 Belongs in `references/platform-limits.md`, in the "NVRTC (CUDA C++ generated at run time) ports to hipRTC" paragraph. NVRTC accepts `--include-path=<dir>` (and `-I<dir>`); hipRTC passes options to clang, which reads `--include-path=<dir>` as the prefix-matched `--include` (force-include a file) followed by `-path=<dir>`, so the compile fails with `fatal error: '-path=<dir>' file not found` from `<built-in>`. Pass `-I<dir>` on the ROCm side (NVRTC also accepts `-I`, so a single spelling works for both if the CUDA path may change). Seen in keops (runtime-generated kernels with a header directory on the hipRTC include path).
 
 ## Review 2026-11-20 (linux-gfx950, head 2980874a)
