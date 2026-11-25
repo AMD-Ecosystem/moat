@@ -2552,6 +2552,8 @@ failure path.
 
 ## Lesson for cuda-to-rocm: nvcc's device code can vary between identical compiles
 
+Promoted to cuda-to-rocm/references/validation.md in f3bbd68e.
+
 For validation.md, "Proving two builds carry the same device code". When
 the CUDA side of a port is checked by comparing nvcc output (PTX or cubin)
 before and after, a difference is not proof that the source changed what
