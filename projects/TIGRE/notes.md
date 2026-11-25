@@ -2639,3 +2639,15 @@ The first core run (20:11 UTC) gave 125 passed, 4 failed, 179 skipped in 9.7 s: 
 - `set-state TIGRE linux-gfx1201 completed --agent validator`: accepted. `fix-ready TIGRE`: False; the windows gate still needs a completed platform at 279816eb (windows-gfx1151/1201/1101 are at older heads). Wave64 (gfx90a) and wave32 (this record) are satisfied at 279816eb.
 - Fix review PR draft updated: the retest paragraph and the `## Upstream reply` now name the R9700 as tested at the merged head; the Radeon 8060S is still given as at 2132d4e5 until a Windows run at 279816eb. The body (first paragraph through the reply) and the title, extracted to scratch files: `python3 utils/prose.py <body> <title>`: clean; `python3 utils/jargon.py <body> <title>`: clean.
 - Still owed at 279816eb: a Windows run (windows-gfx1151, -gfx1201 or -gfx1101) for the windows gate, after which `fix-ready` can pass and `upstream.py --fix-review` can open the page (check master has not moved past e0e3f0a2 first).
+
+## Validation 2026-11-25 (windows-gfx1151, at `279816eb`) -- PASS
+
+Run by the checkup session on the laptop at jeff's request. AMD Radeon 8060S (gfx1151, wave32 APU, hardware fp32 filtering), Windows 11, TheRock SDK via `win_rocm_env.sh`, venv `tigre_venv2` (no torch), `ulimit -c 0`, one GPU process. Detached worktree of the fork clone `agent_space/tigre-win4` checked out at 279816eb (== `head_sha` == `reviewed_sha`); old `build/` and in-place `.pyd` removed first; tracked tree clean after build and tests. Upstream master still e0e3f0a2 at the time of the run. Nothing pushed.
+
+- Build (`utils/timeit.sh TIGRE compile -- bash agent_space/tigre_build_win1151_279.sh`: `TIGRE_BACKEND=hip HIP_ARCH=gfx1151`, `python setup.py build_ext --inplace -j 8`): rc 0, 8/8 `.pyd`, printed the backend, `gfx1151` and `TIGRE: building the extensions one at a time (build_ext -j is not supported on Windows).`
+- Tests (`utils/timeit.sh TIGRE test -- bash agent_space/tigre_run_279.sh`, the script of the 2132d4e5 entry):
+  - core: **282 passed, 0 failed**, 26 skipped, 17 deselected (575 s). Skips: torch not installed (7), 2/4 GPUs, mmap host-bounds test (Linux only), CUDA runtime via ctypes.
+  - extended: **13 passed**, 14 skipped (503 s).
+  - `tigre_gates.py` cone, solvers, parallel: **RESULT PASS** each.
+- Against 2132d4e5 on this host: core 274 -> 282 (master's new `test_versions.py` and `test_nikon_loader_angles.py`, as on gfx90a/gfx1201), extended 13 = 13, gates PASS = PASS.
+- PyTorch test files: run separately in `agent_space/tigre_torch_venv` (entry below when done); `test_texture_object_leak.py` is not run on this laptop (jeff, 2026-11-25: not needed, it passed on both Linux GPUs).
