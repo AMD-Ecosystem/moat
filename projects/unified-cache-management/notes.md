@@ -1348,6 +1348,8 @@ Result: linux-gfx90a COMPLETED at eda03f156a96c7d5f8cf04bb47cf279e81eade53, buil
 
 ## Lesson for cuda-to-rocm: O_DIRECT tests fail with EINVAL on a container's overlay filesystem
 
+Promoted to cuda-to-rocm/references/diagnosis.md in f3bbd68e.
+
 A storage test that opens its files with `O_DIRECT` and writes into a directory relative to the test's working directory can fail with `pwrite ... errno=22 (Invalid argument)` when that directory is on a container's overlay root, and pass on the same host from tmpfs or a real ext4/xfs mount. It looks like a GPU or pinned-buffer fault because the write source is a staged device buffer. Before blaming the port, rerun the failing cases from a tmpfs working directory (`cd /dev/shm/<dir> && <test binary> --gtest_filter=...`), and check whether the project's CPU-only (simulated-device) build fails the same cases on the same filesystem. If both point at the filesystem, record the cases as host-environment failures and move on.
 ## Second sync on moat-fix-1021 (2026-11-20, porter, linux-gfx942)
 
