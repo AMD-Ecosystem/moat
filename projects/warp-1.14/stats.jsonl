@@ -586,3 +586,9 @@
 {"kind":"phase","ts":"2026-11-24T22:54:35Z","phase":"test","seconds":22.51,"exit":0,"cmd":"bash agent_space/v/run.sh matmul2 -s autodetect -p test_tile_matmul.py"}
 {"kind":"phase","ts":"2026-11-24T22:55:01Z","phase":"test","seconds":25.424,"exit":0,"cmd":"bash agent_space/v/run.sh matmul3 -s autodetect -p test_tile_matmul.py"}
 {"kind":"session","ts":"2026-11-24T22:55:51Z","epoch":1795560951.148668,"event":"end","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-24T22:31:41Z","phase":"compile","seconds":846.818,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/p6ev/build.sh"}
+{"kind":"phase","ts":"2026-11-24T22:32:22Z","phase":"compile","seconds":0.182,"exit":1,"cmd":"bash -c cd /d/Develop/moat/agent_space/p6ev/warp && /c/Users/<user>/AppData/Local/Programs/Python/Python312/python -m build --wheel -C--build-option=-Pwindows-x86_64 --outdir /d/Develop/moat/agent_space/p6ev/dist"}
+{"kind":"phase","ts":"2026-11-24T22:32:40Z","phase":"compile","seconds":6.536,"exit":0,"cmd":"bash -c cd /d/Develop/moat/agent_space/p6ev/warp && /d/Develop/moat/agent_space/p6ev/bvenv/Scripts/python.exe -m build --wheel -C--build-option=-Pwindows-x86_64 --outdir /d/Develop/moat/agent_space/p6ev/dist"}
+{"kind":"phase","ts":"2026-11-24T22:35:32Z","phase":"compile","seconds":0.956,"exit":1,"cmd":"bash -c cd /d/Develop/moat/agent_space/p6ev/warp/warp/examples/cpp/build && cmake --build . 2>&1"}
+{"kind":"phase","ts":"2026-11-24T22:35:49Z","phase":"compile","seconds":5.839,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/p6ev/exbuild2.sh"}
+{"kind":"session","ts":"2026-11-25T00:04:14Z","epoch":1795565054.368781,"event":"end","platform":"windows-gfx1151"}
