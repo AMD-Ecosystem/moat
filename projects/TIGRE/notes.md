@@ -2651,3 +2651,6 @@ Run by the checkup session on the laptop at jeff's request. AMD Radeon 8060S (gf
   - `tigre_gates.py` cone, solvers, parallel: **RESULT PASS** each.
 - Against 2132d4e5 on this host: core 274 -> 282 (master's new `test_versions.py` and `test_nikon_loader_angles.py`, as on gfx90a/gfx1201), extended 13 = 13, gates PASS = PASS.
 - PyTorch test files: run separately in `agent_space/tigre_torch_venv` (entry below when done); `test_texture_object_leak.py` is not run on this laptop (jeff, 2026-11-25: not needed, it passed on both Linux GPUs).
+
+### PyTorch test files at 279816eb (windows-gfx1151, 2026-11-25)
+`agent_space/tigre_torch_venv` (torch 2.12.0+rocm7.14.0a20260519 [device-gfx1151], numpy 1.26.4), `bash agent_space/tigre_run_torch_279.sh` (the 9 files of the 2132d4e5 torch run plus `test_tv_host_bounds.py`; `test_texture_object_leak.py` not run, per jeff): **75 passed, 1 failed, 11 skipped** (1979 s). The failure is `test_image_split_when_the_gpu_is_nearly_full[Ax-Siddon]` with the identical mismatch of 2132d4e5 (10676406 elements, max abs 0.00875854, max rel 2.16e-4): the split-count difference diagnosed there (GPU-tensor run 4 pieces, NumPy reference 3), not a port defect. Skips as at 2132d4e5. The fix review draft now gives the Radeon 8060S at 279816eb.

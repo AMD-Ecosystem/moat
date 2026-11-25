@@ -321,3 +321,4 @@
 {"kind":"session","ts":"2026-11-25T20:39:42Z","epoch":1795639182.117549,"event":"end","platform":"linux-gfx1201"}
 {"kind":"phase","ts":"2026-11-25T21:08:01Z","phase":"compile","seconds":60.604,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/tigre_build_win1151_279.sh"}
 {"kind":"phase","ts":"2026-11-25T21:30:11Z","phase":"test","seconds":1328.964,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/tigre_run_279.sh"}
+{"kind":"phase","ts":"2026-11-25T22:04:49Z","phase":"test","seconds":1981.457,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/tigre_run_torch_279.sh"}
