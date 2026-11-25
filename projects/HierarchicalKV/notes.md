@@ -821,3 +821,73 @@ Same setup as the 592f800 check, rebuilt inside this job directory: bazelisk 1.2
 There is no CUDA break, so no fix is proposed. On CUDA, 4033ed6 is 592f800 with four host-side `__LINE__` constants moved.
 
 Logs and scripts (container-local, job directory `cc/`): `logs/` (`*-build.log`, `*-bazel.log`, `ppcmp.txt`, `sass-base-p4033.txt`), `ppn/*.diff`, `host/`, `scripts/` (`pp.sh`, `ppcmp.sh`, `rawcmp.sh`, `hostsame.sh`, `strict.sh`, `bazel_cuda.sh`).
+## Validation 2026-11-25 (linux-gfx1201 Radeon AI PRO R9700, wave32, validator role, fork head 4033ed6): FAILED, two-process hang
+
+Requested by Jeff Daily (fleet job): the port's first wave32 validation, at 4033ed6, following the gfx942 round-2 recipe so the two can be compared. Run 2026-11-24 21:10 to 2026-11-25 03:15.
+
+**Verdict: validation-failed.** Every test binary passes when it has the GPU to itself, but the gfx942 loop condition (two instances of `FindOrInsertPtrTest.test_find_or_insert_multi_threads` at the same time on the one GPU) hangs on this card in 4 of 4 pairs, and the job counts any hang as a failure. The stall is in upstream's group-lock spin kernels, which wait on a kernel in another stream (details below). With `GPU_MAX_HW_QUEUES=2` one pair passed. A proposed change is below; nothing was pushed to the fork.
+
+### Host, device, toolchain
+
+- Device: one AMD Radeon AI PRO R9700 (`HIP_VISIBLE_DEVICES=0` as pinned; `hipGetDeviceProperties`: gfx1201, PCI e3:00 = amd-smi GPU 3, 32 CUs, warpSize 32, 64 KiB LDS per block, 31.86 GiB, `hipDeviceAttributeWallClockRate` 100000 kHz, so `global_timer_ns`'s fixed 100 MHz holds here too). `amd-smi process` showed no other process on any GPU at the start.
+- TheRock ROCm 10.2.0 wheels in the job venv: `$FLEET_VENV/bin/python -m pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ "rocm[libraries,devel,device-gfx1201]==10.2.0"` (the venv also carries older 10.1.0 `rocm-sdk-device-*` packages for other targets from its base; the gfx1201 one is 10.2.0). `rocm-sdk path --root` = `<job>/venv/lib/python3.11/site-packages/_rocm_sdk_devel`.
+- Compiler the CMake build invokes (`CMAKE_HIP_COMPILER`, and the compiler in every ninja HIP rule): `<sdk>/lib/llvm/bin/clang++`, AMD clang 24.0.0git (llvm-project bdc35841c97f), HIP 7.17.26434. Host C++ `/usr/bin/c++`. CMake 3.31.6, Ninja 1.13.0 (venv). The Bazel ROCm crosstool calls `<sdk>/lib/llvm/bin/clang`.
+
+### Build (4033ed6, documented commands)
+
+```
+R=$(rocm-sdk path --root); export ROCM_PATH=$R PATH=$R/bin:$PATH
+git submodule update --init tests/googletest
+cmake -S . -B build-hip -G Ninja -DHKV_USE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1201 -DCMAKE_PREFIX_PATH=$R
+bash utils/timeit.sh HierarchicalKV compile -- cmake --build build-hip -j 24
+```
+54/54, rc 0, 7 min at -j24 (20 tests + 3 benchmarks). Effective flags `-g -O -O3 -std=gnu++17 --offload-arch=gfx1201` (CMake default build type, i.e. Debug with assertions live). Warnings are all upstream shapes: 718 `-Wunused-value` (nodiscard `hipError_t`), 88 `-Wswitch`, 50 `-Wconstant-conversion` (the `S min_score = MAX_SCORE` lines that give nvcc's `#69-D`).
+
+### Full suite, one binary at a time, under gdb with a 3600 s stall capture: 20/20 binaries pass, 241 gtest cases
+
+All 20 test executables as built, nothing filtered or resized, `IS_BLOSSOM_CI` unset, nothing else on the GPU. Seconds (cases): repeated_key 5 (9), correctness_stress 20 (62), dynamic_max_capacity 5 (1), lock_unlock 5 (1), reserved_keys 5 (1), merlin_memory_pool 5 (6), save_and_load 20 (5), group_lock 30 (4), find_with_missed_keys 25 (7), uint32_score 60 (4), assign_values 75 (3), export_batch_if 95 (plain `main`, exit 0, prints `done`), dual_bucket 55 (33), find_or_insert_ptr_lock 415 (13), accum_or_assign 340 (14), assign_score 331 (8), insert_and_evict 430 (9), merlin_hashtable 735 (24), find_or_insert 1081 (19), find_or_insert_ptr 1336 (18). Every process `exited normally`; no `Failure` or `hipError` line. No case needed more memory than the card has: the 64M-key tables and the 16 GB `max_hbm_for_vectors` cases ran as written (the multi-thread case peaks at 16.3-18.3 GB of VRAM).
+
+### Repeated-key tests (same-wavefront contention)
+
+`repeated_key_test` 20 consecutive runs (plus the suite run and three others): 9/9 every time, about 5 s each. On wave32 two copies of the key share one 32-lane wavefront, the case the round-2 fix targets. `AMD_LOG_LEVEL=3` shows `pipeline_update_kernel_with_io`, `pipeline_update_score_kernel` and `pipeline_update_values_kernel_with_io` dispatched 3 times each, as on gfx942.
+
+### `FindOrInsertPtrTest.test_find_or_insert_multi_threads`
+
+| Condition | Runs | Result |
+|---|---|---|
+| one instance at a time (sizing run, the suite's run, 10 loop runs under gdb with a 1200 s stall capture) | 12 | 12 pass, 335-395 s (loop mean 371 s) |
+| two instances at once, the gfx942 recipe (second started 20 s after the first) | 4 pairs | **4 of 4 pairs hang, both processes each time** |
+| two instances at once, `GPU_MAX_HW_QUEUES=2` in both, under gdb | 1 pair | both pass, 361 s each |
+
+The hanging pairs: (1) the first loop pair under gdb with the gfx942 900 s watchdog; (2) a pair under gdb with a 3000 s threshold, to rule out "slow" (one instance takes 335-395 s); (3) a plain pair with no debugger, killed by `timeout 1500`; (4) a pair under `AMD_LOG_LEVEL=3`, killed at 1500 s. The 30-run loop was stopped after the first pair, because every pair hangs.
+
+State at the hang (pair 2 at 3000 s, gdb `thread apply all bt`; pair 1 the same):
+- GPU `GFX_ACTIVITY` 100 % the whole time, no host progress.
+- Process B (43 threads): 20 workers spinning in `group_shared_mutex::lock_read` (host loop on `h_update_count_`), 5 in `update_read_lock` (host CAS on `h_unique_flag_`), one in `lock_update_read`, and the rest waiting on GPU completion: `hipStreamSynchronize` (after a lock kernel), and `hipMemcpyAsync`/`hipStreamSynchronize` from `HashTable::fast_load_factor` inside `assign` (`rocr::core::BusyWaitSignal::WaitRelaxed`).
+- Process A: only the main thread left, in `HashTable` destruction (`destroy_table` -> `hipFree` at 900 s, `hipMemcpy` at 3000 s), busy-waiting on a GPU signal. It is starved, not deadlocked on its own.
+- VRAM at the hang: 29.6 GB in pair 2 but 19.7 GB in pair 3, so the card's memory is not what runs out.
+
+Which kernels (pair 4, `AMD_LOG_LEVEL=3` dispatch lines with the per-bucket init kernels filtered out): each process stopped dispatching within about 35 s of the second one starting, and its last kernel is one of upstream's single-thread group-lock spin kernels, launched right after the unlock kernel it waits for went to another stream:
+- A: `unlock_read_kernel`, `unlock_read_kernel`, then `lock_update_read_kernel` (spins on the device until `read_count <= 1` and `update_count == 0`), then three `__amd_rocclr_copyBuffer`, then nothing.
+- B: `pipeline_update_kernel_with_io` + `unlock_update_kernel` on the worker's stream, then `lock_read_kernel` (spins until `update_count == 0`), then nothing.
+
+Mechanism (my reading; the port does not change these files): `group_shared_mutex` (`include/merlin/group_lock.cuh`) admits a holder with host-side counters, then launches a one-thread lock kernel on a per-thread lock stream (`get_lock_stream()`) and synchronizes it. The previous holder released by enqueuing an `unlock_*_kernel` on its own stream, behind its work, and decremented the host counter at once. So the device-side spin in `lock_*_kernel` (`core_kernels/group_lock_kernels.cuh`) waits for a kernel queued on another stream. This only completes if the two streams' hardware queues both make progress. HIP maps a process's streams onto `GPU_MAX_HW_QUEUES` (default 4) hardware queues. With two such processes on this card the queues are oversubscribed, and the queue holding the unlock kernel never runs again while the spinner occupies the GPU (GPU at 100 %, no progress for 50 minutes). One process alone, or two processes with 2 queues each, passed. MI300X ran the same two-lane loop 30/30 at this head; it schedules more hardware queues. CUDA does not guarantee concurrent progress of independent streams either, so this is an upstream forward-progress assumption that this card's queue scheduling exposes. Whether that scheduling is itself a defect (a spinning queue starving a runnable queue indefinitely instead of time-slicing) is a question for a person, below.
+
+Side effect that contaminated two diagnostic runs: after a hung pair is killed, the GPU stays wedged for a while. New processes stall in their first cache-invalidate packet at code-object load (`rocr::AMD::AqlQueue::ExecutePM4` <- `GpuAgent::InvalidateCodeCaches` <- `BlitKernel::Initialize` <- `Executable::Freeze`), with no test thread started. This happened to a pair launched under rocgdb right after pair 2 (so its `info dispatches` = "No dispatches are currently active" says nothing about the hang) and to a second `GPU_MAX_HW_QUEUES=2` pair right after pair 4. It cleared within about 20 minutes the first time. After the last kill (03:11) it was still present at 03:15: `repeated_key_test` stalled in its first case under `timeout 120` twice, and `amd-smi process -g 3` listed one process holding about 682 MB of VRAM under a PID that does not exist on the host (3227120, then 3236139 at the next check). A host or driver owner should check GPU 3 (PCI e3:00) before the next job uses it.
+
+### Proposed change (not made; needs a person's ruling)
+
+The port must not hang where CUDA returns. Options:
+- (a) HIP-only, in `group_shared_mutex`: make each `unlock_read`/`unlock_update`/`unlock_update_read` wait for its unlock kernel (`cudaStreamSynchronize(stream)`, or record an event the next lock waits on) before decrementing the host counters. The host then admits the next holder only after the device counters are released, so the lock kernels never wait on a kernel in another queue. Cost: an unlock blocks the caller's thread until its own stream's preceding work finishes, which serializes holders more than CUDA does. CUDA unchanged under `#ifdef MERLIN_HIP`. It should be re-run on this card with the two-lane loop and on gfx942.
+- (b) Treat it as a ROCm queue-scheduling defect and file it with the evidence above (one process passes, two hang, `GPU_MAX_HW_QUEUES=2` passes), plus the post-kill wedge. This leaves users on this card exposed until a fix ships.
+- (c) Both.
+Setting `GPU_MAX_HW_QUEUES` in the tests is not a fix: users run the library in their own processes.
+
+### Other items
+
+- ROCm Bazel build: clean clone at 4033ed6 without googletest, bazelisk 1.25.0 (release binary, sha256 fd8fdff4...), `BAZELISK_HOME` and `--output_user_root` under the job directory, Bazel 5.0.0 per `.bazeliskrc`: `ROCM_PATH=$R ROCM_AMDGPU_TARGETS=gfx1201 bazelisk --output_user_root=<job>/bazel/root build --config=rocm --jobs=24 //...` under `timeit.sh compile`: "Build completed successfully, 13 total actions", rc 0, 55 s. `benchmark_util` embeds only `amdgcn-amd-amdhsa--gfx1201`. It ran 300 s on the GPU (cap, rc 124), printing its tables ("GPU: 1 x AMD Radeon AI PRO R9700"; dim 8 at LF 0.50: insert_or_assign 0.156, find 0.378, find_or_insert 0.155, assign 0.306 B-KV/s), no error lines. (My first bazelisk call ran from the wrong directory through `timeit.sh` and downloaded Bazel 9.3.3 into the job's `BAZELISK_HOME`; nothing used it.)
+- Default benchmarks, 10-minute cap each, alone on the GPU: `dual_bucket_benchmark` rc 0 in 2 s ("Benchmark Complete", final LF 0.9973); `find_with_missed_keys_benchmark` and `merlin_hashtable_benchmark` still printing tables at the cap (rc 124), no error, fault or abort line.
+- Integrity: `git -C projects/HierarchicalKV/src status --porcelain` shows only untracked `build-hip/`; HEAD 4033ed6f9d60. `python3 utils/jargon.py --port HierarchicalKV`: clean (after fetching `master` into the clone). README documents the HIP CMake and Bazel builds.
+- **CUDA compile gate: not run here; this host has no CUDA toolkit.** No CUDA compile at 4033ed6 is recorded yet; it covers `include/merlin/memory_pool.cuh` (the round-3 review predicts identical SASS and host objects differing only in `__LINE__` constants).
+
+Logs (container-local, not committed): `agent_space/val/` (`build.log`, `bazel.log`, `suite/`, `rk/`, `single/`, `loop900/` (pair 1 and the VRAM samples `mem.txt`), `conc/` (pair 2), `diag/` (pair 3 `plain-*`, `q2-*`), `lp/` (pair 4 dispatch lines), `rg/` (the wedged rocgdb pair), `bench/`).

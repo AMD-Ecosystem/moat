@@ -46,3 +46,9 @@
 {"kind":"phase","ts":"2026-11-24T19:55:49Z","phase":"test","seconds":1232.737,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300b-20261124-100248-fix3-hierarchicalkv-prompt/moat/agent_space/val4/bench.sh"}
 {"kind":"phase","ts":"2026-11-24T20:56:03Z","phase":"test","seconds":4848.358,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300b-20261124-100248-fix3-hierarchicalkv-prompt/moat/agent_space/val4/suite.sh"}
 {"kind":"session","ts":"2026-11-24T20:56:47Z","epoch":1795553807.495844,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-24T21:09:45Z","epoch":1795554585.242794,"event":"start","platform":"linux-gfx1201"}
+{"kind":"phase","ts":"2026-11-24T21:16:44Z","phase":"compile","seconds":417.229,"exit":0,"cmd":"cmake --build projects/HierarchicalKV/src/build-hip -j 24"}
+{"kind":"phase","ts":"2026-11-24T21:17:58Z","phase":"compile","seconds":1.587,"exit":2,"cmd":"/var/lib/jenkins/fleet/jobs/gfx1201-20261124-130703-val-hierarchicalkv-w32-prompt/bazel/bin/bazelisk --output_user_root=/var/lib/jenkins/fleet/jobs/gfx1201-20261124-130703-val-hierarchicalkv-w32-prompt/bazel/root build --config=rocm --jobs=24 //..."}
+{"kind":"phase","ts":"2026-11-24T21:19:14Z","phase":"compile","seconds":56.319,"exit":0,"cmd":"agent_space/val/bazel_build.sh"}
+{"kind":"phase","ts":"2026-11-25T01:47:07Z","phase":"test","seconds":10396.31,"exit":0,"cmd":"agent_space/val/driver.sh"}
+{"kind":"session","ts":"2026-11-25T03:17:43Z","epoch":1795576663.628469,"event":"end","platform":"linux-gfx1201"}
