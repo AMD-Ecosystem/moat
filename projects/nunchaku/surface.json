@@ -290,7 +290,7 @@
     },
     {
       "id": "python:arch-detection",
-      "note": "nunchaku/utils.py get_rocm_arch/ROCM_FP4_ARCHS; int4 on ROCm"
+      "note": "nunchaku/utils.py get_rocm_arch/ROCM_FP4_ARCHS; get_precision() int4 on ROCm; the v1 loaders take the checkpoint's precision when check_hardware_compatibility accepts it (get_checkpoint_precision, ruling Q1 a of 2026-11-25, fork 662be3a)"
     },
     {
       "id": "kernel:primitive-layer-int4",
@@ -470,7 +470,7 @@
     },
     {
       "id": "kernel:stage2-gfx1250",
-      "reason": "gfx1250 takes the lane-gather reference for INT4 and f16/bf16 (no 16x16x16 WMMA there); a gfx1250 matrix-instruction path for them is not written; whether it is owed is jeff's call (gfx1250 is not a required gate)"
+      "reason": "written (ruling Q2 b of 2026-11-25, fork 555105f): INT4 on v_wmma_i32_16x16x64_iu8 (4-bit widened to bytes), f16/bf16 products on v_wmma_f32_16x16x32_{f16,bf16}, 256-thread launch bound on gfx1250; compiled only, unproven until the MI450 run (primitive test test_gfx1250.hip, mma_dump/f16_dump against the reference build, tests/ops, end to end)"
     }
   ],
   "removed_from_floor": []
