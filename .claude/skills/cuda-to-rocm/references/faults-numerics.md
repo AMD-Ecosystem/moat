@@ -247,6 +247,17 @@ upstream is what found these; HIP runs cannot. (LichtFeld-Studio)
 
 ## Conversions and multi-word integers
 
+**HIP's OCP fp8 conversions do not compile for gfx942; E5M2 is the top byte of a half.**
+`hip_fp8.h`'s `__hip_cvt_*` functions assert "type is unsupported by current target device"
+for `__HIP_E5M2`/`__HIP_E4M3` when compiled for gfx942, which supports only the FNUZ encodings,
+so CUDA code that stores data (a kv cache) as OCP E5M2 cannot use them there. E5M2 is exactly
+the upper byte of an IEEE half: decode is `half_bits = byte << 8`; encode from half is
+round-to-nearest-even on the low byte (`(mag + 0x7f + ((mag >> 8) & 1)) >> 8`) with saturation
+to 0x7b and NaN to 0x7f; from float, rebias the exponent and round the mantissa to 2 bits, with
+a separate subnormal branch below 2^-14. That is bit-identical to `torch.float8_e5m2` over every
+half and bf16 pattern. An E5M2 value is also exact in bf16 (the upper half of its float bits),
+which avoids a rounding conversion entirely. (ColossalAI, ROCm 10.2)
+
 **Converting a NEGATIVE float to an UNSIGNED integer diverges silently between the back
 ends** -- it is undefined behaviour, and the two hardware conversions pick different
 answers. Measured on gfx90a, `(uint64_t)(-2.28)` is `0x00000000fffffffe`: the AMD lowering
@@ -350,6 +361,21 @@ HIP branch a helper with exactly the result of upstream's PTX for every shift co
 callers can produce, and drop your own fix rather than keeping a second, different one.
 (HEonGPU: upstream GPU-NTT later fixed the 61-bit case with PTX shift helpers, and the port
 replaced its explicit branches with HIP helpers that return zero for counts of 64 or more.)
+
+The same hardware difference bites 32-bit shifts whose count comes from data or from a count
+that can reach the word width, not only lane-index masks (faults-wavefront.md). NVIDIA's `shl`
+clamps the count; AMD uses its low five bits. Two forms: a data-derived shift in packed
+counters, `1u << ((radix - first) << 4)` for radix values outside the current group, where the
+code relies on the result being 0 (on ROCm the counters picked up bogus increments and ranks
+ran past their buffers, a memory fault on the first frame); and a mask from a count that can be
+exactly 32, `(1 << n) - 1` with `n` the children of a 32-wide tree node or the lanes of the last
+sub-warp, which NVIDIA turns into all 32 lanes and AMD into 0. The second can be silent: an
+empty mask fed a bounding-box reduction over no lanes, and a downstream overlap test happened
+to report a hit on the resulting infinite box. Spell out the intended result (`n < 32 ? (1u <<
+n) - 1 : ~0u`). A grep for mask expressions missed sites; what found them was listing every
+shift whose count is not a literal and classifying each count's range (a script that strips
+comments and takes the right operand up to the first lower-precedence operator; one project had
+280 such sites). (PhysX)
 
 ## Half-precision GEMM accuracy
 

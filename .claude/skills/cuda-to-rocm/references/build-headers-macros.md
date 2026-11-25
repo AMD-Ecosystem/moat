@@ -363,6 +363,18 @@ right only when the code uses just `this_grid()`, `this_thread_block()` and `thr
 grep for `cg::reduce`, `reduce_update_async` and `plus<>` first. (diff-surfel-rasterizations,
 faster-gaussian-splatting)
 
+**Tile shuffles of pointers and enums need `__shfl` overloads, declared before the
+cooperative-groups header.** CUDA's `thread_block_tile::shfl` takes any trivially copyable type.
+HIP's tile `shfl` calls `__shfl(var, src, width)`, which exists only for arithmetic types, so
+`g.shfl(ptr, lane)` or `g.shfl(enum_value, lane)` fails with "no matching function for call to
+'__shfl'" deep inside `amd_hip_cooperative_groups.h`. Add template overloads (a pointer through
+`unsigned long long`, an enum through `std::underlying_type`), declared after
+`hip/hip_runtime.h` and before `hip/hip_cooperative_groups.h`: for a pointer to a fundamental
+type there is no associated namespace for argument-dependent lookup, so only declarations
+visible at the template's definition are found. A HIP tile `ballot()` returns `unsigned long
+long` (the tile's own bits, compacted), so `const auto v = g.ballot(...); __ffs(v)` becomes
+ambiguous; store it in `unsigned int` as the CUDA type was. (HierarchicalKV, ROCm 10.2)
+
 **Count cooperative-groups call sites per feature before calling them a blocker.** A grep
 for `cooperative_groups` or `cg::` counts include lines and namespace aliases, and generated
 code repeats those in every file: one project's "2392 references" were 2347 includes and

@@ -8,7 +8,9 @@ Contents:
 - A bundled header-only library (GLM): hipify sees only `include_dirs`
 - A vendored library with its own sources: the `includes` pattern decides which headers are hipified
 - Keep compiler flags in the right command-line namespace
+- Ask hipcc whether the extension can build; do not check for ROCm files
 - hipify generation: v1 renames, v2 masquerades
+- The runtime build (`load()`) and the ahead-of-time build hipify differently
 - A torch API used by a ROCm-only branch is a version floor nobody sees
 - Clean the hipified mirror by the path rule, not with another port's clean step
 - Windows
@@ -60,6 +62,16 @@ A clean hipify run does not mean every name resolved. Two gaps surface only as c
 
 - `<cooperative_groups/reduce.h>` has no mapping, so the mirror keeps the CUDA header name and fails with "file not found". HIP gained `cg::reduce` in `<hip/cooperative_groups/hip_reduce.h>` (not included by `<hip/hip_cooperative_groups.h>`) together with `cg::plus`/`cg::greater`/`cg::less` in the main header, all in one change (ROCm/rocm-systems `1fe7989f90`, 2026-03-23): present from `therock-7.13`, absent from every 7.2.x release (through `rocm-7.2.4`) and from `therock-7.12`. A port that must build on ROCm 7.2.x therefore needs both arms under `USE_ROCM`: `#if __has_include(<hip/cooperative_groups/hip_reduce.h>)` includes it, and the `#else` defines the functor and a `reduce(const thread_block_tile<size, ParentCGTy>&, T, Op)` in `namespace cooperative_groups` as a `size/2 .. 1` `tile.shfl_xor` loop, so the CUDA call site stays untouched. One `__has_include` gates both names because they arrived together; forcing the fallback on a newer HIP to test it collides with the built-in `greater`, so rename the fallback symbols in a scratch copy for that check. Prove the fallback arm against real 7.2.x headers: the `hip-dev`, `rocm-llvm`, `rocm-device-libs`, `hip-runtime-amd`, `hipcc`, `rocm-core`, `hipcub-dev` and `rocprim-dev` debs from `repo.radeon.com/rocm/apt/7.2.4` extract with `dpkg-deb -x` (no install) and compile the hipified TUs with `--rocm-path`; any extra include directory taken from a newer SDK must leave out its `hip/` subtree, or `__has_include` finds the newer `hip_reduce.h` and the test proves nothing. `<cooperative_groups/scan.h>` maps to `<hip/cooperative_groups/hip_scan.h>` only in builds newer than `therock-7.14` (absent at that tag), so bound it the same way.
 - `curand_Philox4x32_10` (one raw Philox4x32-10 evaluation from `<curand_philox4x32_x.h>`) is renamed to `hiprand_Philox4x32_10`, which exists in neither hipRAND nor rocRAND. rocRAND keeps the rounds `protected` inside `rocrand_device::philox4x32_10_engine`. Define the function under `USE_ROCM` instead: ten rounds with multipliers `0xD2511F53`/`0xCD9E8D57` and key increments `0x9E3779B9`/`0xBB67AE85` between rounds. Keep the CUDA name, because hipify renames the definition and the call in the same way. Check it against the Random123 known-answer vectors (counter 0, key 0 gives `6627e8d5 e169c58d bc57ac4c 9b00dbd8`) so the noise stays bit-compatible with CUDA for a given seed and offset. hipRAND is gaining the function itself (ROCm/rocm-libraries PR #14808), so prefer it when present, but select it with a feature test, not a `HIPRAND_VERSION` threshold: a version guessed before the release ships breaks the build if the number arrives without the function. In `setup.py`, under the ROCm branch only, run `hipcc -x hip -fsyntax-only` with the extension's `nvcc` flags and `-I` for `include_dirs + include_paths('cuda')` on a two-line source passed on stdin (include `<hiprand/hiprand_kernel.h>`, call the function in a `__device__` function), discard its output, and append a `-D` macro to the HIP flags only on success; the header keeps the local copy in the `#else`. Return False before building the hipcc path when `cpp_extension.ROCM_HOME` is None (a ROCm torch wheel on a machine without the SDK): `os.path.join(None, 'bin')` raises a TypeError that hides torch's own "ROCM_HOME environment variable is not set" error from `CUDAExtension`. Syntax-only from stdin writes no files and costs about 2 s. (faster-gaussian-splatting)
+
+Two more gaps of the same kind. A dispatch macro that pastes a prefix onto a launch
+expression (`general_##__VA_ARGS__` with `kernel<T><<<g, b, 0, s>>>(...)`, choosing
+`general_kernel`) breaks once hipify rewrites the launch into `hipLaunchKernelGGL((kernel<T>),
+...)`: the paste produces `general_hipLaunchKernelGGL`. Define that name under `USE_ROCM` as a
+forwarder, `#define general_hipLaunchKernelGGL(K, ...) hipLaunchKernelGGL((PASTE K),
+__VA_ARGS__)` with `#define PASTE(...) general_##__VA_ARGS__`, keeping the parentheses so
+template commas survive. And hipify renames `cub::BlockLoad` to `hipcub::BlockLoad` but not
+`cub::BLOCK_LOAD_VECTORIZE`; `namespace cub = hipcub;` under `USE_ROCM` fixes every such name.
+(ColossalAI)
 
 ### A bundled header-only library (GLM): hipify sees only `include_dirs`
 
@@ -122,6 +134,30 @@ Verify the wrap POSITIVELY, not just that the build stopped failing: a mis-wrapp
 
 A cheap diagnostic for a failing CUDA compile check: if the flag or construct does not appear anywhere in the pre-port upstream source (`git show <upstream_sha>:<file> | grep <token>` is empty), it is new port code, not pre-existing breakage, and there is no need to build upstream to compare. (CuMesh: `setup.py` appended `-fvisibility=hidden -fvisibility-inlines-hidden` to the `"nvcc"` key for both back ends.)
 
+A `DEBUG=1` switch that adds `-G` (nvcc device debug info) to `extra_compile_args["nvcc"]`
+breaks the ROCm debug build: under ROCm torch that list goes to hipcc, and clang rejects it
+(`clang++: error: unsupported option '-G' for target 'x86_64-unknown-linux-gnu'`). Release
+builds never take the path, so it stays hidden until someone debugs. Use `-g` when
+`torch.version.hip` is set and keep `-G` for CUDA. (rl)
+
+### Ask hipcc whether the extension can build; do not check for ROCm files
+
+A `setup.py` that chooses between a GPU and a CPU-only build under a ROCm torch is tempted to
+check files: `hipcc` exists, the device bitcode is in `<ROCm>/amdgcn/bitcode`. That misses what
+the build needs, which is whatever torch's HIP headers include: `ATen/hip/HIPContext.h` pulls
+in the hipSPARSE, hipBLAS, hipBLASLt and hipSOLVER headers, which a core-only ROCm (the SDK's
+`core` Python package, or a runtime-dev install without the hip* library dev packages) lacks.
+Ask the compiler instead: `hipcc -E` a two-line file (`#include <ATen/hip/HIPContext.h>`,
+`#include <c10/hip/HIPGuard.h>`) with `torch.utils.cpp_extension.include_paths(device_type="cuda")`,
+`COMMON_HIP_FLAGS` and `COMMON_HIPCC_FLAGS`. The driver refuses to start without the device
+libraries even for `-E`, and a missing header stops the preprocessor, so one call (under half
+a second; a full `-c` is about 5 s) covers both, and its first error line tells the user what
+is missing. Pass the same `-std=` the real compile gets: without it the probe works on Linux
+(hipcc defaults to a modern standard) and fails on Windows with rocPRIM's `#error "rocPRIM
+requires at least C++17"`, sending a documented install down the CPU-only path. Derive the
+standard as `BuildExtension` does for the installed torch (`-std=c++17` in torch 2.11,
+`-std=c++20` from 2.12) rather than hard-coding one. (rl)
+
 ### hipify generation: v1 renames, v2 masquerades
 
 Which generation runs decides what the `c10`/`at` CUDA classes are called, so it is worth
@@ -157,6 +193,24 @@ older torch -- so a guard keyed on the wrong axis silently breaks the other plat
 build. That fault, with the two regressions that produced it, is in
 build-headers-macros.md ("An arch-specific fix keyed on the OS or the ROCm version"). (aihwkit)
 
+### The runtime build (`load()`) and the ahead-of-time build hipify differently
+
+Projects that build their extension both ahead of time (`CUDAExtension`) and at first use
+(`torch.utils.cpp_extension.load()`) get two different ROCm builds from one source list.
+`load()` decides `with_cuda` from the source list (any `.cu`/`.cuh`) and hipifies only when it
+is true, while `CUDAExtension` always hipifies. An extension whose sources are all `.cpp` but
+include CUDA headers (a CPU optimizer including `cuda_fp16.h` or `cublas_v2.h`) therefore
+builds ahead of time and fails at first use with "cublas_v2.h: No such file or directory";
+pass `with_cuda=True` to `load()` on ROCm only. And `BuildExtension._hipify_compile_flags`
+rewrites the first `CUDA` in every nvcc `-D`/`-U` flag (`-DMYLIB_WITH_CUDA` becomes
+`-DMYLIB_WITH_HIP`, `-U__CUDA_NO_HALF_OPERATORS__` becomes `-U__HIP_NO_HALF_OPERATORS__`), while
+`load()` passes `extra_cuda_cflags` through untouched. Headers guarded on the CUDA-named macro
+then compile empty in the ahead-of-time build (the module imports, the kernels are missing),
+and the runtime build's half-operator undefines do nothing. Translate the flags yourself on
+ROCm the same way for both paths, make the guards accept the HIP spelling, and test the
+runtime path with nothing prebuilt (a source checkout and a scratch `HOME`). (ColossalAI,
+torch 2.13)
+
 ### A torch API used by a ROCm-only branch is a version floor nobody sees
 
 A HIP branch compiles only against the ROCm PyTorch on the porting machine, which is usually far newer than the project's pinned torch, and one failing call takes the whole extension down with it, kernels that already worked included.
@@ -166,6 +220,14 @@ A HIP branch compiles only against the ROCm PyTorch on the porting machine, whic
 `getCurrentCUDABlasLtHandle()` in `ATen/cuda/CUDAContextLight.h` is the case that broke llm-awq: up to 2.3 the declaration and the `<cublasLt.h>` include sit under `... (defined(USE_ROCM) && ROCM_VERSION >= 50700)`, so it is undeclared in an extension; 2.4 (ae9a4fa, "enforce ROCM_VERSION >= 6.0") dropped that guard, which is the only reason the handle is reachable from 2.4 on. `getCUDABlasLtWorkspace()` and `getCUDABlasLtWorkspaceSize()` exist only from 2.9. Before calling a torch API from a HIP branch, `git show <oldest supported tag>:<header>` and read the preprocessor guard around the declaration, not just whether the name is present. A guard inside an inline function body (`ROCM_VERSION < 50201` in `deviceCount()` of `HIPGuardImplMasqueradingAsCUDA.h`) changes behaviour, not what is declared.
 
 When calling hipBLASLt directly, keep the handle and workspace in the extension: one `hipblasLtHandle_t` per device from `hipblasLtCreate` on first use (mutex-guarded, never destroyed, as torch does), the current stream, and a byte-tensor workspace (`at::empty({n}, input.options().dtype(at::kByte))`, sized from the chosen heuristic's `workspaceSize`, none when zero). The hipBLASLt API is itself a floor: 0.3 (ROCm 5.7) takes `hipblasDatatype_t` and `hipblasLtComputeType_t` in `hipblasLtMatrixLayoutCreate` / `hipblasLtMatmulDescCreate`; 0.6 (ROCm 6.0) takes `hipDataType` and `hipblasComputeType_t` (`HIP_R_8I`, `HIPBLAS_COMPUTE_32I`). Gate the hipBLASLt code on `HIPBLASLT_VERSION_MAJOR/MINOR` from `<hipblaslt/hipblaslt-version.h>` (installed by both) and keep a portable kernel for older releases, instead of letting it raise the ROCm floor of the whole extension. (llm-awq)
+
+`TORCH_HIP_VERSION` is in the same position. torch 2.13's
+`torch/headeronly/util/BFloat16.h` declares `BFloat16(const __hip_bfloat16&)` only under
+`TORCH_HIP_VERSION >= 702`, and no installed header or `cpp_extension` flag defines it, so in an
+extension the converting constructor does not exist. CUDA code that passes a `__nv_bfloat16`
+(hipified to `__hip_bfloat16`) where an `at::BFloat16` is expected compiles on CUDA and fails on
+ROCm with "no matching function for call"; add an overload or specialization taking the HIP
+type under `USE_ROCM`. (ColossalAI)
 
 ### Clean the hipified mirror by the path rule, not with another port's clean step
 
@@ -201,6 +263,7 @@ For a PyTorch-ecosystem project the in-repo `.cu` is only half the bring-up: the
 
 - A pip install silently overwrites the ROCm torch. An unfiltered `pip install -r requirements.txt` reinstalls the CUDA `torch`/`torchvision`/`xformers`/`flash-attn`/`triton` wheels on top of your ROCm ones, after which the project "has no GPU". Strip the CUDA-default pins first -- `grep -vEi '^(torch|torchvision|torchaudio|xformers|triton|flash.attn|cupy|gsplat)' requirements.txt | pip install -r /dev/stdin` -- then install the ROCm builds explicitly.
 - Building AITER from source replaces the environment's Triton. ROCm/aiter's `setup.py` (seen at v0.1.30) uninstalls whatever Triton is installed (`triton`, `pytorch-triton-rocm`, `triton-rocm`, ...) and installs its own pin, even under `pip wheel --no-deps`, so a PyTorch built against one Triton silently runs on another (flash-attention's Triton AMD backend then broke at import with `ValueError: key contains names that are not kernel arguments`). Set `AITER_USE_SYSTEM_TRITON=1` when building it, and check `python -c "import triton; print(triton.__version__, triton.__file__)"` before trusting a later run. (Matrix-Game)
+- TheRock's torch wheels carry their GPU code in separate per-architecture packages, on Linux as on Windows (windows.md, "A torch wheel needs the matching `[device-<gfx>]` extra"). The ROCm 10.x release wheels are on `https://stable.repo.amd.com/rocm/whl-next/` (nightlies on `nightly.repo.amd.com/rocm/whl-next/`; `repo.amd.com/rocm/whl/` stops at 7.x). Install `torch[device-<gfx>]`: without the extra, torch imports and enumerates the GPU, and the first kernel fails with `hipErrorInvalidKernelFile` or `hipErrorInvalidImage`. The chip package (`amd-torch-device-gfx1100`) holds only the torch kernels; aotriton's images, which back SDPA's flash and memory-efficient paths, are in the family package (`amd-torch-device-gfx110x`), so with the chip package alone `scaled_dot_product_attention` fails with `hipErrorInvalidImage` on inputs that pick those paths while the math path works. Check that `torch/lib/aotriton.images/` exists. Run `rocm-sdk init` afterwards so torch's `ROCM_HOME` resolves to the expanded devel tree (math-library headers), not the core one. (rl, ColossalAI)
 - The same trap fires on ANY pip install that has torch in its dependency graph, not just a requirements file, and a source-built ROCm torch is the worst case. `pip install timm torch_geometric` on a machine whose torch is a locally built dev wheel (`2.14.0a0+git<sha>`) replaced torch with the PyPI CUDA build, pulled the whole `nvidia-*` stack, and swapped `triton` 3.8.0 for the CUDA `triton` 3.7.1. The dev version is on no index, so pip cannot put it back and nothing warns you. Default to `pip install --no-deps <pkg>` for every dependency on such a machine, add the handful of pure-Python transitive deps by hand, and before you start, find the wheel that produced the current torch so a restore is `pip install --no-deps --force-reinstall <wheel>`. Verify with `python -c "import torch; print(torch.__version__, torch.version.hip)"` after any install that touched a torch-dependent package. (Pointcept)
 - Wheel name != import name. AMD ships some ROCm wheels on its own index (`pip install <pkg> --extra-index-url=https://pypi.amd.com/<rocm-ver>/simple/`); the distribution name can differ from the import (`amd_gsplat` imports as `gsplat`). Pin the ROCm index so pip does not silently prefer a CUDA wheel from default PyPI.
 - Build source extensions AGAINST the installed ROCm torch: `PYTORCH_ROCM_ARCH=<arch> pip install <submodule> --no-build-isolation`. `--no-build-isolation` is load-bearing, but get the reason right when you document it for users: the isolated build env contains only the build backend plus whatever `[build-system] requires` names, so a project that pins torch there gets a CUDA torch built against, while the far more common project that pins nothing gets no torch at all and dies at metadata generation on `setup.py`'s top-level `import torch` (`ModuleNotFoundError` inside `/tmp/pip-build-env-*/overlay`). Check the project's `pyproject.toml`/`install_requires` before writing "keeps pip from pulling a CUDA torch" into a README -- and note that `--no-deps` protects nothing when no dependency is declared. (op43dgs: neither exists in any of its four submodules, so the isolation failure is the import, not a CUDA wheel.)

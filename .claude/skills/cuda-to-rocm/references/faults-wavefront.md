@@ -226,6 +226,11 @@ a compat-header macro that is the identity for CUDA. Also pass the tile width ex
 `__shfl_sync(m, v, 0)` defaults to `warpSize`, so on wave64 lane 0 of the first tile is
 broadcast to both. (LichtFeld-Studio: fastgs/gsplat 32-lane tile macros, nn
 softmax/norm block reductions, `block_reduce_min4`; GPUMD: NEP-spin.)
+Code written for the native wavefront traps the same way wherever part of the wavefront is
+inactive: a block narrower than 64 threads on a wave64 GPU, the last wavefront of a block that
+is not a whole number of wavefronts, or a branch on a 32-thread group. Pass `__activemask()` on
+HIP, keeping a constant only where code compares a mask against "all lanes" to choose a fast
+path; release machine code does not change. (warp-1.14)
 
 ## Shuffles and logical warps
 
@@ -331,6 +336,26 @@ computes the expected active-lane mask from the block layout and asserts
 `__ballot(1) == expected` first. It does not false-positive on a legitimately partial final
 wave. If device code is compiled by explicit hipcc command lines, mirror the release
 `-DNDEBUG` yourself or the asserts stay on in release. (lc0)
+
+**A lock-retry loop deadlocks when the lock holder is in the same wavefront.** A hash-table or
+lock-based kernel that passes on CUDA hangs on AMD with the GPU at 100%, often only under
+contention (a full bucket, duplicate keys in a batch). A lane that leaves a loop waits at the
+loop's exit until every lane of the wavefront has left; CUDA's independent thread scheduling
+(Volta and later) lets a lock holder run ahead, AMD does not. Any retry loop that spins while a
+slot is locked deadlocks when the holder is another lane or tile of the same wavefront that
+already left the loop and does its copy and unlock after it. Three shapes were seen: a helper
+that spins in place (`while (load == LOCKED) {}`, or a ballot-and-`continue` loop) with the
+critical section after the call; a caller retrying in `do { ... } while (result == CONTINUE)`
+with the critical section after the loop; and a critical section inside the do-while whose loop
+condition is statically false once the lock is taken, so the compiler may move it to the loop
+exit, where it runs after the other lanes (putting the unlock "inside the loop" is not enough).
+Retry through a loop whose latch every lane reaches after finishing its critical section, with
+a condition the compiler cannot decide on that path: in a grid-stride kernel re-run the same
+index from the top (`t -= stride; continue;`), or exit uniformly (`while (__any(!done))`). Or
+never wait on a held slot: when choosing an eviction victim, skip locked slots and retry if none
+is left. `AMD_LOG_LEVEL=3` names the last kernel launched and `AMD_SERIALIZE_KERNEL=3` pins down
+which of several concurrent kernels never returns. Gate the change so the CUDA path stays
+identical, and check that with a PTX diff. (HierarchicalKV, ROCm 10.2, gfx942)
 
 **`cub`/`hipCUB` block collectives race on a 64-thread block without an explicit
 `__syncthreads()`.** At wave64 a 64-thread block is a single wavefront, so a `BlockReduce`

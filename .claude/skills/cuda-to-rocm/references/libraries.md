@@ -99,6 +99,14 @@ rejects `HIPBLAS_COMPUTE_16F` and hipSPARSE rejects `HIP_R_16F` as an SpMM compu
 both call sites kept passing `half` scalars, and the hipBLASLt one survived review and three
 platform validations because the assertion that would have caught it was never reached.)
 
+**`hipblasGemmEx` rejects `HIPBLAS_COMPUTE_32F_FAST_16F` for FP16 inputs.** A shim that maps
+`CUBLAS_COMPUTE_32F_FAST_16F` to `HIPBLAS_COMPUTE_32F_FAST_16F` (the natural spelling since
+`hipblasComputeType_t` arrived) gets `HIPBLAS_STATUS_NOT_SUPPORTED` (7) on an FP16 x FP16 -> FP32
+GEMM. hipBLAS documents FAST_16F as "32-bit input can use 16-bit compute", and the rocBLAS
+backend does not take it with 16-bit inputs. Map it to `HIPBLAS_COMPUTE_32F` for those GEMMs
+(older shims mapped to `HIPBLAS_R_32F`, which is why they worked), and check every compute-type
+enum a shim maps, not only the ones the main path uses. (koboldcpp, ROCm 10.2, gfx942)
+
 **hipBLASLt epilogues are not cuBLASLt's, per type and per format.** On gfx90a with hipBLASLt
 1.4, DEFAULT/BIAS/RELU/RELU_BIAS exist for f32/f16/bf16 but double has only DEFAULT, and the
 AUX/DRELU/BGRAD epilogues exist only for f16. cuBLASLt's ReLU auxiliary output is a 1-bit mask
@@ -120,6 +128,15 @@ scales, pad rows to 32, GEMM without bias, slice, add the bias. Per-tensor FP8 `
 takes `float8_e4m3fnuz` (max 240) on gfx942 and only `float8_e4m3fn` (max 448) on gfx950 and
 gfx12, so pick the e4m3 type per device (as PyTorch's own tests do with `e4m3_type`) instead
 of hard-coding either. (Matrix-Game)
+
+**Probe `torch._scaled_mm`'s fp8 types once per device instead of listing architectures.** On
+gfx942 it accepts only `float8_e4m3fnuz`/`float8_e5m2fnuz` and fails `HIPBLAS_STATUS_NOT_SUPPORTED`
+for the OCP types; gfx950 and gfx12 take OCP; gfx90a and gfx11 have none. Try a 16x16
+`_scaled_mm` with the OCP pair, then the FNUZ pair, once per device (cached, and excluded from
+`torch.compile`), and cast to whatever works. A test of the fp8 GEMM should skip on "no pair
+works", not on the compute-capability number, which on ROCm is an AMD architecture number.
+Keep fp8 data exchanged between ranks in the OCP formats so it does not depend on the GPU.
+(ColossalAI)
 
 **Generic GEMM on CK device operations.** For CUTLASS-style row-major GEMMs with fused
 epilogues: `DeviceGemmMultipleD_Xdl_CShuffle` on CDNA (FP16/BF16/FP32),
@@ -180,6 +197,16 @@ to the math path. VAEs with single-head spatial attention over the full channel 
 dim 512) hit it. Rerun the call under `with sdpa_kernel([SDPBackend.MATH])` to tell it from a
 real fault, and route such calls to the math path, chunked if the [L, L] matrix is large.
 (Matrix-Game)
+
+**flash-attn 2.8.3's Triton AMD backward reads `dout` with `out`'s strides.** In flash-attn
+2.8.3.post2's Triton AMD backend (the RDNA path, `FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE`), the
+backward preprocess indexes `dout` with `out`'s strides. A non-contiguous `dout` whose last
+stride is 1 (the gradient of `out.transpose(1, 2)`) passes `maybe_contiguous` and gives wrong
+dq and dk while dv stays correct. The same backend returns `rng_state=None` without dropout,
+which breaks `torch.compile` against the op's fake implementation. Both are fixed on flash-attn
+main, where the backend comes from ROCm/aiter; no release had the fix as of 2026-11. Test an
+FA2 integration on RDNA with a transposed upstream gradient and under `torch.compile`, not only
+with a contiguous `dout`. (ColossalAI)
 
 **rocBLAS `gemv` over more than 65535 batches returns wrong entries, and `cupy.einsum` reaches it.**
 Root cause (https://github.com/ROCm/rocm-libraries/issues/14819): for transA=N and m < 2n, rocBLAS
@@ -453,6 +480,24 @@ the port and tell the user. Validate 1-, 2- and 8-byte
 atomic paths explicitly, because 4-byte tests pass either way. (cuCollections)
 
 ## CuPy on ROCm
+
+libhipcxx's headers, unlike libcu++'s under g++, do not compile with a plain host compiler
+(`'__host__' does not name a type`). It is found with `find_package(libhipcxx)` (target
+`libhipcxx::libhipcxx`, headers under `include/hipccl`, with the `cuda/std/...` spellings). A
+host `.cpp` that includes a header exposing `cuda::std` types must therefore be compiled as HIP
+too, or those types' ABI differs between translation units. A `namespace cuda::std = ::std`
+shim does not substitute in device code: libstdc++'s `std::optional::value()` calls a host-only
+throw helper that hip-clang rejects. Include `<cuda/std/cmath>` and `<cuda/std/functional>`
+explicitly where the sources relied on CCCL including them transitively (`cuda::std::abs(float)`
+is otherwise ambiguous). (autoware_universe)
+
+**torchaudio's RNN-T loss and CTC forced alignment run only on the CPU in ROCm builds.**
+`NotImplementedError: Could not run 'torchaudio::rnnt_loss' with arguments from the 'CUDA'
+backend` (likewise `torchaudio::forced_align`) as soon as the inputs are on an AMD GPU:
+torchaudio compiles those kernels only for CUDA, and `libtorchaudio.so` in the ROCm wheels has
+no HIP code (checked 2.8.0+rocm6.4, 2.8.0a0+rocm7.12.0, 2.11.0+rocm7.2). Move the inputs to the
+CPU for these two calls, or use k2's RNN-T losses, which have a HIP build. Check before porting
+a speech project whether its default loss is torchaudio's. (wenet)
 
 **CuPy-ROCm gaps a CuPy-based port meets at run time.** `cupy.cuda.runtime.deviceSetLimit` is a stub
 that always raises hipErrorUnknown (`cupy_backends/hip/cupy_hip_runtime.h`); call

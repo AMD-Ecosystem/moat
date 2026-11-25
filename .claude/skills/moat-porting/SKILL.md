@@ -335,6 +335,37 @@ This is a docs, diff, and review checkout, not a build checkout -- a compile nee
   write an exit marker, and wait on the marker in foreground polls of under 10 minutes.
   Keep whatever makes the work resumable outside the process (there, a persistent
   `TRITON_CACHE_DIR`, so the killed run's compiles were not lost). (Pointcept)
+- Installing TheRock wheels into a job: the ROCm 10.x releases are on
+  `https://stable.repo.amd.com/rocm/whl-next/`, installed into `$FLEET_VENV` only
+  (`$FLEET_VENV/bin/python -m pip install --index-url ... "rocm[libraries,devel]==10.2.0"
+  "rocm-sdk-device-<gfx>==10.2.0"`). The job guard refuses an install outside it, and any
+  command whose text merely contains the two words of a pip install, even in a grep pattern
+  or a heredoc of notes; write notes with the editor tool. (koboldcpp, wenet)
+- Job venvs reach the base env's `amdsmi` through the base links, so after newer TheRock
+  wheels go into `$FLEET_VENV` (10.2 over a 10.1 base) `torch.cuda.device_count()` reads 0:
+  add a `.pth` putting `$(rocm-sdk path --root)/share/amd_smi` first (cuda-to-rocm
+  diagnosis.md has the general case), and put the venv's and the SDK's `bin` first on PATH,
+  or `cpp_extension.ROCM_HOME` resolves to the base env's SDK. (ColossalAI)
+- Run a project's tests with `PATH=$FLEET_VENV/bin:$PATH`: a test that `pip install`s a missing
+  module through `os.system` (wenet's tokenizer test) otherwise writes into the shared base env.
+  Pre-install what tests install for themselves. (wenet)
+- `pkill -f <pattern>` kills the worker's own shell, whose command line contains the whole
+  command text (exit 144, nothing reported). Collect PIDs with `ps -eo pid,args | grep
+  <pattern> | grep -v grep` into a file in one call and kill them in the next. (HierarchicalKV)
+- ROS 2 without root (the container blocks user-namespace mounts): a private apt
+  (`APT_CONFIG` with lists and cache in the job directory, `Dir::State::status
+  "/var/lib/dpkg/status"`, `Debug::NoLocking`), `apt-get install --download-only`,
+  `dpkg-deb -x` into `<job>/root`, then rewrite `/opt/ros/<distro>` and job-only `/usr/...`
+  paths (including `PACKAGE_PREFIX_DIR` in CMakePackageConfigHelpers configs and Qt5's
+  `"/usr/lib/x86_64-linux-gnu/../../"`), repoint dangling dev symlinks, and symlink in missing
+  host entries, but not the host's top-level `include/*.h` or
+  `c++`/`sys`/`linux`/`asm-generic` (FindCUDA turns them into `-I` ahead of libstdc++'s
+  wrappers) and not the host's Ubuntu ROCm runtime (`libhsa-runtime64.so.1`,
+  `libamdhip64.so.5`), and put `$ROCM_SDK/lib` first in `LD_LIBRARY_PATH`. Delete released packages the build replaces
+  from source when their headers are unscoped. colcon hangs with `CMAKE_VERBOSE_MAKEFILE=ON`
+  (one output line exceeds asyncio's 64 KiB reader limit). Fast DDS drops best-effort messages
+  over about 500 KB on localhost (512 KB shared-memory segment): give it a profile with a
+  64 MiB SHM `segment_size`. The cppcheck deb cannot run relocated. (autoware_universe)
 - Host and toolchain diagnostics specific to MOAT's machines (the gfx1151 laptop's System32
   runtime, TheRock layouts per host) belong in project notes or memory, not in
   `cuda-to-rocm`. Its `windows.md`, `linux-host-setup.md` and `platform-limits.md` are

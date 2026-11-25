@@ -170,6 +170,7 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - An over-wide `__shfl*` width does not error, it silently degenerates
 - Do not hardcode wave64 GEOMETRY either
 - Intra-wave barrier divergence
+- A lock-retry loop deadlocks when the lock holder is in the same wavefront
 - `cub`/`hipCUB` block collectives race on a 64-thread block without an explicit ...
 - A block collective called in a loop without a barrier races only under concurrent GPU load
 - `__smid()` can EXCEED `multiProcessorCount` on AMD
@@ -185,6 +186,7 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - `atomicInc(p, val)` is a WRAPPING increment, so the bounded-slot idiom ...
 - Fresh device allocations are NOT zero on ROCm
 - An uninitialised local passed by value lets clang delete a padding-lane guard, and the ...
+- Type punning through a word pointer lets clang drop the stores it reads
 - Host code reading a `__device__` variable through a pointer gets HIP's host shadow, not ...
 - Rule-of-five on resource handles
 - A functor returning a reference to a by-value or forwarded parameter
@@ -198,9 +200,11 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - A zero-filling allocator helper races a non-blocking upload the same way
 - A plain device-to-device copy is the same race in a less suspicious costume
 - A "last block reduces" kernel needs `__threadfence()`, and MI300X is where its absence ...
+- A GPU-written host flag can arrive before an earlier small device-to-host copy
 - `hipFree` is synchronizing
 - Device-side `new[]`/`delete[]` per thread is worth replacing, but it is NOT a known ...
 - A copy kind that disagrees with the pointers is `hipErrorInvalidValue`
+- `hipMemcpyToSymbol` rejects `hipMemcpyDefault`
 - `cudaLaunchHostFunc`/`hipLaunchHostFunc` callback threads must not call ANY runtime API
 - A host-function callback must not block either
 - HIP after `fork()` crashes in the child
@@ -241,6 +245,7 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - A hand-written Jacobi/eigenvalue sweep replacing a library solver must normalize first
 - Host `min`/`max` on non-`int` values truncate to int under hipcc
 - A HIP workaround in shared host code must not change CUDA's numbers
+- HIP's OCP fp8 conversions do not compile for gfx942; E5M2 is the top byte of a half
 - Converting a NEGATIVE float to an UNSIGNED integer diverges silently between the back ends
 - PTX carry-chain arithmetic (multi-word integers)
 - Shift counts of 0 or >= 64 in hand-rolled 128-bit arithmetic
@@ -271,6 +276,7 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - Upstream CCCL 3.0 compat shims are CUDA-only by construction: keep them out of the HIP ...
 - nvcc accepts a split launch chevron, `kernel << <grid, block >> >(args)`; clang does not
 - Three CUDA spellings that do not resolve under HIP, all cheap to guard
+- Tile shuffles of pointers and enums need `__shfl` overloads, declared before the ...
 - Count cooperative-groups call sites per feature before calling them a blocker
 - HIP's bf16 header has no `make_bfloat162` and no `__floats2bfloat162_rn`
 - HIP has no `half2` overload of `__hmax2`
@@ -298,6 +304,7 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - Use the CUDA build's host compiler for host C++ in a large app
 - The vcpkg toolchain already overrides `add_library`/`add_executable`
 - An unset CMake build type runs every HIP kernel unoptimized
+- `CMAKE_COMPILE_WARNING_AS_ERROR` outranks `-Wno-error`
 - Never mark the host `.cpp` files `LANGUAGE HIP` to dodge the flag leak
 - A `__device__` body in its own `.cu` has two answers on AMD, and the choice is about ...
 - `-fgpu-rdc` changes the consumer contract, so the project's downstream docs owe a line ...
@@ -311,14 +318,21 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - OpenMP in a mixed g++/HIP library: one runtime only
 - CMake `LANGUAGE HIP` on host `.cpp` files drops OpenMP
 - A HIP-linked shared library, or a host-linked executable, gets no RUNPATH to the ROCm lib ...
+- TheRock's torch wheels cannot be linked from C++ as installed: their RUNPATH points into ...
+- A library that interposes the HIP registration entry points must bind them locally
 - With the ROCm clang as the host compiler, a found system libunwind links but does not load
 - LibTorch's CMake package adds `-D__HIP_NO_HALF_OPERATORS__=1 ...
+- ld.lld rejects an underlinked shared library that GNU ld accepted
+- FindCUDA leaves NOTFOUND variables behind on a machine without CUDA
+- Build protobuf (and abseil) with the same compiler as the code that includes its ...
 - On a multi-GPU host a rapids-cmake HIP dependency fails configure with `mismatch between ...
 - A source-built HIP library and a PyTorch wheel in one process must load the same ROCm ...
 - A vcpkg-manifest project needs `autoconf-archive` on the build machine, and a full vcpkg ...
 - LibTorch on the include path shadows the system `fmt`, and spdlog stops compiling
 - Submodules pinned to commits that do not exist
+- A local-package option must be a variable only the user sets, not `<Pkg>_DIR`
 - Install and consume the port, not just build it
+- A ROCm wheel's runtime dependency on the SDK, with setuptools and a static ...
 - Every optional target the project can build, not just the one you build
 - A cached build-script decision from a wrong env var survives fixing the env var
 - An nvcc Makefile's link line does not carry over to hipcc verbatim
@@ -349,6 +363,8 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - A `core.autocrlf` mismatch can break `git apply` of a committed patch
 - A `std::stringstream` can fail on a multi-GB payload on Windows only
 - Kernels on different streams run one after another
+- Late submission exposes missing cross-stream ordering
+- Graph relaunch races its own memory-free nodes
 - VMM address ranges that were mapped are never reused
 - A crash trace without a PDB names the wrong function
 - A CPU crash that Linux never shows is often a heap over-read
@@ -362,12 +378,15 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - heFFTe's rocFFT backend does not accept hipFFT complex types
 - Choosing the NVIDIA or AMD build of a library at run time
 - A scalar's WIDTH follows the compute/scale type, not the matrix type
+- `hipblasGemmEx` rejects `HIPBLAS_COMPUTE_32F_FAST_16F` for FP16 inputs
 - hipBLASLt epilogues are not cuBLASLt's, per type and per format
 - PyTorch's ROCm MX GEMM wants unswizzled scales, M, N and K in multiples of 32, and no bias
+- Probe `torch._scaled_mm`'s fp8 types once per device instead of listing architectures
 - Generic GEMM on CK device operations
 - Composable Kernel older than tag rocm-7.2.0 races on gfx11 LDS barriers
 - Fused FP16 attention (cuDNN SDPA, flash attention): MIOpen has no path, CK's FMHA does
 - PyTorch's fused SDPA on gfx1100 fails at head dims 257 to 512 with an unrelated HIP error
+- flash-attn 2.8.3's Triton AMD backward reads `dout` with `out`'s strides
 - rocBLAS `gemv` over more than 65535 batches returns wrong entries, and `cupy.einsum` ...
 - On gfx12, rocBLAS complex GEMM with n > 2^21 leaves columns unwritten
 - Some MIOpen convolution solvers are not run-to-run reproducible; establish the noise ...
@@ -390,6 +409,7 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - rocPRIM radix sort of 64-bit keys is wrong when `end_bit` is 64 and `begin_bit` is not 0
 - Choosing the workaround for that bit-range defect: narrowing the range is only safe when ...
 - libcu++ -> libhipcxx, and two atomic defects in it
+- torchaudio's RNN-T loss and CTC forced alignment run only on the CPU in ROCm builds
 - CuPy-ROCm gaps a CuPy-based port meets at run time
 - Code that reads cuRAND's device generator state internals needs a rocRAND translation ...
 - NVTX -> roctx
@@ -408,9 +428,11 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 **`references/platform-limits.md`** -- Platform limits and other build classes
 
 - AMD compute-capability values COLLIDE with NVIDIA arch numbers
+- `rocminfo` prints pool sizes as `N (0xH) KB`, with a space
 - A query HIP reports as unsupported leaves a sticky error that the NEXT check reports
 - `clock64()` is a 20-bit wrapping counter on RDNA3, so a cycle-bounded spin, delay or ...
 - On RDNA, a nonzero occupancy does not mean the dynamic shared memory fits
+- Dynamic shared memory is not 16-byte aligned on AMDGPU unless declared so
 - Launch geometry computed from device properties can overshoot a bound sized for NVIDIA
 - `__launch_bounds__(1024)` changes nothing on HIP and something on CUDA
 - A kernel launched with fewer than 1024 threads needs `__launch_bounds__` on HIP to get ...
@@ -424,6 +446,7 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - NVRTC (CUDA C++ generated at run time) ports to hipRTC
 - Runtime-compiled kernels inherit nothing from the host build
 - Triton on AMD accepts `input_precision='tf32'` only on gfx942
+- Triton `num_warps` above 16 cannot launch on a 64-wide wavefront
 - CUDA-namespaced libdevice calls and hard-coded FP8 types
 - An integrated APU reports the whole shared memory pool as device memory
 - An integrated APU can crash the device linker under build parallelism
@@ -437,6 +460,7 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - Triangulate single- against double-precision before blaming the wavefront
 - Test "it reads uninitialized device memory" with a fill-pattern differential, not an audit
 - To close an "it might silently fall back" risk, trace it; then bound it from the code ...
+- `torch.cuda.device_count()` returns 0 while `torch.cuda.is_available()` is True: a ...
 - A once-per-suite host crash that stress reruns never reproduce: widen the suspected race ...
 - ROCm 10.1 `AMD_LOG_MASK` takes decimal only, and graph replays are invisible to it
 - Before blaming the code under test for a wrong result, save the output, the inputs as ...
@@ -450,6 +474,7 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - A hang that depends on inlining: long branches clobber the return address
 - Proving a real miscompile: catch the faulting instruction, then flip one backend pass
 - Before removing a compiler workaround, rerun the whole suite on the new release
+- An instruction-selection abort: change how the value is produced
 - A fault inside a vendored JIT entry point: rebuild-with-a-forced-throw beats a debugger
 - scikit-learn's KMeans can crash a Python test on a machine with very many cores
 - Failures that appear only when the whole suite runs in one process
@@ -465,6 +490,7 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - Profile the hot kernels and read their ISA before blaming tile tables or wavefront size
 - Scalar emulation of a packed intrinsic (`__hmax2` as two `__hmax`) cost 15x or more
 - Tile and block-size tables are second order, and a project's own autotuner can pick a ...
+- Compare kernel variants warmed up, interleaved, against a noise floor
 - What did not matter: RDC layout and maskless shuffles
 
 **`references/validation.md`** -- Validation
@@ -484,6 +510,7 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - Proving two builds carry the same device code: build both in the SAME directory
 - A passing assertion COUNT is not a list of what was tested
 - A green result does not prove a GPU test ran: count kernel dispatches
+- An onnxruntime GPU provider that fails at session creation falls back to the CPU silently
 - Read what the project's own cross-backend checker actually compares
 - A project with no test suite: author the harness, then ship it WITH the port
 - A GPU test the port adds must skip on a machine with no device, and an in-`main` check ...

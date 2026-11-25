@@ -726,6 +726,8 @@ Found porting CuPy's Windows build. Each one looks like a broken port and is not
 - **A `friend` naming a `__device__` function template needs `__device__` itself** with the clang in ROCm 7.14 (Linux and Windows): without it the friend no longer matches, and the template loses access (`'x_' is a private member of ...`). NVRTC also rejects the unannotated friend unless `-default-device` is given. Annotate the friend; it is correct on both.
 - **The hiprtc DLL's name carries the HIP version, and the digit layout has changed between releases** (`hiprtc0702.dll`, `hiprtc0714.dll` and `hiprtc07013.dll` have all shipped), so it is not a soname-like name and must not be hard-coded: see "A null top frame above a vendored DLL" above.
 - **A `setup.py` that copied PyTorch's old `BuildExtension` is not thread-safe under `build_ext -j`.** Its MSVC path replaces `self.compiler.spawn` (or `call` on setuptools 84+) with a translating wrapper for the duration of one `compile()` and restores it afterwards. `build_ext -j N` builds extensions in threads that share the one compiler object, so one thread's restore sends another thread's `.cu` files to `cl.exe` (errors such as an undeclared `hiprandState` from cl), and extensions that list the same source write the same `.obj` at once (`Permission denied`). The CUDA branch has the same race; a serial build works. Set `self.parallel = None` in `build_extensions` before delegating, on Windows. (TIGRE)
+- **The ROCm SDK packages' device libraries are only in `lib/llvm/amdgcn/bitcode` on Windows.** The Linux devel tree links `<ROCm>/amdgcn -> lib/llvm/amdgcn`; the Windows devel wheel (10.2.0 checked) has no such link and nothing under clang's resource directory, so plain hipcc fails with "cannot find ROCm device library". A build file can make the documented install work: when `<ROCm>/amdgcn/bitcode` is absent, `HIP_DEVICE_LIB_PATH` is unset and `<ROCm>/lib/llvm/amdgcn/bitcode/*.bc` exists, pass `--rocm-device-lib-path=<that directory>`. The Linux core-only package has the same layout, so the flag is harmless there. (rl)
+- **HIP device code has no `__assert_fail` on Windows.** A project-supplied device `assert` for a runtime compiler (hipRTC has no `<assert.h>`) often expands to `__assert_fail(expr, file, line, func)`, the glibc name that `hip/amd_detail/hip_assert.h` defines as a printing device function, but only when `_WIN32` is not defined; on Windows it declares `_wassert(const wchar_t*, const wchar_t*, unsigned)`, which traps without printing. Debug kernels then fail to compile only on Windows ("use of undeclared identifier '__assert_fail'"), and `NDEBUG` builds hide it. Give the Windows branch its own expansion (`printf`, then `__builtin_trap()`), or call `_wassert` with wide strings. (warp-1.14)
 - **A symbol looked up in your own extension by name must be `__declspec(dllexport)`.** `ctypes.CDLL(__file__)` / `GetProcAddress` sees only exported symbols on Windows; on Linux every non-static function is visible, so this is Windows-only and fails at first use, not at link.
 - **`os.add_dll_directory(<rocm>/bin)` is enough** for a Python extension that links the ROCm DLLs, even on a host whose System32 `amdhip64_7.dll` is broken: the extension-load search order puts the added directory before System32, and hiprtc's later by-name loads of `amd_comgr.dll` resolved from the same directory (checked with `GetModuleFileNameW`). No preloading by full path was needed. Keep the returned handle alive.
 - **A missing ROCm root does not fail the import; the extension binds the display driver's System32 `amdhip64_7.dll` without any error.** If the extension skips `add_dll_directory` because it cannot find the root, the import still succeeds against the driver's HIP runtime (7.12 on the machine where this was seen). The failure comes later and points elsewhere (cupy: `failed to load hiprtc0712.dll`, a hiprtc name derived from the wrong runtime version). TheRock's `hipconfig.exe` / `rocm-sdk.exe` are console scripts in the venv's `Scripts` directory, which is on PATH only when the venv is activated, so an unactivated `venv\Scripts\python.exe` (from an IDE, a service, or a build with `--no-build-isolation`) finds neither. Look up `shutil.which('hipconfig', path=sysconfig.get_path('scripts'))` when PATH has no hipconfig, and warn by name when no root is found. Verify which DLL loaded with `GetModuleFileNameW`. (cupy)
@@ -812,6 +814,34 @@ gfx1201). `GPU_MAX_HW_QUEUES` does not change it. Results stay correct; only the
 is lost. If a failing test's assertion is a timing ratio between a serial and a
 concurrent run, and every functional test passes, this is the cause and the port is not
 at fault. (FLAMEGPU2, where a 20-line repro was written.)
+
+### Late submission exposes missing cross-stream ordering
+
+The Windows HIP runtime can submit work on one stream noticeably later than work issued
+afterwards on another stream. Tests that zero or fill buffers on one stream and then launch
+kernels or graphs on a freshly created second stream, with no event or synchronization between
+them, pass on Linux and on CUDA by timing and fail on Windows with results that look like "the
+kernel never ran" (the late fill overwrites the output). Add a synchronize after the fill: if
+the failure disappears, the test has a race. (warp-1.14: only the first round in a process
+failed.)
+
+### Graph relaunch races its own memory-free nodes
+
+On Windows the HIP runtime does not dispatch directly: graph commands, including the mem-alloc
+and mem-free nodes a stream capture creates for `hipMallocAsync`/`hipFreeAsync`, run on a runtime
+worker thread. Relaunching a graph instantiated with `hipGraphInstantiateFlagAutoFreeOnLaunch`
+frees the graph's memory on the calling thread before it waits for the previous launch, so when
+the previous launch's free node is still queued behind a running kernel the worker frees memory
+twice. Symptoms, only on Windows and only for back-to-back replays: `hipGraphLaunch` returning
+`hipErrorInvalidValue` for a valid graph, or an access violation inside `amdhip64_7.dll` on a
+thread that is not yours (the same offset every time), with `Memory didn't belong to any pool!`
+at `AMD_LOG_LEVEL=1`. Workaround: on Windows, `hipStreamSynchronize` the stream right after each
+`hipGraphLaunch` when the stream is not capturing. Waiting before each launch instead closes the
+relaunch race but leaves a second failure: on a graph's first launch, a copy issued right after
+the launch can find the graph's memory invalid (`hipErrorInvalidValue`) until the launch has run
+its alloc nodes (5 of 5 runs with the wait before, 0 of 5 with the wait after). The runtime
+already blocks inside such a launch, so the wait costs little. A reproducer needs a kernel long
+enough (milliseconds) to keep the free node pending. (warp-1.14)
 
 ### VMM address ranges that were mapped are never reused
 

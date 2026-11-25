@@ -32,6 +32,13 @@ from native detection lists one entry per GPU (`gfx90a;gfx90a;gfx90a;gfx90a` on 
 host): `list(REMOVE_DUPLICATES)` before creating per-arch targets (strategy-a-cmake.md).
 (MMseqs2: libmarv's per-arch AMD aligner tables.)
 
+**`rocminfo` prints pool sizes as `N (0xH) KB`, with a space.** A launcher that scrapes
+`rocminfo` for VRAM with a regex written against `25163776(0x17ff800) KB` (`(\d+)\(0x`) finds
+nothing on ROCm 10.1 and 10.2, which print `Size: 25163776 (0x17ff800) KB`. Allow the whitespace
+(`(\d+)\s*\(0x[0-9a-fA-F]+\)\s*KB`), or ask the HIP runtime (`hipMemGetInfo`) instead.
+rocminfo also ignores `HIP_VISIBLE_DEVICES` and lists every agent, so it is a poor source for
+the devices a process will see. (koboldcpp)
+
 **A query HIP reports as unsupported leaves a sticky error that the NEXT check reports.**
 Reading or setting `cudaLimitPrintfFifoSize` (`cudaDeviceGetLimit`/`cudaDeviceSetLimit`) maps
 to a call that returns `hipErrorUnsupportedLimit`. Code that ignores that return value and
@@ -82,6 +89,17 @@ CTC decoder) and leaves the CUDA sources untouched. Check each candidate block s
 separately, because static shared memory (block-reduce scratch) grows with it. Sweep widths
 past 64 KiB/element-size on an RDNA card. Sweeping to 8192 only catches the
 8-byte-per-column backward kernels. (oneflow, gfx1100)
+
+**Dynamic shared memory is not 16-byte aligned on AMDGPU unless declared so.** CUDA starts a
+kernel's dynamic shared memory (`extern __shared__ char buf[];`) 16-byte aligned, and code that
+carves vector-typed tiles out of it relies on that. AMDGPU places the dynamic window right after
+the kernel's static `__shared__` variables, at the alignment declared on the `extern` array (1
+byte for `char`), so where it starts depends on the kernel's static shared size. Release builds
+usually run anyway (the hardware tolerates the misaligned LDS vector access); an alignment
+assertion in a debug build, or a static shared size that is not a multiple of 16 (read
+`.group_segment_fixed_size` with `llvm-readelf --notes`), shows it. Fix on HIP: `extern
+__shared__ char buf[] __attribute__((aligned(16)));` (an `alignas` after `__shared__` is a
+syntax error). (warp-1.14)
 
 **Launch geometry computed from device properties can overshoot a bound sized for NVIDIA.**
 MI300X reports `multiProcessorCount` 304 and `maxThreadsPerMultiProcessor` 2048, against 132 and
@@ -210,8 +228,10 @@ on HIP, or keep the axis-1 count at or below 65,535: moving the large count itse
 trades the HIP failure for a CUDA one. A capped grid with a grid-stride loop is the other
 option, and the usual one in HIP C++. In Triton the grid callable sees only the kernel
 arguments, not `num_warps`, so size axis 0 for the largest work-group (1024 work-items).
-Pruning autotune configs does not fix it: past some size every config is too large.
-(FlexGEMM)
+Pruning autotune configs does not fix it: past some size every config is too large. Code
+that caps a grid-stride launch at CUDA's 2^31 - 1 blocks hits it only above about 4.3 billion
+elements, which tests rarely reach; cap at `0xFFFFFFFF / blockDim.x` on HIP. (FlexGEMM;
+warp-1.14)
 
 ## Runtime-compiled kernels
 
@@ -347,6 +367,14 @@ which follows Triton's own per-target rule (and honors `TRITON_OVERRIDE_ARCH`), 
 result into the kernels as a `tl.constexpr`. The deprecated `tl.dot(allow_tf32=...)` makes the
 same choice in the kernel, but `TRITON_F32_DEFAULT` overrides it, which would change the CUDA
 path. (FlexGEMM)
+
+### Triton `num_warps` above 16 cannot launch on a 64-wide wavefront
+
+Triton's `num_warps` counts wavefronts, so 32 warps on CDNA is 2048 threads, and the launch
+fails with `OutOfResources: out of resource: threads, Required: 2048, Hardware limit: 1024`.
+Heuristics written for NVIDIA (`min(max(N // 256, 8), 32)`) hit it at large N. Cap with `1024
+// torch.cuda.get_device_properties(dev).warp_size`, which changes nothing on NVIDIA. Tests
+often never reach the large-N case, so check it directly. (ColossalAI)
 
 ### CUDA-namespaced libdevice calls and hard-coded FP8 types
 

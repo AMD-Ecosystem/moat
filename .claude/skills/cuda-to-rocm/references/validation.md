@@ -384,6 +384,18 @@ a real one; the dispatch count was right both times. Three follow-ons:
   corroboration than a second "it is nonzero"; a mismatch with no code difference between
   the two runs is a signal worth chasing. (colmap)
 
+### An onnxruntime GPU provider that fails at session creation falls back to the CPU silently
+
+A script that asks for `MIGraphXExecutionProvider` (or any GPU provider) can run, return correct
+numbers and be slow: onnxruntime's Python API retries on `CPUExecutionProvider` when the
+requested provider fails to initialize, and the `EP Error ... Falling back to
+['CPUExecutionProvider'] and retrying` block is easy to miss in a long log. Assert that
+`session.get_providers()[0]` is the GPU provider in validation runs, and look for the provider's
+own compile log (`[MIGraphX EP] ... Model Compile: Begin`). A MIGraphX built from an older tag
+than the SDK can also fail its run-time kernel compiles with `-Werror,-Wdeprecated-attributes`
+under a newer clang; MIGraphX appends `MIGRAPHX_GPU_HIP_FLAGS` to that compile
+(`-Wno-deprecated-attributes`). (wenet, onnxruntime-migraphx 1.27.1)
+
 ### Read what the project's own cross-backend checker actually compares
 
 A project that ships a "compare backend A against backend B" harness makes an attractive gate, but check which outputs it compares before trusting a pass, and check whether the test INPUT can reach the code you changed at all.

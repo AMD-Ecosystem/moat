@@ -54,6 +54,13 @@ went from 957 ms for kv=1024 (unoptimized) to 13.8 ms for kv=4096 once combined 
 (platform-limits.md, "A kernel launched with fewer than 1024 threads needs `__launch_bounds__`").
 (Quest)
 
+**`CMAKE_COMPILE_WARNING_AS_ERROR` outranks `-Wno-error`.** A project that sets it (ROS 2's
+`autoware_package()` does on CMake 3.24 and later) gets `-Werror` appended after every target
+compile option, so `target_compile_options(t PRIVATE -Wno-error)` has no effect. When `.cu`
+sources move from nvcc (which never saw the flag through `CUDA_NVCC_FLAGS`) to the HIP language,
+upstream kernel warnings become errors; set the target property `COMPILE_WARNING_AS_ERROR OFF`
+on the HIP kernel target instead. (autoware_universe)
+
 ### Never mark the host `.cpp` files `LANGUAGE HIP` to dodge the flag leak
 
 The tempting shortcut when a mixed CXX/HIP target fails to compile is to mark *every* source
@@ -190,6 +197,17 @@ compile of the same file may already have recorded the identical error as pre-ex
 two findings do not contradict. One path was always broken and stayed broken; the other was
 accidentally working and stopped. (Velvet: `Timer.hpp` used `std::vector` with no
 `#include <vector>`, on gcc's and clang's libstdc++ alike.)
+
+Compiling host sources as HIP also changes which compiler mangles their symbols. Against
+libraries built with GCC, a few template signatures mangle differently: a return type of
+`std::enable_if_t<std::is_same_v<T, X>, ...>` is `Xsr3stdE9is_same_v...` from clang and
+`X9is_same_v...` from GCC 13. The shared library still links (undefined symbols are allowed in
+a `.so`), and under lazy binding the process dies with "symbol lookup error" only when the call
+is first bound, so tests that never reach it pass; with `-Wl,-z,now` or `LD_BIND_NOW=1` it fails
+at load. Run `ldd -r` on every built library and executable (it lists unresolved symbols; a
+plugin library may legitimately leave some to the process that loads it, so read each hit). Keep
+sources that only call host libraries on the host compiler, as the CUDA build does.
+(autoware_universe, GCC 13.3)
 
 ## Relocatable device code (-fgpu-rdc)
 
@@ -500,6 +518,30 @@ line beside it.
 Whether a `/opt/rocm` package registers its lib dir with ld.so.conf was not verified; do
 not rely on it. (h2o4gpu, ESPResSo)
 
+**TheRock's torch wheels cannot be linked from C++ as installed: their RUNPATH points into the
+wheel builder's tree.** Linking an executable against `torch/share/cmake/Torch` from such a wheel
+warns `librocm-openblas.so.0, needed by libtorch_cpu.so, not found` and fails with undefined
+`sgemm_`/`zgetrf_` (and `librocm_sysdeps_liblzma.so.5` for aotriton), while the same wheel works
+in Python. `libtorch_cpu.so`/`libtorch_hip.so` carry `RUNPATH
+$ORIGIN:/opt/python/cp311-cp311/lib/python3.11/site-packages/_rocm_sdk_devel/lib/host-math/lib:...`,
+valid only on the build machine; Python works because the SDK package preloads its libraries. Put
+the SDK's `_rocm_sdk_core/lib`, `lib/host-math/lib`, `lib/rocm_sysdeps/lib` and
+`_rocm_sdk_libraries_<family>/lib` on `LD_LIBRARY_PATH` (GNU ld also searches it for indirect
+dependencies), or into the executable's RPATH with `--disable-new-dtags`. The download.pytorch.org
+ROCm wheels instead bundle these libraries next to libtorch with `DT_RPATH $ORIGIN` (an RPATH,
+which also reaches indirect dependencies). (wenet, torch 2.8.0+rocm7.12.0)
+
+**A library that interposes the HIP registration entry points must bind them locally.** A shared
+library that defines `__hipRegisterFatBinary`/`__hipRegisterFunction`/`__hipRegisterVar`/
+`__hipUnregisterFatBinary` to capture its own code objects (for a driver-API module table) and
+forwards to the runtime with `dlsym(RTLD_NEXT)` works only while nothing made `libamdhip64` global
+first: with default visibility its module constructors' calls resolve through the global scope,
+so in a process that already uses HIP (or under `LD_PRELOAD=libamdhip64.so`) the runtime's
+definitions win and the library's table stays empty. Give the wrappers
+`__attribute__((visibility("protected")))` so the static linker binds the calls inside the
+library; `readelf -rW lib.so | grep __hipRegister` should then show no relocations. Test once
+with the runtime preloaded. (PhysX)
+
 **With the ROCm clang as the host compiler, a found system libunwind links but does not load.**
 The ROCm clang searches the `include/` directory next to its LLVM install ahead of the system
 include directories, so `<libunwind.h>` resolves to LLVM's header, while a `FindUnwind` module
@@ -519,6 +561,39 @@ to every target that links it** (`torch_hip` INTERFACE_COMPILE_OPTIONS). Project
 files that use `__half` arithmetic then fail with "invalid operands ... '__half'". If no HIP TU
 includes LibTorch, `#undef` both in the force-included compat header under `__HIP__`.
 (LichtFeld-Studio)
+
+**ld.lld rejects an underlinked shared library that GNU ld accepted.** A HIP executable links
+with the ROCm SDK's clang, and TheRock's clang uses ld.lld, which rejects any undefined symbol in
+a linked shared library that no input on the link line defines (`undefined reference ...
+(disallowed by --no-allow-shlib-undefined)`). The CUDA build links the same executable with GNU
+ld, which accepts it. A host library that uses a dependency without linking it (no `NEEDED`
+entry, a g++-built library calling fmt) therefore breaks only the ROCm link, and only for
+executables that link it directly (often unit tests). Check `readelf -d <lib> | grep NEEDED`, and
+confirm with `-DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=bfd`: if GNU ld links it, the library is
+underlinked. Link the dependency to that library, or add it to the affected HIP targets in the
+build files, guarded to the HIP build; a linker flag in a recipe is not a fix. (autoware_universe)
+
+**FindCUDA leaves NOTFOUND variables behind on a machine without CUDA.** When a project calls
+the legacy `find_package(CUDA)` and falls back to a HIP branch on `NOT CUDA_FOUND`, FindCUDA still
+sets `CUDA_LIBRARIES` (`CUDA_CUDART_LIBRARY-NOTFOUND`) and `CUDA_INCLUDE_DIRS`
+(`CUDA_TOOLKIT_INCLUDE-NOTFOUND`). A target line shared by both backends that uses them
+(`target_link_libraries(t ${CUDA_LIBRARIES} ...)`, often in tests) fails the generate step: "The
+following variables are used in this project, but they are set to NOTFOUND". It does not appear
+when configure skips `find_package(CUDA)` (a "use HIP even if CUDA is found" option), so a port
+tested only that way can ship a documented command that fails. Empty the FindCUDA result
+variables that shared lines use on the HIP branch, or move those lines into the CUDA branch, and
+test the documented command on a machine without CUDA. (autoware_universe)
+
+**Build protobuf (and abseil) with the same compiler as the code that includes its generated
+headers.** The first parse of a message segfaults inside
+`google::protobuf::internal::TcParser::FastMtS1` with a jump to a garbage address (MIGraphX's
+`migraphx-driver read model.onnx` crashed on any ONNX file). protobuf v30's table-driven parser
+calls its fast-path functions with a clang-only calling convention (`PROTOBUF_CC`), so generated
+code and inline headers compiled by the ROCm clang call into a `libprotobuf.a` that g++ compiled
+with the default one. Build the dependency prefix with the ROCm clang (for cget, `cget init --cxx
+<rocm>/lib/llvm/bin/clang++`) and rebuild. When such a library is loaded into a process that
+already has another protobuf (onnxruntime), link it with `-Wl,--exclude-libs,ALL -Wl,-Bsymbolic`
+so it binds to its own copy. (wenet)
 
 **On a multi-GPU host a rapids-cmake HIP dependency fails configure with `mismatch between
 CMAKE_HIP_ARCHITECTURES and GPU_TARGETS`.** ROCm's `hip-config.cmake` fills the `GPU_TARGETS`
@@ -552,6 +627,17 @@ finds its headers through `ROCM_PATH`, and torch preloads `libamdhip64`/`libhipr
 every library a separately built `.so` links (`libhiprtc-builtins.so.7` for Warp). Triage
 first: print which `libamdhip64` each import resolved (`/proc/<pid>/maps`, or the version
 each library reports) before rebuilding anything. (IsaacLab)
+
+The download.pytorch.org ROCm wheels show the reverse case: they bundle `libamdhip64.so`,
+`libhsa-runtime64.so` and friends in `torch/lib`, and the bundled HSA runtime keeps the SONAME
+`libhsa-runtime64.so.1`. A library built for a newer system ROCm (onnxruntime's MIGraphX
+provider) then fails to load after `import torch` with `libamdhip64.so.7: undefined symbol:
+hsa_amd_memory_get_preferred_copy_engine, version ROCR_1`, because the loader reuses torch's older
+HSA runtime, and onnxruntime quietly retries on the CPU provider (validation.md). Use a torch built
+for the same system ROCm (AMD publishes such wheels at
+`repo.radeon.com/rocm/manylinux/rocm-rel-<version>/`; they link the system ROCm instead of
+bundling it), and check `/proc/self/maps` for a single `libamdhip64`/`libhsa-runtime64` pair.
+(wenet)
 
 **A vcpkg-manifest project needs `autoconf-archive` on the build machine, and a full vcpkg
 clone.** A project that moved its dependencies to a vcpkg manifest configures with
@@ -627,6 +713,27 @@ while a genuine gitlink bump still shows. This also states the honest upstream p
 these changes belong in the submodules' own repositories, and the patch files are exactly
 the diffs to send there. (HEonGPU)
 
+### A local-package option must be a variable only the user sets, not `<Pkg>_DIR`
+
+To let a CMake build that downloads a dependency use a local copy instead (a ROCm LibTorch in
+place of a downloaded CUDA one), add one explicit cache variable that only the user sets, such as
+`set(LIBTORCH_PATH "" CACHE PATH "...")`; do not infer the request from `<Pkg>_DIR`.
+`find_package` writes `<Pkg>_DIR` into the cache itself, so after the first configure
+`if(Torch_DIR)` fires on every reconfigure and the download never runs again, and every attempt
+to tell the user's value from the cached one misses a case (symlinked checkouts, relative values,
+a download directory that did not exist yet). When the variable is set,
+`find_package(Torch PATHS ${LIBTORCH_PATH} NO_DEFAULT_PATH)` and skip the download; when it is
+empty, leave the original code untouched. A PATH cache entry turns a relative `-D` value into an
+absolute path. Details that matter: a set path with no package should stop configure with an
+error naming the variable, never fall back to the download; do not load it `QUIET`, which
+suppresses the messages that say why a config rejected itself; and a package config caches more
+than `<Pkg>_DIR` (LibTorch's caches `Caffe2_DIR` and library paths), so unset the entries that
+point into the package before loading the local copy and after, and guard the case where the
+local config stops configure with a fatal error (an INTERNAL marker set before loading and
+cleared after; when the variable is empty and the marker is set, unset the package's entries).
+Test with several configures in one build directory (download then local, local then download),
+from the checkout and through a symlink. (wenet, CMake 3.14 and 3.31)
+
 ## Installed packages and optional targets
 
 ### Install and consume the port, not just build it
@@ -654,6 +761,17 @@ that `cmake --install --prefix` does NOT override a prefix a project baked into 
 rules at configure time; reconfigure with `-DCMAKE_INSTALL_PREFIX` instead of concluding the
 install is broken. Write the downstream snippet into the docs only after the consumer
 actually configures, builds and runs. (HEonGPU)
+
+### A ROCm wheel's runtime dependency on the SDK, with setuptools and a static `pyproject.toml`
+
+To add `Requires-Dist: rocm>=X.Y,<X.(Y+1)` to a ROCm build's wheel without making `dependencies`
+dynamic (which changes how lock files see the project), append the requirement after setuptools
+has applied `pyproject.toml`, in a `Distribution.parse_config_files` override: set both
+`self.install_requires` and `self.metadata.install_requires` (setuptools copies the former into
+the latter inside `parse_config_files`, and Requires-Dist is written from the metadata), and only
+when there is something to add, because any reassignment marks the field `Dynamic: requires-dist`
+in the CUDA wheel too. Pin the version from what the build used (`<rocm>/.info/version`), not a
+hard-coded one. (warp-1.14)
 
 ### Every optional target the project can build, not just the one you build
 
