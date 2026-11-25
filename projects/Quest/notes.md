@@ -4785,3 +4785,7 @@ Llama-2-7b-chat not run on this laptop (as before). The random-weight 0.96 GB Ll
 CUDA gate recorded at `517c6a7` by the gfx950 porter round (real nvcc; `2a3e44f` has the same tree). `jargon.py --port Quest` not rerun here (no fork change). No driver reset or device loss during any run.
 
 State: windows-gfx1151 `completed` at `2a3e44f`.
+
+## Ruling 2026-11-25 (jeffdaily): gfx950 ships as it is
+
+On the gfx950 operator host-path decision against the 2026-11-23 "within 2x of SDPA" ruling, jeffdaily chose to ship as it is: no host-path rework and no further gfx950 kernel tuning before the pull request. The PR body states the gfx950 figures plainly: at 4096 x 4096 the kernel alone is 1.97x of SDPA and the operator about 2.8x (its host code leaves the GPU idle 0.08-0.13 ms per call), and from 8192 x 8192 up the operator is within 2x (2.09x at 8192^2 is the borderline; 1.78x at 16384^2). Every other validated GPU (MI300X, MI250X, W7800, R9700, Radeon 8060S) meets the 2x target.
