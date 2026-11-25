@@ -505,3 +505,4 @@ git -C projects/cuda_blackboard/src commit-tree 'b76dacbb7b1cade5a54933e809af2ca
 ```
 
 Check `git diff b76dacb <new sha>` is empty. Then Jeff's one authorized forced update of `moat-port` to that sha, followed by `squash-carry-forward`.
+The record step after that push: `python3 utils/moatlib.py squash-carry-forward cuda_blackboard <new sha>`.
