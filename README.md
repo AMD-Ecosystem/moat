@@ -346,7 +346,7 @@ The project name links upstream.
 | [warp](https://github.com/NVIDIA/warp) | ⬜ | ⬜ | ⬜ | — |
 | [warp-1.14](https://github.com/NVIDIA/warp) ([fork](https://github.com/AMD-Ecosystem/warp/tree/release/1.14.0.amd0)) | ✅ | ✅ | ✅ | — fork release line; no upstream pull request |
 | [warp-1.15](https://github.com/NVIDIA/warp) ([fork](https://github.com/AMD-Ecosystem/warp/tree/release/1.15.0.amd0)) | 🔧 | ⬜ | ⬜ | — fork release line; no upstream pull request |
-| [wenet](https://github.com/wenet-e2e/wenet) ([fork](https://github.com/AMD-Ecosystem/wenet/tree/moat-port)) | ✅ | ✅ | ⬜ | — |
+| [wenet](https://github.com/wenet-e2e/wenet) ([fork](https://github.com/AMD-Ecosystem/wenet/tree/moat-port)) | ✅ | ✅ | 🔧 | — |
 | [world_engine](https://github.com/Overworldai/world_engine) | ⬜ | ⬜ | ⬜ | ⚖️ license-restricted -- gap-matrix intake follow-up 2026-11-12: GPL-3 |
 | [yalm](https://github.com/andrewkchan/yalm) ([fork](https://github.com/AMD-Ecosystem/yalm/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#12](https://github.com/andrewkchan/yalm/pull/12) |
 | [YarnBall](https://github.com/jerry060599/YarnBall) ([fork](https://github.com/AMD-Ecosystem/YarnBall/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#5](https://github.com/jerry060599/YarnBall/pull/5) |
