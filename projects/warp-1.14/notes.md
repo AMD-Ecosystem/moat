@@ -8625,3 +8625,69 @@ Each item one process, `ulimit -c 0`, `timeout 300`, a `progress.log` line befor
 3. Windowed example: `warp.examples.fem.example_apic_fluid` driven by `gl_window.py` (the version has no `example_cloth`; this is the example that renders with the windowed `OpenGLRenderer`): 1024 x 1024 window, 68,921 particles (`--voxel-size 0.5`), 600 frames in 21.8 s, window stayed open, `get_pixels(..., split_up_tiles=False, mode="rgb")` of the last frame: shape (1024, 1024, 3), min 0.0, max 1.0, mean 0.796, std 0.195, 82% of pixels differ from the corner colour: **not blank** (`logs/gl_frame.png`: blue shaded spheres over a pale-blue gradient with a grid and axes). rc=0, no HIP error, no hang, no driver reset. The first window run (100 frames) failed only at my pixel capture (`get_pixels` with the default `split_up_tiles=True` asserts on a renderer without tiles; the simulation and window ran fine); rerun with the fixed call passed. The Python-exit `__del__`/`sys.meta_path is None` and pyglet focus-callback messages at shutdown are pyglet/renderer teardown noise, rc=0.
 
 Verdict: every step clean at `66ba4ffb` (build, wheel, loadcheck, examples, 169 files, 61 held tests, GL). `jargon.py --port warp-1.14` is clean. The CUDA no-regression gate is not rerun here (no toolkit on this host; recorded by the Linux validators).
+
+## Release wheel (Linux), 66ba4ffb (2026-11-25, linux-gfx950 MI355X, release build at the validated head)
+
+Request from jeff: build the Linux release wheel at the final head `66ba4ffb31bce1bd822943cfc764c34eb21a8eef` with the release recipe (all default Linux targets, `--no-rocm-rpath`, ROCm 10.2 Python SDK), check it, validate that exact file on gfx950, stage it for the GitHub Release. No lock taken, no platform state changed, nothing pushed to the fork. `HIP_VISIBLE_DEVICES=1` (dispatcher pin, kept), `ulimit -c 0` for every GPU run, a fresh `WARP_CACHE_PATH` per run, no process stopped.
+
+**Verdict: release blocker. The wheel is not manylinux_2_28. It is tagged `manylinux_2_28_x86_64` but needs glibc 2.38.** `auditwheel show`: "consistent with the following platform tag: linux_x86_64 ... This constrains the platform tag to manylinux_2_38_x86_64". It was built in the job venv on this host (Ubuntu 24.04, glibc 2.39, g++ 13.3); the notes name no manylinux build environment. On Linux with glibc older than 2.38 (RHEL 8/9, Ubuntu 22.04, Debian 12), pip would install this wheel because of the 2.28 tag, and then loading `warp.so` would fail with `GLIBC_2.38 not found`. Every Linux wheel built before this one for this line used the same kind of host, so all of them had the same false tag; no earlier entry checked symbol versions. The wheel was therefore **not** copied to `<job>/release/` and no `release/SHA256SUMS` was written. Everything else passed: content checks, the 26 targets, and the suite from the installed wheel (only the known `test_async` pool-off failures, each passing alone).
+
+### Build
+
+- ROCm: `"$FLEET_VENV/bin/python" -m pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple "rocm[devel]==10.2.0" auditwheel build`, then `rocm-sdk init` (`rocm-sdk version` 10.2.0). Stale 10.1.0 `rocm-sdk-libraries` and `rocm-sdk-device-*` remain in the venv. The build does not use them.
+- Clone: `git clone --branch release/1.14.0.amd0 https://github.com/AMD-Ecosystem/warp <job>/rel/warp`. `git rev-parse HEAD` = `66ba4ffb31bce1bd822943cfc764c34eb21a8eef`, 67 LFS files smudged, `git status --porcelain` empty before and after the build.
+- `<job>/scripts/build.sh <clone> 64 <job>/wheel` under `utils/timeit.sh warp-1.14 compile` (189 s, `MAX_JOBS`=64):
+  ```bash
+  python build_lib.py --rocm-path "$(python -m rocm_sdk path --root)" -j 64 --no-rocm-rpath   # "Warp build succeeded"
+  python -m build --wheel -C--build-option=-Plinux-x86_64 -o <job>/wheel
+  ```
+  The build log shows 26 targets, each with 14 `--offload-arch` occurrences: gfx1010-1012, gfx1030-1036, gfx1100-1103, gfx1150-1153, gfx1200, gfx1201, gfx1250, gfx1250-strict, gfx908, gfx90a, gfx942 and gfx950. `--offload-compress` appears on all 14 HIP compiles. warp-clang.so links packman's LLVM (`_build/host-deps/llvm-project/release-x86_64`).
+
+### The wheel
+
+**`/var/lib/jenkins/fleet/jobs/mi355-20261125-114653-warp114-release-wheel-linux/wheel/warp_lang-1.14.0+rocm10.2.0-py3-none-manylinux_2_28_x86_64.whl`, 37,277,457 bytes, sha256 `8710e46c499d3d7069e5b0b11c59523db402a0b2748c274a014f1423fe139cfe`** (also in `<job>/wheel/SHA256SUMS`). Every check and run below used this file.
+
+| check | result |
+|---|---|
+| file name | `warp_lang-1.14.0+rocm10.2.0-py3-none-manylinux_2_28_x86_64.whl`, WHEEL `Tag: py3-none-manylinux_2_28_x86_64` (setuptools 84.2.1), 548 entries |
+| manylinux_2_28 (`auditwheel` 6.8.2 `show`) | **FAIL**: `linux_x86_64`, constrained to `manylinux_2_38_x86_64` |
+| warp.so highest symbol versions (`objdump -T`) | **GLIBC_2.38** (no GLIBCXX/CXXABI: libstdc++ is static). Symbols above 2.28: `exp log log2 pow`@2.29, `__libc_single_threaded`@2.32, `stat lstat fstat64`@2.33, `dlopen pthread_once __pthread_key_create`@2.34, `_dl_find_object`@2.35, `arc4random`@2.36, `__isoc23_strtol __isoc23_strtoul fmod fmodf`@2.38 |
+| warp-clang.so highest symbol versions | **GLIBC_2.38**: the same families plus `pthread_*`, `dl*`@2.34, `mknod stat64 lstat64`@2.33, `pthread_sigmask`@2.32 |
+| NEEDED / RUNPATH | warp.so: libamdhip64.so.7, libhiprtc.so.7, libm, libc, ld-linux; RUNPATH `$ORIGIN`. warp-clang.so: libm, libc, ld-linux; RUNPATH `$ORIGIN` |
+| offload targets | `.hip_fatbin` holds 11 bundles, all compressed (`CCOB` 11, `__CLANG_OFFLOAD_BUNDLE__` 0). `clang-offload-bundler --list` on each gives the same 26 `hip-amdgcn-amd-amdhsa--` targets listed above, gfx1250-strict included |
+| METADATA | `Name: warp-lang`, `Version: 1.14.0+rocm10.2.0`, `Requires-Dist: numpy`, `Requires-Dist: rocm<10.3,>=10.2`; no `Environment :: GPU :: NVIDIA CUDA` classifier. Upstream's `torch-cu12`/`torch-cu13` extras remain, unchanged from upstream |
+| forbidden files | none matching `libmathdx|nvjitlink|nvrtc|cudart` |
+| licence files | `LICENSE.md` plus 13 under `licenses/`: Gaia, appdirs, asset_pixel_jpg, cubql, dlpack, fp16, llvm, moller, nanovdb, svd, unittest_parallel, usd, windingnumber. No cuda, nvrtc or libmathdx licence |
+| `warp/bin/warp.so.rocm` | `'\n10.2.0\n'` (8 bytes) |
+| sizes | warp.so 11,000,648, warp-clang.so 67,136,896, installed `du -sb warp` 106,447,014 |
+| build path / job name | byte search of all 548 members for the job path, the job name, `/rel/warp`, `_rocm_sdk_devel` and `/var/lib/jenkins`: 0 hits. `strings -a` of both .so files: 0 hits. All 286 device code objects (11 bundles x 26, unbundled): 0 hits |
+| fp contraction strings | `-ffp-contract=on`, `-ffp-contract=off`, `-DWP_FUSE_FP` present |
+
+Cause of the glibc 2.38 requirement: this host's toolchain, not the fork. packman's LLVM static libraries reference none of `__isoc23_*`, `arc4random` or `_dl_find_object` (`nm -u` over 135 archives). The new versions come from compiling against glibc 2.39 headers (`__isoc23_strtol`) and linking against glibc 2.39 (`fmod`@2.38, `pthread_*`@2.34). GCC 13's static libstdc++/libgcc add `arc4random` (`std::random_device`) and `_dl_find_object` (unwinder). Upstream builds its wheels in `quay.io/pypa/manylinux_2_28_x86_64` (`docker/warp-builder/Dockerfile`, `MANYLINUX_IMAGE`), with gcc-toolset-14 against glibc 2.28.
+
+### Install (step 3)
+
+- A new venv with nothing else in it (`/usr/bin/python3.11 -m venv <job>/wtest`) was created, but the fleet guard refuses `pip install` into any environment other than `$FLEET_VENV` ("pip changing the Python environment every job on this host shares"). So the clean-venv install was not done. Instead, `<job>/wtest/bin/python -m pip download <wheel> --extra-index-url https://stable.repo.amd.com/rocm/whl-next/ -d <job>/dl` showed what a fresh resolver pulls: `rocm-10.2.0` (sdist), `rocm_sdk_core-10.2.0`, `numpy-2.4.6`, plus the wheel itself (re-hashed: same sha256).
+- The suite ran from `"$FLEET_VENV/bin/python" -m pip install --force-reinstall --no-deps <wheel>` ("Successfully installed warp-lang-1.14.0+rocm10.2.0"; rocm 10.2.0 and numpy 1.26.4 were already in the venv). The installed warp.so (`5b280164...`) and warp-clang.so (`623094c1...`) hash the same as the wheel's members. No torch and no usd-core in the venv.
+
+### Runs (`<job>/scripts/run.sh <label> <args>`: `ulimit -c 0`, `HIP_VISIBLE_DEVICES=1`, cwd `<job>/run`, fresh cache, `warp.__file__` asserted in site-packages; under `utils/timeit.sh warp-1.14 test`)
+
+`amd-smi process -g 1`: "No running processes detected" before the full suite and again before the reruns. Load average 13.7 at the start, 7.9 at the end. Banner: "Warp 1.14.0+rocm10.2.0 initialized: ROCm 10.2, HIP runtime 7.17".
+
+| run | result |
+|---|---|
+| `python -m warp.tests -s autodetect` (199 suites, 8 processes) | **Ran 7562 tests in 561.6 s, FAILED (failures=2, skipped=108)** |
+| `-p test_async.py -k test_copy_s2c_d2d_SrcPoolOff_DstPoolOff_NoStream_NoGrad_Graph_AccessBoth` | Ran 1, **OK** |
+| `-p test_async.py -k test_copy_s2c_d2d_SrcPoolOff_DstPoolOff_NoStream_NoGrad_Graph_AccessSrcDst` | Ran 1, **OK** |
+| `-p test_async.py` | Ran 2373 tests in 96.8 s, **OK** |
+| `--warp-debug -s autodetect -p "test_tile*.py"` | **Ran 599 tests in 161.7 s, OK (skipped=9)**, no device assertion, no error 700 |
+
+- The two failures: `test_copy_s2c_d2d_SrcPoolOff_DstPoolOff_NoStream_NoGrad_Graph_AccessBoth` and `..._AccessSrcDst`. Each had `Mismatched elements: 125184 / 1000000 (12.5%)`, with the head of the destination zero. That is the ROCm lost-writes signature (rocm-systems#16355) with the destination pool off. Each passes alone, and so does the whole file, so under jeff's rule they do not fail the run.
+- `Warp CUDA error` lines: 0 in every run. 3 CPU-only `Compilation with PCH failed` retries, the known upstream CPU-path behavior.
+- 108 skips. 106 counted by reason: usd-core 27, no suitable devices 24, conditional graph nodes 16, MathDx 8 + `MathDx is not enabled` 1, two CUDA devices 7, mempool access 5 + 1 without + 1 with module-load, peer access 3 + 1 without + 1 with module-load, `cuda:0 cannot access CPU memory` 2, NVRTC two archs 2, multi-GPU 2, rmm 1, memory-usage flakiness 1, `Requires CUDA` 1, NVRTC not available 1, stream priority 1. The other 2 are `No module named 'torch'`. This matches the 80 skips of the 66ba4ffb gfx950 validation once usd-core and torch are absent (torch also removes 46 tests: 7562 against 7608).
+
+### For jeff: what the release needs (no decision taken)
+
+1. **Build the Linux wheel in a manylinux_2_28 environment.** Run the same commands inside `quay.io/pypa/manylinux_2_28_x86_64`, the base of upstream's `docker/warp-builder`. Use `/opt/python/cp311-cp311` for a venv, `pip install "rocm[devel]==10.2.0" build` from the AMD index, then the two commands above. After that, check `auditwheel show` (expect manylinux_2_28) and repeat the checks and runs above on the new file. No fork change is expected: the fork's own objects and packman's LLVM show no dependence on new glibc headers that the 2.28 toolchain would not resolve. No container runtime exists in this fleet container. I unpacked the image (manifest digest `sha256:55a36963bc0504cdf004011001c1072306402f0b8b83be5a5eba7068f93eec53`, AlmaLinux 8.10, glibc 2.28, gcc-toolset-14) into `<job>/ml/root`, and user namespaces work here (`unshare -r`). Running the build there with `unshare` and `chroot` was refused by the session's permission classifier as evading oversight, so it needs your authorization (or a host with docker or podman). A second clean clone at `66ba4ffb` is ready at `<job>/rel2/warp`.
+2. Decide whether a clean-venv install check needs a guard exception (pip into a scratch venv in the job directory). This run used `pip download` from a new venv plus the install into `$FLEET_VENV`.
+3. After the rebuild, the release notes and docs stay as they are: the asset name and the `manylinux_2_28` claim become true.
