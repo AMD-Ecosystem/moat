@@ -6,12 +6,15 @@ Scripts of the gfx950 porter round in `notes.md`. `mma_dump.py` is in `notes.md`
 
 The RDNA round's `test.hip` (in `notes-rdna-scripts.md`) adapted to 64-lane wavefronts: each 32-lane warp computes its own problem, the launch is 64 threads, and `NANTEST=1` puts NaN and infinity into the upper warp's problems only and checks the lower warp's (the cross-warp isolation check). Build exactly as `build.sh` there, with `--offload-arch=gfx950` (or gfx942, gfx90a).
 
+Changed 2026-11-25 (jeff's ruling on the gfx90a f16 MFMA subnormal flush): when the GPU it runs on is gfx90a, every f16 A and B input whose f16 value is subnormal is set to a signed zero before both the device and the host reference see it, because the MI200 FP16 matrix instructions flush subnormal inputs to zero (documented behavior; PyTorch's numerical-accuracy notes, "Reduced Precision FP16 and BF16 GEMMs and Convolutions on AMD Instinct MI200 devices"). It prints `gfx90a: subnormal f16 inputs zeroed` when it does. bf16 inputs, C, and every other GPU keep the strict check unchanged. `FTZ_INPUTS=1` (the gfx90a evidence run's switch) still forces the same zeroing on any GPU.
+
 ```cpp
 // Checks mma_m16n16k16_* (WMMA on RDNA) against the reference m16n8k16 lane-gather functions and a float64 host
 // reference, on random 16x16x16 problems in the mma.sync fragment layouts.
 #include <hip/hip_runtime.h>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <cmath>
 #include <vector>
 #include <random>
@@ -90,12 +93,21 @@ static uint32_t f2u(float f) {
     return u;
 }
 
+// MI200 (gfx90a) FP16 matrix instructions read subnormal f16 inputs as zero (documented hardware behavior); there the
+// test data carries no subnormal f16 inputs, so the strict bound below still applies to everything else
+static bool ftz_f16_inputs = false;
+
 template<int MODE>
 static int run(int ntests, float scale) {
     const bool bf = MODE == 1;
     std::mt19937 rng(1234 + MODE);
     std::normal_distribution<float> nd(0.f, 1.f);
-    auto enc = [&](float x) { return bf ? f2bf(x) : f2h(x); };
+    auto enc = [&](float x) {
+        uint16_t v = bf ? f2bf(x) : f2h(x);
+        if (ftz_f16_inputs && !bf && (v & 0x7c00) == 0)
+            v &= 0x8000;
+        return v;
+    };
     auto dec = [&](uint16_t x) { return bf ? bf2f(x) : h2f(x); };
 
     std::vector<uint4> hA(ntests * 32), hB(ntests * 32), hC(ntests * 64);
@@ -236,6 +248,11 @@ static int run(int ntests, float scale) {
 }
 
 int main() {
+    hipDeviceProp_t prop;
+    CHECK(hipGetDeviceProperties(&prop, 0));
+    ftz_f16_inputs = strncmp(prop.gcnArchName, "gfx90a", 6) == 0 || getenv("FTZ_INPUTS");
+    if (ftz_f16_inputs)
+        printf("%s: subnormal f16 inputs zeroed\n", prop.gcnArchName);
     int bad = 0;
     for (float scale : {1.0f, 0.01f, 30.0f}) {
         bad += run<0>(2000, scale);
@@ -388,4 +405,209 @@ for precision in sys.argv[2:]:
         print(f"{precision} r{rank}: image {total:.3f} s, transformer {tr:.3f} s over {n} calls")
     del pipe, transformer
     torch.cuda.empty_cache()
+```
+
+## FLUX loader round (2026-11-25): scripts
+
+Scripts of "Porter round 2026-11-25, gfx950: FLUX loader precision, gfx90a f16 flush ruling" in `notes.md`. Paths are this job's; adjust `J`. `test_zimage_fp4_public.py` is in `notes-gfx1250-scripts.md` (unchanged).
+
+### flux_loader_matrix.py
+
+`python -I flux_loader_matrix.py <tree> <out.json>` with `HF_HOME` set; run once with the 555105f tree and once with the new tree (each with the same built `_C`), then compare the two JSON files row by row.
+
+```python
+"""Load the public FLUX checkpoint types the tests use through NunchakuFluxTransformer2dModel.from_pretrained on faked
+GPUs (CUDA capabilities, ROCm architectures) and unfaked, and record the precision the loader builds the quantized
+model with and whether the load succeeds.
+
+    python -I flux_loader_matrix.py <tree> <out.json>
+
+<tree> is a built nunchaku checkout. The C++ model can only be built on a GPU, so the fakes cover the loader's
+precision choice and its check_hardware_compatibility call; they are undone where the loader builds the quantized
+model (load_quantized_module), which then runs unfaked on this host's GPU with the precision the loader chose. Each case
+runs in its own process (a model built for the wrong precision may abort instead of raising).
+"""
+
+import json
+import subprocess
+import sys
+
+CHECKPOINTS = [
+    ("nunchaku-tech/nunchaku-flux.1-schnell", "svdq-int4_r32-flux.1-schnell.safetensors"),
+    ("nunchaku-tech/nunchaku-flux.1-schnell", "svdq-fp4_r32-flux.1-schnell.safetensors"),
+    ("mit-han-lab/nunchaku-shuttle-jaguar", "svdq-int4_r32-shuttle-jaguar.safetensors"),
+    ("mit-han-lab/nunchaku-shuttle-jaguar", "svdq-fp4_r32-shuttle-jaguar.safetensors"),
+]
+DEVICES = (
+    [["cuda", list(c)] for c in [(7, 5), (8, 0), (8, 6), (8, 9), (9, 0), (10, 0), (12, 0), (12, 1)]]
+    + [["rocm", a] for a in ["gfx90a", "gfx942", "gfx950", "gfx1100", "gfx1201", "gfx1250"]]
+    + [["real", "here"]]
+)
+
+CHILD = r"""
+import json, sys, types
+tree, repo, name, kind, device = json.loads(sys.argv[1])
+sys.path.insert(0, tree)
+import torch
+from huggingface_hub import hf_hub_download
+import nunchaku
+from nunchaku import NunchakuFluxTransformer2dModel
+from nunchaku.models.transformers import transformer_flux
+assert nunchaku.__file__.startswith(tree), nunchaku.__file__
+path = hf_hub_download(repo, name)
+orig = (torch.version.hip, torch.cuda.get_device_capability, torch.cuda.get_device_properties)
+def restore():
+    torch.version.hip, torch.cuda.get_device_capability, torch.cuda.get_device_properties = orig
+if kind == "cuda":
+    torch.version.hip = None
+    torch.cuda.get_device_capability = lambda *a, **k: tuple(device)
+    def no_props(*a, **k):
+        raise AssertionError("ROCm architecture asked on a CUDA device")
+    torch.cuda.get_device_properties = no_props
+elif kind == "rocm":
+    torch.cuda.get_device_properties = lambda *a, **k: types.SimpleNamespace(gcnArchName=f"{device}:sramecc+:xnack-")
+built = []
+original = transformer_flux.load_quantized_module
+def spy(*args, **kwargs):
+    built.append("fp4" if kwargs["use_fp4"] else "int4")
+    restore()
+    return original(*args, **kwargs)
+transformer_flux.load_quantized_module = spy
+try:
+    model = NunchakuFluxTransformer2dModel.from_pretrained(path, torch_dtype=torch.bfloat16)
+    torch.cuda.synchronize()
+    status = "ok"
+except Exception as e:
+    status = f"{type(e).__name__}: {str(e).splitlines()[0][:160] if str(e) else ''}"
+print("RESULT " + json.dumps(dict(built=built, status=status)), flush=True)
+"""
+
+tree, out = sys.argv[1], sys.argv[2]
+results = []
+for repo, name in CHECKPOINTS:
+    for kind, device in DEVICES:
+        arg = json.dumps([tree, repo, name, kind, device])
+        try:
+            p = subprocess.run(
+                [sys.executable, "-I", "-c", CHILD, arg], capture_output=True, text=True, timeout=900, cwd="/tmp"
+            )
+            lines = [line for line in p.stdout.splitlines() if line.startswith("RESULT ")]
+            if lines:
+                r = json.loads(lines[-1][7:])
+            else:
+                tail = (p.stderr.strip().splitlines() or ["?"])[-1][:160]
+                r = dict(built=None, status=f"process exit {p.returncode}: {tail}")
+        except subprocess.TimeoutExpired:
+            r = dict(built=None, status="timeout")
+        row = dict(checkpoint=name, device=f"{kind}:{device}", **r)
+        print(json.dumps(row), flush=True)
+        results.append(row)
+json.dump(results, open(out, "w"), indent=1)
+```
+
+### no_token.py
+
+pytest plugin (`-p no_token` with its directory on `PYTHONPATH`): the FLUX tests read their prompts through `datasets.load_dataset(..., token=True)`, which fails with no Hugging Face login although `playgroundai/MJHQ-30K` is public. The dataset script also downloads the 3.6 GB image archive even when no ground-truth images are requested.
+
+```python
+"""pytest plugin: the FLUX tests read their prompts with datasets.load_dataset(..., token=True), which fails without a
+Hugging Face login although the dataset (playgroundai/MJHQ-30K) is public. Drop that one argument; nothing else changes.
+
+    python -m pytest -p no_token ...   (with this directory on PYTHONPATH)
+"""
+
+import datasets
+
+_load_dataset = datasets.load_dataset
+
+
+def _load_dataset_public(*args, **kwargs):
+    if kwargs.get("token") is True:
+        kwargs["token"] = None
+    return _load_dataset(*args, **kwargs)
+
+
+datasets.load_dataset = _load_dataset_public
+```
+
+### test_shuttle_fp4_public.py
+
+`python -m pytest -v -s -p no_token <path>/test_shuttle_fp4_public.py` from the fork root.
+
+```python
+"""Upstream's shuttle-jaguar FLUX test (tests/flux/test_shuttle_jaguar.py) on its NVFP4 checkpoint.
+
+The upstream test passes get_precision() ("int4" on AMD GPUs) to run_test, which picks the checkpoint file and the
+LPIPS threshold from it. Here run_test gets "fp4" and upstream's fp4 threshold, with the test's other parameters
+unchanged. nunchaku is not patched: NunchakuFluxTransformer2dModel.from_pretrained picks the precision itself; the
+precision it builds the quantized model with is recorded and checked.
+
+Run from the fork root:  python -m pytest -v -s -p no_token <this file>
+"""
+
+import pytest
+
+from nunchaku.models.transformers import transformer_flux
+from tests.flux.utils import run_test
+
+chosen = []
+_load_quantized_module = transformer_flux.load_quantized_module
+
+
+def _record(*args, **kwargs):
+    chosen.append("fp4" if kwargs["use_fp4"] else "int4")
+    return _load_quantized_module(*args, **kwargs)
+
+
+@pytest.fixture(autouse=True)
+def loader_precision(monkeypatch):
+    chosen.clear()
+    monkeypatch.setattr(transformer_flux, "load_quantized_module", _record)
+    yield
+    print(f"loader precision: {chosen}")
+    assert chosen == ["fp4"]
+
+
+@pytest.mark.parametrize(
+    "height,width,attention_impl,cpu_offload,expected_lpips", [(1024, 1024, "nunchaku-fp16", False, 0.148)]
+)
+def test_shuttle_jaguar_fp4(height, width, attention_impl, cpu_offload, expected_lpips):
+    run_test(
+        precision="fp4",
+        model_name="shuttle-jaguar",
+        height=height,
+        width=width,
+        attention_impl=attention_impl,
+        cpu_offload=cpu_offload,
+        expected_lpips=expected_lpips,
+    )
+```
+
+### flux_e2e.sh
+
+```bash
+#!/bin/bash
+# usage: flux_e2e.sh <tree>   (upstream's shuttle-jaguar test on int4, then the NVFP4 wrapper; prompts via no_token)
+J=/var/lib/jenkins/fleet/jobs/mi355-20261125-131653-port6-nunchaku-flux-ftz-prompt
+cd "$1" || exit 1
+ulimit -c 0
+export PATH=$FLEET_VENV/bin:$PATH HF_HOME=$J/hf HF_HUB_DISABLE_XET=1 NUNCHAKU_TEST_CACHE_ROOT=$J/test_cache PYTHONPATH=$J/scripts
+timeout 5400 $FLEET_VENV/bin/python -m pytest -v -s -p no_token tests/flux/test_shuttle_jaguar.py > $J/w/e2e_shuttle_int4.log 2>&1
+r1=$?
+timeout 5400 $FLEET_VENV/bin/python -m pytest -v -s -p no_token $J/scripts/test_shuttle_fp4_public.py > $J/w/e2e_shuttle_fp4.log 2>&1
+r2=$?
+echo "int4 exit $r1, fp4 exit $r2"
+[ $r1 -eq 0 ] && [ $r2 -eq 0 ]
+```
+
+### tcdna/build.sh
+
+Compiles `test_cdna.hip` (above) against the built tree's hipified headers: `inc/src/common.h` = the tree's `src/common_hip.h`, `inc/src/kernels/utils.cuh` = `src/kernels/utils_hip.cuh`, `inc/src/kernels/zgemm/mma_rocm.cuh` = the fork's `mma_rocm.cuh` with `__nv_bfloat162` replaced by `__hip_bfloat162`.
+
+```bash
+#!/bin/bash
+# usage: build.sh <arch>   (compiles test_cdna.hip with the extension's flags against the built tree's hipified headers)
+J=/var/lib/jenkins/fleet/jobs/mi355-20261125-131653-port6-nunchaku-flux-ftz-prompt
+export PATH=$J/venv/bin:$PATH
+cd $J/scripts/tcdna && $J/venv/lib/python3.11/site-packages/_rocm_sdk_devel/bin/hipcc -O3 -std=c++20 --offload-arch=$1 -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -DENABLE_BF16=1 -DFMT_CONSTEVAL= -I inc/src -I $J/w/src/third_party/spdlog/include test_cdna.hip -o test_$1
 ```
