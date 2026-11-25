@@ -103,15 +103,19 @@ Two lines, and it applies to any hand-rolled replacement for a library decomposi
 
 ## Host math under the HIP compiler
 
-**Host `min`/`max` on floating-point values truncate to int under hipcc.** CUDA declares
-host `min`/`max` for int, unsigned, long, long long, float and double. HIP's
-`__clang_hip_math.h` declares only `min`/`max(int, int)` on the host. So host code in a
+**Host `min`/`max` on non-`int` values truncate to int under hipcc.** CUDA
+declares host `min`/`max` for int, unsigned, long, long long, float and double. HIP's
+`__clang_hip_math.h` declares only `min`/`max(int, int)` on the host by default. So host code in a
 `.cu` file such as `max(0.25, min(100.0, fwhm))` or `max(atan(a), atan(b))` compiles
 cleanly, converts both arguments to int and returns an int. Device code is unaffected,
 because the device overloads cover float and double. Expect parameters silently rounded
 down, a value below 1 clamped to 0, and geometry decisions taken on a zero angle. The only
 build symptom is `-Wliteral-conversion` on fractional literals ("changes value from 0.25
-to 0"), and only when a literal is involved. Detection: add
+to 0"), and only when a literal is involved; a variable argument, such as `x` in a
+`__host__ __device__ float clamp(float x) { return min(max(x, 0.25f), 3.75f); }`, gets no
+warning for itself. Unsigned and 64-bit arguments are hit too, which "the arguments are
+integers" makes easy to miss: `max(3000000000u, 1u)` converts both to int and returns 1.
+Detection: add
 `-D__HIP_NO_HOST_MIN_MAX_IN_GLOBAL_NAMESPACE__ -include poison.h` to the real hipcc
 command with `--cuda-host-only -fsyntax-only`. `poison.h` redefines the default pair with
 `__attribute__((diagnose_if(true, "HOSTMINMAX", "warning")))`, so every host call that
@@ -123,13 +127,32 @@ overload calls. `crt/math_functions.hpp` implements `min`/`max(double, double)` 
 mixed float/double forms with `fmin`/`fmax`, and `(float, float)` with `fminf`/`fmaxf`.
 Cast a float argument to double where CUDA took a mixed overload, e.g.
 `fmax(0.25, fmin(100.0, double(fwhm)))`. That keeps CUDA's results, NaN handling included,
-on every ROCm and on CUDA, without an `#ifdef`. Leave int calls alone. Do NOT rely on
-`-D__HIP_DEFINE_EXTENDED_HOST_MIN_MAX__=1`. That macro adds the floating-point host
-overloads only from ROCm 7.2.0 (LLVM 0248d277ca), defaults to 0, and does not exist in
-7.1.x and earlier, where the define silently does nothing and the truncation stays. Rerun
-the detection pass with no define: no host call may still land on `(int, int)` with
-non-int arguments. Then confirm that the device code objects did not change (`.text`/`.rodata`
-of the unbundled `.hip_fatbin`; the `__hip_cuid_*` names change with path and flags).
+on every ROCm and on CUDA, without an `#ifdef`. Leave calls whose arguments are both `int`
+alone; give unsigned, `long` and `long long` calls a small typed helper (or `std::min<T>` /
+`std::max<T>` with the type spelled, in a TU no hipify pass rewrites -- see the `std::` note
+below), so nothing reaches `(int, int)`.
+
+`-D__HIP_DEFINE_EXTENDED_HOST_MIN_MAX__=1` is the macro the header offers, and it is a
+supplement to that fix, not a replacement. It defaults to 0 in `__clang_hip_math.h` and, when
+set, adds host overloads for the unsigned and 64-bit integer types and for float, double and
+mixed float-double. Mixed signed/unsigned pairs need a second macro,
+`__HIP_DEFINE_MIXED_HOST_MIN_MAX__`, which is off for a reason the header states (it compares
+unsigned). The macro arrived in ROCm 7.2.0 (LLVM 0248d277ca); in 7.1.x and earlier the define
+silently does nothing and the truncation stays. So a build that only adds the define is
+correct on the ROCm it was tested on and wrong on an older one, with no diagnostic. If a
+project does use it, make the older ROCm fail loudly with a host-pass assertion in the
+compat header:
+
+    #if defined(__HIP_PLATFORM_AMD__) && !defined(__HIP_DEVICE_COMPILE__)
+    #include <type_traits>
+    static_assert(std::is_same<decltype(min(1.0f, 2.0f)), float>::value,
+                  "host min(float,float) resolves to min(int,int): fix the call sites or "
+                  "build with ROCm >= 7.2 and -D__HIP_DEFINE_EXTENDED_HOST_MIN_MAX__=1");
+    #endif
+
+Either way, rerun the detection pass with no define: no host call may still land on
+`(int, int)` with non-int arguments. Then confirm that the device code objects did not change
+(`.text`/`.rodata` of the unbundled `.hip_fatbin`; the `__hip_cuid_*` names change with path and flags).
 (LEAP: bilateral FWHMs truncated, intensity FWHM < 1 gave the identity; the modular-beam
 Joseph backprojector chose its parallel kernel for cone data, failing adjointness and FBP;
 the FBPlowpass window zeroed all but DC.) `std::min`/`std::max` are NOT safe either once a
