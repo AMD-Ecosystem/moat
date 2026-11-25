@@ -8,7 +8,7 @@
   "ext_type": "python-triton",
   "stage": "review-passed",
   "adopted_at": "2026-11-12T16:27:02Z",
-  "updated_at": "2026-11-24T22:04:38Z",
+  "updated_at": "2026-11-25T20:57:11Z",
   "head_sha": "6d94b2fb5ccdd1351b3ce5b5242cadda5f367f70",
   "depends_on": [
     "flash-attention"
@@ -140,5 +140,12 @@
     "at": "2026-11-23T23:45:10Z"
   },
   "reviewed_sha": "6d94b2fb5ccdd1351b3ce5b5242cadda5f367f70",
-  "review_pr": "https://github.com/AMD-Ecosystem/Matrix-Game/pull/1"
+  "review_pr": "https://github.com/AMD-Ecosystem/Matrix-Game/pull/1",
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-11-25T20:54:29Z",
+    "head_sha": "6d94b2fb5ccdd1351b3ce5b5242cadda5f367f70",
+    "content_sha256": "4d8cfd32674249b81604305afe25f0523ce81a3cd33cfd7a2efa71677cb812af",
+    "review_pr": "https://github.com/AMD-Ecosystem/Matrix-Game/pull/1"
+  }
 }
