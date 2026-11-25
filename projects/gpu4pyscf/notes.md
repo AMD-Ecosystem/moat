@@ -6416,3 +6416,58 @@ The ids: `test_rhf.py::KnownValues::test_get_jk`, `test_uhf.py::KnownValues::tes
 - On gfx1201 the 10.2 machine-LICM fault in `rys_k_1111` is gone with the 10.3 nightly compiler (424729db), with no flag, and the scf/dft result matches the flagged 10.2 build exactly. With the MI300X (fixed) and the MI200 (not fixed, wrong gradients) results, 10.3 fixes two of the three GPUs that showed a 10.2 defect; the gfx90a section is the one that argues for a ROCm report, and its reproducer (`test_jk_energy_per_atom`, 6-31g K-only probe) is the one to file with, not this GPU's.
 
 Fixed in the 10.3 nightly on this GPU: yes.
+
+## Issue reproducer check, gfx90a (2026-11-24)
+
+Fleet job requested by jeff, evidence only (not a pipeline round): run the shell block planned as the reproducer of the ROCm compiler issue for the gfx90a machine-LICM miscompile (previous MI200 10.3 section) verbatim, so a reader can paste it as is. No stage, platform record, lock, `moat-port` or README branch touched; nothing pushed to the fork; nothing posted. **Result: the block works as written, no correction needed. All 8 lines exit 0 except the last, whose test fails as expected (`1 failed`, error 1.28e200); the install line repeated with `CMAKE_CONFIGURE_ARGS="-DCMAKE_HIP_FLAGS=-mllvm=-disable-machine-licm"` into a separate prefix gives `1 passed`.**
+
+### Environment
+MI200 series (gfx90a), `HIP_VISIBLE_DEVICES=1` from the dispatcher, every GPU run under `ulimit -c 0` and `timeout 300`. Run from a new empty directory inside the job directory. `python3.11` on PATH is a Python 3.11 venv interpreter of the image (a venv created from it worked). Outside the block's text, only `CMAKE_BUILD_PARALLEL_LEVEL=$MAX_JOBS` (128) was exported. Lines 1 to 7 ran in one bash shell exactly as written (each followed by an exit-code echo); line 8 ran as `timeout 300 bash -c '<line 8>'` with `W`, `R102`, `R103` exported, so its text is unchanged.
+
+### The block, as run (unchanged)
+```
+W=$PWD
+python3.11 -m venv v103 && v103/bin/pip install --pre --index-url https://nightly.repo.amd.com/rocm/whl-next/ 'rocm[libraries,devel,device-gfx90a]==10.3.0a20261124'
+python3.11 -m venv v102 && v102/bin/pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ 'rocm[libraries,devel,device-gfx90a]==10.2.0'
+v102/bin/pip install cupy-rocm-7-0==14.2.0 pyscf==2.14.0 pytest
+R103=$(v103/bin/rocm-sdk path --root); R102=$(v102/bin/rocm-sdk path --root)
+git clone https://github.com/pyscf/gpu4pyscf src && git -C src checkout c9eea22a
+cd $W/src && PATH=$W/v103/bin:$R103/bin:$PATH ROCM_PATH=$R103 HIP_PATH=$R103 LD_LIBRARY_PATH=$R103/lib GPU4PYSCF_BACKEND=hip pip install --no-deps --prefix $W/inst .
+cd /tmp && PATH=$W/v102/bin:$R102/bin:$PATH ROCM_PATH=$R102 HIP_PATH=$R102 LD_LIBRARY_PATH=$R102/lib PYTHONPATH=$W/inst/lib/python3.11/site-packages pytest --import-mode=importlib -q $W/src/gpu4pyscf/scf/tests/test_scf_jk.py::test_jk_energy_per_atom
+```
+
+| line | result | time |
+|---|---|---|
+| 1 `W=$PWD` | rc 0 | 0 s |
+| 2 v103 venv + ROCm 10.3.0a20261124 | rc 0; `Successfully installed rocm-10.3.0a20261124 rocm-sdk-core-10.3.0a20261124 rocm-sdk-devel-10.3.0a20261124 rocm-sdk-device-gfx90a-10.3.0a20261124 rocm-sdk-libraries-10.3.0a20261124` | 100 s |
+| 3 v102 venv + ROCm 10.2.0 | rc 0; `Successfully installed rocm-10.2.0 rocm-sdk-core-10.2.0 rocm-sdk-devel-10.2.0 rocm-sdk-device-gfx90a-10.2.0 rocm-sdk-libraries-10.2.0` | 103 s |
+| 4 cupy, pyscf, pytest | rc 0; `Successfully installed cupy-rocm-7-0-14.2.0 h5py-3.16.0 iniconfig-2.3.1 numpy-2.4.6 packaging-26.4 pluggy-1.7.0 pygments-2.21.0 pyscf-2.14.0 pytest-9.2.0 scipy-1.17.1` | 38 s |
+| 5 SDK roots | rc 0 | 10 s |
+| 6 clone + checkout c9eea22a | rc 0 | 2 s |
+| 7 build with the 10.3 compiler | rc 0; `Successfully built gpu4pyscf-rocm3x` / `Successfully installed gpu4pyscf-rocm3x-1.9.1` | 183 s |
+| 8 test on the 10.2 runtime | rc 1 (the expected failure) | 18 s |
+
+Line 8 output:
+```
+>       assert abs(ejk[0] - ref).max() < 5e-12
+E       assert np.float64(1.2776214127454851e+200) < 5e-12
+E        +      where array([1.27762141e+200, 9.42347438e+198, 6.71708544e+199]) = abs((array([-1.27762141e+200,  9.42347438e+198, -6.71708544e+199]) - array([ 0.31798304, -1.30002441,  0.18646394])))
+FAILED .../src/gpu4pyscf/scf/tests/test_scf_jk.py::test_jk_energy_per_atom
+1 failed, 2 warnings in 16.20s
+```
+Two more runs of line 8 (with `-p no:cacheprovider` added, same install): `1 failed` each, errors 9.13e248 and 6.95e250 in 0.89 s. The wrong value changes from run to run; it is huge every time. The installed `libgvhf_rys.so` gfx90a code object's `.comment` names `AMD clang version 24.0.0git (https://github.com/ROCm/llvm-project.git 424729dba65359a5e521ab2e729af131c8a5b0d4)` and the matching AMD LLD, the compiler of the previous section.
+
+### Control: the install line with the flag
+In the same directory after the block, `W`, `R103`, `R102` set as in lines 1 and 5:
+```
+cd $W/src && PATH=$W/v103/bin:$R103/bin:$PATH ROCM_PATH=$R103 HIP_PATH=$R103 LD_LIBRARY_PATH=$R103/lib GPU4PYSCF_BACKEND=hip CMAKE_CONFIGURE_ARGS="-DCMAKE_HIP_FLAGS=-mllvm=-disable-machine-licm" pip install --no-deps --prefix $W/inst-licm .
+cd /tmp && PATH=$W/v102/bin:$R102/bin:$PATH ROCM_PATH=$R102 HIP_PATH=$R102 LD_LIBRARY_PATH=$R102/lib PYTHONPATH=$W/inst-licm/lib/python3.11/site-packages pytest --import-mode=importlib -q $W/src/gpu4pyscf/scf/tests/test_scf_jk.py::test_jk_energy_per_atom
+```
+Install rc 0 in 171 s (a full recompile; it reuses `src/build`, whose `CMakeCache.txt` then carries `disable-machine-licm`), `Successfully installed gpu4pyscf-rocm3x-1.9.1`; `libgvhf_rys.so` and `libgvhf.so` differ from the plain install. Test: `1 passed, 2 warnings in 0.97s`, rc 0; 2 more runs `1 passed` each.
+
+### Notes for the issue text
+- The block needs no correction on this host. A reader needs `python3.11`, `git` and network access to both AMD wheel indexes, GitHub and PyPI; pip's isolated build fetches cmake and the other build requirements itself.
+- The package name comes out as `gpu4pyscf-rocm3x` here (the earlier MI200 job's verbose build said `gpu4pyscf-rocm7x`). `setup.py` `get_rocm_version()` falls back to the first `<digits>.` in the ROCm path when `hipconfig --version` gives nothing usable inside pip's build, and the pip SDK path contains `python3.11`. Cosmetic, not related to the miscompile; `hipconfig --version` outside pip prints `7.18.26470-0000000`.
+- numpy resolved to 2.4.6 here (earlier jobs: 2.2.6); the result is the same.
+
+Reproducer runs as written on gfx90a: yes.
