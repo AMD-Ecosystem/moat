@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "hip-mallocasync-refused-during-blocking-stream-capture",
+      "kind": "rocm-bug-report",
+      "component": "clr",
+      "summary": "HIP 7.17 (ROCm 10.2), MI300X: while a blocking stream is being captured, hipMallocAsync on any other, uncaptured stream returns hipErrorStreamCaptureUnsupported (900) for every capture mode, even with the thread's mode exchanged to relaxed; CUDA allows it. Warp 1.15's deterministic mode allocates its capture buffers that way; the port allocates them without the memory pool on HIP. Reproducer in warp-1.15 notes (session 1, relaxed.hip).",
+      "refs": [
+        "projects/warp-1.15/notes.md#porting-session-1"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-25T01:36:24Z",
+      "decided": null
+    }
+  ]
+}
