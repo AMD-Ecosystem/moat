@@ -8691,3 +8691,34 @@ Cause of the glibc 2.38 requirement: this host's toolchain, not the fork. packma
 1. **Build the Linux wheel in a manylinux_2_28 environment.** Run the same commands inside `quay.io/pypa/manylinux_2_28_x86_64`, the base of upstream's `docker/warp-builder`. Use `/opt/python/cp311-cp311` for a venv, `pip install "rocm[devel]==10.2.0" build` from the AMD index, then the two commands above. After that, check `auditwheel show` (expect manylinux_2_28) and repeat the checks and runs above on the new file. No fork change is expected: the fork's own objects and packman's LLVM show no dependence on new glibc headers that the 2.28 toolchain would not resolve. No container runtime exists in this fleet container. I unpacked the image (manifest digest `sha256:55a36963bc0504cdf004011001c1072306402f0b8b83be5a5eba7068f93eec53`, AlmaLinux 8.10, glibc 2.28, gcc-toolset-14) into `<job>/ml/root`, and user namespaces work here (`unshare -r`). Running the build there with `unshare` and `chroot` was refused by the session's permission classifier as evading oversight, so it needs your authorization (or a host with docker or podman). A second clean clone at `66ba4ffb` is ready at `<job>/rel2/warp`.
 2. Decide whether a clean-venv install check needs a guard exception (pip into a scratch venv in the job directory). This run used `pip download` from a new venv plus the install into `$FLEET_VENV`.
 3. After the rebuild, the release notes and docs stay as they are: the asset name and the `manylinux_2_28` claim become true.
+
+## Release wheel suite (linux-gfx1201), 0402fdef
+
+2026-11-25, AMD Radeon AI PRO R9700 (gfx1201, wave32, 32 GiB), requested by jeff. The wheel tested is the exact file for the GitHub Release: built from the fork's `release/1.14.0.amd0` at `66ba4ffb31bce1bd822943cfc764c34eb21a8eef` in upstream's manylinux_2_28 build container, `/var/lib/jenkins/fleet/shared/warp114-release/warp_lang-1.14.0+rocm10.2.0-py3-none-manylinux_2_28_x86_64.whl`. It was not copied, rebuilt or modified. This is release evidence at an already-validated head: no lock taken, no platform state changed. Dispatcher pin `HIP_VISIBLE_DEVICES=3` kept, `ulimit -c 0` for every run, no process stopped.
+
+**Result: pass. No failure, no error, so nothing needed a rerun alone. No `Warp CUDA error` line, no error 700, no `test_async` failure (2373 of 2373 ran OK in the full suite).**
+
+### sha256 and install
+
+- `sha256sum <wheel>` = `0402fdef420959474d564ed15c8852ae1847ca86516df0e53fd07b96797f21a0`, matching the expected value.
+- `$FLEET_VENV` (Python 3.11.17) had no warp-lang (`pip uninstall -y warp-lang`: not installed). `"$FLEET_VENV/bin/python" -m pip install <wheel> --extra-index-url https://stable.repo.amd.com/rocm/whl-next/` resolved and installed `rocm-10.2.0 rocm-sdk-core-10.2.0 warp-lang-1.14.0+rocm10.2.0` (numpy 1.26.4 already there).
+- Then the same extras the earlier gfx1201 validator used: `"$FLEET_VENV/bin/python" -m pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple "torch[device-gfx1201]==2.15.0+rocm10.2.0" usd-core numpy==1.26.4`, which installed torch 2.15.0+rocm10.2.0, rocm-sdk-libraries 10.2.0, rocm-sdk-device-gfx1201 10.2.0, usd-core 26.11. The resolver warned only about leftover, unused 10.1.0 `rocm-sdk-device-*` packages from the venv's image.
+- `warp.__file__` = `$FLEET_VENV/lib/python3.11/site-packages/warp/__init__.py` (asserted again before every run).
+- Installed `warp/bin/warp.so` sha256 `54f6fccc688775cbdcc11c4242226f82956bf1fa4dfae251e45987b3ee8cb7ef` = the wheel member (`unzip -p <wheel> warp/bin/warp.so | sha256sum`); `warp-clang.so` `af0256e4cc5888343db065830c2cd2abd5febcb4c2d1f85f849cec25379d83a7` = the wheel member.
+- Banner: `Warp 1.14.0+rocm10.2.0 initialized: ROCm 10.2, HIP runtime 7.17`, `"cuda:0" : "AMD Radeon AI PRO R9700" (32 GiB, gfx1201, mempool enabled)`. torch sees the same device.
+
+### Runs
+
+`<job>/rw/run.sh <label> <args>`: `ulimit -c 0`, `HIP_VISIBLE_DEVICES=3`, a new empty `WARP_CACHE_PATH` per run, cwd `<job>/rw/run` (outside any warp checkout; none exists in the job), asserts `warp.__file__` is in site-packages, logs `amd-smi process -g 3`, then `"$FLEET_VENV/bin/python" -m warp.tests <args>`. Each run wrapped as `utils/timeit.sh warp-1.14 test -- <job>/rw/run.sh ...`.
+
+`amd-smi process -g 3`: "No running processes detected" before the full suite and before the debug tile run, so the GPU was uncontended throughout (unlike the 66ba4ffb gfx1201 validation).
+
+| run | result |
+|---|---|
+| `python -m warp.tests -s autodetect` (full default suite) | **Ran 7610 tests in 749.1 s, OK (skipped=79)**, rc 0 |
+| `python -m warp.tests -s autodetect --warp-debug -p "test_tile*.py"` | **Ran 602 tests in 196.0 s, OK (skipped=15)**, rc 0; no device assertion |
+
+- Same test count as the 66ba4ffb gfx1201 validation (7610 with torch and usd-core). Skips: 79 here against 82 there; the difference is exactly the 3 "Insufficient free memory" skips, which that run had because of another container's load on GPU 3. The other 79 match by reason and count: no suitable devices 18, conditional graph nodes 16, MathDx 8 + `MathDx is not enabled` 1 + no-MathDx tolerance 1, two CUDA devices 7, multi-GPU 2, mempool 5 + 1 without + 1 with module-load, peer access 3 + 1 without + 1 with module-load, `cuda:0 cannot access CPU memory` 2, NVRTC two archs 2, NVRTC not available 1, `Requires CUDA` 1, rmm 1, memory-usage flakiness 1, HIP stream priorities 1, and the five 64 KiB shared-memory skips.
+- torch: 34 test_torch tests ran and passed. `test_mesh_query_point`: 9 of 9 OK (usd-core installed).
+- Debug tile skips (15): 8 MathDx support, 1 `MathDx is not enabled`, 1 no-MathDx tolerance, five 64 KiB; same as 66ba4ffb.
+- Known harmless noise only: the one `Failed to configure kernel dynamic shared memory ... test_tile_load_scoped_kernel_cf796b16_cuda_kernel_backward ... 65536 bytes` warning (kernel never launched, test passes), 3 CPU-path `Compilation with PCH failed` retries, 5 `sem_unlink` `FileNotFoundError` tracebacks and `resource_tracker` warnings at runner teardown.
