@@ -277,9 +277,13 @@ RULED: accept the current scope. bf16 is accelerated only as upstream's API allo
 The entry above wrongly bundled two things. What Jeff accepted is upstream's API restriction (bf16 inputs, float32 output, forward only). He did not agree to leaving bf16 off WMMA: his Q3 ruling asked for WMMA on Radeon for fp16 and bf16 on gfx11/gfx12, and the previous porter's omission of bf16 there was a deviation from that ruling, not a consequence of the API restriction (MFMA accelerates the same restricted case). bf16 inputs on WMMA for gfx11/gfx12 are owed in this line; assigned to the Windows porter session (gfx1151 is a gfx11 WMMA GPU), with the benchmark owed on gfx1100 and gfx1201.
 
 ## Lesson for cuda-to-rocm: on Windows, HIP device code has no `__assert_fail`
+
+Promoted to cuda-to-rocm/references/windows.md in 9d8549ee.
 Reference file: `references/windows.md`. Code that supplies its own device `assert` for a runtime compiler (hipRTC has no `<assert.h>`) often expands it to `__assert_fail(expr, file, line, func)`, the glibc name that HIP's `hip/amd_detail/hip_assert.h` defines as a printing device function. That header declares `__assert_fail` only when `_WIN32` is not defined; on Windows it declares `_wassert(const wchar_t*, const wchar_t*, unsigned)` instead, which traps without printing. Debug-mode kernels then fail to compile only on Windows ("use of undeclared identifier '__assert_fail'"), while release builds (`NDEBUG`) hide it. Give the Windows branch its own expansion (`printf`, then `__builtin_trap()`), or call `_wassert` with wide strings. (warp-1.14, Warp's `crt.h`)
 
 ## Lesson for cuda-to-rocm: Windows HIP submission timing exposes missing cross-stream ordering
+
+Promoted to cuda-to-rocm/references/windows.md in 9d8549ee.
 Reference file: `references/diagnosis.md`. On Windows the HIP runtime can submit work on one stream noticeably later than work issued afterwards on another stream. Tests that zero or fill buffers on one stream and then launch kernels or graphs on a freshly created second stream, with no event or synchronization between them, pass on Linux and on CUDA by timing and fail on Windows with results that look like "the kernel never ran" (the late fill overwrites the output). Before suspecting the runtime, add a `synchronize` after the fill: if the failure disappears, the test has a race. Warp's `test_event_external` is an example: only the first round in a process failed. (warp-1.14)
 
 ### Next step (head `fda2f89a`; written by the windows-gfx1151 porter)
@@ -311,6 +315,8 @@ The project stays in `porting`, lock held by windows-gfx1151, as directed: Phase
 **For Jeff (no decision taken):** the default Windows target list costs about 13 MB uncompressed and 1.07 MB zipped per target (22 targets: 290.5 MB DLL, 24.4 MB zipped); `--offload-compress` is the untried alternative to a shorter list.
 
 ## Lesson for cuda-to-rocm: Windows HIP graph relaunch races its own memory-free nodes
+
+Promoted to cuda-to-rocm/references/windows.md in 9d8549ee.
 Reference file: `references/windows.md` (or `references/diagnosis.md`). On Windows the HIP runtime does not dispatch directly: graph commands, including the mem-alloc and mem-free nodes a stream capture creates for `hipMallocAsync`/`hipFreeAsync`, run on a runtime worker thread. Relaunching a graph instantiated with `hipGraphInstantiateFlagAutoFreeOnLaunch` frees the graph's memory on the calling thread before it waits for the previous launch, so when the previous launch's free node is still queued behind a running kernel the worker frees memory twice. Symptoms, only on Windows and only for back-to-back replays: `hipGraphLaunch` returning `hipErrorInvalidValue` for a valid graph, or an access violation inside `amdhip64_7.dll` on a thread that is not yours (the same offset every time), with `Memory didn't belong to any pool!` at `AMD_LOG_LEVEL=1`. Workaround: on Windows, `hipStreamSynchronize` the stream right after each `hipGraphLaunch`, when the stream is not capturing. Waiting before each launch closes the relaunch race but leaves a second failure open: on a graph's first launch, a copy the caller issues right after the launch can find the memory the graph allocates invalid (`hipErrorInvalidValue`) until the launch has run its alloc nodes; a reproducer that copies from that memory after the first launch fails 5 of 5 runs with the wait before the launch and 0 of 5 with the wait after it. The runtime already blocks inside such a launch, so the wait costs little. A reproducer needs a kernel long enough (milliseconds) to keep the free node pending; tiny kernels hide it. (warp-1.14)
 
 ### Next step (head `de4e07a3`; written by the windows-gfx1151 porter, session 14)
@@ -464,12 +470,18 @@ Build-time fact found on the way: clang's `--offload-jobs=<n>` compiles the targ
 4. **ROCm wheel classifiers**: METADATA keeps upstream's static `Environment :: GPU :: NVIDIA CUDA` and `:: 12` classifiers. Options: leave (pyproject.toml untouched, smallest diff), or have setup.py replace them for a ROCm wheel.
 
 ## Lesson for cuda-to-rocm: HIP limits a grid to 2^32 - 1 threads per dimension, not 2^31 - 1 blocks
+
+Promoted to cuda-to-rocm/references/platform-limits.md in 9d8549ee (merged into FlexGEMM's entry on the same limit).
 Reference file: `references/fault-classes.md` (launch configuration). CUDA limits gridDim.x to 2^31 - 1 blocks, so code that caps a one-dimensional launch at 2^31 - 1 blocks (common with grid-stride loops) can launch up to 2^31 - 1 times blockDim threads. HIP describes the grid to the hardware in threads, and `hipModuleLaunchKernel`/`hipLaunchKernel` return `hipErrorInvalidValue` when gridDim.x * blockDim.x exceeds 2^32 - 1. The symptom is a launch error and untouched outputs only for very large problems (more than about 4.3 billion elements), which tests rarely reach. For grid-stride kernels cap the block count at `0xFFFFFFFF / blockDim.x` on HIP; kernels that need one thread per element must split the launch. (warp-1.14, `wp_cuda_launch_kernel`)
 
 ## Lesson for cuda-to-rocm: compressed offload bundles for multi-target HIP libraries
+
+Promoted to cuda-to-rocm/references/strategy-a-cmake.md in 9d8549ee.
 Reference file: `references/libraries.md` (the pip-installed ROCm SDK / shipping wheels) or a build reference. A HIP library built for every target a ROCm release supports embeds one code object per target per translation unit (here 25 targets, 324 MB of device code). `--offload-compress` stores each translation unit's bundle zstd-compressed (`--offload-compression-level=<n>`); because the per-target code objects are similar, bundles shrink to 2-16% (a 330 MB library to 10.6 MB), at no measurable build cost, and the HIP runtime of ROCm 10.2 loads them. The cost is decompression the first time a process uses kernels from a bundle, about 35-50 ms per bundle here, and only while comgr's code-object cache (`~/.cache/comgr`, `AMD_COMGR_CACHE_DIR`) is cold: measure first-launch time with a fresh `AMD_COMGR_CACHE_DIR` per run, or the cache hides it. Separately, `--offload-jobs=<n>` compiles the targets of one translation unit in parallel (here 320 s -> 39 s); its output differs only in the `__hip_cuid_*` symbol. (warp-1.14)
 
 ## Lesson for cuda-to-rocm: a ROCm wheel's runtime dependency with setuptools and a static pyproject.toml
+
+Promoted to cuda-to-rocm/references/build-cmake-link.md in 9d8549ee.
 Reference file: `references/libraries.md` (the pip-installed ROCm SDK). To add `Requires-Dist: rocm>=X.Y,<X.(Y+1)` to a ROCm build's wheel without making `dependencies` dynamic (which changes how lock files see the project), append the requirement after setuptools has applied pyproject.toml, in a `Distribution.parse_config_files` override: set both `self.install_requires` and `self.metadata.install_requires` (setuptools copies the former into the latter inside `parse_config_files`, and Requires-Dist is written from the metadata), and only when there is something to add, because any reassignment marks the field `Dynamic: requires-dist` in the CUDA wheel too. Pin the version from what the build used (here `<rocm>/.info/version`, written to a marker next to the library) rather than hard-coding it. (warp-1.14)
 
 ### Scripts from this session
@@ -856,6 +868,8 @@ So on gfx950 the speculative traversal does not reproduce the gfx942 gain; per t
 After the revert: test_mesh* 49 OK, test_apic_mesh 12 OK (usd-core installed).
 
 ## Lesson for cuda-to-rocm: compare GPU kernel variants warmed up, interleaved, against a noise floor
+
+Promoted to cuda-to-rocm/references/performance.md in 9d8549ee.
 Reference file: `references/validation.md` (performance comparisons) or `diagnosis.md`. On a shared multi-GPU board (other jobs at 100% on sibling GPUs), absolute kernel times of the same code varied 4-18x between short processes, and per-process profiler runs that start from an idle GPU compared different clock states: a traversal change looked 15-48% faster in 11 of 12 cells that way and was 0-54% slower when timed after a warm-up launch with repeated launches in one process. What held up: (1) warm up inside the process and time many launches; (2) interleave the trees in rounds (A, B, A, B) and take the median of per-run medians; (3) include a metric whose code is identical in both trees as the noise floor in the same rounds; (4) for functional regressions that only show as speed, include a query/throughput check of the built structures, because correctness tests pass on degenerate-but-valid trees. (warp-1.14)
 
 ### Item 5 addendum: warmed GPU-time triplets (verdict unchanged)
@@ -3217,9 +3231,13 @@ Tile performance, release mode, `26be6725` (before) against the fork tree with t
 `repro.py` (findings 1, 2, 3, 5), `fm_test_kernel.py`, `mfma_targets.py`, `wmma_warn.py`, `fastmath_probe.py`, `tile_perf.py` with `perf_rounds.sh`, `lds_load.py` with `lds_scan.sh`, `setupcheck/check.py`, `tests_after.sh`, `split.py` (the commit split). Recipes are in the evidence lines above; the scripts are scratch.
 
 ## Lesson for cuda-to-rocm: dynamic shared memory is not 16-byte aligned on AMDGPU unless declared so
+
+Promoted to cuda-to-rocm/references/platform-limits.md in 9d8549ee.
 Reference file: `references/diagnosis.md` (or the fault-class reference). CUDA starts a kernel's dynamic shared memory (`extern __shared__ char buf[];`) 16-byte aligned, and code that carves vector-typed tiles out of it relies on that. AMDGPU places the dynamic window directly after the kernel's static `__shared__` variables, at the alignment declared on the `extern` array (1 byte for `char`), so where it starts depends on how much static shared memory the kernel has. Release builds usually run anyway (the hardware tolerates the misaligned LDS vector access), which hides it; an alignment assertion in a debug build, or a kernel whose static shared size is not a multiple of 16 (read `.group_segment_fixed_size` with `llvm-readelf --notes` on the code object), shows it. Fix on HIP: `extern __shared__ char buf[] __attribute__((aligned(16)));` (an `alignas` after `__shared__` is a syntax error). (warp-1.14)
 
 ## Lesson for cuda-to-rocm: HIP's `*_sync` warp functions check the mask in debug builds
+
+Promoted to cuda-to-rocm/references/faults-wavefront.md in 9d8549ee.
 Reference file: the wavefront reference. HIP's `__ballot_sync`, `__shfl_*_sync` and `__syncwarp(mask)` assert, in any compile without `NDEBUG`, that the mask names exactly the lanes executing the call, and trap otherwise (the launch ends in "illegal memory access", error 700). Code that passes a constant full mask (`~0ull`, or CUDA's `0xFFFFFFFF` widened) works in release builds, where the mask is not checked and a ballot already covers only the executing lanes, but traps in debug builds wherever part of the wavefront is inactive: a block narrower than 64 threads on a 64-wide GPU, the last wavefront of a block that is not a whole number of wavefronts, or a branch on a 32-thread group. Pass `__activemask()` on HIP; keep a constant only where the code compares a mask against "all lanes" to choose a fast path. Release machine code does not change. (warp-1.14)
 
 Archive note (session 28): the push of this session's notes was refused by the pre-push `blobs` gate (`notes.md` 1003 KB, limit 1000 KB). Per the moat-porting procedure, porting sessions 4 to 9 and the evidence sessions between them (13 sections, 210 KB, all dated 2026-11-19 and superseded as platform baselines) were moved verbatim to `notes-archive.md` in commit `d647a77b`, with a pointer under the title; every `## Lesson for` section stayed here.
