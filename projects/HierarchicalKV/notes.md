@@ -895,3 +895,232 @@ Logs (container-local, not committed): `agent_space/val/` (`build.log`, `bazel.l
 ## Ruling on the two-process hang (Jeff Daily, 2026-11-25)
 
 Option (c) of "Validation 2026-11-25 (linux-gfx1201 ...)": both a HIP-only workaround in the library (in `group_shared_mutex`, so a lock kernel never spins on an unlock kernel queued in another queue) and a ROCm issue draft for Jeff. Jeff expects the workaround may cost a lot of performance: measure it, do not assume; the measurement decides whether it ships. Porter round on linux-gfx1201 (Radeon AI PRO R9700), confirming the cause first with more than one run.
+
+## Porter 2026-11-25 (linux-gfx1201 Radeon AI PRO R9700, porter role): two-process hang; GPU wedged after the 5th unmodified pair, round INCOMPLETE
+
+Requested by Jeff Daily (fleet job), implementing his ruling (c) above. **Stopped early: the pinned GPU stayed wedged for more than two hours after the fifth hung pair was stopped, so all GPU work stopped, as the job instructed.** Done: 5 unmodified pairs (5 of 5 hang), queue counts per process, two standalone reproducers (no hang), the workaround (written, built 54/54, committed in the job's fork clone as `2fc61db`, **not pushed** because it has no GPU run behind it), the HIP runtime source check, the ROCm issue draft. Not done (each needs a working GPU): the `GPU_MAX_HW_QUEUES` pairs, the single-process runs, the diagnostic dispatch pair, the workaround's 30 pairs and full test set, and every cost measurement. The stage stays `porting` with the lock stamped to linux-gfx1201; this job has stopped, so the next porter re-stamps it.
+
+The prompt calls the hanging loop "the two-process `repeated_key_test` loop". The loop the gfx1201 validation ran, and this round ran, is two concurrent `find_or_insert_ptr_test --gtest_filter=FindOrInsertPtrTest.test_find_or_insert_multi_threads`; `repeated_key_test` passes (validation section above).
+
+### Host, device, toolchain
+
+- `HIP_VISIBLE_DEVICES=2` as pinned resolves to PCI 03:00 (`hipGetDeviceProperties`: AMD Radeon AI PRO R9700, gfx1201, 32 CUs, warpSize 32) = amd-smi GPU 0 = DRM card3 = KFD gpu_id 7727. **This is a different card from the gfx1201 validation's (PCI e3:00).** No other process on any GPU at the start.
+- TheRock ROCm 10.2.0 wheels installed into the job venv: `$FLEET_VENV/bin/python -m pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ "rocm[libraries,devel,device-gfx1201]==10.2.0"` (pip warns that the venv's older 10.1.0 `rocm-sdk-device-*` packages for other targets require 10.1.0 libraries; nothing here uses them). `rocm-sdk path --root` = `<job>/venv/lib/python3.11/site-packages/_rocm_sdk_devel`. rocm-systems pin 43fa692 (`share/therock/therock_manifest.json`).
+- Compiler the builds invoke: `CMAKE_HIP_COMPILER` = `<sdk>/lib/llvm/bin/clang++`, AMD clang 24.0.0git (llvm-project bdc35841c97f), HIP 7.17.26434. CMake 3.31.6 and Ninja 1.13.0 from the venv. CMake default build type (empty, so `-O3 -g` with assertions live, as the validation).
+- Kernel 6.11.0-26-generic, amdgpu DKMS 6.19.14.31400100, `sched_policy=0`, `cwsr_enable=1`, `hws_max_conc_proc=-1`, `queue_preemption_timeout_ms=9000`; MES firmware 0x91, MEC 0xd3e; KFD topology for this GPU: `num_cp_queues 4`, `num_sdma_engines 2`, `num_sdma_queues_per_engine 6`. No debugfs and no `dmesg` access in the container.
+- Builds (each `timeit.sh ... compile`, rc 0, 54/54): the unmodified 4033ed6 in a detached worktree `agent_space/hkv-base` (459 s), and 2fc61db in `projects/HierarchicalKV/src/build-hip` (482 s at nice 19). Configure: `cmake -S . -B build-hip -G Ninja -DHKV_USE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1201 -DCMAKE_PREFIX_PATH=$R`. `concurrency_benchmark` (an opt-in research benchmark, `-DHKV_BUILD_REPRO_BENCHMARKS=ON`, built as the single target into `build-repro`) for both trees, for the cost measurement that did not run.
+
+### Step 1: is the cause confirmed (partially done)
+
+Each run: `timeout -s TERM -k 60 1200 <build>/find_or_insert_ptr_test --gtest_filter=FindOrInsertPtrTest.test_find_or_insert_multi_threads`, the second process started 20 s after the first, exactly two processes on the card, `ulimit -c 0`, and after every pair a trivial-kernel check (`devq`: device properties, one `hipLaunchKernelGGL`, read back) under `timeout -s TERM -k 30 60`, retried every 2 minutes.
+
+| Condition | Runs | Result |
+|---|---|---|
+| unmodified 4033ed6, two processes | 5 pairs | **5 of 5 pairs hang, both processes every time**: no gtest result, each process stopped by `timeout` at 1200-1203 s (rc 124, SIGTERM was enough). One instance alone takes 335-395 s (validation). The check after pairs 1-4 passed at the first try; **after pair 5 the GPU stayed wedged (below)** |
+| `GPU_MAX_HW_QUEUES=2`, two processes | 0 of 5 pairs | not run (wedge) |
+| `GPU_MAX_HW_QUEUES=3`, two processes | 0 of 5 pairs | not run (wedge) |
+| one process alone | 0 of 5 runs | not run (wedge); the validation has 12 of 12 passes on the other card |
+| unmodified, `AMD_LOG_LEVEL=3`, kernel dispatch lines kept | 0 of 1 pair | not run (wedge); the validation's one traced pair is the only dispatch evidence |
+
+With the validation's runs: unmodified two-process pairs hang 9 of 9 on two R9700 cards. Whether the hang is the lock kernels (the validation's dispatch trace) was not re-traced here, and the workaround, which would test the mechanism, never ran.
+
+**Queues per process.** Sampled 60 s after the first process started from `/sys/class/kfd/kfd/proc/<host pid>/queues/*/{type,gpuid}` (host PIDs; the container has its own PID namespace): every test process holds **6 queues on this GPU, 5 compute (type 0) and 1 SDMA (type 1)**, in 9 of the 10 samples (pair 4's second process had 2 compute queues at that moment, still starting up). Five compute queues is HIP's `GPU_MAX_HW_QUEUES` default of 4 plus ROCr's utility queue. **Two processes therefore hold 10 compute queues against the 4 that `num_cp_queues` reports for this GPU; one process alone already holds 5.** The standalone programs below hold 5 compute queues each. `stats_7727/evicted_ms` (a constant that differs by process start time) and `counters_7727/page_in` did not change during a run, so they say nothing about KFD evictions here.
+
+**Standalone reproducers: no hang yet.** Two programs, built with `<sdk>/bin/hipcc -O2 --offload-arch=gfx1201`, each run as two processes started 1 s apart (container-local `agent_space/hang/`):
+- `spinrepro <iters> <pairs> <work_us> <blocks>`: per pair of streams, a busy kernel (wall-clock spin, 256 blocks of 64) then a one-thread release kernel on stream B, then a one-thread kernel on stream A that spins until the flag is set, then `hipStreamSynchronize(A)`. 1 stream pair: 20000 iterations in 15.35 s and 15.28 s. 4 stream pairs (8 streams): 20000 iterations in 86.12 s and 85.96 s. Both pass.
+- `lockrepro <threads> <iters> <work_us> <blocks>`: HierarchicalKV's lock pattern. Each host thread owns a work stream and a lock stream (`hipStreamCreate`, as `get_lock_stream()`), takes a host flag, launches a one-thread CAS-spin `acquire` kernel on its lock stream and synchronizes it, queues a busy kernel plus a one-thread `release` kernel on its work stream, and clears the host flag without waiting. 16 threads x 3000: 48000 acquisitions in 41.43 s and 41.20 s. 64 threads x 600: 38400 in 57.62 s and 57.98 s. Both pass.
+- Variants that add what the test does beside the lock, an allocate/copy/free cycle (`CHURN=<n>`: `hipMalloc`, `hipHostMalloc`, two synchronous `hipMemcpy`, two frees every n iterations) and a small device-to-pageable copy synchronized inside the critical section (`PAGEABLE=<n>`, as `HashTable::fast_load_factor` does), are built and were not run (wedge). The next things to try, in that order.
+
+### The wedge after pair 5
+
+Pair 5 was stopped at 20:43 UTC (rc 124, both processes exited). From then on, every new HIP process on this GPU stalled; device properties still read normally:
+- the check program stalled in its first packet: gdb (launched under gdb because `ptrace_scope=1`) shows the main thread in `rocr::core::InterruptSignal::WaitRelaxed` <- `hsa_signal_wait_scacquire` <- `AqlQueue::ExecutePM4` <- `GpuAgent::InvalidateCodeCaches` <- `BlitKernel::Initialize` <- `GpuAgent::DmaCopy` <- `RegionMemory::Freeze` <- `ExecutableImpl::Freeze` <- ... <- `hipLaunchKernel` <- `main`, and the two ROCr event threads in `hsaKmtWaitOnMultipleEvents`. The validation's wedge had the same frames.
+- `amd-smi` at 20:55, with only that stalled check process on the GPU (1 queue, 171 MB of VRAM): `GFX_ACTIVITY` 84 %, socket power 138 W. A minute later 3 %, 15 W, and from 21:00 on 0-3 %, 1-14 W.
+- Checks at 21:06, 21:08 to 21:35 every 3 minutes, one with a 540 s cap (21:44, never got past the first packet), 21:45 to 22:45 every 5 minutes, 22:47 and 22:51: every one timed out. **Still wedged 2 h 08 min after the kill; GPU work stopped.** The other four hung pairs on this card did not wedge it (each check passed within seconds). On the validation's card (e3:00) a wedge cleared within about 20 minutes once, and was still present when that job ended the other time.
+- **A host or driver owner needs to check GPU PCI 0000:03:00.0 (amd-smi GPU 0, card3, KFD gpu_id 7727) before the next job uses it.** Nothing here can reset it (no root).
+
+Log of the probes: `agent_space/hang/real/wedge-base5.txt`, gdb capture `wedge-gdb.txt` (container-local).
+
+### Existing ROCm issues (read-only search)
+
+`gh search issues` on ROCm/rocm-systems for oversubscription, `GPU_MAX_HW_QUEUES`, spin, starvation and cross-stream terms found no report of this hang. The nearest is **ROCm/rocm-systems#15850** (open, unlabeled, 2026-11-14): on an R9700 with `num_cp_queues 4` under MES, a HIP process with 5 compute queues stalls for good when a KFD evict/restore leaves a queue with pending packets unmapped and no further doorbell comes; `GPU_MAX_HW_QUEUES=3` (4 queues on 4 slots) cured it there. Same card, same queue oversubscription, a different trigger (a full queue and evictions). Also seen: #14856 (a 4th hardware queue starting late on MI300A/MI250X) and #11678 (a host wait inside the execution lock).
+
+### Step 2: the workaround (written and built; NOT GPU-tested, NOT pushed)
+
+Fork commit **`2fc61db` "[ROCm] Wait for released group locks on the host before locking"**, parent 4033ed6, in this job's clone only (`git ls-remote` still shows `moat-port` at 4033ed6). It was not pushed because nothing has run it on a GPU (validate before pushing), and because Jeff ruled that the cost measurement decides whether it ships. The diff below is the durable copy; the clone is wiped with the job.
+
+The narrower form, chosen over "each unlock synchronizes its stream before decrementing the host counters":
+- Each `unlock_*` still queues its unlock kernel on the caller's stream and returns without blocking. Under the HIP guard it then also records one mutex-owned event on that stream and makes a mutex-owned non-blocking **release stream** wait on it, under a `std::mutex`: `read_release_stream_` for `unlock_read`, `update_release_stream_` for `unlock_update`, both for `unlock_update_read`. This happens before the host counter is decremented.
+- Each `lock_*`, once admitted by the host counters and before it launches its lock kernel, synchronizes on the host the release stream for the counts its kernel checks: `lock_read` the update stream (its kernel waits for `update_count == 0`), `lock_update` the read stream (`read_count == 0`), `lock_update_read` both. The lock kernel then finds the counters already released and never spins on a kernel in another queue.
+- Why it is still correct: the lock kernel used to wait for exactly the unlock kernels of the conflicting holders that released before this locker was admitted. Admission needs the host decrement, which comes after that unlock's event and stream wait (a release decrement, read with acquire or seq_cst), so every such unlock is already ordered on the release stream when the locker synchronizes it. The device kernels and counters are unchanged, so mutual exclusion is still enforced on the device exactly as before. The only change is that the host waits for the release first.
+- Why it should cost little (to be measured): the locker already blocked on the host until its lock kernel finished, and that kernel could not finish before those same unlock kernels had run. So the locker waits about as long as before. Unlocks stay asynchronous for the caller, which the stricter form would not. The extra work is one event record plus one or two stream waits per unlock, under a mutex shared by all unlockers of one table, and one or two (usually already complete) stream synchronizations per lock. A single release stream per count serializes the release markers, but a locker only waits on the count it conflicts with, and the lock already orders those holders.
+- No exposure to ROCm/rocm-systems#14755: the event is only recorded and waited on while the caller's stream is alive, and is never queried or synchronized; only the mutex's own streams are synchronized. In the HIP source at the 10.2.0 pin (rocm-systems 43fa692, `projects/clr/hipamd/src`), `hipEventRecord_common` checks `hip::isValid` on the event's previous stream before touching it (`hip_event.cpp:452-456`), and `hipStreamWaitEvent_common` returns early when the event's stream is no longer valid (`hip_stream.cpp:570-575`). A stream-wait goes through `MemoryPool`'s `AddSafeStream` bookkeeping when both streams are on one device (`hip_stream.cpp:634-637`); it is O(allocations in the stream-ordered pool's free heap), and the library uses stream-ordered allocation only in `allocator.cuh` (`cudaMallocAsync`/`cudaFreeAsync`) and one `cudaFreeAsync` in `utils.cuh`. The measurement will show whether that matters.
+- What it relies on instead: an event wait on another stream completes once the recorded work has run. That is the documented stream and event contract, which upstream's spin kernel does not rely on: it assumes that another stream keeps running while the spinning kernel occupies its own queue, which neither CUDA nor HIP promises. If MES can also leave the unlocking queue unmapped behind a queue whose head is a cross-queue barrier, this form could still stall, which only the 30-pair loop can show. The stricter form (`cudaStreamSynchronize(stream)` in each unlock before the host decrement) needs no cross-queue wait at all and is the fallback.
+- Resources per table (one `group_shared_mutex`): two non-blocking streams and one event, created in the constructor on the device current then (the device of the mutex's counters), destroyed in the destructor after its `cudaDeviceSynchronize`.
+
+**Files the commit touches that a CUDA build reads: `include/merlin/group_lock.cuh` only** (+55 lines, nothing removed). Every added line is inside a `#ifdef MERLIN_HIP` block (`MERLIN_HIP` comes from `merlin/hip_compat.cuh` through `core_kernels/group_lock_kernels.cuh`), and there is no device code in the additions. Expected on nvcc: identical SASS. Host objects should differ only in the `__LINE__` immediates of the `CUDA_CHECK`s in `group_lock.cuh` below the first inserted block (`debug.hpp:48-51` passes `__LINE__`), in every TU that includes `merlin_hashtable.cuh` or `group_lock.cuh` (`group_lock_test` too).
+
+```
+diff --git a/include/merlin/group_lock.cuh b/include/merlin/group_lock.cuh
+@@ group_shared_mutex() noexcept
+     CUDA_CHECK(cudaDeviceSynchronize());
++#ifdef MERLIN_HIP
++    CUDA_CHECK(
++        cudaEventCreateWithFlags(&release_event_, cudaEventDisableTiming));
++    CUDA_CHECK(cudaStreamCreateWithFlags(&read_release_stream_,
++                                         cudaStreamNonBlocking));
++    CUDA_CHECK(cudaStreamCreateWithFlags(&update_release_stream_,
++                                         cudaStreamNonBlocking));
++#endif
+   }
+@@ ~group_shared_mutex() noexcept
+     CUDA_CHECK(cudaDeviceSynchronize());
++#ifdef MERLIN_HIP
++    CUDA_CHECK(cudaStreamDestroy(update_release_stream_));
++    CUDA_CHECK(cudaStreamDestroy(read_release_stream_));
++    CUDA_CHECK(cudaEventDestroy(release_event_));
++#endif
+     CUDA_CHECK(cudaFree(d_update_count_));
+@@ lock_read()
+       if (h_update_count_.load(std::memory_order_seq_cst) == 0) {
+         {
++#ifdef MERLIN_HIP
++          CUDA_CHECK(cudaStreamSynchronize(update_release_stream_));
++#endif
+           cudaStream_t stream = get_lock_stream();
+@@ unlock_read(cudaStream_t stream)
+     { group_lock::unlock_read_kernel<<<1, 1, 0, stream>>>(d_read_count_); }
++#ifdef MERLIN_HIP
++    mark_released(stream, read_release_stream_);
++#endif
+     h_read_count_.fetch_sub(1, std::memory_order_release);
+@@ lock_update()
+       if (h_read_count_.load(std::memory_order_seq_cst) == 0) {
+         {
++#ifdef MERLIN_HIP
++          CUDA_CHECK(cudaStreamSynchronize(read_release_stream_));
++#endif
+           cudaStream_t stream = get_lock_stream();
+@@ unlock_update(cudaStream_t stream)
+     { group_lock::unlock_update_kernel<<<1, 1, 0, stream>>>(d_update_count_); }
++#ifdef MERLIN_HIP
++    mark_released(stream, update_release_stream_);
++#endif
+     h_update_count_.fetch_sub(1, std::memory_order_release);
+@@ lock_update_read(), before the lock kernel
+     {
++#ifdef MERLIN_HIP
++      CUDA_CHECK(cudaStreamSynchronize(read_release_stream_));
++      CUDA_CHECK(cudaStreamSynchronize(update_release_stream_));
++#endif
+       cudaStream_t stream = get_lock_stream();
+@@ unlock_update_read(cudaStream_t stream), after the unlock kernel
++#ifdef MERLIN_HIP
++    mark_released(stream, read_release_stream_, update_release_stream_);
++#endif
+     h_read_count_.fetch_sub(1, std::memory_order_release);
+@@ private:
++#ifdef MERLIN_HIP
++  // A lock kernel spins until earlier unlock kernels, queued on the
++  // holders' streams, have run. HIP gives no guarantee that another
++  // stream's queue runs while the spinning kernel occupies its own, and
++  // with several processes on one GPU it may not. So each unlock is also
++  // ordered onto a stream owned here, and the next conflicting locker
++  // waits for that stream on the host before it launches its kernel,
++  // which then finds the counters already released.
++  void mark_released(cudaStream_t stream, cudaStream_t release_stream,
++                     cudaStream_t other_release_stream = nullptr) {
++    std::lock_guard<std::mutex> guard(release_mutex_);
++    CUDA_CHECK(cudaEventRecord(release_event_, stream));
++    CUDA_CHECK(cudaStreamWaitEvent(release_stream, release_event_, 0));
++    if (other_release_stream != nullptr) {
++      CUDA_CHECK(cudaStreamWaitEvent(other_release_stream, release_event_, 0));
++    }
++  }
++
++  std::mutex release_mutex_;
++  cudaEvent_t release_event_;
++  cudaStream_t read_release_stream_;
++  cudaStream_t update_release_stream_;
++#endif
+   std::atomic<int> h_update_count_;
+```
+
+The local commit's message (draft; its second paragraph's mechanism sentence and its Test Plan describe runs that have not happened, and must be rewritten from the real results before any push): title as above; body: the forward-progress assumption of the lock kernels, the 5-of-5 two-process hang on the R9700 with 5 compute queues per process against 4, the release-stream design and why the wait covers exactly what the lock kernel waited for, "CUDA is unchanged: every addition is under the HIP guard", the AI-assistance sentence, and a Test Plan (configure, build, the 30-pair loop, every test binary, the benchmarks before and after). `python3 utils/jargon.py --port HierarchicalKV` on the local branch: clean.
+
+### Step 3: cost measurement (not run); what the gfx1201 rerun and the gfx942 follow-up must measure
+
+Unmodified 4033ed6 against the workaround, same build flags, one process at a time on the GPU, nothing else on it, **at least 3 runs per build, interleaved (base, workaround, base, ...)**, per benchmark the change in percent of each reported throughput with the run-to-run spread (min-max or standard deviation of the 3):
+1. `dual_bucket_benchmark` (default CMake target), to completion (about 2 s), cap 300 s.
+2. `find_with_missed_keys_benchmark` (default target), fixed cap 420 s; compare only the table rows that every run finished.
+3. `merlin_hashtable_benchmark` (default target; the same source as the Bazel `//benchmark:benchmark_util` earlier validations ran, `benchmark/BUILD`), fixed cap 420 s, rows finished in every run. It calls the locked APIs from one thread, so it shows the per-call overhead.
+4. `concurrency_benchmark triple_group` (research target, `-DHKV_BUILD_REPRO_BENCHMARKS=ON`, `cmake --build <dir> --target concurrency_benchmark`), cap 900 s: multi-threaded find/assign/insert mixes and an assign-only thread sweep (1, 2, 5, 10 threads) on one table, the most lock-sensitive workload; compare `throughput_bkvs` per workload line of its CSV.
+5. Test-suite runtime: every one of the 20 test binaries once per build, one at a time, nothing filtered, per-binary seconds and the total; the multi-thread binaries (`find_or_insert_ptr_lock_test`, `find_or_insert_ptr_test`, `group_lock_test`, `merlin_hashtable_test`) matter most.
+Scripts for all of this are written (`agent_space/bench.sh <tree> <out>`, `agent_space/suite.sh <build dir> <out>`, container-local; the commands above are complete without them). On gfx942 the same list applies, plus its 30-run two-lane loop of `test_find_or_insert_multi_threads` (the 4033ed6 baseline there is 270-286 s per run), to show the workaround does not slow the case it does not need.
+
+### Steps 4 and 5
+
+- Step 4 (30 clean pairs and the full test set with the workaround): not run (wedge). The chain for it is `agent_space/hang/chain2.sh` (5 single-process runs, then 30 pairs of the workaround build, stopping on a failed check).
+- Step 5: the issue draft is below.
+
+## Issue draft for Jeff
+
+Target **ROCm/rocm-systems**, labels **`bug`** and **`project: clr`** (looked up with `gh label list`; the queue count per process is HIP's `GPU_MAX_HW_QUEUES` default plus ROCr's utility queue, so `project: rocr-runtime` is the other candidate; the scheduling itself is MES firmware and amdgpu, which have no label in this repository). Searched first (above): no existing report; #15850 is the nearest and is linked. **Not posted.** Two things for Jeff to decide: whether to post before the standalone program reproduces it (so far only the HierarchicalKV test does; the `CHURN`/`PAGEABLE` variants are the next try), and whether it belongs as a comment on #15850 instead of a new issue.
+
+Title: `[clr] gfx1201: two HIP processes hang on a cross-stream spin wait`
+
+====
+### Problem
+
+On a Radeon AI PRO R9700 (gfx1201, MES), two HIP processes on the same GPU hang for good when each runs a single-thread kernel that spins on a device counter until a kernel queued on another stream of the same process decrements it. Each process alone completes. After the hung processes are killed, the GPU sometimes stays unusable: a new process stalls in the first packet it submits.
+
+### System
+
+- Radeon AI PRO R9700 32 GB (gfx1201), `num_cp_queues 4` in the KFD topology, amdgpu `sched_policy=0`, `cwsr_enable=1`, MES firmware 0x91
+- Linux 6.11.0-26-generic, amdgpu DKMS 6.19.14.31400100
+- TheRock ROCm 10.2.0 wheels (HIP 7.17.26434, rocm-systems 43fa692)
+
+### Reproduction
+
+NVIDIA-Merlin/HierarchicalKV, HIP build (`cmake -DHKV_USE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1201`), two instances of one test on one GPU, the second started 20 s after the first:
+
+```
+./find_or_insert_ptr_test --gtest_filter=FindOrInsertPtrTest.test_find_or_insert_multi_threads
+```
+
+The test runs 64 host threads on one table. Its reader/writer lock admits a holder on the host, then launches a one-thread kernel on a per-thread stream that spins until the device counters allow it, and synchronizes that stream. The previous holder releases by queuing a one-thread unlock kernel on its own stream, behind its work.
+
+- Two processes: 9 of 9 pairs hung, both processes every time, on two R9700 cards (left for 900 to 3000 s before being stopped; one instance alone takes 335 to 395 s). The GPU reads 100 % busy with no host progress.
+- One process at a time: 12 of 12 runs passed.
+- `GPU_MAX_HW_QUEUES=2` in both processes: 1 of 1 pair passed.
+- `AMD_LOG_LEVEL=3`, one traced pair: in each process the last kernel dispatched is one of the spinning lock kernels, launched right after the unlock kernel it waits for was queued on another stream.
+- Each process holds 6 KFD queues on the GPU (5 compute, 1 SDMA, from `/sys/class/kfd/kfd/proc/<pid>/queues`), so two processes hold 10 compute queues against 4 slots.
+
+A standalone program with the same pattern (two processes; in each, host threads queue a busy kernel and a one-thread release kernel on one stream, then launch a one-thread kernel on a second stream that spins until the release kernel has run; 2 to 128 streams per process) did not hang in 4 pairs of runs of 15 to 86 s.
+
+### After killing the hung processes
+
+After one of the hung pairs was stopped (SIGTERM from `timeout`; both processes exited), the GPU read 84 % activity at 138 W twelve minutes later, with only a stalled new process (one queue) open on it, then 0 to 3 % at 1 to 14 W. For the next two hours every new process stalled in its first packet: `AqlQueue::ExecutePM4` <- `GpuAgent::InvalidateCodeCaches` <- `BlitKernel::Initialize`, during code object load, while device properties still read normally. On this card the other four hung pairs did not leave the GPU in this state; on the other card it happened twice and once cleared within about 20 minutes.
+
+### Related
+
+ROCm/rocm-systems#15850 reports a stall on the same card with more compute queues than `num_cp_queues`, where a queue with pending packets is left unmapped after a KFD evict/restore and never mapped again.
+
+### Expected
+
+A queue with pending packets runs again while another queue spins, or the runtime does not create more queues than the device has slots, and killing processes returns the GPU to a usable state.
+====
+
+`utils/prose.py` and `utils/jargon.py` on the body: clean.
+
+## Lesson for cuda-to-rocm: a kernel that spins on another stream's kernel can hang once several processes share an RDNA4 GPU
+
+Belongs in `references/diagnosis.md` (hangs), next to the SIMT forward-progress material. A lock or flag that a one-thread kernel spins on, released by a kernel queued on a different stream, assumes the other stream's queue keeps running while the spinner holds its own. Neither CUDA nor HIP promises that. On a Radeon AI PRO R9700 (gfx1201, MES, KFD `num_cp_queues 4`) every HIP process holds 5 compute queues by default (`GPU_MAX_HW_QUEUES` 4 plus ROCr's utility queue; count them in `/sys/class/kfd/kfd/proc/<host pid>/queues/*/type`), and HierarchicalKV's group lock hung in 9 of 9 two-process runs while one process always passed. Test multi-stream code with two processes on one GPU, not only one. Prefer host-side waits on events or on library-owned streams to device spins across streams. After stopping a hung run, check the GPU with a trivial kernel before the next run: it can stay unusable for hours (new processes stall in their first packet, `InvalidateCodeCaches`) while device queries still work. (HierarchicalKV, TheRock 10.2.0, gfx1201)
+
+### Next steps (for whoever resumes)
+
+1. A host owner checks or resets GPU PCI 03:00 on this host (and e3:00 if it recurs).
+2. Re-dispatch this porter round: re-stamp the lock, rebuild 2fc61db from the diff above (or cherry-pick it if the clone still exists), then in this order, runs that should not hang first: 5 single-process runs, the 30 pairs with the workaround, the full test set with the workaround, the benchmarks and suite before and after (3 interleaved runs each), and last the runs that hang (the `GPU_MAX_HW_QUEUES=2` and `=3` pairs, the traced pair, the `CHURN`/`PAGEABLE` reproducers), since each hang can wedge the GPU.
+3. Push 2fc61db only after the 30 pairs and the full set pass and Jeff has the cost numbers; then `advance-head`, review, the gfx942 revalidation with the list above, and the nvcc check of `include/merlin/group_lock.cuh`.
+
+Logs (container-local, not committed): `agent_space/hang/real/` (`base-<n>-{A,B}.log`, `base-<n>-queues.txt`, `base-<n>-health.log`, `wedge-base5.txt`, `wedge-gdb.txt`, `summary.txt`), `agent_space/hang/` (`spinrepro.cpp`, `lockrepro.cpp`, `pairtest.sh`, `health.sh`, `chain2.sh`), `agent_space/{bench,suite}.sh`, `agent_space/clr/rs` (sparse rocm-systems at 43fa692), `agent_space/build-{base,wa}.log`.
