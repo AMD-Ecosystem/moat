@@ -4751,3 +4751,37 @@ State: linux-gfx90a `completed` at `517c6a7`.
 
 1. windows-gfx1151: first hardware run of the capped wave32 code on Windows (the review 2026-11-24 lists the configurations), queued last per the Windows-last rule.
 2. jeffdaily: the gfx950 operator host-path decision (porter round 2026-11-24 resumed, item 7) is still open.
+
+## Validation 2026-11-25 (windows-gfx1151, at `2a3e44f`) -- PASS
+
+Run by the checkup session on the laptop, jeff present (his request). AMD Radeon 8060S (gfx1151, RDNA3.5 APU, wave32, 20 CUs, shared memory), Windows 11. `torch312_venv` recreated today at the same path after the D: cleanup removed it (same pins as before): torch 2.12.0+rocm7.14.0a20260519 `[device-gfx1151]`, rocm-sdk-devel 7.14.0a20260519 (`python -m rocm_sdk init`), Python 3.12.10, transformers 4.37.2, tokenizers 0.15.2, accelerate 1.0.1, pytest 9.2.0, numpy 2.5.5. CMake 3.31.0, Ninja, VS 2022 BuildTools x64. Fork clone `projects/Quest/src` checked out detached at `2a3e44f` (== `head_sha` == `reviewed_sha`; tree identical to `517c6a7`); `git status --porcelain` shows only the five untracked runtime DLLs in `quest/`. No fork edit, no push. Full run (the platform's last record was `9cb8bee`; first Windows run of the capped wave32 prefill code). Scripts and logs: `agent_space/quest_porter/val_2a3e44f/`. Laptop limits kept: one GPU process at a time, no timing shape above 4096 x 4096, no 7B model, test files have no repeat or stress loops.
+
+### Build (README Windows block as written; old build dir and `.pyd` moved aside)
+`utils/timeit.sh Quest compile -- powershell -NoProfile -ExecutionPolicy Bypass -File readme_build.ps1` (venv activated, README block verbatim, `ninja -j 16`): rc 0, 8/8, **513 s**. `CMAKE_BUILD_TYPE=Release`, `--offload-arch=gfx1151` on 8 of 8 compile lines, 0 errors; warnings as at `9cb8bee` (18 `nodiscard hipError_t` lines, 252 MSVC `getenv` deprecation lines from `decode_attn.cuh:876`, the unused `--ld-path` link warning).
+
+### GPU tests
+`utils/timeit.sh Quest test -- powershell ... test.ps1` (`python -m pytest quest\tests -p no:cacheprovider -v -rs`): **202 passed, 28 skipped, 0 failed** (14.0 s). Skips as everywhere: topk 15 (k >= kv_len), prefill 13 (qo_len > kv_len).
+
+### fp64 reference harness (`notes-prefill-harness.md`, extracted unchanged at this branch's version; Windows `build.sh` as at `9cb8bee`)
+`harness/checkall.sh` (build and run one configuration at a time). Every binary reports `wave=32 op_elems=16`. **CFG 0-11: 120/120.** Largest max |dO| / max |dLSE| over the 10 shapes: CFG 0 1.0e-3 / 7.0e-4; 1 1.4e-3 / 1.8e-3; 2 1.2e-3 / 1.5e-3; 3 9.4e-4 / 6.3e-4; 4 2.0e-3 / 2.4e-3; 5 (bf16) 1.2e-2 / 1.4e-2; 6 (bf16) 6.1e-3 / 3.4e-3; 7 1.4e-3 / 1.5e-3; 8 1.2e-3 / 7.5e-4; 9 1.9e-3 / 2.0e-3; 10 9.4e-4 / 6.3e-4; 11 (bf16) 6.2e-3 / 4.1e-3; all within the harness tolerances. The capped cases (CFG 0, 8: head 128 nfx 1; CFG 10, 11: head 64 nfx 2) and the deliberately uncapped head 128 nfx 2 (CFG 1, 2, 4, 5, 7, 9) all pass: first Windows hardware evidence for the capped code. Negative control (`-DNEGCTRL=true`) on CFG 0, 1, 10: **1/10 each** (max |dO| up to 2.9, |dLSE| up to 13).
+
+### Prefill time against SDPA (`prefill_time.py`, SHAPES limited to 4096 x 4096 on this laptop)
+Causal, 32 heads x 128, fp16, page size 16; torch SDPA falls to its slow path on this torch build (AOTriton attention is experimental here and off).
+
+| qo x kv | Quest `2a3e44f` | torch SDPA | ratio | Quest `9cb8bee` | max abs diff vs SDPA |
+|---|---|---|---|---|---|
+| 1 x 4096 | 0.988 ms | 3.394 ms | 0.29 | -- | 6.1e-05 |
+| 128 x 4096 | 1.943 ms | 11.325 ms | 0.17 | -- | 1.8e-04 |
+| 1024 x 1024 | 1.703 ms | 16.452 ms | 0.10 | 2.031 ms | 2.0e-03 |
+| 1024 x 4096 | 7.784 ms | 59.123 ms | 0.13 | -- | 2.4e-04 |
+| 4096 x 4096 | 16.839 ms | 267.281 ms | 0.06 | 17.761 ms | 2.0e-03 |
+
+Within 2x of SDPA at every shape (the 2026-11-23 ruling holds here; SDPA is the slow side on gfx1151, so the ratio is not comparable with the discrete GPUs). The 1 x 4096 row is the capped nfx-1 kernel through the operator, first timing on Windows. The two shapes timed at `9cb8bee` are 16% and 5% faster.
+
+### End-to-end
+Llama-2-7b-chat not run on this laptop (as before). The random-weight 0.96 GB Llama-architecture check (`agent_space/quest_e2e/cmp.py 1024 30`, HF vs Quest, same weights): prefill logits max |diff| 0.0093 at logit range 5.95, first greedy divergence at step 5 on a 0.0039 HF top1-top2 tie, steps before it max |diff| 0.0098. Identical to `9cb8bee` and `6e7d8db`.
+
+### CUDA gate, content, integrity
+CUDA gate recorded at `517c6a7` by the gfx950 porter round (real nvcc; `2a3e44f` has the same tree). `jargon.py --port Quest` not rerun here (no fork change). No driver reset or device loss during any run.
+
+State: windows-gfx1151 `completed` at `2a3e44f`.
