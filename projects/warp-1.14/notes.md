@@ -8753,3 +8753,30 @@ Cause of the glibc 2.38 requirement: this host's toolchain, not the fork. packma
 - test_torch 34 OK; `test_mesh_query_point` 9 of 9 OK; test_diagnostics passed (13 ok markers on their own lines, as in the 66ba4ffb run).
 - Debug tile: 602 tests against 599 in the earlier release-build run, which had no torch. Skips (10): 8 MathDx support, 1 `MathDx is not enabled`, 1 no-MathDx tolerance.
 - Noise only: 3 CPU-path `Compilation with PCH failed` retries (known upstream CPU behavior).
+## Release wheel suite (linux-gfx1100), 0402fdef (2026-11-25, Radeon Pro W7800 48GB, release evidence)
+
+Request from jeff: run the suite from the exact Linux release wheel built in upstream's manylinux_2_28 container from `release/1.14.0.amd0` at `66ba4ffb31bce1bd822943cfc764c34eb21a8eef`. No lock taken, no platform state changed, the wheel was not copied, rebuilt or modified. **Verdict: pass. Full suite OK, debug tile run OK, no failure, so nothing needed a rerun alone.** Results match the 66ba4ffb gfx1100 validation above exactly (7610 tests, 79 skips; 602 debug tile tests, 15 skips).
+
+### Wheel and install
+
+- `/var/lib/jenkins/fleet/shared/warp114-release/warp_lang-1.14.0+rocm10.2.0-py3-none-manylinux_2_28_x86_64.whl`, 37,348,070 bytes. `sha256sum`: `0402fdef420959474d564ed15c8852ae1847ca86516df0e53fd07b96797f21a0`, equal to the expected value.
+- No warp-lang was installed in `$FLEET_VENV` (Python 3.11.17). `"$FLEET_VENV/bin/python" -m pip install <wheel> --extra-index-url https://stable.repo.amd.com/rocm/whl-next/`: "Successfully installed rocm-10.2.0 rocm-sdk-core-10.2.0 warp-lang-1.14.0+rocm10.2.0" (the venv had 10.1.0 TheRock wheels).
+- As the earlier gfx1100 validator did: `"$FLEET_VENV/bin/python" -m pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple "torch[device-gfx1100]==2.15.0+rocm10.2.0" "rocm[device-gfx1100]==10.2.0" numpy==1.26.4 usd-core` gave torch 2.15.0+rocm10.2.0, usd-core 26.11, rocm-sdk-libraries and rocm-sdk-device-gfx1100 10.2.0 (pip warns only about the stale 10.1.0 device packages). torch ran a GPU tensor op correctly; `import pxr` works.
+- `warp.__file__` = `$FLEET_VENV/lib/python3.11/site-packages/warp/__init__.py`. Installed `warp.so` sha256 `54f6fccc688775cbdcc11c4242226f82956bf1fa4dfae251e45987b3ee8cb7ef` and `warp-clang.so` `af0256e4cc5888343db065830c2cd2abd5febcb4c2d1f85f849cec25379d83a7`, each equal to `unzip -p <wheel> warp/bin/<file> | sha256sum`. `warp.so.rocm` reads `'\n10.2.0\n'`.
+- Banner: "Warp 1.14.0+rocm10.2.0 initialized: ROCm 10.2, HIP runtime 7.17 ... "cuda:0" : "AMD Radeon Pro W7800 48GB" (45 GiB, gfx1100, mempool enabled)".
+
+### GPU
+
+Dispatcher pin `HIP_VISIBLE_DEVICES=3` kept. HIP device 3 is PCI bus 0x26 (torch `pci_bus_id` 38), which is `amd-smi` GPU 1 (BDF `0000:26:00.0`), not amd-smi GPU 3: the HIP and amd-smi orderings differ on this host. `amd-smi process` showed "No running processes detected" on all four GPUs before the full suite and on GPU 1 again before the debug run. Load average 0.4 at the start, 2.5 at the end of the full suite. No process was stopped.
+
+### Runs (`<job>/rel/scripts/run.sh <label> <args>` under `utils/timeit.sh warp-1.14 test`: `ulimit -c 0`, cwd `<job>/rel/run` outside any warp checkout, `rm -rf` then recreate `WARP_CACHE_PATH=<job>/rel/cache_<label>`, the site-packages assertion, then `$FLEET_VENV/bin/python -m warp.tests <args>`)
+
+| run | result |
+|---|---|
+| `python -m warp.tests -s autodetect` | **Ran 7610 tests in 813.2 s, OK (skipped=79)** |
+| `python -m warp.tests -s autodetect --warp-debug -p "test_tile*.py"` | **Ran 602 tests in 270.1 s, OK (skipped=15)** |
+
+- Failures and errors: 0 in both runs. `Warp CUDA error` lines: 0. Error 700: none. `test_async`: all 2373 tests passed in the full suite (the #16355 pool-off copy failure did not occur). 34 `test_torch` tests passed. No usd-core or torch skips; jax and paddle are not installed (their DLPack/interop tests are dropped at import, not counted as skips, same as before).
+- Full-suite skips, 79, the same reasons and counts as the 66ba4ffb gfx1100 validation: no suitable devices 18; conditional graph nodes 16; MathDx 8 + `MathDx is not enabled` 1 + no-MathDx tolerance 1; two CUDA devices 7, multi-GPU 2; mempool access 5 + 1 without + 1 with module-load; peer access 3 + 1 without + 1 with module-load; `cuda:0 cannot access CPU memory` 2; NVRTC two archs 2, NVRTC not available 1, `Requires CUDA` 1; rmm 1; memory-usage flakiness 1; HIP stream priorities 1; the five 64 KiB shared-memory skips (66,816 B 1, 66,688 B 2, 67,584 B 2).
+- Debug tile skips, 15: MathDx 8, `MathDx is not enabled` 1, no-MathDx tolerance 1, the same five 64 KiB skips.
+- Other output, known and not a finding: one `test_tile_load_scoped` "Failed to configure kernel dynamic shared memory" warning and three CPU `Compilation with PCH failed, retrying` lines in the full suite.
