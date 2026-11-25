@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "setuptools-cuda",
   "adopted_at": "2026-06-04T01:07:42Z",
-  "updated_at": "2026-11-25T22:09:39Z",
+  "updated_at": "2026-11-25T23:07:22Z",
   "head_sha": "279816eb40309950d964a98df7d85c408811b9cf",
   "depends_on": [],
   "pr_url": "https://github.com/CERN/TIGRE/pull/747",
@@ -219,10 +219,10 @@
   },
   "pr_approval": {
     "approved_by": "jeffdaily",
-    "at": "2026-11-05T07:31:22Z",
-    "head_sha": "f779703298570f752da7c3994db3fc9903b9bf1c",
-    "content_sha256": "19f537f43e5238f4046c15e632960158278c274c4c58c96d03dabaa6ad911d65",
-    "review_pr": "https://github.com/AMD-Ecosystem/TIGRE/pull/2"
+    "at": "2026-11-25T22:59:48Z",
+    "head_sha": "279816eb40309950d964a98df7d85c408811b9cf",
+    "content_sha256": "febb6e20abb6d04db1f841f3cdd34488dcb9c79847279ab2509c89283726aba8",
+    "review_pr": "https://github.com/AMD-Ecosystem/TIGRE/pull/3"
   },
   "fix_merged_at": "2026-11-05T07:33:27Z",
   "porting": null,
