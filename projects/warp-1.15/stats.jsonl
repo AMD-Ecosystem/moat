@@ -13,3 +13,6 @@
 {"kind":"phase","ts":"2026-11-25T01:40:43Z","phase":"compile","seconds":90.953,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi300-20261124-163755-warp115-porter1/moat/projects/warp-1.15/src && python build_lib.py --rocm-path /var/lib/jenkins/fleet/jobs/mi300-20261124-163755-warp115-porter1/venv/lib/python3.11/site-packages/_rocm_sdk_devel --hip-arch gfx942 -j 32 --sanitize=address"}
 {"kind":"phase","ts":"2026-11-25T01:46:24Z","phase":"compile","seconds":71.436,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi300-20261124-163755-warp115-porter1/moat/projects/warp-1.15/src && python build_lib.py --rocm-path /var/lib/jenkins/fleet/jobs/mi300-20261124-163755-warp115-porter1/venv/lib/python3.11/site-packages/_rocm_sdk_devel --hip-arch gfx942 -j 32"}
 {"kind":"phase","ts":"2026-11-25T01:49:37Z","phase":"test","seconds":771.512,"exit":0,"cmd":"agent_space/suite.sh full2"}
+{"kind":"phase","ts":"2026-11-25T03:07:55Z","phase":"test","seconds":2645.616,"exit":0,"cmd":"agent_space/tiledbg.sh"}
+{"kind":"phase","ts":"2026-11-25T04:41:26Z","phase":"test","seconds":323.346,"exit":0,"cmd":"agent_space/tiledbg.sh"}
+{"kind":"phase","ts":"2026-11-25T04:54:34Z","phase":"test","seconds":760.409,"exit":0,"cmd":"agent_space/suite.sh full3"}
