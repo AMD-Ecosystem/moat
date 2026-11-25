@@ -100,6 +100,19 @@ claims. The same mechanism with a different symptom, a counter that advances by 
 times the real count, is in faults-wavefront.md ("A leader-only write broadcast by shuffle
 must be initialised on every lane"). (symforce, colmap)
 
+**Host code reading a `__device__` variable through a pointer gets HIP's host shadow, not
+the value.** CUDA code often keeps lookup tables as `__device__ static constexpr` arrays so that
+both sides can use them, and reaches them through a `__host__ __device__ constexpr` helper that
+returns `table.data()`. Under nvcc the host side reads the real values. Under HIP, a `__device__`
+variable's host-side symbol is a shadow that only the runtime registration uses, so once the host
+takes its address it reads zeros (or garbage at -O2) where nvcc reads the table. Reading
+`table[i]` directly with a constant index can still constant-fold and look right, which hides
+the problem in small tests. Nothing faults: in cuCollections the HyperLogLog++ host finalizer
+silently skipped bias correction (Spark-parity test 79 vs. 81). Fix on HIP: drop `__device__` and
+keep a plain `static constexpr` array, which clang makes usable from device code as well (verified
+on both sides). nvcc rejects that spelling in device code, so keep `__device__` on the CUDA branch.
+(cuCollections)
+
 ## Handle and object lifetime
 
 **Rule-of-five on resource handles.** CUDA tolerates a default-constructed or
@@ -322,6 +335,22 @@ standalone C probe of the same copy passes because it reads back with a synchron
 Bisect with a sync on each side: only the one AFTER the copy fixes it. (TornadoVM:
 `NativeCommandQueue.mapOnDeviceMemoryNDRegion`, deterministic on Windows gfx1151, passing
 on Linux gfx950/gfx1201.)
+
+**A "last block reduces" kernel needs `__threadfence()`, and MI300X is where its absence shows.**
+A common CUDA pattern computes per-block partial results, writes them to global memory, bumps a
+completion counter with `atomicInc`/`atomicAdd`, and lets whichever block sees the final count
+read every partial and finish the reduction. CUDA's memory model requires a device-scope fence
+between the partial-sum stores and the counter, which is what CUDA's own threadFenceReduction
+sample does. Code that leaves the fences out usually works on an
+NVIDIA GPU, whose single L2 makes other blocks' stores visible in time. MI300X (gfx942) is
+built from eight XCDs, each with its own L2, and a plain store from a block on one XCD is not
+guaranteed to be visible to a block on another without a release/acquire: the last block reads
+stale partials. The result is wrong or run-to-run nondeterministic, with no fault. Add
+`__threadfence()` after the partial stores (before the atomic) and again in the last block before
+it reads the partials; it is correct on CUDA too and costs one fence per block. Grep for
+`atomicInc`, a `gridDim.x - 1` comparison against an atomic's return value, and "last block"
+comments. Without the fences, llm.c's `layernorm_backward_kernel10` failed the project's
+determinism check on every run on gfx942; with them, every test configuration passed. (llm.c)
 
 **`hipFree` is synchronizing** (`hipFreeAsync` is not), so an explicit
 `hipDeviceSynchronize()` before it is redundant. (anari-visionaray)

@@ -61,6 +61,20 @@ launch it had and a wave64 device gets a whole wavefront. Any launch whose block
 computed from a data size, rather than being a fixed 128 or 256, is a candidate. (CV-CUDA:
 OpFindHomography refinement, reachable at 16 or fewer point pairs.)
 
+**The shuffles themselves read lanes that hold no thread, whatever the count says.** On
+NVIDIA a 32-thread block fills its warp exactly, so a reduction such as
+`for (off = warpSize / 2; off > 0; off /= 2) v += __shfl_down(v, off);` only ever reads live
+lanes. On wave64 the same block is half a wavefront: `warpSize / 2` is 32, lane 0 reads lane
+32, and lanes 32-63 hold no thread, so the value returned is undefined and is added in. A
+minimal kernel (each thread contributes 1, 4096 blocks) gives the right sum for 64-thread
+blocks and a wrong sum in every block at 32 threads (gfx942). Where the launch can change, the
+block floor above fixes this too. Where the block width is fixed by the algorithm, add only
+lanes that hold a thread
+(`if (lane + off < warpSize && (mask >> (lane + off)) & 1) v += other;`, with the mask built
+from the block size), or start the loop at the block width when the block is smaller than a
+wavefront. Sweep every block size the code can launch, including 32 and below.
+(cuda-samples `reduction` `reduce7`/`warpReduceSum`.)
+
 **Warp-tiled dispatch tables written for 32 lanes break when `kWarpSize` becomes 64.**
 Making the warp-size constant arch-correct is not the end of it; audit what is built FROM
 it. Two shapes recur. (1) A square `kWarpSize x kWarpSize` block (one warp of columns times
