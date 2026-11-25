@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "setuptools-cuda",
   "adopted_at": "2026-06-04T01:07:42Z",
-  "updated_at": "2026-11-25T23:07:22Z",
+  "updated_at": "2026-11-25T23:07:40Z",
   "head_sha": "279816eb40309950d964a98df7d85c408811b9cf",
   "depends_on": [],
   "pr_url": "https://github.com/CERN/TIGRE/pull/747",
@@ -205,13 +205,8 @@
       "last_agent": "validator"
     }
   },
-  "published_sha": "f779703298570f752da7c3994db3fc9903b9bf1c",
-  "fix": {
-    "branch": "moat-fix-747",
-    "base_sha": "f779703298570f752da7c3994db3fc9903b9bf1c",
-    "review_pr": "https://github.com/AMD-Ecosystem/TIGRE/pull/3",
-    "opened_at": "2026-11-20T21:31:23Z"
-  },
+  "published_sha": "279816eb40309950d964a98df7d85c408811b9cf",
+  "fix": null,
   "porting_released": {
     "arch": "linux-gfx90a",
     "since": "2026-11-25T18:23:56Z",
@@ -224,7 +219,7 @@
     "content_sha256": "febb6e20abb6d04db1f841f3cdd34488dcb9c79847279ab2509c89283726aba8",
     "review_pr": "https://github.com/AMD-Ecosystem/TIGRE/pull/3"
   },
-  "fix_merged_at": "2026-11-05T07:33:27Z",
+  "fix_merged_at": "2026-11-25T23:07:40Z",
   "porting": null,
   "reviewed_sha": "279816eb40309950d964a98df7d85c408811b9cf"
 }
