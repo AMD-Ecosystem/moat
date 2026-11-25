@@ -82,6 +82,18 @@ separately, because static shared memory (block-reduce scratch) grows with it. S
 past 64 KiB/element-size on an RDNA card. Sweeping to 8192 only catches the
 8-byte-per-column backward kernels. (oneflow, gfx1100)
 
+**Launch geometry computed from device properties can overshoot a bound sized for NVIDIA.**
+MI300X reports `multiProcessorCount` 304 and `maxThreadsPerMultiProcessor` 2048, against 132 and
+2048 on an H100, so a grid sized "enough blocks to fill the GPU" comes out more than twice as large.
+Code that later reduces those blocks in a fixed-size second pass (one 1024-thread block, a
+`__shared__` array of 1024, a scratch buffer sized by a constant) was correct on every NVIDIA
+part it met and breaks here. llm.c's `global_norm.cuh` computes
+`maxThreadsPerMultiProcessor * multiProcessorCount / 512` = 1216 blocks and asserts
+`gx * gy < 1024`, which tripped on the first MI300X test run. Cap the derived count at the bound
+it feeds (a no-op wherever the old assumption held, so the CUDA path keeps its numbers), and grep
+for every `multiProcessorCount` and `maxThreadsPerMultiProcessor` product. Related but separate:
+`__smid()` exceeding `multiProcessorCount` (faults-wavefront.md). (llm.c, gfx942.)
+
 **`__launch_bounds__(1024)` changes nothing on HIP and something on CUDA.** HIP-clang
 already gives every kernel `amdgpu-flat-work-group-size="1,1024"` (`.max_flat_workgroup_size:
 1024` in the code-object metadata) with or without the attribute -- check the metadata with
@@ -136,6 +148,21 @@ with `hipMallocAsync`/`hipFreeAsync` on the launch stream. Put the variant in a 
 CUDA translation unit stays identical. In gpu4pyscf's ECP derivative kernels the variant gave
 bit-identical results and, at a few hundred tasks or more, ran in 0.6x the time of the LDS-heavy
 kernel, because its smaller LDS footprint keeps more blocks resident. (gpu4pyscf)
+
+**A refused shared-memory opt-in trips the last-error check placed before the project's own
+fallback.** Projects that already handle a refused opt-in usually write `status =
+cudaFuncSetAttribute(...); cudaCheck(cudaGetLastError()); if (status == cudaSuccess) big_kernel
+else fallback`. On gfx942 (MI300X) `hipDeviceAttributeSharedMemPerBlockOptin`,
+`sharedMemPerBlock` and `maxSharedMemoryPerMultiProcessor` are all 65536, and an opt-in of
+64 KiB succeeds while 65 KiB and above returns `hipErrorInvalidValue`. The
+next `hipGetLastError()` returns that error once and clears it, as on CUDA (the unsupported-query
+entry above), so the check aborts before the fallback is reached. This is a latent upstream bug,
+invisible on NVIDIA parts where the request never fails. Clear the error after a refused opt-in
+(one discarded `cudaGetLastError()`) or test the status before any last-error check; the existing
+fallback then runs on AMD and the CUDA path is unchanged. llm.c (upstream `f1e2ace`)
+`layernorm_forward` requests `(2 + 8) * C * sizeof(floatX)` bytes: 30,720 B at the C=768 its tests
+use, but more than 64 KiB from C >= 1639 in FP32 (C >= 3277 in BF16), where a direct call
+aborts at that check instead of falling back. (llm.c, gfx942)
 
 **AMD's 64 KB LDS breaks "half the per-SM shared memory" tile heuristics, and the dispatcher may
 then launch nothing.** FlashInfer-derived dispatchers size tiles from
