@@ -586,6 +586,26 @@
     {
       "id": "test:unified-memory-allocator",
       "evidence": "porting session 1 (gfx942, fork fb004310): test_unified_memory and test_allocator pass in the full suite"
+    },
+    {
+      "id": "feature:thread-block-clusters",
+      "evidence": "porting session 2 (gfx942, fork 85ad22eb): ruling Q2 (a): 4d66d600, Device.is_cluster_launch_supported, cluster_dim ignored on AMD GPUs; deferred warp-hip-gfx1250-thread-block-clusters"
+    },
+    {
+      "id": "feature:texture-mipmaps",
+      "evidence": "porting session 2 (gfx942, fork 85ad22eb): ruling Q3 (a): 912b3493; software mip storage verified on gfx942 (six mipmap tests, CPU comparison within 1e-6); hardware path for gfx1100/gfx1201 and the Windows fallback owed to those validators"
+    },
+    {
+      "id": "feature:radix-sort-bit-range",
+      "evidence": "porting session 2 (gfx942, fork 85ad22eb): ruling Q5 (d): 1713eb55 comparator specializations, 8e154af4 tests; integer keys 0 mismatches to 2^20; floating-point ranges refused by rocPRIM, question Q7 for jeff"
+    },
+    {
+      "id": "feature:cmake-build-hip",
+      "evidence": "porting session 2 (gfx942, fork 85ad22eb): ruling Q4 (b): 85ad22eb configure-time stop on ROCm-only hosts, install docs line; deferred warp-hip-cmake-build"
+    },
+    {
+      "id": "test:cluster-dim",
+      "evidence": "porting session 2 (gfx942, fork 85ad22eb): test_cluster_dim 18 tests OK (9 skipped by capability) on gfx942"
     }
   ],
   "scoped_out": [
@@ -774,26 +794,6 @@
     {
       "id": "platform:windows",
       "reason": "gate not yet validated for 1.15 (nothing ported yet)"
-    },
-    {
-      "id": "feature:thread-block-clusters",
-      "reason": "plan question Q2 (unruled): proposed unsupported-by-capability on HIP; until ruled it is open in-scope work"
-    },
-    {
-      "id": "feature:texture-mipmaps",
-      "reason": "plan question Q3 (unruled): hardware hipMipmappedArray on Linux image-capable devices, software sampler elsewhere, or refusal"
-    },
-    {
-      "id": "feature:radix-sort-bit-range",
-      "reason": "plan question Q5 (unruled): HIP workaround for the rocPRIM 64-bit begin_bit>0/end_bit 64 defect, or a refusal and known issue"
-    },
-    {
-      "id": "feature:cmake-build-hip",
-      "reason": "plan question Q4 (unruled): HIP branch in the optional CMake build, or a clear refusal"
-    },
-    {
-      "id": "test:cluster-dim",
-      "reason": "follows Q2"
     }
   ],
   "removed_from_floor": [
