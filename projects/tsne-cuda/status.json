@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-08-07T06:47:29Z",
-  "updated_at": "2026-11-10T05:16:42Z",
+  "updated_at": "2026-11-25T23:21:21Z",
   "head_sha": "33f708d1ac8c4fae8cc7c8d31a5ca58238dfdf5b",
   "depends_on": [
     "faiss"
@@ -133,6 +133,7 @@
   "pr_url": "https://github.com/CannyLab/tsne-cuda/pull/145",
   "pr_number": 145,
   "pr_opened_at": "2026-11-10T05:16:42Z",
-  "pr_state": "open",
-  "published_sha": "33f708d1ac8c4fae8cc7c8d31a5ca58238dfdf5b"
+  "pr_state": "merged",
+  "published_sha": "33f708d1ac8c4fae8cc7c8d31a5ca58238dfdf5b",
+  "pr_merged_at": "2026-11-25T23:21:21Z"
 }
