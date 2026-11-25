@@ -7,7 +7,7 @@
   "priority": 6.146,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T00:04:57Z",
-  "updated_at": "2026-11-24T02:17:31Z",
+  "updated_at": "2026-11-25T01:12:42Z",
   "head_sha": "2f25788dce71ec94799164d08ce90d5d48bdb5b3",
   "pr_url": "https://github.com/arrayfire/arrayfire/pull/3708",
   "pr_number": 3708,
@@ -127,11 +127,11 @@
     "windows-gfx1151": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "83be197816b2ce57303c29dda35b7c56d8d9209b",
+      "validated_sha": "2f25788dce71ec94799164d08ce90d5d48bdb5b3",
       "failed_sha": null,
       "started_at": null,
-      "completed_at": "2026-11-05T06:27:26Z",
-      "updated_at": "2026-11-05T06:40:49Z",
+      "completed_at": "2026-11-25T01:12:42Z",
+      "updated_at": "2026-11-25T01:12:42Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -146,7 +146,10 @@
         "last_session_at": null
       },
       "state": "completed",
-      "last_agent": "validator"
+      "last_agent": "validator",
+      "validated_prior": [
+        "83be197816b2ce57303c29dda35b7c56d8d9209b"
+      ]
     },
     "windows-gfx1101": {
       "state": "completed",

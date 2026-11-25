@@ -3535,3 +3535,28 @@ Gates: `jargon.py --port arrayfire` -- only the standing frozen `6800d5586` 'MOA
 ## Ruling 2026-11-24 (recorded by the checkup session): delivery of the moat-sync-b11d700 round
 
 jeff chose option (b): after the round is approved on its fork review PR and merged into `moat-port`, it lands on arrayfire/arrayfire#3741 (approved by syurkevi 2026-11-11, not merged), with a note to the maintainer saying what the two new commits are (the master merge and the `sparse_arith.cu` host-pointer fix that also explains the Windows `test_sparse_arith` crashes). `--merge-fix` does not post to #3741 (the maintained record has no open pr_state), so the note is a separate comment that jeff approves and posts himself. The windows-gfx1151 run at 2f25788dc goes next on the laptop, as soon as the Warp validation running there finishes.
+
+## Validation 2026-11-24 (validator, windows-gfx1151, sync round moat-sync-b11d700 head 2f25788dc) -- RESULT: COMPLETED (130/131)
+
+Run by the checkup session at jeff's request, after the Warp validation freed the laptop GPU. GPU: AMD Radeon 8060S (gfx1151, RDNA3.5 APU, wave32), Windows 11, TheRock SDK `_rocm_sdk_devel` (same SDK as the 2026-11-04 entry), `ulimit -c 0`, `HIP_VISIBLE_DEVICES=0`, one GPU process at a time. Head checked out as a detached worktree of the fork clone (`git worktree add --detach agent_space/af-src-2f257 2f25788dc`); tracked tree clean (`git status --porcelain`: untracked build output only). Nothing pushed.
+
+### Build (fresh dir, same configure as the 2026-11-04 entry)
+```
+utils/timeit.sh arrayfire compile -- cmake -S <wt> -B <wt>/build-gfx1151 -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_COMPILER=<sdk>/lib/llvm/bin/clang.exe -DCMAKE_CXX_COMPILER=<sdk>/lib/llvm/bin/clang++.exe -DCMAKE_HIP_COMPILER=<sdk>/lib/llvm/bin/clang++.exe \
+  -DCMAKE_PREFIX_PATH=<sdk> -DCMAKE_HIP_ARCHITECTURES=gfx1151 -DAF_BUILD_HIP=ON -DAF_BUILD_CUDA=OFF -DAF_BUILD_CPU=OFF -DAF_BUILD_OPENCL=OFF \
+  -DAF_BUILD_ONEAPI=OFF -DAF_BUILD_UNIFIED=ON -DAF_BUILD_EXAMPLES=OFF -DAF_BUILD_FORGE=OFF -DAF_WITH_CUDNN=OFF -DAF_WITH_IMAGEIO=OFF \
+  -DAF_BUILD_DOCS=OFF -DAF_BUILD_TESTS=ON -DAF_STACKTRACE_TYPE=None -DAF_TEST_WITH_MTX_FILES=OFF -DVCPKG_MANIFEST_INSTALL=OFF \
+  -DBoost_INCLUDE_DIR=<TheRock boost source> -DBoost_NO_SYSTEM_PATHS=ON
+utils/timeit.sh arrayfire compile -- cmake --build <wt>/build-gfx1151 -j 16      # 1082/1082, 0 errors
+```
+Runtime DLLs and `hipblaslt/`, `rocblas/` copied into `build-gfx1151/bin` from the 2026-11-04 build (same SDK). `ROCM_PATH`/`HIP_PATH` unset for the build, set to the SDK for the run (hipRTC include path).
+
+### Tests
+```
+ROCBLAS_TENSILE_LIBPATH=<libs_gfx1151>/bin/rocblas/library ROCBLAS_USE_HIPBLASLT=0 HIP_VISIBLE_DEVICES=0
+utils/timeit.sh arrayfire test -- ctest --test-dir <wt>/build-gfx1151 -R '_cuda$' -j1 --output-on-failure --timeout 900
+```
+No exclusions this time. **130/131 PASS in 1836 s.** Only failure `test_confidence_connected_cuda` (Image IO not configured, `AF_WITH_IMAGEIO=OFF`), the standing disposition on every platform. `test_sparse_arith_cuda` **Passed (52.5 s)**: the csrgeam2Nnz host-count fix (2f25788dc) removes the Windows sparse+sparse crash that made earlier runs on this host segfault or exclude it. `test_threading_cuda` Passed (9.8 s); the intermittent hipFFT hang from 2026-11-04 did not recur. No HIP fault, no 719.
+
+Comparison: 83f66a507 here was 128/130 run (sparse_arith excluded, threading timed out). Linux at 2f25788dc: 131/132 on gfx1201 and gfx942 (same sole failure).
