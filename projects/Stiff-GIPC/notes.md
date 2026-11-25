@@ -86,3 +86,22 @@ Worth taking up as its own port: MPL-2.0 (tier 2, same as GPU_IPC), no duplicate
 | Repository | Upstream | Licence (full intake scan) |
 | --- | --- | --- |
 | Stiff-GIPC | https://github.com/KemengHuang/Stiff-GIPC | MPL-2.0 (root LICENSE since first commit; vendored METIS/GKlib Apache-2.0; no NVIDIA proprietary text; README asks commercial users to contact the authors) |
+
+## Planning 2026-11-25 (linux-gfx90a, no GPU used)
+
+Plan in `plan.md`, surface floor in `surface.json` (49 CUDA files and 15 generated components, plus 12 planner-added: the six scenes, the batch and viewer run paths, the Windows build, the README section, and the two compat items below). Upstream main is still bb2849a7 (`git ls-remote`, 2026-11-25). The fork clone at `projects/Stiff-GIPC/src` is read-only; nothing was edited or pushed.
+
+Scope: full port, no cut, so no scope question for jeff. One executable; GLUT is initialized even in batch mode; MeshProcess is host-only and unchanged.
+
+Dependencies: no MOAT hard dependency (`depends_on` stays `[]`); no optional MOAT dependency. System packages: `libglew-dev freeglut3-dev libeigen3-dev nlohmann-json3-dev` (plus `xvfb` to run); on Windows, vcpkg `eigen3 freeglut glew nlohmann-json`. ROCm libraries: hipCUB/rocPRIM, hipBLAS, hipSPARSE (handles only).
+
+Facts probed on this host with the pip ROCm 10.1 SDK clang (`_rocm_sdk_devel/llvm/bin/clang++ -x hip --offload-arch=gfx90a -fgpu-rdc -nogpulib -c`, Eigen 3.4.0 from `/usr/include/eigen3`). These were syntax probes only, not a project build:
+
+- Predefined macros: host pass `__HIPCC__ __HIP__`; device pass adds `__HIP_DEVICE_COMPILE__`. There is no `__CUDACC__` and no `__CUDA_ARCH__` on either pass.
+- The `CT_GENERIC` pattern from `cuda_tools/cuda_def.h` (`#ifdef __CUDA_ARCH__` -> `__host__ __device__`) fails under HIP: `no matching function for call to 'twice' ... call to __host__ function from __global__ function`, "1 error generated when compiling for gfx90a". Adding `|| defined(__HIP_DEVICE_COMPILE__)` still fails, now "when compiling for host" (clang checks kernel bodies in the host pass). `#if defined(__CUDA_ARCH__) || defined(__HIPCC__)` compiles clean, including an HD template that calls a `__device__`-only function.
+- `Eigen::SelfAdjointEigenSolver<Matrix<double,9,9>>` constructed in a kernel fails: `HouseholderSequence.h:320 reference to __host__ function 'applyThisOnTheLeft'`, `ProductEvaluators.h:361 ... 'scaleAndAddTo'`, `BlasUtil.h:453 ... 'extract'`. `computeDirect()` on a 3x3 and the fixed products `A*B*A^T` at 9x9 and 12x12 compile clean in device code.
+- HIP's `__ballot_sync`/`__shfl_down_sync`/`__syncwarp(mask)` `static_assert(sizeof(MaskT) == 8)` (`hip/amd_detail/amd_warp_sync_functions.h:177-297`), so every `0xffffffff` call site in MASPreconditioner.cu and GIPC.cu is a compile error. The no-argument `__syncwarp()` exists (line 167).
+
+Validation harness: upstream's own batch mode (`GIPC_CASE=1..6`, `GIPC_STEPS=N`, `GIPC_DUMP_STATE=path`; exit 3 on a non-finite vertex), documented in upstream AGENTS.md. Under Xvfb it needs no xdotool. Upstream deleted its only test file in 42e69645; the plan does not resurrect it.
+
+Windows expectation: GPU_IPC's windows gate was waived 2026-11-20 because the gfx1151 laptop bugchecks (csagent.sys) under this code family's GPU work. If it recurs here, the windows platform gets `set-blocked` with the evidence and the waiver question goes to jeff; an agent may only suggest a waiver.

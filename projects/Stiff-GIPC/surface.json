@@ -1,0 +1,247 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "bb2849a7b292",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [
+      "StiffGIPC/abd_system/abd_sim_data.cu",
+      "StiffGIPC/abd_system/abd_system.cu",
+      "StiffGIPC/abd_system/abd_system_function/cal_abd_energy.cu",
+      "StiffGIPC/abd_system/abd_system_function/cal_q_tilde.cu",
+      "StiffGIPC/abd_system/abd_system_function/cal_x_from_q.cu",
+      "StiffGIPC/abd_system/abd_system_function/setup_abd_system_gradient_and_hessian.cu",
+      "StiffGIPC/abd_system/abd_system_function/step_forward.cu",
+      "StiffGIPC/abd_system/abd_system_function/update_velocity.cu",
+      "StiffGIPC/app/gl_main.cu",
+      "StiffGIPC/collision/ACCD.cu",
+      "StiffGIPC/collision/ACCD.cuh",
+      "StiffGIPC/collision/FrictionUtils.cuh",
+      "StiffGIPC/collision/mlbvh.cu",
+      "StiffGIPC/collision/mlbvh.cuh",
+      "StiffGIPC/core/GIPC.cu",
+      "StiffGIPC/core/GIPC.cuh",
+      "StiffGIPC/core/GIPC_PDerivative.cuh",
+      "StiffGIPC/core/gipc_system.cu",
+      "StiffGIPC/cuda_tools/cuda_buffer_view.h",
+      "StiffGIPC/cuda_tools/cuda_cub_wrappers.h",
+      "StiffGIPC/cuda_tools/cuda_def.h",
+      "StiffGIPC/cuda_tools/cuda_dense_vector.h",
+      "StiffGIPC/cuda_tools/cuda_linear_system.h",
+      "StiffGIPC/cuda_tools/cuda_tools.h",
+      "StiffGIPC/fem/device_fem_data.cu",
+      "StiffGIPC/fem/device_fem_data.cuh",
+      "StiffGIPC/fem/femEnergy.cu",
+      "StiffGIPC/fem/femEnergy.cuh",
+      "StiffGIPC/gipc/utils/math.h",
+      "StiffGIPC/linear_system/linear_system/global_linear_system.cu",
+      "StiffGIPC/linear_system/linear_system/global_matrix.cu",
+      "StiffGIPC/linear_system/linear_system/i_linear_system_solver.cu",
+      "StiffGIPC/linear_system/linear_system/i_preconditioner.cu",
+      "StiffGIPC/linear_system/linear_system/linear_subsystem.cu",
+      "StiffGIPC/linear_system/preconditioner/abd_preconditioner.cu",
+      "StiffGIPC/linear_system/preconditioner/diag_preconditioner.cu",
+      "StiffGIPC/linear_system/preconditioner/fem_mas_preconditioner.cu",
+      "StiffGIPC/linear_system/solver/pcg_solver.cu",
+      "StiffGIPC/linear_system/subsystem/abd_linear_subsystem.cu",
+      "StiffGIPC/linear_system/subsystem/fem_linear_subsystem.cu",
+      "StiffGIPC/linear_system/utils/converter.cu",
+      "StiffGIPC/linear_system/utils/spmv.cu",
+      "StiffGIPC/math/QRSVD.hpp",
+      "StiffGIPC/math/gpu_eigen_libs.cu",
+      "StiffGIPC/math/gpu_eigen_libs.cuh",
+      "StiffGIPC/solver/MASPreconditioner.cu",
+      "StiffGIPC/solver/MASPreconditioner.cuh",
+      "StiffGIPC/solver/PCG_SOLVER.cu",
+      "StiffGIPC/solver/PCG_SOLVER.cuh"
+    ],
+    "markers": {
+      "kernel": 192,
+      "device_code": 542,
+      "launch": 109,
+      "warp_intrinsic": 84
+    },
+    "libraries": {
+      "cub": 32,
+      "cublas": 9,
+      "cusparse": 8,
+      "cusolver": 15
+    }
+  },
+  "components": [
+    {
+      "id": "executable:gipc",
+      "kind": "executable",
+      "where": "CMakeLists.txt"
+    },
+    {
+      "id": "library:metis",
+      "kind": "library",
+      "where": "MeshProcess/External/METIS/libmetis/CMakeLists.txt"
+    },
+    {
+      "id": "library:metis_partition",
+      "kind": "library",
+      "where": "MeshProcess/metis_partition/CMakeLists.txt"
+    },
+    {
+      "id": "option:ASSERT",
+      "kind": "option",
+      "where": "MeshProcess/External/GKlib/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "turn asserts on"
+    },
+    {
+      "id": "option:ASSERT2",
+      "kind": "option",
+      "where": "MeshProcess/External/GKlib/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "additional assertions"
+    },
+    {
+      "id": "option:DEBUG",
+      "kind": "option",
+      "where": "MeshProcess/External/GKlib/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "add debugging support"
+    },
+    {
+      "id": "option:GDB",
+      "kind": "option",
+      "where": "MeshProcess/External/GKlib/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "add gdb support"
+    },
+    {
+      "id": "option:GKRAND",
+      "kind": "option",
+      "where": "MeshProcess/External/GKlib/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "enable GKRAND support"
+    },
+    {
+      "id": "option:GKREGEX",
+      "kind": "option",
+      "where": "MeshProcess/External/GKlib/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "enable GKREGEX support"
+    },
+    {
+      "id": "option:GPROF",
+      "kind": "option",
+      "where": "MeshProcess/External/GKlib/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "add gprof support"
+    },
+    {
+      "id": "option:NO_X86",
+      "kind": "option",
+      "where": "MeshProcess/External/GKlib/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "enable no-x86 support"
+    },
+    {
+      "id": "option:OPENMP",
+      "kind": "option",
+      "where": "MeshProcess/External/GKlib/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "enable OpenMP support"
+    },
+    {
+      "id": "option:PCRE",
+      "kind": "option",
+      "where": "MeshProcess/External/GKlib/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "enable PCRE support"
+    },
+    {
+      "id": "option:SHARED",
+      "kind": "option",
+      "where": "MeshProcess/External/GKlib/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "enable shared support"
+    },
+    {
+      "id": "option:VALGRID",
+      "kind": "option",
+      "where": "MeshProcess/External/GKlib/CMakeLists.txt",
+      "default": "OFF",
+      "doc": "enable valgrind support"
+    },
+    {
+      "id": "scene:case1",
+      "kind": "scene",
+      "where": "StiffGIPC/app/gl_main.cu set_case1, run with GIPC_CASE=1 GIPC_STEPS=N",
+      "doc": "box pipe (ABD)"
+    },
+    {
+      "id": "scene:case2",
+      "kind": "scene",
+      "where": "StiffGIPC/app/gl_main.cu set_case2, run with GIPC_CASE=2 GIPC_STEPS=N",
+      "doc": "soft-rigid-cloth coupling"
+    },
+    {
+      "id": "scene:case3",
+      "kind": "scene",
+      "where": "StiffGIPC/app/gl_main.cu set_case3, run with GIPC_CASE=3 GIPC_STEPS=N",
+      "doc": "wrecking ball (JSON scene)"
+    },
+    {
+      "id": "scene:case4",
+      "kind": "scene",
+      "where": "StiffGIPC/app/gl_main.cu set_case4, run with GIPC_CASE=4 GIPC_STEPS=N",
+      "doc": "fixed cloth"
+    },
+    {
+      "id": "scene:case5",
+      "kind": "scene",
+      "where": "StiffGIPC/app/gl_main.cu set_case5, run with GIPC_CASE=5 GIPC_STEPS=N",
+      "doc": "twisting mat (FEM)"
+    },
+    {
+      "id": "scene:case6",
+      "kind": "scene",
+      "where": "StiffGIPC/app/gl_main.cu set_case6, run with GIPC_CASE=6 GIPC_STEPS=N",
+      "doc": "large box pipe and cloth (default)"
+    },
+    {
+      "id": "path:batch-mode",
+      "kind": "run-path",
+      "where": "StiffGIPC/app/gl_main.cu:1753-1806",
+      "doc": "GIPC_STEPS/GIPC_CASE/GIPC_DUMP_STATE non-interactive run; upstream's documented validation path"
+    },
+    {
+      "id": "path:interactive-viewer",
+      "kind": "run-path",
+      "where": "StiffGIPC/app/gl_main.cu",
+      "doc": "GLUT viewer; same binary, compute path identical to batch mode"
+    },
+    {
+      "id": "build:windows",
+      "kind": "build",
+      "where": "CMakeLists.txt (MSVC/vcpkg blocks)",
+      "doc": "upstream supports Windows; HIP build with clang+Ninja"
+    },
+    {
+      "id": "doc:readme-build",
+      "kind": "doc",
+      "where": "README.md Dependencies",
+      "doc": "ROCm build instructions"
+    },
+    {
+      "id": "compat:cuda_tools-compile-phase-macros",
+      "kind": "compat",
+      "where": "StiffGIPC/cuda_tools/cuda_def.h:13, cuda_all.h:12",
+      "doc": "CT_GENERIC on __CUDA_ARCH__ and cub wrappers on __CUDACC__; HIP defines neither"
+    },
+    {
+      "id": "compat:device-eigen-eigensolver",
+      "kind": "compat",
+      "where": "fem/femEnergy.cu:66 makePDSNK<6,9,12>; cuda_tools/cuda_eigen.h:173 evd<9>",
+      "doc": "Eigen general SelfAdjointEigenSolver is host-only under clang"
+    }
+  ],
+  "covered": [],
+  "scoped_out": [],
+  "owed": [],
+  "removed_from_floor": []
+}
