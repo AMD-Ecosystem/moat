@@ -9,8 +9,8 @@
       "refs": [
         "projects/autoware_universe/notes.md#validation-2026-11-23"
       ],
-      "status": "open",
-      "upstream_issue": null,
+      "status": "filed",
+      "upstream_issue": "https://github.com/ROCm/rocm-systems/issues/16758",
       "created_at": "2026-11-23T23:48:02Z",
       "decided": {
         "choice": "now",
@@ -35,8 +35,8 @@
       "refs": [
         "projects/autoware_universe/notes.md#validation-2026-11-23"
       ],
-      "status": "open",
-      "upstream_issue": null,
+      "status": "filed",
+      "upstream_issue": "https://github.com/autowarefoundation/autoware_universe/issues/13676",
       "created_at": "2026-11-23T23:48:02Z",
       "decided": {
         "choice": "now",
@@ -53,8 +53,8 @@
       "refs": [
         "projects/autoware_universe/notes.md#porter-round-2-2026-11-24"
       ],
-      "status": "open",
-      "upstream_issue": null,
+      "status": "filed",
+      "upstream_issue": "https://github.com/autowarefoundation/autoware_universe/issues/13677",
       "created_at": "2026-11-24T00:55:53Z",
       "decided": {
         "choice": "now",
@@ -71,8 +71,8 @@
       "refs": [
         "projects/autoware_universe/notes.md#porter-round-5"
       ],
-      "status": "open",
-      "upstream_issue": null,
+      "status": "filed",
+      "upstream_issue": "https://github.com/autowarefoundation/autoware_universe/issues/13678",
       "created_at": "2026-11-24T04:23:15Z",
       "decided": {
         "choice": "now",
