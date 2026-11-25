@@ -21,8 +21,11 @@ Contents:
   `hipGetDeviceProperties(&prop, dev); prop.warpSize`, or `hipDeviceAttributeWarpSize`.
   PyTorch exposes `at::cuda::warp_size()`.
 - Device code uses a compile-time per-arch constant. `__GFX9__` is defined only during
-  device compilation; there is no `__AMDGCN_WAVEFRONT_SIZE__` in ROCm 7.2.x or 7.14, so the
-  `__GFX*__` guards are the supported selector:
+  device compilation; there is no `__AMDGCN_WAVEFRONT_SIZE__` in ROCm 7.2.x or 7.14, and
+  ROCm 10.1's clang no longer defines `__AMDGCN_WAVEFRONT_SIZE` either, so code that picks a
+  width from it at preprocessing time falls to its non-AMD default (check with `amdclang++
+  -x hip --offload-arch=gfx90a --cuda-device-only -nogpulib -dM -E`). The `__GFX*__` guards
+  are the supported selector:
 
         #if defined(__GFX8__) || defined(__GFX9__)
         static constexpr int kWarpSize = 64;   // CDNA: gfx90a, gfx94x
@@ -253,6 +256,13 @@ mask of the debug-trap entry above; what breaks is relying on their defaults.) W
 layer as functions under project-owned names, not as macros named after the intrinsics
 (build-headers-macros.md, "Do not name compat macros after the warp functions ROCm
 declares"). (GPU_IPC)
+Which calls break shows where to look first: scans and xor/down reductions guarded by `lane %
+32` mostly survive the full-wavefront default, because their reads stay inside a 32-lane half,
+while a call that names an ABSOLUTE source lane (`__shfl_sync(~0, v, lane / 2)`, a lane-0
+broadcast of per-warp data) silently reads the lower half on wave64. A layer whose ballot
+already returns the caller's 32-bit half can default its shuffles to 32 through wrappers with
+a default argument (`T shfl(T v, int src, int w = 32)`), so explicit widths still pass
+through. (cuSZ: LC-framework output outside its error bound on gfx90a only.)
 
 **A fixed-cluster warp reduction is wavefront-safe exactly when the cluster size equals the
 pinned shuffle width AND the clusters are aligned to it: check that, do not restructure the

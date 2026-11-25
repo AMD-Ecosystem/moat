@@ -90,7 +90,7 @@ AMD-native target is not the same verdict as "no target exists"; say which.
 | CMake, link or load errors: `LANGUAGE HIP`, `-fgpu-rdc`, OpenMP, RUNPATH, LibTorch, installed packages, submodules | `references/build-cmake-link.md` |
 | anything on Windows: SDK install, clang drivers, CRT and link errors, DLL loading, Windows-only wrong results, debugging | `references/windows.md` (link wrapper for a clang-cl host with `-fgpu-rdc`: `assets/hip_link_win.py`) |
 | a CUDA library to replace, or a missing routine or mode: cuBLAS, cuSOLVER, cuDNN, cuSPARSE, Thrust/CUB, cuRAND, NCCL, RAPIDS, nvJPEG, NVDEC, NVML | `references/libraries.md` |
-| a device query that answers differently, `clock64`, occupancy, kernels compiled at run time (PTX, NVRTC), an integrated APU | `references/platform-limits.md` |
+| a device query that answers differently, `clock64`, occupancy, a grid too large to launch, kernels compiled at run time (PTX, NVRTC, Triton), an integrated APU | `references/platform-limits.md` |
 | a failure you cannot place yet, or a suspected ROCm bug | `references/diagnosis.md` |
 | correct results but far slower than the CUDA build: profiling, kernel ISA, emulated packed intrinsics | `references/performance.md` |
 | what counts as validated; compiling the CUDA path with nvcc | `references/validation.md` |
@@ -230,6 +230,9 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 
 - clang for HIP defaults to `-ffp-contract=fast`
 - One contraction setting cannot satisfy both kinds of bit-exact test
+- When bit-exact tests pin nvcc's results and no global setting is clean, read nvcc's fused ...
+- A test that fails deterministically on some AMD targets only, with an error that scales ...
+- AMDGPU can fold a float-to-half conversion into the preceding fma, rounding once where ...
 - `-ffast-math` is NOT the HIP translation of nvcc's `--use_fast_math`, and reaching for it ...
 - `-ffast-math` implies `-ffinite-math-only` under clang; nvcc's `--use_fast_math` does not ...
 - `__fsqrt_rn` is not always correctly rounded on gfx90a
@@ -261,6 +264,7 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - A macro that nvcc or a CUDA header defines and HIP does not reads as 0, and every gate on ...
 - `__HIP_PLATFORM_AMD__` is undefined until `hip/hip_runtime.h` has been included in that TU
 - Defining `__CUDA_ARCH__` for the HIP device pass also feeds every numeric gate
+- A code generator's device-pass guards live in strings, and fail only when a model uses ...
 - Audit every macro class that gates a dtype or arch path, not just `__CUDA_ARCH__`
 - `CUDART_VERSION` is undefined under HIP, so every `#if CUDART_VERSION >= N` guard ...
 - Project code that splits on `__CUDACC__` means "compiled by the device compiler", and HIP ...
@@ -278,6 +282,7 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - clang checks kernel bodies in the HIP host pass; nvcc does not
 - The CUDA Samples `helper_math.h` makes vector arithmetic ambiguous under HIP
 - HIP's `blockIdx`/`threadIdx` do not convert to `uint3`, and a `uint3` does not convert to ...
+- HIP's host-side `__half` needs the HIP compiler, and `HIP_vector_type`'s operators hijack ...
 - A helper whose name the standard library also declares must NOT be guarded on ...
 - Extend a CUDA guard for HIP; never re-key it
 - A ROCm-only branch inside a shared template still COMPILES on the CUDA path
@@ -358,10 +363,14 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - Choosing the NVIDIA or AMD build of a library at run time
 - A scalar's WIDTH follows the compute/scale type, not the matrix type
 - hipBLASLt epilogues are not cuBLASLt's, per type and per format
+- PyTorch's ROCm MX GEMM wants unswizzled scales, M, N and K in multiples of 32, and no bias
 - Generic GEMM on CK device operations
+- Composable Kernel older than tag rocm-7.2.0 races on gfx11 LDS barriers
 - Fused FP16 attention (cuDNN SDPA, flash attention): MIOpen has no path, CK's FMHA does
+- PyTorch's fused SDPA on gfx1100 fails at head dims 257 to 512 with an unrelated HIP error
 - rocBLAS `gemv` over more than 65535 batches returns wrong entries, and `cupy.einsum` ...
 - On gfx12, rocBLAS complex GEMM with n > 2^21 leaves columns unwritten
+- Some MIOpen convolution solvers are not run-to-run reproducible; establish the noise ...
 - A "find the best algorithm" call WRITES to the tensor named as its output
 - MIOpen honours only a unit alpha and a zero beta for 2D convolution, pooling and bias
 - MIOpen runs a convolution only on a handle where Find ran for it
@@ -370,6 +379,7 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - A zero workspace size does not mean "skip the operation"
 - hipSPARSE has no uniform half-precision SpMM
 - Library calls inside HIP graph capture
+- A device pointer passed while the handle is in host pointer mode crashes only on some ...
 - rocThrust's `thrust/system/cuda/error.h` is CUDA-only
 - Prefer the specific hipCUB algorithm header over the `<hipcub/hipcub.hpp>` umbrella
 - rocPRIM never asks for less than 4 bytes of temp storage
@@ -409,9 +419,12 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - A refused shared-memory opt-in trips the last-error check placed before the project's own ...
 - AMD's 64 KB LDS breaks "half the per-SM shared memory" tile heuristics, and the ...
 - gfx12 work-group IDs y and z are 16 bits: a grid y or z above 65536 is rejected or ...
+- HIP limits each grid dimension to fewer than 2^32 work-items, not to 2^31 - 1 blocks
 - Runtime PTX plus the CUDA Driver API is a THIRD build class
 - NVRTC (CUDA C++ generated at run time) ports to hipRTC
 - Runtime-compiled kernels inherit nothing from the host build
+- Triton on AMD accepts `input_precision='tf32'` only on gfx942
+- CUDA-namespaced libdevice calls and hard-coded FP8 types
 - An integrated APU reports the whole shared memory pool as device memory
 - An integrated APU can crash the device linker under build parallelism
 - A low-CU integrated GPU can outrun a fixed upstream test timeout without any fault
@@ -443,6 +456,8 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - A sync-bound GPU test that passes alone can time out under `ctest -jN`
 - A free-memory leak check measures the whole GPU, not your process
 - A free-memory-delta test can fail once per process on gfx90a
+- A fixed "leak" after the first launch of a spilling kernel is the scratch allocation ...
+- O_DIRECT I/O fails with EINVAL on a container's overlay filesystem
 - Two GPUs visible to one process can crash the runtime
 
 **`references/performance.md`** -- Performance: what a correct port can still lose
@@ -480,5 +495,6 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - Headless Vulkan on a Linux GPU host: Xvfb plus Mesa's software WSI
 - Driving a compute demo whose only entry point is an interactive GL window
 - A GPU test that hangs only under `ctest -jN` is usually the software GL stack
+- Headless EGL on an Instinct host lists every GPU before the software device
 - HIP and Vulkan in one process can oops the kernel on an old amdgpu-dkms
 <!-- index:end -->

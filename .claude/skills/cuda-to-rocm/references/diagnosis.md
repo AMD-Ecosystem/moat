@@ -232,6 +232,34 @@ fixed amount on its first run in a process and pass on repeats. Check with
 `--gtest_repeat=3` in one process before calling it a leak: a leak grows each
 repetition, a first-use cost appears once. (LichtFeld-Studio)
 
+### A fixed "leak" after the first launch of a spilling kernel is the scratch allocation growing
+
+A "no leak over N calls" test can fail on one AMD architecture by a fixed amount (25.75 MB in
+one case) that does not change with problem size, while each operation warmed up on its own
+shows zero drift. The first launch of a kernel that needs more private (scratch) memory per
+lane than any kernel before it makes the HIP runtime grow the queue's scratch allocation,
+sized per lane times the maximum number of resident waves, and keep it. Kernels tuned for
+NVIDIA's 255 registers per thread (a fully unrolled column of 8 accumulators) can exceed the
+128 VGPRs clang allows on gfx90a for a kernel without `__launch_bounds__` and spill hundreds
+of registers (platform-limits.md, "A kernel launched with fewer than 1024 threads needs
+`__launch_bounds__` on HIP to get its registers"). Separate the first call from the steady
+state, and read `.private_segment_fixed_size`, `.vgpr_count` and `.vgpr_spill_count` for each
+kernel from `hipcc --cuda-device-only -S`. Remove the spill rather than the test: a smaller
+unroll (4 voxels per thread instead of 8 was also about 2x faster on MI250X) or
+`__launch_bounds__` with the real block size (no spill, but slower there). Wave32 RDNA did
+not spill on the same kernel. (TIGRE cone backprojectors)
+
+### O_DIRECT I/O fails with EINVAL on a container's overlay filesystem
+
+A storage test that opens its files with `O_DIRECT` in a directory under the test's working
+directory can fail with `pwrite ... errno=22 (Invalid argument)` when that directory is on a
+container's overlay root, and pass on the same host from tmpfs or a real ext4/xfs mount. It
+looks like a GPU or pinned-buffer fault because the write source is a staged device buffer.
+Rerun the failing cases from a tmpfs working directory (`cd /dev/shm/<dir> && <test binary>
+--gtest_filter=...`), and check whether the project's CPU-only (simulated-device) build fails
+the same cases on the same filesystem. If both point at the filesystem, it is the host
+environment, not the port. (unified-cache-management)
+
 ## Multi-GPU hosts
 
 ### Two GPUs visible to one process can crash the runtime

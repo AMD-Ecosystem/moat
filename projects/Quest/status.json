@@ -1,0 +1,245 @@
+{
+  "schema_version": 3,
+  "name": "Quest",
+  "upstream_url": "https://github.com/mit-han-lab/Quest",
+  "fork_url": "https://github.com/AMD-Ecosystem/Quest",
+  "fork_default_branch": "main",
+  "priority": 3.866,
+  "ext_type": "torch-extension",
+  "adopted_at": "2026-05-30T01:04:50Z",
+  "updated_at": "2026-11-25T23:08:51Z",
+  "head_sha": "2a3e44f0150db42e31b02850cbdb051737ead280",
+  "depends_on": [],
+  "waivers": {},
+  "license_spdx": "MIT",
+  "upstream_repo_id": 815507746,
+  "stage": "review-passed",
+  "platforms": {
+    "linux-gfx1100": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "2a3e44f0150db42e31b02850cbdb051737ead280",
+      "started_at": "2026-08-08T17:49:02Z",
+      "completed_at": "2026-11-24T06:55:34Z",
+      "updated_at": "2026-11-24T20:58:52Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "state": "completed",
+      "validated_prior": [
+        "c9828e2eb037b1052ac4d036389481949ee29c4a",
+        "9cb8bee0b33326a6d5f177d4a2e466bcc7f0e963",
+        "517c6a746eebc5e0b5a6cc23416e1be089d95885"
+      ],
+      "carry_forward": {
+        "from": "517c6a746eebc5e0b5a6cc23416e1be089d95885",
+        "to": "2a3e44f0150db42e31b02850cbdb051737ead280",
+        "method": "squash",
+        "detail": "tree-identical squash of the validated head",
+        "at": "2026-11-24T20:58:52Z"
+      }
+    },
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "2a3e44f0150db42e31b02850cbdb051737ead280",
+      "failed_sha": "ac7382c78aa21fe51db761d691e320bfb7a87217",
+      "started_at": "2026-08-19T21:38:01Z",
+      "completed_at": "2026-11-25T21:05:22Z",
+      "updated_at": "2026-11-25T21:05:22Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "last_agent": "moat-checkup-2026-11-20",
+      "validated_prior": [
+        "c9828e2eb037b1052ac4d036389481949ee29c4a",
+        "6e7d8db768950aab224fece523f1f640d2f5b6c9",
+        "2b938d8ab5eea6b19d522a53681a68819bf04dca",
+        "9cb8bee0b33326a6d5f177d4a2e466bcc7f0e963"
+      ]
+    },
+    "linux-gfx90a": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "2a3e44f0150db42e31b02850cbdb051737ead280",
+      "started_at": "2026-06-04T21:24:50Z",
+      "completed_at": "2026-11-24T20:09:54Z",
+      "updated_at": "2026-11-24T20:58:52Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "state": "completed",
+      "validated_prior": [
+        "c9828e2eb037b1052ac4d036389481949ee29c4a",
+        "517c6a746eebc5e0b5a6cc23416e1be089d95885"
+      ],
+      "carry_forward": {
+        "from": "517c6a746eebc5e0b5a6cc23416e1be089d95885",
+        "to": "2a3e44f0150db42e31b02850cbdb051737ead280",
+        "method": "squash",
+        "detail": "tree-identical squash of the validated head",
+        "at": "2026-11-24T20:58:52Z"
+      }
+    },
+    "linux-gfx950": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "2a3e44f0150db42e31b02850cbdb051737ead280",
+      "failed_sha": null,
+      "started_at": "2026-11-23T20:24:33Z",
+      "completed_at": "2026-11-24T06:21:58Z",
+      "updated_at": "2026-11-24T20:58:52Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "last_agent": "validator",
+      "validated_prior": [
+        "9cb8bee0b33326a6d5f177d4a2e466bcc7f0e963",
+        "517c6a746eebc5e0b5a6cc23416e1be089d95885"
+      ],
+      "carry_forward": {
+        "from": "517c6a746eebc5e0b5a6cc23416e1be089d95885",
+        "to": "2a3e44f0150db42e31b02850cbdb051737ead280",
+        "method": "squash",
+        "detail": "tree-identical squash of the validated head",
+        "at": "2026-11-24T20:58:52Z"
+      }
+    },
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "2a3e44f0150db42e31b02850cbdb051737ead280",
+      "failed_sha": null,
+      "started_at": "2026-11-19T05:25:42Z",
+      "completed_at": "2026-11-24T05:33:33Z",
+      "updated_at": "2026-11-24T20:58:52Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "state": "completed",
+      "validated_prior": [
+        "6e7d8db768950aab224fece523f1f640d2f5b6c9",
+        "2b938d8ab5eea6b19d522a53681a68819bf04dca",
+        "9cb8bee0b33326a6d5f177d4a2e466bcc7f0e963",
+        "517c6a746eebc5e0b5a6cc23416e1be089d95885"
+      ],
+      "carry_forward": {
+        "from": "517c6a746eebc5e0b5a6cc23416e1be089d95885",
+        "to": "2a3e44f0150db42e31b02850cbdb051737ead280",
+        "method": "squash",
+        "detail": "tree-identical squash of the validated head",
+        "at": "2026-11-24T20:58:52Z"
+      }
+    },
+    "linux-gfx1201": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "2a3e44f0150db42e31b02850cbdb051737ead280",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-11-24T06:20:13Z",
+      "updated_at": "2026-11-24T20:58:52Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "validated_prior": [
+        "6e7d8db768950aab224fece523f1f640d2f5b6c9",
+        "2b938d8ab5eea6b19d522a53681a68819bf04dca",
+        "9cb8bee0b33326a6d5f177d4a2e466bcc7f0e963",
+        "517c6a746eebc5e0b5a6cc23416e1be089d95885"
+      ],
+      "carry_forward": {
+        "from": "517c6a746eebc5e0b5a6cc23416e1be089d95885",
+        "to": "2a3e44f0150db42e31b02850cbdb051737ead280",
+        "method": "squash",
+        "detail": "tree-identical squash of the validated head",
+        "at": "2026-11-24T20:58:52Z"
+      }
+    }
+  },
+  "porting_released": {
+    "arch": "linux-gfx942",
+    "since": "2026-11-24T04:56:10Z",
+    "at": "2026-11-24T05:14:16Z"
+  },
+  "reviewed_sha": "2a3e44f0150db42e31b02850cbdb051737ead280",
+  "review_pr": "https://github.com/AMD-Ecosystem/Quest/pull/2",
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-11-25T23:06:16Z",
+    "head_sha": "2a3e44f0150db42e31b02850cbdb051737ead280",
+    "content_sha256": "fee932e6eb813d5e66d750c3cc77076464cda02f7e01fe3af07f48bacc367c8b",
+    "review_pr": "https://github.com/AMD-Ecosystem/Quest/pull/2"
+  },
+  "pr_url": "https://github.com/mit-han-lab/Quest/pull/34",
+  "pr_number": 34,
+  "pr_opened_at": "2026-11-25T23:08:51Z",
+  "pr_state": "open",
+  "published_sha": "2a3e44f0150db42e31b02850cbdb051737ead280"
+}
