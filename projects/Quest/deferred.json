@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "quest-gfx1151-decode-attn-wrong",
+      "kind": "rocm-bug-report",
+      "component": "flashinfer compat shims / ROCm 7.14 codegen",
+      "summary": "BatchDecodeWithPagedKVCache returns ~98.5% wrong elements on windows-gfx1151 (ROCm 7.14, clang 23) while rope/estimate pass and the same branch passes on gfx1100/gfx90a at ROCm 7.2.3; not aliasing, not -O3 (both rebuilt and retested)",
+      "refs": [],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-08-13T22:02:47Z",
+      "decided": null
+    },
+    {
+      "id": "quest-hip-cp-async-noop-pipeline-race",
+      "kind": "other",
+      "component": "kernels/include/hip_compat/flashinfer (cp_async.cuh not shimmed)",
+      "summary": "PORT DEFECT (supersedes quest-gfx1151-decode-attn-wrong, which wrongly blamed ROCm). Under HIP __CUDACC_VER_MAJOR__ is undefined, so FLASHINFER_CP_ASYNC_ENABLED is off and cp_async commit_group/wait_group compile to empty, leaving the decode kernel 2-stage smem pipeline with no ordering. Races at >=4 wavefronts per block: wrong on gfx1151, LATENT on gfx90a/gfx1100 which currently pass by scheduling luck. Proven: num_stages_smem=1 gives 121/121; bdz 1/2/4 pass, bdz=8 fails. Fix = shim cp_async.cuh, or force single-stage on the HIP path",
+      "refs": [],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-08-13T22:29:34Z",
+      "decided": null
+    },
+    {
+      "id": "quest-decode-single-block-path-broken",
+      "kind": "other",
+      "component": "kernels/include/decode/decode_attn.cuh (non-partitioned decode path)",
+      "summary": "FIXED in 9be60fc. The sparse decode kernel's single-block launch shape is broken: it runs with gridDim.x==1 where the slice-length expression (batch_idx == gridDim.x-1 ? last_page_len : page_size) always picks last_page_len, collapsing the block's KV slice. Only reachable when num_kv_heads saturates the occupancy grid, i.e. on low-CU parts -- gfx1151 (20 CUs) hit it, gfx1100 (70) and gfx942 (304) never did. Correcting that one expression is NOT sufficient; the path has at least one further defect, so it is disabled rather than repaired. Left open for a porter who wants to repair and re-enable it",
+      "refs": [],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-08-13T23:34:36Z",
+      "decided": {
+        "choice": "now",
+        "by": "Jeff Daily",
+        "at": "2026-08-19T18:46:18Z"
+      }
+    },
+    {
+      "id": "quest-single-block-disable-changes-cuda",
+      "kind": "other",
+      "component": null,
+      "summary": "RULED now by Jeff Daily 2026-08-19, to be done in the same porting round as quest-decode-single-block-path-broken. 9be60fc disables the single-block decode path with a plain 'constexpr bool kSingleBlockPathIsCorrect = false' in the shared kernels/include/decode/decode_attn.cuh, with no HIP guard, so CUDA builds take it too. The selecting condition (batch_size * num_kv_heads >= blocks_per_cu * cu_count) is reachable on a low-SM NVIDIA card, so the change alters NVIDIA launch behaviour under a [ROCm] commit prefix, and nothing about the defect is HIP-specific. Compounding it, the CUDA no-regression gate is recorded cuda-not-validated at this head (RAFT branch-24.02 CUDA::nvToolsExt wall), so the CUDA path is not even compile-checked. Decision: keep the CUDA path at upstream behaviour. If the single-block path is successfully repaired and re-enabled, this resolves itself; if any disable survives the repair, it must be HIP-guarded.",
+      "refs": [
+        "projects/Quest/notes.md"
+      ],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-08-19T18:46:43Z",
+      "decided": {
+        "choice": "now",
+        "by": "Jeff Daily",
+        "at": "2026-08-19T18:46:48Z"
+      }
+    },
+    {
+      "id": "quest-c1d7fff-missing-ai-disclosure",
+      "kind": "other",
+      "component": null,
+      "summary": "c1d7fff, the commit the moat-port branch is built on, has no AI-assistance disclosure in its body; the other three commits do. AGENTS.md requires it per commit. It cannot be fixed by amending: that would rewrite the branch and orphan the validated shas. The intended remedy is the PR-prep squash to one commit, whose message carries the disclosure -- but nothing enforces that squash, so this must be checked before publishing. upstream.py --publish runs 'gh pr create --head <fork>:<branch>' and publishes the branch as it stands, publish_blockers has no squash requirement, and neither CONTRIBUTING.md nor the moat-checkup skill mentions squashing. Ruling wanted: squash at PR prep (and confirm the squash message carries the disclosure), or accept the branch as-is and rewrite before publication.",
+      "refs": [
+        "projects/Quest/notes.md"
+      ],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-08-20T00:14:40Z",
+      "decided": null
+    },
+    {
+      "id": "quest-prefill-matrix-cores",
+      "kind": "other",
+      "component": null,
+      "summary": "Quest's HIP prefill (prefill_with_paged_kv_cache) emulates mma.sync/ldmatrix with lane shuffles and fp32 FMA: correct on wave32 and wave64, but 30-50x slower than torch SDPA on MI300X (4096x4096 causal: 431 ms vs 14 ms). Options: AMD-native MFMA/WMMA rewrite of prefill.cuh, or route the HIP operator through at::scaled_dot_product_attention after gathering pages. Needs a ruling on whether either is wanted before upstream submission.",
+      "refs": [
+        "projects/Quest/notes.md#prefill-performance-correct-but-on-the-vector-units----a-decision-for-jeff",
+        "projects/Quest/notes.md#ruling-2026-11-25-jeffdaily-gfx950-ships-as-it-is"
+      ],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-11-19T07:42:41Z",
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-11-20T00:43:04Z",
+        "note": "Ruled in session 2026-11-20: do the matrix-core prefill before the upstream pull request is sent; Quest is held until then."
+      }
+    }
+  ]
+}
