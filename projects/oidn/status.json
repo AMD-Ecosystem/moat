@@ -6,9 +6,9 @@
   "fork_default_branch": "master",
   "priority": 0.0,
   "ext_type": "cmake",
-  "stage": "porting",
+  "stage": "reviewing",
   "adopted_at": "2026-11-06T02:27:16Z",
-  "updated_at": "2026-11-25T20:50:06Z",
+  "updated_at": "2026-11-25T20:51:01Z",
   "head_sha": "130cb6da9658cee2ea6393f68b1555d3c3e130d1",
   "depends_on": [],
   "waivers": {},
@@ -68,7 +68,7 @@
       "failed_sha": "06bdc4c46ce3be658f25598f5af6db01febc78d8",
       "started_at": "2026-11-25T20:37:04Z",
       "completed_at": null,
-      "updated_at": "2026-11-25T20:37:04Z",
+      "updated_at": "2026-11-25T20:51:01Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -83,7 +83,7 @@
         "last_session_at": null
       },
       "state": "validation-failed",
-      "last_agent": "validator"
+      "last_agent": "reviewer"
     },
     "linux-gfx90a": {
       "blocked": false,
@@ -128,9 +128,9 @@
     "at": "2026-11-10T18:16:24Z"
   },
   "porting_released": {
-    "arch": "linux-gfx90a",
-    "since": "2026-11-23T20:21:40Z",
-    "at": "2026-11-23T20:28:27Z"
+    "arch": "linux-gfx1100",
+    "since": "2026-11-25T20:37:04Z",
+    "at": "2026-11-25T20:50:49Z"
   },
   "base_branch_ruling": {
     "branch": "master",
@@ -141,7 +141,7 @@
   "reviewed_sha": "06bdc4c46ce3be658f25598f5af6db01febc78d8",
   "porting": {
     "arch": "linux-gfx1100",
-    "since": "2026-11-25T20:37:04Z",
+    "since": "2026-11-25T20:51:01Z",
     "holder": "ee9fac1c202b"
   }
 }
