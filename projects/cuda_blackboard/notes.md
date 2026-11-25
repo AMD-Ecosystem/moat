@@ -388,3 +388,54 @@ colcon test-result --verbose --test-result-base build/cuda_blackboard
 ### Lesson for moat-porting: `utils/timeit.sh` runs its command from the MOAT root
 
 `timeit.sh` does `cd "$(dirname "$0")/.."` before running the wrapped command. A bare `colcon build` (or any tool that writes relative to the cwd) therefore writes `build/`, `install/` and `log/` into the MOAT checkout. Wrap a script that `cd`s to its workspace first (`timeit.sh <name> compile -- bash build.sh`), or pass absolute `--build-base`/`--install-base`.
+
+## Review 2026-11-25 (reviewer role, linux-gfx942 fleet job; delta 9e0fb865...b76dacb)
+
+Scope: `git diff 9e0fb865...b76dacb` (merge `94e27aa` of upstream `e4e1206`, plus `lint` `b76dacb`), reviewed with the pr-review skill. This job wrote the delta, so an independent child agent reviewed it first. I re-checked each of its claims below against the code. Verdict: **review-passed**. No code defect.
+
+Verified:
+- **The merge is faithful.** `94e27aa` has parents 9e0fb86 and e4e1206, and the merge base is a4f330e. `git diff upstream/main 94e27aa` is identical to `git diff a4f330e 9e0fb86` (16 files, +198/-18), and `git diff 9e0fb86 94e27aa` is identical to `git diff a4f330e upstream/main` (17 files, +145/-61). Nothing was dropped on either side.
+- **No interaction with the port.** The only upstream source change is the token-identical reflow in `cuda_unique_ptr.hpp`. No new `cuda*` identifier, and CMakeLists.txt, package.xml and cmake/ are untouched. The child preprocessed the 8 library TUs at b76dacb in HIP mode (`g++ -E -D__HIP_PLATFORM_AMD__`, ROCm 10.2 headers). The only `cuda[A-Z]*` tokens left are inside log string literals, so every runtime name is mapped. None of the 42 macro names appears in the Jazzy install headers.
+- **The `lint` commit is neutral on HIP.** It changes include and blank lines only, and its message is exactly `lint`. Every file still gets the compat header before its first CUDA name (directly, or through `cuda_error.hpp:4` / `cuda_mem_pool_context.hpp:4`). In 8 of the 9 files the moved line was already a guarded re-include. The one real move is `include/cuda_blackboard/cuda_blackboard_subscriber.hpp:5`, where compat now precedes negotiated/rclcpp/std_msgs. The child compared the preprocessed HIP output of all 8 TUs at 94e27aa and b76dacb: 7 are identical. `cuda_blackboard_subscriber.cpp` differs in 6 libstdc++ attribute lines (`__attribute__((__noinline__))` -> `__attribute__(())`), because HIP's `amd_detail/host_defines.h` does `#define __noinline__` (empty) for a non-HIP-clang compiler, and that TU now parses libstdc++ after it. I confirmed the define in the ROCm 10.2 header. GCC accepts both forms, and the effect is a lost noinline hint on cold libstdc++ paths. The other 7 TUs already had exactly this at the validated head, so this is consistency, not a new behavior. A consumer header's position relative to the compat macros is unchanged, and the `#ifndef` guards behave as before.
+- **Commit messages.** The merge title is 37 chars, with an AI disclosure, a fenced Test Plan, no `Co-Authored-By`, and no internal vocabulary. `python3 utils/jargon.py --port cuda_blackboard`: clean.
+- **Upstream pre-commit at b76dacb.** All hooks pass (Porter 2026-11-25 above). The child's clang-format 23.1.2 `--dry-run --Werror` over every .hpp/.cpp is also clean, and it confirmed that clang-format 19.1.5 flags the same 9 files at 9e0fb86.
+
+Not a code finding, but owed: **the CUDA compile at b76dacb.** The nvcc check is recorded only at 9e0fb86. The lint commit moves `<cuda_runtime.h>` ahead of rclcpp/libstdc++ in the installed `cuda_blackboard_subscriber.hpp` on the CUDA path. Upstream's own `cuda_error.hpp` / `cuda_mem_pool_context.hpp` already include the CUDA headers first, so it should be neutral, but that is reasoning, not evidence. This host has no CUDA toolkit, so the check is listed under "Owed after this round" for the mi355 host.
+
+Wording nits in the squash message draft (the child's F2-F4), applied to the draft below: "a consumer's own compatibility header" narrowed to a macro-based one that maps the same names (a consumer `using cudaStream_t = hipStream_t;` would become `using hipStream_t = hipStream_t;`); "given no stream" extended to "or the legacy default stream" (`src/cuda_blackboard_subscriber.cpp:157-160` tests `nullptr || cudaStreamLegacy`); "builds exactly as before" on CUDA narrowed to "with the same configuration and libraries" (the headers now include `cuda_runtime.h` where upstream used `cuda_runtime_api.h`).
+
+Untested residual: upstream's cppcheck-differential job (now in a `ros:jazzy` container with `--library=.cppcheck_macros.cfg`) was not run, because this host has no cppcheck. It runs on the upstream PR.
+
+### Squashed commit message (draft, for the PR-prep squash ruled 2026-11-25)
+
+`python3 utils/prose.py` and `python3 utils/jargon.py` on the file: clean. The title is 42 chars. Before the squash is made, the Test Plan's claims must hold at the head being squashed: gfx1100 revalidated, and the CUDA 12.8 compile recorded at that head. If the head moves again, re-check them.
+
+````
+feat: support AMD GPUs through HIP on ROCm
+
+cuda_blackboard only builds when CUDA is found, so it cannot be used on AMD GPUs. The package has no device code: every CUDA call is a runtime API call made from host C++, and each one has a direct HIP equivalent.
+
+When find_package(CUDA) fails, CMakeLists.txt now looks for HIP (find_package(hip CONFIG), also searching ROCM_PATH and /opt/rocm) and, if found, builds the same targets linked against hip::host. Nothing goes through a device compiler and no new option is needed, so the documented colcon build works unchanged on a ROCm host, and a host with CUDA builds with the same configuration and libraries as before. On HIP the installed package configuration adds hip::host to the exported libraries, so consumers get the HIP include path and __HIP_PLATFORM_AMD__; it does not export hip::device, whose device-compilation flags a plain C++ compiler rejects.
+
+A new installed header, cuda_blackboard/cuda_runtime_compat.hpp, includes cuda_runtime.h on CUDA. On HIP it includes hip/hip_runtime_api.h and maps the CUDA runtime names this package uses to their HIP equivalents, each as an #ifndef-guarded macro with the same expansion as hipify, so a consumer's own macro-based compatibility header that maps the same names does not conflict with it. It lives under cuda_blackboard/ rather than shadowing cuda_runtime.h, because this package's include directory is exported to every consumer. It replaces the CUDA includes in the headers, sources and tests.
+
+On HIP, an event recorded on hipStreamLegacy crashes the next hipStreamWaitEvent that waits on it. The subscriber records its consumer-completion event on the legacy stream when it was given no stream or the legacy default stream, so on HIP it now records on the null stream, which is HIP's legacy default stream with the same blocking semantics. The upstream tests always pass a created stream and do not reach this path.
+
+The README notes that AMD GPUs are supported through HIP on ROCm.
+
+This change was written with the assistance of an AI coding agent.
+
+Test Plan:
+
+On an AMD Instinct MI300X (gfx942) and an AMD Radeon Pro W7800 (gfx1100), with ROCm 10.2 and ROS 2 Jazzy, the configure log reports the HIP build and all tests pass 20 times in a row:
+
+```
+colcon build --packages-up-to cuda_blackboard --cmake-args -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=<rocm prefix>
+colcon test --packages-select cuda_blackboard --event-handlers console_direct+ --ctest-args --repeat until-fail:20
+colcon test-result --verbose --test-result-base build/cuda_blackboard
+```
+
+A subscriber built with the constructor that takes no stream received 1000 PointCloud2 messages in the same process with no data mismatch. With CUDA 12.8 the same colcon build takes the CUDA branch and compiles with no warnings.
+
+Signed-off-by: Jeff Daily <jeff.daily@amd.com>
+````
