@@ -164,6 +164,8 @@ Recommendation: Request Changes (the bf16 include-order trap).
 
 ## Lesson for cuda-to-rocm: default shuffle width must be 32 when the port treats the warp as 32 lanes
 
+Promoted to cuda-to-rocm/references/faults-wavefront.md in f3bbd68e.
+
 For `faults-wavefront.md`. A translation layer that maps `__shfl_sync(mask, v, src)` to `__shfl(v, src)` inherits HIP's default width (the full wavefront, 64 on CDNA). Scans and xor/down reductions survive that, because their reads stay inside a 32-lane half when guarded by `lane % 32`. A call that names an absolute source lane (`__shfl_sync(~0, v, lane / 2)`, a lane-0 broadcast of per-warp data) silently reads the lower half on wave64. If the port's ballot translation already returns the caller's 32-bit half, make the shuffles default to width 32 too, through `__device__` wrappers with a default argument (`T psz_shfl(T v, int src, int w = 32)`), so explicit widths still pass through. Seen as LC-framework output that failed its error bound on gfx90a only (cuSZ, ROCm 10.1). Related: current ROCm clang no longer defines `__AMDGCN_WAVEFRONT_SIZE`, so code that picks a warp width from it at preprocessing time falls to its non-AMD default; check with `amdclang++ -x hip --offload-arch=gfx90a --cuda-device-only -nogpulib -dM -E`.
 
 ## CUDA compile check 2026-06-25 (@ 11140547 -- CUDA backend intact)
