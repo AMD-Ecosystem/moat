@@ -337,3 +337,54 @@ colcon test-result --verbose --test-result-base build/cuda_blackboard
 ## Ruling on the planner's Question 1 (Jeff Daily, 2026-11-23)
 
 **A, default build only.** The optional `ENABLE_AGNOCAST` variant is scoped out because it has no GPU code. `feature:agnocast` and `test:test_start_worker_thread` moved from `owed` to `scoped_out` in surface.json. (Jeff gave the same ruling for autoware_universe's Agnocast variant.)
+
+## Ruling on DCO sign-off (Jeff Daily, 2026-11-25)
+
+**Option (a).** After the upstream-merge round below passes review and validation, the port is squashed at PR prep into one commit that carries `Signed-off-by: Jeff Daily <jeff.daily@amd.com>`. Its tree must be identical to the validated head, and it is carried with `squash-carry-forward`. Jeff authorizes that one forced update of `moat-port`, since no upstream PR is open. The 2026-11-25 merge job does not squash and does not force-push: it only prepares the message (draft under "Squashed commit message (draft)" below) and records. This answers the reviewer's open item 1 of 2026-11-20.
+
+## Porter 2026-11-25: merge upstream main (linux-gfx942 fleet job; AMD Instinct MI300X in CPX mode, HIP_VISIBLE_DEVICES=8 pinned by the dispatcher)
+
+Upstream `main` moved past the port's base `a4f330e` with five commits of 2026-11-24, up to `e4e1206e30e8f119a833ac8b8d33bc04cfd58e5f`: #33 (sync codecov.yaml), #18 (sync files), #20 (pre-commit quarterly autoupdate), #34 (cppcheck-weekly renamed to cppcheck, sync `.cppcheck_macros.cfg`), #35 (sync files).
+
+### Fork commits (`moat-port`, plain push 9e0fb86..b76dacb, no rebase, amend or force)
+
+- `94e27aa` `Merge upstream main into the HIP port`: `git merge --no-ff upstream/main`, **no conflicts**. Checked: `git diff upstream/main 94e27aa` is exactly `git diff a4f330e 9e0fb86` (the port delta, unchanged; diffed after removing `index` lines and hunk offsets).
+- `b76dacb` `lint` (message only, per the lint rule): clang-format include re-ordering in 9 files, +8/-13, include lines only.
+
+### Upstream changes checked against the port
+
+- 17 upstream files changed. 16 are CI/config only (`.github/`, `.pre-commit-config*.yaml`, `.prettierignore`, `codecov.yaml`, `.cppcheck_macros.cfg`). The `.cppcheck_macros.cfg` defines only Autoware agnocast-wrapper macros for cppcheck, so nothing in it concerns HIP.
+- The only source change is `include/cuda_blackboard/cuda_unique_ptr.hpp`, the file the freshness check flagged: clang-format v23 reflows the `CUDA_BLACKBOARD_CHECK_CUDA_ERROR(::cudaMallocFromPoolAsync(...))` call (layout only, same tokens). The port touches this file only at the include block (lines 23-26), so git merged both without conflict.
+- **No new CUDA runtime API calls.** Upstream added no new `cuda*` identifier, so the compat header needs no new mapping.
+
+### Pre-commit (upstream's updated `.pre-commit-config.yaml`, run locally)
+
+- `pre-commit run --files <the 16 files the port adds or modifies>` at the merge: **clang-format (v23.1.2) failed** on the port's swapped include lines. It re-sorts `#include "cuda_blackboard/cuda_runtime_compat.hpp"` into the quoted-include group, because the port replaced the angle-bracket `<cuda_runtime*.h>` lines in place. All other hooks passed.
+- **This failure was already present at 9e0fb86, so the autoupdate did not introduce it.** clang-format 19.1.5 (the pre-update hook version, pip `clang-format==19.1.5`) re-sorts the same include lines in the same 9 files. The 2026-11-20 review missed it. The hook requires the fix either way, hence the `lint` commit.
+- markdownlint-cli v0.49.1 crashes under the host's node v16 (`SyntaxError: Invalid regular expression flags` on a `/v` regex). That is an environment failure, not a lint result. With node 22.11.0 (official tarball, job directory) it passes.
+- At b76dacb, `pre-commit run --all-files` passes every hook (check-json/xml/yaml, markdownlint, prettier, yamllint, flake8-ros, sort-package-xml, fix-include-guard, isort, black, clang-format, cpplint). Commands: `PRE_COMMIT_HOME=<job>/precommit-cache PATH=<node22>/bin:$FLEET_VENV/bin:$PATH pre-commit run --all-files`. The optional config (markdown-link-check) was not run.
+
+### Environment (job directory only; nothing shared on the host was modified)
+
+- ROCm: TheRock 10.2.0 wheels installed into the job venv, shadowing the base env's 10.1 links: `$FLEET_VENV/bin/pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple 'rocm[devel,device-gfx942]==10.2.0'`, then `rocm-sdk init`. `rocm-sdk path --root` = `$FLEET_VENV/lib/python3.11/site-packages/_rocm_sdk_devel`, HIP 7.17.26434 (`amdclang++` there is AMD clang 24.0.0git, but the build does not use it).
+- **Compiler the build actually invokes: `/usr/bin/c++` = GNU g++ 13.3.0** (`CMAKE_CXX_COMPILER:FILEPATH=/usr/bin/c++` -> `x86_64-linux-gnu-g++-13`) for every translation unit, with `-D__HIP_PLATFORM_AMD__=1` and the SDK include dir from `hip::host`. Configure prints `HIP: Using hipcc from relative path: .../_rocm_sdk_devel/bin/hipcc`. That is hip-config locating hipcc, and hipcc is never invoked (no device code). `libcuda_blackboard.so` NEEDs `libamdhip64.so.7`, which resolves to the job venv's 10.2 SDK.
+- cmake 3.31.6, Python 3.11.17 (job venv), Ubuntu 24.04.
+- Boost 1.83.0 headers (`./b2 install --with-headers`) and OpenCV 4.6.0 (`-DBUILD_LIST=core,imgproc,imgcodecs,highgui`, no GTK/Qt/FFmpeg/GStreamer/V4L/OpenCL/IPP, bundled png/jpeg/zlib/tiff/webp/openjpeg) built into `<job>/deps/prefix`. This host has neither.
+- ROS 2 Jazzy from source in `<job>/ros2_jazzy`, the earlier recipe (ros2/ros2 `jazzy` `ros2.repos` with `vcs import --shallow`, `osrf/negotiated@eac198b5`, `COLCON_IGNORE` in `eclipse-iceoryx`, Fast-DDS `thirdparty/asio`+`tinyxml2` submodules, same `colcon build --merge-install --packages-up-to ...` command and `--cmake-args`, `MAKEFLAGS=-j6 --parallel-workers 16`): 152 packages, rc 0.
+  - **vision_opencv must be pinned to `a56ad9a`.** `rolling` has moved on (tip `b4caad4` on 2026-11-25), and its cv_bridge now uses `std::endian` (C++20) and `sensor_msgs::image_encodings::NV12`, which Jazzy's sensor_msgs lacks, so it fails to build. Use `git clone -b rolling https://github.com/ros-perception/vision_opencv && git -C vision_opencv checkout a56ad9a`, not a shallow clone of the tip.
+- Run environment: `source <job>/ros2_jazzy/install/setup.bash`, `LD_LIBRARY_PATH=$ROCM_SDK/lib:<job>/deps/prefix/lib`, `ROS_LOCALHOST_ONLY=1`, `MAKEFLAGS=-j$MAX_JOBS` (96), `ulimit -c 0`.
+
+### Build and tests at b76dacb
+
+```
+colcon build --event-handlers console_direct+ --packages-up-to cuda_blackboard --cmake-args -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=$ROCM_SDK;<job>/deps/prefix" -DPython3_EXECUTABLE=$FLEET_VENV/bin/python -DCMAKE_VERBOSE_MAKEFILE=ON
+timeout 1800 colcon test --packages-select cuda_blackboard --event-handlers console_direct+ --ctest-args --repeat until-fail:20
+colcon test-result --verbose --test-result-base build/cuda_blackboard
+```
+
+- Build rc 0, 24 s. Configure prints `-- cuda was not found, building cuda_blackboard with HIP 7.17.26434`, and the "will not be built" warning does not fire. All 3 libraries and all 3 tests were built. The warnings are the same 11 known `-Wunused-result` sites (the lint commit moved some by one line: `cuda_image.cpp:50-51`, `cuda_pointcloud2.cpp:97-98`, `cuda_test_utils.hpp:29`).
+- Tests rc 0: `100% tests passed, 0 tests failed out of 3`, 60 `[  PASSED  ]` blocks, 0 `[  FAILED  ]`, 0 `[  SKIPPED ]`, `Summary: 10 tests, 0 errors, 0 failures, 0 skipped`, 30.4 s.
+
+### Lesson for moat-porting: `utils/timeit.sh` runs its command from the MOAT root
+
+`timeit.sh` does `cd "$(dirname "$0")/.."` before running the wrapped command. A bare `colcon build` (or any tool that writes relative to the cwd) therefore writes `build/`, `install/` and `log/` into the MOAT checkout. Wrap a script that `cd`s to its workspace first (`timeit.sh <name> compile -- bash build.sh`), or pass absolute `--build-base`/`--install-base`.
