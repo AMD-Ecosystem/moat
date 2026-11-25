@@ -472,3 +472,45 @@ From a clone at `ac56e32a` on the mi355 host: `python build_lib.py --cuda-path /
 
 ### Stage
 The full suite passes from the installed wheel on gfx942 apart from the known `test_async` flake, which passes alone. The stage was not left (`ported`); the lock taken for this round is released with `port-lock --release`.
+
+## CUDA compile check (mi355), ac56e32a
+
+Requested by jeff Daily, before review. No GPU used; no lock taken, no state changed, nothing changed in the fork. Fresh clone of AMD-Ecosystem/warp (`GIT_LFS_SKIP_SMUDGE=1`), detached at `ac56e32a` (= `release/1.15.0.amd0` tip); a worktree at pristine `release-1.15` = `ffa038b1`. nvcc 12.8.93 (`/usr/local/cuda`), g++ 13.3, job venv Python 3.11.
+
+**Verdict: no CUDA break, no new warning, and no unintended change to CUDA device code.** `ac56e32a` preprocesses to exactly the CUDA units of `85ad22eb` (checked in the section "CUDA compile check (mi355), 85ad22eb"), apart from `__LINE__` values in `sort.cu`. One thing is better than before: the CMake build's `warp.so` loads again (below).
+
+### 1. Builds
+| Build | ac56e32a | release-1.15 |
+|---|---|---|
+| `python build_lib.py --cuda-path /usr/local/cuda --no-use-libmathdx -j 21` (13 `.cu` units, sm_52 to sm_120 + PTX; host `.cpp` with `-Werror`) | "Warp build succeeded" | "Warp build succeeded" |
+| `cmake -S . -B <dir> -G Ninja -DWARP_CUDA_PATH=/usr/local/cuda` (defaults, libmathdx ON) | configures, exit 0 | configures, exit 0 |
+| `cmake --build <dir> --parallel 21` | 39/39, exit 0 | 39/39, exit 0 |
+
+(The two trees were built at the same time, 21 jobs each, inside the job's `MAX_JOBS` of 42.) Warnings: the build_lib warning lines of head and base are identical after path normalization, and there are only two kinds: nvcc's "offline compilation for architectures prior to 75 will be removed" (13, one per unit) and "Could not find or load the NVIDIA CUDA driver" (this host has no NVIDIA GPU). The CMake configure and build logs have no warnings. This host has `hipcc`/`rocm-sdk` on PATH, so the configure passing again shows `warp_check_rocm_only_host()` stays quiet where nvcc is found.
+
+**CMake `warp.so` now loads; at `85ad22eb` it did not.** `CMakeLists.txt` (upstream's source list, unchanged by the port) does not list `texture_software.cpp`; only `build_lib.py` compiles it. At `85ad22eb` `texture.cpp` called the `wp_texture_software_*` functions unconditionally, so the CMake-built `warp.so` (the one kept by the earlier check's job) has 9 undefined `wp_texture_software_*` symbols: `ldd -r` lists 9, and `ctypes.CDLL` fails with `undefined symbol: _Z24wp_texture_software_copyPvjjjimjjimjjS_`. The earlier check reported "39/39" for that build because a shared library links with undefined symbols. Since `4aa22f6d` (the `WP_ENABLE_HIP` guards) the calls are gone from CUDA builds. At `ac56e32a` the CMake `warp.so` has no undefined `texture_software` symbols, `ldd -r` reports no undefined symbol, and `ctypes.CDLL` loads it (no GPU is needed to load it). The pristine release-1.15 CMake library is also clean. The 1.14 line has no `CMakeLists.txt`, so it is not affected. Nothing to fix now; the reviewer should know that no `CMakeLists.txt` entry exists for `texture_software.cpp`, which is correct only while every call stays under `WP_ENABLE_HIP` (the HIP build goes through `build_lib.py`, and the CMake build refuses ROCm-only hosts).
+
+### 2. Preprocessed CUDA units (`cuda_pp.sh` as in warp-1.14 session 19, sm_90, no libmathdx)
+Run for `ffa038b1` (release-1.15), `06a3f7c6`, `85ad22eb` and `ac56e32a`. All 14 `.cu` files preprocess at every revision. 13 compile to an object; `apic.cu` does not compile on its own at any revision, upstream included (80 errors such as `namespace "wp" has no member "set_error_string"`), because it is not a unit: `warp.cu:6082` does `#include "apic.cu"`, so its code is checked inside the `warp` units. Its own `.i` files are still compared. Normalization: the outdir prefix removed, and the `__LINE__` value after `"tree/warp/native/<path>", ` replaced by `L`. Comparison: token level (GNU diff over one token per line).
+
+| Pair | Device (`cpp1`) | Host (`cpp4`) |
+|---|---|---|
+| `85ad22eb` -> `ac56e32a` | 13 identical, `sort` LINE-ONLY | 13 identical, `sort` LINE-ONLY |
+| `06a3f7c6` -> `ac56e32a` | 12 identical, `warp` and `sort` LINE-ONLY, `bvh_cubql` differs | `bvh_cubql` as device, plus `(` `)` around `tex.tex` (126 pairs) |
+| `ffa038b1` -> `ac56e32a` | all 14 differ | all 14 differ |
+
+- **This round (`85ad22eb` -> `ac56e32a`):** `sort.cu`'s whole change (encode/decode kernels, `radix_sort_pairs_float_range_device`, the `temp_buffer.h`/`<type_traits>` includes) is inside `#if WP_ENABLE_HIP` and does not reach CUDA; only line numbers move. Intended, as the porter predicted.
+- **`06a3f7c6` -> `ac56e32a`:** device: `bvh_cubql` only, `sah_builder.h` back to upstream's text (`const int sortBeginBit = 32;` removed and its two uses become the literal `32`, the same value), plus two cuBQL line numbers in an error string (527 -> 519, 545 -> 537). Host: the same, plus `(const Texture*)tex.tex` -> `(const Texture*)(tex.tex)` in the 9 CPU samplers of `texture.h`, which is textually a no-op. Intended. The result is the same as the earlier check's `06a3f7c6` -> `85ad22eb`.
+- **release-1.15 -> `ac56e32a`:** the token-level difference list of every `cpp1` and `cpp4` unit is byte-identical to release-1.15 -> `85ad22eb` (`hunks.py` output compared with `cmp`). The classification in the 85ad22eb section therefore holds unchanged: the 1.14 port text (sync masks, `tile_mask_t`, value initialization, constant-folding limits, explicit shuffle width, parenthesized texture handles, `__host__ __device__` matmul stubs, the `warp.h` declarations, the cuBQL #34/#35 backports) and this line's own items (`warp_shuffle_down` mask type, `BlockIterator::operator-`, `run_to_run_reduce_by_key`). All intended. I read the `warp` unit's hunks again and name explicitly some that the earlier list put under its class headings:
+  - The memset/memtile kernels' index `static_cast<size_t>(blockDim.x) * static_cast<size_t>(blockIdx.x) + threadIdx.x` -> `WP_GRID_THREAD_INDEX`, which on CUDA is `(size_t(blockIdx.x) * size_t(blockDim.x) + size_t(threadIdx.x))` (`cuda_util.h:36`). The operands swap, so the product is the same. The other copy kernels already used that order.
+  - Host only, in `warp.cu`: `is_capture_pause_supported()`, which on CUDA returns exactly upstream's `CUDA_VERSION >= 12040 && wp_cuda_driver_version() >= 12040`, so `wp_cuda_graph_pause_capture`/`resume` are unchanged. Also the `is_texture_hardware_supported`/`is_texture3d_hardware_supported` device fields (default 1, set only in the HIP branch), the `wp_hip_compile_program` stub (prints an error, returns -1), `wp_hip_runtime_version` (0), `wp_cuda_device_get_arch_name` (""), and `CUipcEventHandle eventHandle = {}` in `wp_cuda_ipc_get_event_handle`. The last one changes CUDA behavior only when `cuIpcGetEventHandle` fails, which now yields an all-zero handle instead of uninitialized bytes.
+  - One `, unsigned int` hunk next to `wp_cuda_graphics_register_gl_buffer` is a token-alignment artifact: the signature is the same at both revisions (`warp.cu:5661` / `:5989`).
+
+### 2b. Host `.cpp` files on CUDA (g++ command from the build log, `-E -P`)
+- `texture_software.cpp`: at `ac56e32a` its body is under `WP_ENABLE_CUDA && WP_ENABLE_HIP`. Its CUDA preprocessing is byte-identical to a file that holds only its seven `#include` lines, and its object file defines no `wp_` symbol. The CUDA build therefore compiles an empty unit (60885 lines of headers, against 61074 at `85ad22eb`, which held the software path). I read the diff `85ad22eb..ac56e32a` in full: only the `#if`/`#endif` lines changed. The mip-level code read in the earlier check is now HIP-only.
+- `texture.cpp`: the include and all six dispatch points are under `#if WP_ENABLE_HIP`. Against release-1.15, its CUDA preprocessing differs only by the shared header text above, line numbers, and the 1.14 port's translation: `texture_memory_type()` (1/2/3 -> `CU_MEMORYTYPE_HOST/DEVICE/ARRAY`, which are 0x01/0x02/0x03 in `cuda.h`, anything else refused as upstream's `else` branch does), and `static_cast` -> C casts on `CUdeviceptr`, `uint64_t` and `cudaSurfaceObject_t`. No `wp_texture_software_*` call remains. The `WP_ENABLE_HIP && _WIN32` branch in `wp_texture_create_device` is absent on CUDA. Intended.
+
+### Not done here
+The V100/libmathdx runtime list in the porter's handoffs needs an NVIDIA GPU and is still owed for `ac56e32a`, as are any sm_90+ cluster tests.
+
+Scripts (container-local): `agent_space/cuda_pp.sh` (verbatim from warp-1.14 session 19), `agent_space/hunks.py` (token-level difference list per pair, for all units of one kind), `agent_space/ctx2.py` (context for chosen hunks).
