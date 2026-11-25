@@ -31,3 +31,7 @@ Survey method: the 1.14..1.15 diff was read in four parts (host runtime, device 
 ### Ruling on plan Q1, how the 1.14 port is carried (jeff, 2026-11-24)
 
 (a), two merges. First `git merge -s ours release-1.14` on `release/1.15.0.amd0`, then `git merge release/1.14.0.amd0`; later 1.14 commits arrive as further merges. Recorded in `plan.md` (Q1 marked ruled; the carry section and Phase 0 state the two merges as decided). Q2 to Q6 remain open; they block only the phases the plan names (Q2 Phase 1's cluster work, Q3 Phase 3's mipmap part, Q4 Phase 6, Q5 Phase 2's sort work) and the release (Q6), not the start of porting, so the stage moves to `planned`. The porter still waits for warp-1.14 to pass Linux revalidation at its final head.
+
+## Ruling on plan Q2, thread block clusters (jeff, 2026-11-24)
+
+(a): clusters are unsupported on HIP, decided by device capability, the way upstream treats pre-sm_90 NVIDIA GPUs. `cluster_dim` is reported ignored with upstream's warning, `get_cuda_max_cluster_dim()` returns 1, the native cluster calls are no-ops, and the launch uses `cluster_dim = 1`. `test_cluster_dim.py` selects devices by capability, not by `arch`, so its "ignored" cases run on HIP. Register a deferred item for gfx1250 cluster support.
