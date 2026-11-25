@@ -3314,7 +3314,9 @@ AMD Instinct MI300X (gfx942, wave64, large BAR), ROCm 7.16, at 2f25788dc, with t
 
 AMD Radeon 8060S (gfx1151, Windows 11, ROCm SDK 7.14), at 2f25788dc, configured with Ninja and the ROCm clang/clang++ for C, C++ and HIP, `-DCMAKE_HIP_ARCHITECTURES=gfx1151` and the same backend options (`-DAF_BUILD_CPU=OFF`, matrix files off), then `ctest -R '_cuda$' -j1 --timeout 900`: 130/131 pass, the same single `confidence_connected` failure. `sparse_arith` passes; before this fix it crashed on Windows machines and was left out of earlier Windows runs.
 
-Not tested here: the Windows installer and standalone-install changes, and the CUDA build (no CUDA toolkit on these machines).
+CUDA 12.8 (nvcc, compile and link only, no NVIDIA GPU) at 539d4be10 with `-C .github/scripts/linux-cuda-gpu.cmake`: builds with no errors, compiling the same 51 `.cu` files with the same warnings as b11d70079. The sparse fix after it changes only `src/backend/hip`, which the CUDA build does not compile.
+
+Not tested here: the Windows installer and standalone-install changes.
 
 Delivery: arrayfire/arrayfire#3741 (base `experimental/hip`, head this branch's target on the fork) is open and approved at 83be19781 but not merged. Merging this round adds these commits to that pull request.
 ~~~
