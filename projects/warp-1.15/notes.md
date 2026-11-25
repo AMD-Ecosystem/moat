@@ -39,3 +39,7 @@ Survey method: the 1.14..1.15 diff was read in four parts (host runtime, device 
 ## Ruling on plan Q3, mipmapped textures (jeff, 2026-11-24)
 
 (a): hardware mipmapped arrays on Linux devices with image support; the GPU software sampler with mip levels on devices without it (gfx942, gfx950, and gfx90a 3D); on Windows, try `hipMipmappedArray` on gfx1151 and route to the software sampler if it fails. The six mipmap tests run on every AMD GPU against Warp's CPU result.
+
+## Ruling on plan Q4, the optional CMake build (jeff, 2026-11-24)
+
+(b): no HIP branch in the CMake build. On a host with ROCm and no CUDA Toolkit, CMake stops at configure with a message that ROCm builds use `build_lib.py`; the install docs say the same; a deferred item records CMake HIP support. Evidence checked before the ruling: through upstream `main` (changelog to 1.19.0, release branches to release-1.20), `build_lib.py` is still the release build and is not deprecated; the installation docs call CMake "the alternate CMake build path" and say to "Use `build_lib.py` for release builds that need Warp's full GPU architecture coverage". Revisit in a later line if upstream makes CMake the release build.
