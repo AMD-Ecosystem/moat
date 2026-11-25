@@ -6,14 +6,18 @@
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
-  "stage": "screened",
+  "stage": "planning",
   "adopted_at": "2026-11-20T20:55:39Z",
-  "updated_at": "2026-11-25T23:22:18Z",
+  "updated_at": "2026-11-25T23:34:35Z",
   "head_sha": null,
   "depends_on": [
     "ccimport"
   ],
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx90a",
+    "since": "2026-11-25T23:34:35Z",
+    "holder": "3abe99d640b0"
+  },
   "waivers": {},
   "platforms": {
     "linux-gfx942": {
@@ -38,6 +42,29 @@
         "last_session_at": null
       },
       "last_agent": "intake"
+    },
+    "linux-gfx90a": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-25T23:34:35Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "planner"
     }
   },
   "license_spdx": "Apache-2.0 AND BSD-3-Clause AND MIT AND BSL-1.0 AND Unlicense AND GPL-3.0-or-later WITH GCC-exception-3.1",
