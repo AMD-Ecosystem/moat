@@ -6373,3 +6373,46 @@ ls <src>/gpu4pyscf/scf/tests/test_*.py <src>/gpu4pyscf/dft/tests/test_*.py | xar
 - The deferred `rocm-10-2-machinelicm-wrong-gradient-jk` says the defect is fixed in the 10.3 nightly; that holds for gfx942 only. Not amended here (evidence-only job); the correction is jeff's to make with `deferred.py amend`.
 
 Fixed in the 10.3 nightly on this GPU: no.
+
+## ROCm 10.3 nightly compiler on the R9700 (gfx1201) (2026-11-24)
+
+Fleet job requested by jeff, evidence only (not a pipeline round): does the 10.3 nightly compiler fix the 10.2 `rys_k_1111` memory fault on the Radeon R9700? No stage, platform record, lock, `moat-port` or README branch touched; nothing pushed to the fork. **Result: yes on this GPU. Built by the 10.3.0a20261124 clang (424729db) without `-mllvm=-disable-machine-licm` and run on the 10.2.0 runtime, gpu4pyscf c9eea22a gives no fault: the first faulting tests of the four files that fault with plain 10.2 pass 2/2, and scf + dft give 346 passed / 2 failed / 23 skipped, identical to the flagged-10.2 row of the R9700 10.2 section, both failures the recorded environment and noise-floor cases. A plain-10.2 control built and run the same way on the same card still faults in `rys_k_1111`.** (Contrast: the same 10.3 compiler does not fix the gfx90a symptom, previous section.)
+
+### Environment
+AMD Radeon AI PRO R9700 (gfx1201), `HIP_VISIBLE_DEVICES=3` from the dispatcher, every GPU run under `ulimit -c 0` and `timeout`. Upstream master c9eea22a (fresh clone of pyscf/gpu4pyscf, one worktree and install prefix per build). Two job-private venvs (`/usr/bin/python3.11 -m venv $FLEET_VENV/v103`, `$FLEET_VENV/v102`).
+- **ROCm 10.3.0a20261124** (the exact build is still on the index): `$FLEET_VENV/v103/bin/pip install --pre --index-url https://nightly.repo.amd.com/rocm/whl-next/ 'rocm[libraries,devel,device-gfx1201]==10.3.0a20261124'`; rocm, rocm-sdk-core, -devel, -libraries, -device-gfx1201 all 10.3.0a20261124; `AMD clang version 24.0.0git (https://github.com/ROCm/llvm-project.git 424729dba65359a5e521ab2e729af131c8a5b0d4)`, the MI300X and MI200 10.3 compiler. Used only as the compiler.
+- **ROCm 10.2.0** (runtime of every run, and compiler of the control): `$FLEET_VENV/v102/bin/pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ 'rocm[libraries,devel,device-gfx1201]==10.2.0'`; clang bdc35841. Same venv: numpy 2.2.6, scipy 1.17.1, cupy-rocm-7-0 14.2.0, pyscf 2.14.0, pyscf-dispersion 1.7.0, geometric 1.1.1, MCFun 0.2.6, pytest 9.2.0, pytest-timeout 2.4.0, cmake 3.31.6.
+- Builds: `PATH=<job>/work/bin:<compiler SDK root>/bin:$FLEET_VENV/v102/bin:/usr/bin:/bin` (`work/bin/cmake` a symlink to the cmake wheel's real 3.31.6 binary, because the venv's cmake entry point fails inside pip's isolated build, as in the earlier R9700 job), `ROCM_PATH=HIP_PATH=<compiler SDK root>`, `LD_LIBRARY_PATH=<compiler SDK root>/lib` (SDK root = `rocm-sdk path --root`). Runs: `PATH=$FLEET_VENV/v102/bin:<10.2 root>/bin:/usr/bin:/bin`, `ROCM_PATH=HIP_PATH=<10.2 root>`, `LD_LIBRARY_PATH=<10.2 root>/lib`, `PYTHONPATH=<prefix>/lib/python3.11/site-packages`, `OMP_NUM_THREADS=4`, from an empty directory. Checked: `gpu4pyscf.__file__` is the install, CuPy `runtimeGetVersion()` 71726434 (10.2), `gcnArchName` gfx1201, and `/proc/self/maps` lists libamdhip64, libhsa-runtime64, libamd_comgr, librocblas, libhipblas, libhipblaslt, librocsolver all from `$FLEET_VENV/v102`.
+
+### Builds (README command; `--prefix`, logging and the job cap added; HIP_ARCHITECTURES unset, native detection)
+```
+cd <worktree at c9eea22a>
+GPU4PYSCF_BACKEND=hip CMAKE_BUILD_ARGS="--verbose -j 6" pip install -v --no-deps --prefix <prefix> .
+```
+- 10.3 plain (the build asked for): exit 0, `gpu4pyscf-rocm7x 1.9.1`, 11 libraries. Configure `-DCMAKE_HIP_COMPILER=$FLEET_VENV/v103/lib/python3.11/site-packages/_rocm_sdk_devel/llvm/bin/clang++`, `The HIP compiler identification is Clang 24.0.0`; **96/96 HIP compile lines and 11/11 `--hip-link` lines run that 10.3 clang++**, 0 mentions of the 10.2 SDK's llvm, `--offload-arch=gfx1201` on 107/107, `licm` 0 times. Producer: `llvm-objcopy --dump-section=.hip_fatbin=rys.fatbin libgvhf_rys.so /dev/null`, `clang-offload-bundler --type=o --unbundle --targets=hipv4-amdgcn-amd-amdhsa--gfx1201`, `llvm-readelf -p .comment`: `AMD clang version 24.0.0git (https://github.com/ROCm/llvm-project.git 424729dba65359a5e521ab2e729af131c8a5b0d4)` and `Linker: AMD LLD 24.0.0 (https://github.com/ROCm/llvm-project.git 424729dba65359a5e521ab2e729af131c8a5b0d4)`.
+- 10.2 plain control, same command with the 10.2 SDK: exit 0; 96/96 compile and 11/11 link lines with the 10.2 clang++, `licm` 0; libgvhf_rys gfx1201 `.comment` names bdc35841.
+
+### Runs (all on the 10.2.0 runtime)
+```
+timeout -k 10 300 python -c "from pyscf import gto; from gpu4pyscf import scf; mol = gto.M(atom='O 0 0 0; H 0 -0.757 0.587; H 0 0.757 0.587', basis='def2-svp'); print(scf.RHF(mol).kernel())"
+timeout -k 10 300 pytest --import-mode=importlib -p no:xdist -p no:cacheprovider -q -rfE <src>/gpu4pyscf/scf/tests/<id>    # one process per id, 2 repetitions
+ls <src>/gpu4pyscf/scf/tests/test_*.py <src>/gpu4pyscf/dft/tests/test_*.py | xargs -P 4 -I{} \
+  timeout -k 30 1800 pytest --import-mode=importlib -p no:xdist -p no:cacheprovider -rfE \
+    -m "not slow and not benchmark and not special" -k "not _high_cost" {}
+```
+The ids: `test_rhf.py::KnownValues::test_get_jk`, `test_uhf.py::KnownValues::test_get_jk`, `test_scf_jk.py::test_jk_hermi1`, `test_scf_j_engine.py::test_j_engine_integral_screen` (the first faulting test of each file with plain 10.2, per the R9700 10.2 section) and `test_scf_jk.py::test_jk_energy_per_atom`.
+
+| build compiler (runtime 10.2.0) | flag | RHF water/def2-svp | the 5 tests | test_rhf / test_uhf / test_scf_jk / test_scf_j_engine files | scf + dft, CI selection |
+|---|---|---|---|---|---|
+| **10.3.0a20261124 (424729db)** | no | -75.96097516696513, rc 0 | **5/5 pass, 2/2 repetitions**, no fault | 23 passed; 11 passed / 3 skipped; 29 passed / 3 skipped; 8 passed | **346 passed / 2 failed / 23 skipped / 0 errors** in 290 s (scf 210/2/14, dft 136/0/9), every file rc 0 or 1, no fault, no hang |
+| 10.2.0 plain, control in this job (same card, same env) | no | not run | test_jk_hermi1 and test_rhf test_get_jk: **`HSA_STATUS_ERROR_MEMORY_FAULT` in `_ZL10rys_k_1111...intern`**, then hung to `timeout` (rc 124); test_rhf rerun once alone: same fault, rc 124 | not run | not run |
+| 10.2.0 plain, R9700 10.2 section | no | -75.96097516696508 | fault | fault (rc 134 or hung) | 288 passed in the other 28 files + fault in these 4 |
+| 10.2.0 + flag, R9700 10.2 section | yes | -75.96097516696517 | pass | pass | 346 / 2 / 23 / 0 |
+
+- The two failures with the 10.3 build are the same two the flagged-10.2 build had: test_diffuse_orbital.py::test_rhf_df_against_qchem (`BasisNotFoundError` d-aug-cc-pvdz, pyscf 2.14; environment) and test_gdm.py::test_gdm_rhf (gradient 6.078e-8 against 5e-8; 2/2 serial reruns 6.078e-8), the known gfx1201 noise-floor case that the 10.2 section saw on 10.1 plain and 10.2 plain too.
+- Not checked: the 10.3 runtime (CuPy 14.2.0 cannot JIT on it, MI300X section), and a static diff of `rys_k_1111` between the 10.2 and 10.3 objects.
+
+### What this means
+- On gfx1201 the 10.2 machine-LICM fault in `rys_k_1111` is gone with the 10.3 nightly compiler (424729db), with no flag, and the scf/dft result matches the flagged 10.2 build exactly. With the MI300X (fixed) and the MI200 (not fixed, wrong gradients) results, 10.3 fixes two of the three GPUs that showed a 10.2 defect; the gfx90a section is the one that argues for a ROCm report, and its reproducer (`test_jk_energy_per_atom`, 6-31g K-only probe) is the one to file with, not this GPU's.
+
+Fixed in the 10.3 nightly on this GPU: yes.
