@@ -32,3 +32,5 @@
 {"kind":"phase","ts":"2026-11-25T21:17:27Z","phase":"compile","seconds":91.662,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi300-20261124-163755-warp115-porter1/moat/projects/warp-1.15/src && python build_lib.py --rocm-path /var/lib/jenkins/fleet/jobs/mi300-20261124-163755-warp115-porter1/venv/lib/python3.11/site-packages/_rocm_sdk_devel --hip-arch gfx942 -j 32"}
 {"kind":"phase","ts":"2026-11-25T21:31:04Z","phase":"test","seconds":594.185,"exit":0,"cmd":"agent_space/suitewheel.sh r4full1"}
 {"kind":"session","ts":"2026-11-25T21:33:35Z","epoch":1795642415.098763,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-25T22:57:34Z","epoch":1795647454.57996,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-25T23:26:24Z","epoch":1795649184.33012,"event":"end","platform":"linux-gfx942"}

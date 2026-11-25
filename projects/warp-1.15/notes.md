@@ -514,3 +514,204 @@ Run for `ffa038b1` (release-1.15), `06a3f7c6`, `85ad22eb` and `ac56e32a`. All 14
 The V100/libmathdx runtime list in the porter's handoffs needs an NVIDIA GPU and is still owed for `ac56e32a`, as are any sm_90+ cluster tests.
 
 Scripts (container-local): `agent_space/cuda_pp.sh` (verbatim from warp-1.14 session 19), `agent_space/hunks.py` (token-level difference list per pair, for all units of one kind), `agent_space/ctx2.py` (context for chosen hunks).
+
+## Review 2026-11-25 (linux-gfx942 MI300X, reviewer): whole port at ac56e32a
+
+jeff Daily requested this review. The lock was taken with `set-state warp-1.15 linux-gfx942 reviewing` (from `ported`).
+
+Scope:
+- The merge `e0a07e7c`: the 1.14 port `66ba4ffb` merged into 1.15 after the `-s ours` merge `5bc97fee`. Each of its 20 conflict resolutions was compared with upstream 1.15 (`git diff 3601b2d0 ffa038b1`) and with the 1.14 port (`git diff 3601b2d0 66ba4ffb`), line by line. Also checked: 1.15 code that merged cleanly beside the port.
+- Every commit from `b8bf0fa4` to `ac56e32a`, against rulings Q1-Q7.
+
+Fork-level checks: fresh fork clone, `rev-list --count release/1.15.0.amd0..origin/release-1.15` = 0, and `jargon.py --port warp-1.15` clean. Every finding below was fact-checked by re-reading the code at `ac56e32a`, and where noted by running it.
+
+**Verdict: changes requested.** F1 to F7 each need a follow-up commit (no amend) or a notes correction. Everything else jeff asked about was checked; the results are under "Checked" so the next round does not redo them.
+
+### Findings (must fix)
+
+**F1. The CMake ROCm check refuses a CUDA host that names nvcc through `CUDACXX`** (`tools/cmake/WarpDependencies.cmake`, `warp_check_rocm_only_host`, from `85ad22eb`).
+- The function returns early only for `CMAKE_CUDA_COMPILER`, or for `nvcc` found in `CUDAToolkit_ROOT/bin` or on PATH.
+- CMake's own CUDA compiler search takes the `CUDACXX` environment variable first (`CMakeDetermineCUDACompiler.cmake:21-28`).
+- Result: on a host with a CUDA Toolkit off PATH, `CUDACXX` set, and any ROCm install (`/opt/rocm/bin/hipcc`, or `hipcc` on PATH), configure now stops with "No CUDA Toolkit was found, but ROCm was", where upstream configured.
+- Reproduced on this host (hipcc on PATH), using a stand-in `nvcc` outside PATH named by `CUDACXX`:
+  - The port tree stops at `CMakeLists.txt:45 (warp_check_rocm_only_host)`.
+  - The same command on a `git archive` of pristine `release-1.15` gets past the check into CMake's CUDA toolkit detection (`CMakeCUDAFindToolkit.cmake`), which shows `CUDACXX` was honored.
+- Fix: also return when `NOT "$ENV{CUDACXX}" STREQUAL ""`. Re-run the mi355 configure with `CUDACXX=/usr/local/cuda/bin/nvcc` and `/usr/local/cuda/bin` off PATH.
+
+**F2. The merge dropped 1.15's refusal to copy from or to a mipmapped texture** (`warp/_src/texture.py:611` `src_handle = src._array_handle`, `:705` `dst_handle = dst._array_handle`).
+- Upstream 1.15 reads `src.cuda_array` / `dst.cuda_array` there (`ffa038b1` texture.py:598 and :692). That property raises "cuda_array is currently limited to non-mipmapped CUDA textures."
+- `copy_from`/`copy_to` check only `self._is_mipmapped`, so the 1.15 guard for the *other* texture lived inside `cuda_array`.
+- The 1.14 port replaced `cuda_array` with `_array_handle` to skip its texture-hardware check. That was harmless on 1.14, which had no mipmaps. In the merge the guard is gone, so `plain.copy_from(mipmapped)` on one device passes a mipmapped-array handle (or a software mip-array handle on HIP) as `MemoryType.ARRAY` to `wp_texture_copy_device`, which uses it as a `CUarray`.
+- This changes behavior on CUDA too: an undefined or generic copy failure, where upstream raised a clear error.
+- Fix: keep `_array_handle`, and raise the same `RuntimeError` when `src._is_mipmapped` / `dst._is_mipmapped` in the same-device branches. Add a test that copies between a plain texture and a mipmapped one, in both directions.
+
+**F3. Windows fallback: `Texture.cuda_texture` returns the tagged software pointer as a texture object** (`warp/_src/texture.py:1080-1091`).
+- `cuda_texture` checks only `_require_texture_hardware(self.device, ...)`.
+- On gfx1151 the device has texture hardware, so for a mipmapped texture that took the `hipMipmappedArrayCreate` fallback (`texture.cpp:204-216`), it returns `_tex_handle`. That is a device `wp::Texture*` with bit 0 set (`texture_software.cpp:226`), handed to an interop caller as a `hipTextureObject_t`.
+- `cuda_array` is refused for mipmapped textures and `cuda_surface` by `surface_access`, so only `cuda_texture` leaks it. Kernels (`id`) are correct.
+- Fix: refuse in `cuda_texture` on HIP when the handle is software-owned. The tag test `self.device.is_hip and self._tex_handle & 1` suffices; keep it HIP-only, because CUDA texture objects are plain integers that may be odd. Use the message `_require_texture_hardware` uses.
+
+**F4. The cluster code comments state that AMD GPUs have no thread block clusters.** That is false for gfx1250, which this line targets (Q6 hold) and which the deferred item `warp-hip-gfx1250-thread-block-clusters` records.
+- Sites: `warp/_src/codegen.py:5819`, `warp/_src/context.py:3039`, `warp/native/warp.cu:5666, 5693, 5795`.
+- The `Device.is_cluster_launch_supported` docstring is accurate (it describes behavior).
+- On jeff's question about `4d66d600`'s body ("AMD GPUs supported here have no thread block clusters"): commits are not amended, and a correction to that body alone does not warrant a commit. The shipped comments do warrant a small comment-only follow-up commit: say that Warp does not launch clusters on AMD GPUs (runs them unclustered), not that the hardware lacks them. That commit's body can carry the correction of `4d66d600`'s wording in one sentence.
+- No behavior change; the CUDA expansion is unchanged.
+
+**F5. `test_texture_mipmap_matches_cpu` samples `lod = 0.5` with `CLOSEST`, an exact tie** (`warp/tests/cuda/test_texture.py:2804`).
+- The CPU sampler picks level `floor(lod + 0.5)` = 1.
+- Texture hardware (NVIDIA, gfx1100/gfx1201/gfx1151) quantizes the LOD and may resolve the tie to level 0. The result then differs by a whole level, far beyond `atol=1e-2`.
+- So far the test has run only on gfx942, which samples in software and equals the CPU sampler by construction. Its hardware arm has never run.
+- Fix: use non-tie LODs for the `CLOSEST` cases (for example 0.4 and 0.6; keep 0.5 for `LINEAR`). Include this test in the owed V100 run (sm_70 has mipmaps) as well as the gfx1100/gfx1201 validators.
+
+**F6. Minimal diff: five HIP shims exist only for cluster code that HIP never runs** (`hip_compat.h` `CUlaunchConfig`, `CUlaunchAttribute`, `CU_LAUNCH_ATTRIBUTE_CLUSTER_DIMENSION`; `cuda_util.cpp:694-703` `cuFuncGetAttribute_f`, `cuOccupancyMaxActiveClusters_f`).
+- `4d66d600` added early `return`s under `#if WP_ENABLE_HIP` in `wp_cuda_set_kernel_cluster_attrs` and `wp_cuda_get_max_cluster_dim` (`warp.cu:5665-5668`, `5692-5695`). The CUDA bodies after them are still compiled for HIP, and they are the only users of those five names (grep at `ac56e32a`: `warp.cu:5709, 5719-5724, 5740`).
+- Fix: put the CUDA bodies in `#else` and drop the five shims. The gfx1250 cluster work (deferred) brings real mappings when it needs them.
+
+**F7. Lesson "hipMallocAsync is refused on every stream while a blocking stream is captured" overstates the `hipMalloc` half.**
+- Re-measured here (ROCm 10.2, MI300X; `agent_space/repro/cap.hip`: begin capture on stream A, launch a kernel on it, then `hipMallocAsync` on a separate non-blocking stream, then `hipMalloc`, then end capture):
+
+  | capturing stream, mode | hipMallocAsync (other stream) | hipMalloc | end capture |
+  |---|---|---|---|
+  | blocking, thread-local | CaptureUnsupported | **CaptureUnsupported** | CaptureInvalidated |
+  | blocking, global | CaptureUnsupported | **CaptureUnsupported** | CaptureInvalidated |
+  | blocking, relaxed | CaptureUnsupported | Success | Success |
+  | blocking, global or thread-local, thread exchanged to relaxed | CaptureUnsupported | Success | Success |
+  | non-blocking, thread-local | Success | **CaptureUnsupported** | CaptureInvalidated |
+  | non-blocking, relaxed, or exchanged to relaxed | Success | Success | Success |
+
+- The `hipMallocAsync` claim holds as written. "Plain `hipMalloc` succeeds in all cases" does not: `hipMalloc` is refused (and the capture invalidated) unless the allocating thread's capture mode is relaxed, which is CUDA's rule for `cudaMalloc` too.
+- The port is correct only because `det_buffer_allocation_scope` exchanges the thread to relaxed first.
+- Also, the lesson says the reproducer is "in the warp-1.15 port's notes", but the notes carry only a one-line description. The `cuda-to-rocm` skill must not name MOAT records anyway.
+- Fix: state the fix as "allocate with `hipMalloc` with the thread's capture mode relaxed (`hipThreadExchangeStreamCaptureMode`), as CUDA requires for `cudaMalloc` during capture". Drop the "all cases" claim. Put the reproducer itself in the lesson (the table above is its output), not a pointer to the notes.
+
+### Recorded, no action possible
+- Two commit titles exceed 72 characters: `1713eb55` (78) and `85ad22eb` (77). `moatlib.py audit-commits warp-1.15` reports both. They cannot be fixed without amending, which is not done. Future commits on this line must stay within 72.
+
+### Checked (evidence for jeff's points; no finding)
+- **rocPRIM comparator specializations (`warp/native/hip/rocprim_radix_sort_fix.h`, `1713eb55`)**
+  - Version gate: `400400 <= ROCPRIM_VERSION < 500200`. Read in rocPRIM 4.6, 4.8 and 5.1 on this host: each has the same defective `radix_merge_compare<Descending, true, T, identity_decomposer>` constructor (`device/detail/device_radix_sort.hpp:742-753`), the same header path and the same 3-argument constructor signature, so the specializations match there.
+  - Which `T`:
+    - Only integral keys reach the masked comparator: `device_radix_merge_sort.hpp:81` is `enable_if_t<is_integral<key_type>>`, and the floating-point overload uses the codec.
+    - Warp's segmented sort has no bit range, so it never instantiates the masked comparator.
+    - `int`, `unsigned`, `long`, `unsigned long`, `long long` and `unsigned long long` cover `int32/uint32/int64/uint64` on Linux (`long`) and Windows (`long long`, with `long` 32-bit there, where `make_unsigned` keeps the mask right).
+    - The mask is built unsigned with explicit full-width cases, and rocPRIM's signed comparison is kept, so the signed order is unchanged.
+  - Linkage:
+    - These are full specializations of a class template, with only in-class (implicitly inline) member functions. Identical definitions in several TUs are ODR-conforming.
+    - They precede every use, because every TU that sorts reaches rocPRIM first through `cub/cub.cuh` -> `hip_cub.h`. That includes `bvh_cubql.cu:30`, where cub comes before cuBQL's own `<hipcub/hipcub.hpp>`, and `deterministic.cu:20`, before thrust.
+  - Cannot affect anything outside Warp:
+    - rocPRIM is header-only.
+    - Every HIP unit is compiled `-fvisibility=hidden -fvisibility-inlines-hidden` (`build_dll.py:947/949`).
+    - The porter's built `warp.so` at `ac56e32a` exports no `radix_merge_compare` symbol (`nm -DC`) and keeps no rocprim symbols at all.
+    - Device code objects are per module.
+- **Float range sort and signed zeros (`sort.cu`, `16b91828`, `8ef864ec`)**
+  - Encoding: zeros -> `sign`, negative -> `~key`, else `key | sign`. No non-zero float encodes to `sign`: `~key == sign` needs `key = 0x7FF..F`, which is positive. So the post-sort mark pass finds exactly the zeros.
+  - Decode inverts the encoding for every other key.
+  - Zeros: they compare equal in every range, and rocPRIM's radix sort is stable. That holds even where a range makes a non-zero key equal to them, because the zeros' relative order is what matters and they are identified by full value. So output zero k is input zero k, and `DeviceSelect::Flagged` plus `ExclusiveSum` restore each sign.
+  - Correct for every n > 0. n == 0 is excluded before any launch.
+  - Scratch is sized as the max of the two queries, both made with n, and reused for the second scan with the same `scan_bytes`.
+  - With no zeros: the select count is 0 and decode never takes the zero branch.
+  - Allocations go through `ScopedTemporary` on the current stream, like `sparse.cu`.
+  - The int `i`/`(n + 255) / 256` launch math matches upstream's raw kernels (`bvh.cu`, `mesh.cu`).
+  - Full-width float sorts and all integer sorts are untouched.
+- **Mipmap software storage and Windows fallback (`912b3493`)**, beyond F3:
+  - Software storage:
+    - Per-level sizes `max(1, dim >> l)` match `texture.py`'s chain and the CPU `Texture` offsets.
+    - One allocation; level views are tracked and deleted before the texels.
+    - `mip_data[l] = texels + mip_offsets[l]`. The host `Texture` used to compute offsets frees only its own buffer (it is restored before destruction).
+  - Handle tag bit:
+    - `hipTextureObject_t` is a pointer to a HIP allocation, and descriptors come from `wp_alloc_device`, so bit 0 is never set on a real handle.
+    - Every sampler arm and `wp_texture_software_object_destroy` mask the bit.
+    - The tag is set only for a software array on a device that samples that dimension in hardware, which only the `_WIN32` branch creates.
+    - `WP_TEXTURE_SOFTWARE_FALLBACK` reaches only Windows hipRTC compiles; the CUDA expansion is upstream's, as the mi355 check showed.
+  - Later `hipTexObjectCreate` failure on Windows: it is not routed to software, as the porter's notes say. `check_cu` reports it, Python raises "Failed to create CUDA texture object", and `__del__` still destroys the mipmapped array (`_array_owner`, not software-owned). Nothing leaks.
+  - A failed `hipMipmappedArrayCreate` leaves no stale last error (`hip_driver_result` clears it).
+  - Minor, not a finding: `wp_texture_software_object_create` builds a host `wp::Texture` the size of all levels only to read `mip_offsets` (carried pattern from 1.14). It is correct.
+- **Cluster gating (`4d66d600`)**
+  - `is_cluster_launch_supported = not is_hip and arch >= 90` is exactly upstream's `is_cuda and arch >= 90` test on NVIDIA. CPU devices are False.
+  - `get_cuda_max_cluster_dim`, the kernel-hook status, the sub-sm_90 compile check (still active for an AOT compile with no device) and `test_cluster_dim.py`'s selection are therefore unchanged on CUDA.
+  - Upstream's "ignored" status is silent (`context.py:936-938`), so not adding a warning is correct; the Q2 ruling's "with upstream's warning" described a warning upstream does not have.
+  - `warp.cu`'s HIP branches are all under `WP_ENABLE_HIP`.
+  - The AOT test's new skip (`{80, 90} <= get_cuda_supported_archs()`) is always satisfied by NVRTC 12.x, so CUDA still runs it.
+- **Deterministic reduce-by-key (`aa1726b3`)**
+  - `rocprim::deterministic_reduce_by_key` has the argument order used here (keys, values, size, unique, aggregates, count, op, compare, stream) in rocPRIM 4.6, 4.8 and 5.1 (`device_reduce_by_key.hpp:501`).
+  - rocPRIM documents `reduce_by_key` as non-deterministic and points to the deterministic variant (`:348-352`).
+  - The CUDA body is the same `cub::DeviceReduce::ReduceByKey` call.
+  - The three binned-accumulator `ReduceByKey` calls stay on hipCUB's default. That is correct: `BinnedFloatAccumulator` exists to be tree-order independent (`deterministic.cu:259-261`), and the whole deterministic suite passed 20 consecutive runs.
+- **Graph-capture memory-pool skip (`deterministic.py`)**
+  - `ScopedMempool(device, False)` only on HIP, inside the scope that already exchanges the thread to relaxed. Per the F7 table, that is exactly the combination where `hipMalloc` works during a blocking-stream capture and `hipMallocAsync` does not. CUDA gets `nullcontext()`.
+  - Frees of those buffers go through the default allocator's deferred-free handling during capture (upstream's pool-off path).
+- **CMake configure check and `texture_software.cpp`**, apart from F1:
+  - At `ac56e32a` the include and all six `wp_texture_software_*` call sites in `texture.cpp` are under `#if WP_ENABLE_HIP`, and `texture_software.cpp`'s body is under `WP_ENABLE_CUDA && WP_ENABLE_HIP`.
+  - The CMake build stays correct while that holds, because it refuses ROCm-only hosts and lists no `texture_software.cpp`. Any future software-texture call outside `WP_ENABLE_HIP` would reintroduce the undefined symbols the mi355 check found at `85ad22eb`.
+- **First-wheel-run 719 in `test_large_arrays`**
+  - Not reproduced. At `ac56e32a` (the porter's built tree, sources identical to HEAD; ROCm 10.2; `HIP_VISIBLE_DEVICES=0`; `ulimit -c 0`), `-p test_large.py` passed 5 of 5 (17 tests each, about 157 s), and the porter's failing subset `-k test_default_grid_stride -k test_block_dim_zero -k excessive -k test_large_arrays` passed 3 of 3 (8 tests each).
+  - Nothing in the port's launch path explains a deterministic 719. Reading `wp_cuda_launch_kernel`:
+    - The HIP grid-stride cap keeps grid.x * block_dim <= 2^32-1.
+    - The lean path keeps grid.x * block_dim <= 2^24 and grid.y, grid.z <= 65535.
+    - The memset kernels use `WP_GRID_THREAD_INDEX` (64-bit).
+  - The porter's reading (a host/GPU episode, with a transient "no ROCm-capable device" the same session) stays unproven but is consistent. The validators should keep watching `test_large` on gfx942.
+- **Merge resolutions**
+  - With no diff from the 1.14 port's delta: `build_dll.py`, `context.py`, `warp.h`, `warp.cpp`, `texture.py` (apart from F2's lost guard), `bvh.h`, `builtin.h`, `test_graph.py`.
+  - Version string only: `VERSION.md`, `config.py`, `version.h`.
+  - `warp.cu`: the HIP cap moved into 1.15's grid-stride code, correct for block_dim >= 1.
+  - `bvh.cu`: the obsolete cuBQL refit-stream hunk dropped; 1.15's single-node `parent == -1` fix agrees with the HIP depth refit; the empty-tree guard comes before the HIP refit.
+  - `tile_reduce.h`: every 1.15 `warp_shuffle_down` overload takes `tile_mask_t`.
+  - `tile_radix_sort.h`: no `0xFFFFFFFFu` mask left.
+  - `texture.h`: `tex*DLod` under `WP_TEXTURE_HW_SAMPLING[_3D]` with `WP_TEXTURE_OBJECT`.
+  - `cuda_util.cpp`: every `cu*_f` has a HIP definition.
+  - Clean-merged 1.15 device code: no raw warp intrinsic with a 32-bit mask remains outside `sparse.cu`'s `bsr_compress_select_sorted_runs`. That function is ported: 64-bit ballot and `__popcll` under `__HIP_PLATFORM_AMD__`; blocks are >= 64 threads (`BSR_COMPRESS_MIN_INPLACE_THREADS`) and a power of two, so `warp_count` is never 0 on wave64. The new `__CUDA_ARCH__` gates are widened or reached only through hipRTC.
+  - Minimal diff: nothing else that 1.15 no longer needs. The port's own `HIP kernel build failed` check in `build.py` stays justified, because 1.15's shared check after the chain says "CUDA kernel build failed".
+- **Other post-merge commits**
+  - `b4145943` (BSR), `b64c4641` (cuBQL walk, with a test that fails without it), `16ed353b`, `55174181` (skip keyed on `is_conditional_graph_supported`, no HIP text, correctly unprefixed), `1262676f`, `fb004310`, `c243af8e` (`noinline` only under `__HIP_DEVICE_COMPILE__`), `06a3f7c6` (lint), `8e154af4`, `3b43b3ac` and `ac56e32a`: no finding.
+  - Commit hygiene: every commit has the `Authored with Claude.` disclosure, a Test Plan and a DCO sign-off, and none has a `Co-Authored-By`. `[ROCm]` appears on the HIP-specific commits only.
+- **Lessons**
+  - `rocPRIM's reduce_by_key is not run-to-run reproducible`: matches rocPRIM's own documentation.
+  - `HIP_POINTER_ATTRIBUTE_MEMPOOL_HANDLE is not supported`: re-measured here, 801 for both a `hipMallocAsync` and a `hipMalloc` pointer, and it is left as the last error.
+  - `printf and assert inlined...` and the two moat-porting lessons: no finding.
+
+### For the porter's next round
+F1, F2, F3, F5 and F6 are code or test changes. Each must:
+- be CUDA-neutral or CUDA-correct, re-checked with real nvcc on mi355 (F2 changes Python behavior on CUDA back to upstream's);
+- be built and run on gfx942: `test_texture.py` and the CMake configure line above.
+
+F4 is a comment-only commit. F7 is a notes edit to the lesson.
+
+### F7 reproducer (container-local copy at `agent_space/repro/cap.hip`; source here so it survives)
+Built with `hipcc --offload-arch=gfx942 -w -o cap cap.hip` (ROCm 10.2). The table in F7 is its output. The variants with an exchanged thread mode call `hipThreadExchangeStreamCaptureMode(&relaxed)` before the two allocations and restore it before ending the capture.
+
+```cpp
+#include <hip/hip_runtime.h>
+#include <cstdio>
+__global__ void k(int* p) { if (p) p[0] = 1; }
+static void run(unsigned cap_flags, hipStreamCaptureMode mode, const char* name, bool xchg=false) {
+    hipStream_t cap, side;
+    hipStreamCreateWithFlags(&cap, cap_flags);
+    hipStreamCreateWithFlags(&side, hipStreamNonBlocking);
+    hipStreamBeginCapture(cap, mode);
+    k<<<1, 1, 0, cap>>>(nullptr);
+    hipStreamCaptureMode m = hipStreamCaptureModeRelaxed; if (xchg) hipThreadExchangeStreamCaptureMode(&m);
+    void* p = nullptr;
+    hipError_t e1 = hipMallocAsync(&p, 1 << 20, side);
+    void* q = nullptr;
+    hipError_t e2 = hipMalloc(&q, 1 << 20);
+    if (xchg) hipThreadExchangeStreamCaptureMode(&m);
+    hipGraph_t g;
+    hipError_t e3 = hipStreamEndCapture(cap, &g);
+    printf("%-40s mallocAsync(side)=%s malloc=%s endcapture=%s\n", name, hipGetErrorName(e1), hipGetErrorName(e2), hipGetErrorName(e3));
+    (void)hipGetLastError();
+    if (p) { hipStreamSynchronize(side); hipFree(p);} if (q) hipFree(q);
+    if (e3 == hipSuccess) hipGraphDestroy(g);
+    hipStreamDestroy(cap); hipStreamDestroy(side);
+}
+int main() {
+    run(hipStreamDefault, hipStreamCaptureModeThreadLocal, "blocking cap, thread-local");
+    run(hipStreamDefault, hipStreamCaptureModeRelaxed, "blocking cap, relaxed");
+    run(hipStreamNonBlocking, hipStreamCaptureModeThreadLocal, "non-blocking cap, thread-local");
+    run(hipStreamNonBlocking, hipStreamCaptureModeRelaxed, "non-blocking cap, relaxed");
+    run(hipStreamDefault, hipStreamCaptureModeGlobal, "blocking cap, global");
+    run(hipStreamDefault, hipStreamCaptureModeGlobal, "blocking cap, global, xchg relaxed", true);
+    run(hipStreamDefault, hipStreamCaptureModeThreadLocal, "blocking cap, thread-local, xchg relaxed", true);
+    run(hipStreamNonBlocking, hipStreamCaptureModeGlobal, "non-blocking cap, global, xchg relaxed", true);
+    return 0;
+}
+```
