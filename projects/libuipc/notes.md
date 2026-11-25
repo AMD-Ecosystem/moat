@@ -112,3 +112,21 @@ Large but mechanical. Strategy A (CMake HIP language with a compat header, sourc
 - Fork requested: libuipc is in the admin fork request batch (with Stiff-GIPC); port libuipc first.
 - Build systems: port the CMake build only. The PR body says xmake is not covered, so upstream can mirror the CMake changes if they want it.
 - `python/LICENSE` (GPL-3.0 text while the package metadata says Apache-2.0): not raised separately; one line in the PR body only if the port touches the Python packaging.
+
+## Planning 2026-11-25 (linux-gfx90a, planner; no build, no GPU)
+
+Read upstream main `6c288d9af54b496bc6232a0d77c3d04fe19c664a` (fork `main` is the same sha; `moat-port` not created yet). Full plan in `plan.md`, accounting in `surface.json` (`surface.py check libuipc`: fully accounted).
+
+- Build: cmake (`set-ext-type libuipc cmake`). Strategy A, masquerading the existing `src/backends/cuda` backend under a new `UIPC_WITH_HIP` option (backend name stays `cuda`), with a HIP-only shim include directory and `-fgpu-rdc` across the 8 OBJECT components.
+- Scope: the whole CMake project (every backend component including the legacy collision filters, the C++ test suites, Python bindings and tests, examples). No partial port and no cut needing a ruling. xmake is out by jeff's 2026-11-24 ruling; the USD/VDB options are CPU-only and untouched (recorded in `surface.json` as not cuts).
+- Hard dependencies: none (`depends_on` stays empty). Every vcpkg dependency is a CPU library, and `gen_vcpkg_json.py --with_cuda_backend` adds nothing. muda is no longer used.
+- Optional dependencies: OpenVDB (with nanovdb only as a vcpkg feature) and USD, both OFF by default, CPU-only. libhipcxx (`hipccl`, bundled with ROCm 10.1+) is an option for the two libcu++ uses; the plan prefers a two-line shim instead.
+- Toolchain fact checked on this host: the pip ROCm SDK carries HIP 7.16. Its `hip_runtime_api.h` has no graph conditional-node API, so `GraphWhile` must stay compiled out on HIP (`CUDART_VERSION` undefined). `hipStreamLegacy` is present.
+- Differences from GPU_IPC: the line search and CCD loops are bounded (`line_search/max_iter` default 8, CCD `max_iter = 1000`, BVH `2 * numObjs`), so a hang on AMD here is a port defect until shown otherwise. Device-side Eigen `compute()` reaches N = 6, 9, 12 through `make_spd` in 12 kernels plus `matrix_utils.cu`. The existing `evd_jacobi` has an absolute 1e-6 tolerance and no iteration cap, so it is not a safe drop-in.
+- Main risks, in order: wave64 ballots and absolute-lane shuffles (exact sites in `plan.md` risk 1); `__CUDA_ARCH__` gates that silently take host branches on HIP (`UIPC_GENERIC`, `common_upper_bits`, `step_displacement`); Eigen N>3 on device; graph-capture invalidation semantics; hipCUB's temp-storage error contract; Windows clang toolchain with vcpkg.
+
+Open questions (none blocks porting; defaults are in `plan.md`):
+
+1. Backend name upstream: planned to keep `cuda` on AMD.
+2. ROCm wheels: building from source with HIP config-settings is planned; publishing ROCm wheels is upstream release CI and not planned.
+3. NVIDIA comparison host for the GPU suites (V100 on the Slurm cluster, if CUDA 12.x still targets sm_70, or another CUDA host).

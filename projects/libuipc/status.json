@@ -5,17 +5,13 @@
   "fork_url": "https://github.com/AMD-Ecosystem/libuipc",
   "fork_default_branch": "main",
   "priority": 0.0,
-  "ext_type": "unknown",
-  "stage": "planning",
+  "ext_type": "cmake",
+  "stage": "planned",
   "adopted_at": "2026-11-24T18:04:33Z",
-  "updated_at": "2026-11-25T23:34:36Z",
+  "updated_at": "2026-11-25T23:47:39Z",
   "head_sha": null,
   "depends_on": [],
-  "porting": {
-    "arch": "linux-gfx90a",
-    "since": "2026-11-25T23:34:36Z",
-    "holder": "376ba0aaa19a"
-  },
+  "porting": null,
   "waivers": {},
   "platforms": {
     "linux-gfx942": {
@@ -48,7 +44,7 @@
       "failed_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-11-25T23:34:36Z",
+      "updated_at": "2026-11-25T23:47:39Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -81,5 +77,10 @@
     "viable": true,
     "summary": "Apache-2.0 C++20/Python IPC contact simulator (GPU_IPC successor, same author, who invited the PR on GPU_IPC#4); CUDA backend ~50k lines .cu, CUB only, no CUDA-only deps; large but mechanical HIP port with a real test suite",
     "at": "2026-11-24T18:09:56Z"
+  },
+  "porting_released": {
+    "arch": "linux-gfx90a",
+    "since": "2026-11-25T23:34:36Z",
+    "at": "2026-11-25T23:47:39Z"
   }
 }
