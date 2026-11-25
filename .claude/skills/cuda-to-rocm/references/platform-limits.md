@@ -217,6 +217,10 @@ by their HIP enum values, which differ from CUDA's. HIP's context API is depreca
 around primary contexts can stand the device in for the context and make it current with
 `hipSetDevice`. clang contracts `a * b + c` by default as NVRTC does; `-ffp-contract=off` is the
 `--fmad=false` equivalent (faults-numerics.md has where the two compilers still differ). (TornadoVM: Java FFM bindings, TC-generated HIP C++.)
+NVRTC's `--include-path=<dir>` spelling does not carry over: hipRTC hands options to clang,
+which reads it as the prefix-matched `--include` (force-include a file) followed by
+`-path=<dir>`, and the compile fails with `fatal error: '-path=<dir>' file not found` from
+`<built-in>`. Pass `-I<dir>`, which NVRTC also accepts, so one spelling serves both. (keops)
 
 ### Runtime-compiled kernels inherit nothing from the host build
 

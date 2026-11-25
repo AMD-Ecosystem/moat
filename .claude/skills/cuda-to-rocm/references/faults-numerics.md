@@ -45,6 +45,63 @@ after every functional fix that lands in the same suite. (CV-CUDA: `-ffp-contrac
 removed most planar-versus-interleaved parity failures but regressed the cubic-versus-gold
 case, so `on` was kept and the parity residual documented.)
 
+**When bit-exact tests pin nvcc's results and no global setting is clean, read nvcc's fused
+multiply-adds from the CUDA build and spell them out at each site, on the HIP device pass
+only.** Three rules decide the spelling. (1) nvcc fuses `a * b + c` after inlining, so a
+multiply and an add in different inlined functions still fuse: a vector-operator library's
+`alpha * v + beta` is `operator+(operator*(alpha, v), beta)`, one FMA on nvcc, two roundings
+under clang `-ffp-contract=on`. A helper instantiated for `float` then fuses where its
+`float3` instantiation does not, and planar-versus-interleaved parity tests differ in the last
+bit. A test gold written with `std::fma` is the tell. `fast` fixes those sites and breaks
+others (in one suite about 75 of 183 bit-exact failures flipped and 39 new ones appeared). (2)
+For a sum of two products, `a * b + c * d`, nvcc follows no fixed left or right rule, so read
+its choice per site from the CUDA build's SASS (`cuobjdump -sass`, or `nvdisasm -g -c` on a
+`-lineinfo` build to map instructions to source lines) instead of predicting it. With nvcc
+12.8 the fused product changed with the element type, with the channel of a vector type
+(`uchar3` fused the right product in channel x and the left one in y and z), with the column
+inside one expression, with whether a product was hoisted out of a loop and reused, and with
+a negated factor (`x * c0 + y * (-c1)` became `fma(x, c0, -(y * c1))`, while `x * (-c3) + y *
+c4` in the same kernel became `fma(y, c4, -(x * c3))`). Each choice was fixed for a given
+instantiation, column or channel, so a spelling per site on the HIP side can match it exactly.
+Parity tests between two layouts that share the helper cannot tell the orders apart; a
+temporary test that recomputes the outputs on the host with `std::fma` in nvcc's order shows
+whether the HIP side now matches. (3) Keep host code unfused: `__host__ __device__` functions
+also compile for the host, whose compiler does not contract in the CUDA build, and
+host-evaluated golds expect that. A macro that expands to an explicit per-element fma under
+`__HIP_DEVICE_COMPILE__` and to the original expression, operand order included, everywhere
+else leaves the CUDA build's expression trees unchanged. Find the sites by scanning device
+code for `acc += a * b`, `acc = acc + a * b` and blends written as one expression. (CV-CUDA
+v0.19, gfx90a: 163 bit-exact failures to 0.)
+
+**A test that fails deterministically on some AMD targets only, with an error that scales
+with a sampling step, can be one ulp of contraction landing on a `ceilf`/`floorf` knife
+edge.** Look for `ceilf`, `floorf` or integer casts of float quantities that are exact
+integers in exact arithmetic (a ray length equal to a box dimension, a count derived from
+length over step). LLVM contracts `a*a + b*b + c*c` differently per target: CDNA (gfx90a,
+gfx942) put two squares into one `v_pk_mul_f32` and rounded both, while RDNA (gfx11, gfx12,
+no packed FP32) built an FMA chain. The one-ulp difference becomes a whole extra sample. It
+is not a wavefront-width bug, even when it splits along wave64/wave32 lines. Diagnose by
+printing the integer from the device for one differing element, emulating the expression in
+float32 with each contraction order, and forcing the order with `__fmaf_rn`/`__fmul_rn` in a
+scratch build. The strict-IEEE CPU evaluation is not the reference: nvcc emitted
+`fma(dz, dz, fma(dx, dx, dy*dy))` (PTX `mul.f32` then two `fma.rn.f32`), the order RDNA
+happened to get. Compile the kernel with `nvcc -ptx` (the pip `nvidia-cuda-nvcc` and
+`nvidia-nvvm` wheels are enough, no GPU needed), and if CUDA's order passes, write that order
+with `fmaf` under the HIP guard; it pins the result on every AMD target without touching the
+CUDA path. (TIGRE)
+
+**AMDGPU can fold a float-to-half conversion into the preceding fma, rounding once where the
+source rounds twice.** `__float2half_rn(__fmaf_rn(a, b, c))`, and any float-to-half
+conversion of an fma result including a contracted `a * b + c`, can compile to one
+`v_fma_mixlo_f16`/`v_fma_mixhi_f16`, which rounds straight to half instead of to float and
+then to half. On gfx90a with HIP 7.16 (AMD clang 24), 230 of 4194304 random inputs gave a
+different half, under every `-ffp-contract` setting. Symptom: F16 outputs one half-precision
+unit off between two kernels that compute the same thing (the fold fires in one instantiation
+and not the other), or against a CUDA reference. Check the ISA for `v_fma_mix*`. Workaround,
+on the device pass only: an empty asm on the float result before the conversion (`asm("" :
+"+v"(x));`), which costs nothing and keeps both roundings. (CV-CUDA resize and color
+conversion, F16)
+
 **`-ffast-math` is NOT the HIP translation of nvcc's `--use_fast_math`, and reaching for it
 because the CUDA flags line has one is a real mistranslation.** nvcc's flag swaps single
 precision transcendentals and division for the fast device intrinsics and leaves double

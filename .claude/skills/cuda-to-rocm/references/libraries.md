@@ -278,6 +278,17 @@ queried size is 0 returns `INVALID_VALUE` once descriptors are reused. Create de
 before capture and cache them per operand set, use `HIPSPARSE_SPMV_CSR_ALG2`, and pass a null
 buffer when the size is 0. `AMD_LOG_LEVEL=3` shows the call that broke the capture. (TornadoVM)
 
+**A device pointer passed while the handle is in host pointer mode crashes only on some
+hosts.** An output argument that CUDA code passes as device memory under host pointer mode
+(hipSPARSE `csrgeam2Nnz`'s `nnzTotalDevHostPtr`, which cuSPARSE tolerates) is dereferenced on
+the CPU by rocSPARSE. It works where the runtime can CPU-map `hipMalloc` memory, as on a
+Linux discrete card with a large (resizable) BAR, and segfaults in host code inside the
+library elsewhere, for example with a 256 MiB BAR; Windows machines, an integrated APU
+included, crashed in the same call (the cause there was not measured). It looks like an OS-
+or arch-specific library bug. Check the BAR size (`/sys/bus/pci/devices/<bdf>/resource`) and
+repeat the call with a host pointer or with `hipsparseSetPointerMode(DEVICE)`. The fix is a
+host variable, or device pointer mode with device scalars. (arrayfire)
+
 ## rocThrust, hipCUB and rocPRIM
 
 **rocThrust's `thrust/system/cuda/error.h` is CUDA-only.** It exists (so the include
