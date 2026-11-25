@@ -1032,3 +1032,84 @@ The gfx1201 half of the wave32 rerun at 75e2528 is done, with no difference from
 - Windows gfx1151 last.
 
 Surface accounting was not edited here (evidence run, notes only).
+
+## Evidence run 2026-11-25, gfx1100 RDNA rerun at 75e2528 (linux-gfx1100 fleet job, for jeff)
+
+Not a porter round: no work lock taken, stage untouched (`porting`), nothing changed in or pushed to the fork. Scope: the gfx1100 half of the gfx950 round's "wave32 reruns at 75e2528" item (the gfx1201 half is the run above), plus the FP4 refusal. **Result: 75e2528 changes nothing observable on gfx1100. Every output of the 75e2528 default build equals the previous RDNA round's 8aa04e7 outputs bit for bit, except the 10 fp32 `lora_act_out` tensors, which differ run to run in every build (float atomics); the 75e2528 reference build equals the previous round's 5c32be5 reference build in the same way. The f16 tolerance table is the previous gfx1100 round's, `tests/ops` 38 passed + 14 FP4 skipped, the end-to-end set 10 passed, speed unchanged, FP4 refuses cleanly.** Nothing failed, so there is no reproducer to record.
+
+### Was 75e2528 meant to change RDNA? (read from `git diff 8aa04e7 75e2528`)
+
+No, and the gfx1201 run above reads the diff the same way. On gfx1100: `NUNCHAKU_ROCM_MFMA_F16`, `NUNCHAKU_ROCM_FP4` and `NUNCHAKU_ROCM_WMMA_FP4` are undefined; the `NUNCHAKU_ROCM_WMMA_INT4`/`_F16` condition gained `&& !defined(__gfx1250__)`, still true; `select4` moved into a shared block unchanged; the `mma_m16n16k16_*` helpers keep their WMMA arm; `FP4_AVAILABLE` stays false, so both FP4 kernels and the FP4 quantize epilogue still reach `trap_no_fp4()`; the new e2m1/e4m3 conversions in `gemm_utils.cuh` replace `trap_unsupported_arch()` but are reached only behind that trap. Code objects (`llvm-objcopy --dump-section=.hip_fatbin`, `clang-offload-bundler --unbundle --targets=hipv4-amdgcn-amd-amdhsa--gfx1100`, `llvm-objdump -d --mcpu=gfx1100`), 8aa04e7 -> 75e2528 default: fp16 INT4 launch 21504 `v_wmma_i32_16x16x16_iu4` + 3888 `v_wmma_f32_16x16x16_f16` in both (2,119,039 vs 2,119,047 lines); bf16 INT4 launch 21504 iu4 + 4400 `..._bf16` in both (3,693,755 lines each); bf16 FP4 launch 64 bf16 (the trap kernels' LoRA) in both; attention 64 f16, AWQ 72 + 72, identical line counts; no MFMA and no `v_wmma_scale16` anywhere. These are the gfx1100 counts the gfx950 round recorded. Reference 75e2528: no WMMA in any of these objects (1.79M and 6.86M lines for the two INT4 launch files).
+
+### Environment
+
+- Host gfx1100 (AMD Radeon Pro W7800 48GB), `HIP_VISIBLE_DEVICES=1` as pinned by the dispatcher (one GPU, kept), `ulimit -c 0`, every GPU run under `timeout`, MAX_JOBS=16 (the exported value) in total: reference build 10 jobs, the two default builds 6, one after the other.
+- Job venv: `$FLEET_VENV/bin/python -m pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple "rocm[libraries,devel,device-gfx1100]==10.2.0" "torch==2.14.0+rocm10.2.0" "torchvision==0.29.0+rocm10.2.0" "amd-torch-device-gfx1100==2.14.0+rocm10.2.0" "amd-torch-device-gfx110x==2.14.0+rocm10.2.0"`. Then `rocm-sdk path --root` once; it printed `$FLEET_VENV/lib/python3.11/site-packages/_rocm_sdk_devel`, and `torch.utils.cpp_extension.ROCM_HOME` is that directory.
+- **The gfx110x family wheel fixes SDPA on gfx1100 too** (the previous gfx1100 round needed a `sitecustomize` that disabled flash and memory-efficient SDPA): `torch/lib/aotriton.images` is present, and flash fp16/bf16 and memory-efficient fp16/bf16/fp32 run, max error vs float64 9.8e-4 / 7.8e-3 / 3.7e-6 (flash has no fp32 kernel, "No available kernel", as on gfx1201). No workaround was used below. This confirms the gfx12 round's lesson (`amd-torch-device-gfx110x`) on gfx1100.
+- **Compiler actually invoked**: all three build logs have 17 device compile lines each running `$FLEET_VENV/lib/python3.11/site-packages/_rocm_sdk_devel/bin/hipcc` (HIP 7.17.26434, AMD clang 24.0.0git bdc35841c97f, ROCm 10.2); none names the image's `/opt/python-3.11-venv`. `test.hip` was compiled with the same `hipcc`. The previous gfx1100 round's build logs, still in its job directory on this host, also invoke that job venv's `_rocm_sdk_devel/bin/hipcc` (expanded there), so that round built with 10.2 too; the gfx12 round's open question about it is answered for gfx1100.
+- Test dependencies as in the earlier rounds: accelerate 1.9.0, diffusers 0.36.0, transformers 4.55.2, peft 0.17.1, datasets 3.6.0, torchmetrics 1.8.2, huggingface-hub 0.34.6, controlnet-aux 0.0.10, image-gen-aux e08ae3d, pytest 8.4.2, numpy 2.4.6, pandas 3.1.1, matplotlib, lpips 0.1.4, scikit-image 0.26.0, scikit-learn 1.9.1, scipy, PyWavelets upgraded; opencv-python-headless uninstalled and opencv-python 4.11.0.86 force-reinstalled.
+- Fork: `git clone https://github.com/AMD-Ecosystem/nunchaku`, `git checkout 75e2528` (75e25288499066d5f635aac8500ff955d5da63a5), plus detached worktrees at 75e2528 (reference) and 8aa04e7 (default, the "before" build), submodules at the recorded commits. `git status --porcelain --untracked-files=no --ignore-submodules=all` is empty in all three at the end; scripts ran from outside the trees (the Sana example writes untracked PNGs).
+- Builds: `PATH=$FLEET_VENV/bin:$PATH PYTORCH_ROCM_ARCH=gfx1100 MAX_JOBS=<n> $FLEET_VENV/bin/python setup.py build_ext --inplace -v`, one tree each, detached (`setsid nohup`, a script appending `EXIT <code> <seconds>`). Not wrapped in `timeit.sh`, because this dispatch allowed committing notes only, so no compile telemetry. Default 75e2528: exit 0, 380 s. Default 8aa04e7: exit 0, 390 s. Reference 75e2528 (`NUNCHAKU_ROCM_MMA_REFERENCE=1`, on all 17 compile lines): exit 0, **7779 s**, almost all of it the single-core device link of the bf16 INT4 launch file (ld.lld). 0 errors in any log.
+- Earlier evidence used from the previous gfx1100 round's job directory on this host (same card model, same wheel set, 10.2 builds): its dumps `dump_ref.pt` (mma_dump, reference 5c32be5), `f16_ref.pt` (f16_dump, reference 5c32be5) and `f16_new.pt` (f16_dump, default 8aa04e7), its 16-bit SDXL and Z-Image reference images, and its Hugging Face cache (hard-linked, `HF_HUB_OFFLINE=1`). No INT4 images were copied, so this build generated its own.
+
+### Results (all on the one gfx1100 GPU)
+
+- **Primitive test** (`test.hip` from `notes-rdna-scripts.md`, unchanged except that it includes the hipified `mma_rocm_hip.cuh` of the built 75e2528 tree, compiled with `-I <tree>/src` and the `build.sh` flags, `--offload-arch=gfx1100`): `timeout 300 ./test_gfx1100` -> **PASS**, no output over the bound in all 9 runs. Max |err| / sum |terms|: f32-accumulator f16 WMMA 2.0e-7 to 2.4e-7 (reference 2.3e-7 to 3.0e-7); bf16 WMMA 1.5e-7 to 1.6e-7 (reference 1.2e-7 to 1.3e-7); f16 accumulator 99.95% to 99.99% bitwise equal to the reference, same max error 4.6e-4; exact small-integer problem: reference exact, WMMA 16/256 one fp32 ulp off in f32 modes (0/256 with the f16 accumulator). The same numbers as the previous gfx1100 round (2.4e-7, 1.6e-7, 16/256): the gfx11 accumulator rounding, which is why C stays outside the WMMA.
+- **`f16_dump.py` / `reldiff.py`** (90 outputs plus 16 float64-error entries; scripts in `notes-rdna-scripts.md`, unchanged):
+  - **Default 75e2528 vs the previous round's default 8aa04e7 (`f16_new.pt`)**: 80 identical, **10 differ, exactly the fp32 `lora_act_out` tensors** (8 `fused[3]` + 2 `quantize[2]`, max rel 2.9e-7). All 8 attention_fp16 and 8 AWQ cases, every GEMM output, packed next-layer activation and scale are bit-identical.
+  - **Reference 75e2528 vs the previous round's reference 5c32be5 (`f16_ref.pt`)**: 80 identical, the same 10 differ (max rel 2.5e-7).
+  - Reference 75e2528 vs default 75e2528: 18 identical, 72 differ, **all within the bound** (RDNA round's tolerance: max |new - ref| / max |output| <= 9.8e-4 float16, 7.8e-3 bfloat16). The `reldiff` output equals reference 5c32be5 vs default 75e2528 on every line apart from four `lora_act_out` noise digits, and `f16_dump compare` of the previous round's own pair (reference 5c32be5 vs default 8aa04e7) gives the same worst-per-kind line. Worst per kind, float16 / bfloat16:
+    - W4A4 GEMM out: 3.05e-4 / 2.44e-3 (4352x256x3072 unsigned); max 4 ulp element-wise.
+    - fused GEMM out: 1.77e-4 / 3.26e-4; max 8 ulp at a small value.
+    - fused output scales: 1.15e-4 / identical; max 2 ulp.
+    - attention_fp16: 4.02e-4 (1024 tokens) / 4.03e-3 (512 tokens, 500 valid).
+    - AWQ GEMM: 5.18e-4 (1024x1024x4096) / 4.00e-3 (512x4096x4096).
+    - packed next-layer activations: at most 2 nibbles per case, one step; quantize kernel outputs and scales identical; fused `lora_act_out` max rel 1.4e-4 (LoRA-down through the WMMA).
+    - each build's own error against float64 is identical to three digits in all 16 attention and AWQ cases (e.g. attention fp16 4608 tokens 0.00239 both, AWQ bf16 512x4096x4096 0.00304 both).
+- **`mma_dump.py`** (74 outputs over 34 cases, script in this file, unchanged):
+  - Reference 75e2528 vs the previous round's reference 5c32be5 (`dump_ref.pt`): `34 cases, 10 outputs differ`, the 10 `lora_act_out` tensors.
+  - Reference 75e2528 vs default 75e2528, and the previous round's reference 5c32be5 vs default 75e2528: **`34 cases, 56 outputs differ`**: all 20 `gemm[0]` (1 to 1185 bytes of up to 6.3M), all 12 `fused[0]`, 5 `fused[1]` (1 to 2 nibbles), 5 `fused[2]` (2 to 5 bytes), the 12 `fused[3]` and 2 `quantize[2]`. These are the f16/bf16 WMMA rounding flips of the LoRA-up/down epilogues that 8aa04e7 introduced, covered by the tolerance above, not INT4 layout errors (a wrong layout moves whole columns). gfx1201 counted 53 because 3 bf16 `gemm[0]` cases came out identical there; that the gfx11 accumulator rounding (16/256 inexact in the primitive test, 0/256 on gfx1201) accounts for the 3 is a guess, not checked. The INT4 main loop's bit identity stays as proven at 5c32be5: 75e2528's INT4 outputs equal 8aa04e7's bit for bit (previous bullet), and 8aa04e7's iu4 path is 5c32be5's.
+- **Determinism**: two runs of the default 75e2528 build differ only in the 10 `lora_act_out` tensors, under both scripts (`mma_dump`: `34 cases, 10 outputs differ`; `f16_dump`: 80 identical, max rel 2.9e-7). Two runs of the reference build: the same 10.
+- **`pytest tests/ops`**: default 75e2528 **38 passed, 14 skipped** in 17.6 s; reference 75e2528 38 passed, 14 skipped. The 14 skips are `test_gemm_w4a4_fp4.py` (6 + 4 + 4), "the GPU has no NVFP4 kernels".
+- **FP4: gfx1100 has no FP4 path at 75e2528** (`FP4_AVAILABLE` false, `ROCM_FP4_ARCHS = ('gfx950', 'gfx1250')`), and it refuses cleanly (`fp4_refuse.py`, the gfx942 75e2528 run's script, unchanged):
+  - `get_precision('auto')` -> `int4`; `check_hardware_compatibility` accepts int4 and rejects `fp4_e2m1_all` with `ValueError: "fp4" quantization needs an AMD GPU with FP4 matrix instructions (gfx950, gfx1250); please use "int4" quantization on gfx1100.`
+  - A direct FP4 GEMM launch and a direct FP4 activation quantize each print `FP4 is not available on this device`; the queue aborts with `HSA_STATUS_ERROR_EXCEPTION ... code: 0x1016` naming `gemm_w4a4_fp4_kernel` / `quantize_w4a4_fuse_lora_kernel<false, true>`; the next `torch.cuda.synchronize()` raises `torch.AcceleratorError: CUDA error: unspecified launch failure` (0.18 s / 0.11 s after the launch), which Python catches; each process exits 0 in 5.6 s / 5.5 s, and a fresh process uses the GPU normally. Under Jeff's ruling, auto stays int4; there is no FP4 run to make on this card.
+- **End to end on the default 75e2528 build** (in-place, on `PYTHONPATH`, no SDPA workaround): `HF_HOME=<job>/hf NUNCHAKU_TEST_CACHE_ROOT=<job>/test_cache HF_HUB_OFFLINE=1 timeout 9000 python -m pytest -v -s tests/v1/sdxl/test_sdxl.py::test_sdxl_lpips tests/v1/sdxl/test_sdxl_turbo.py::test_sdxl_turbo_lpips tests/sana tests/v1/z_image` -> **10 passed** in 773 s.
+  - SDXL LPIPS 0.149 (expected 0.25).
+  - SDXL-Turbo 0.216 (0.25).
+  - Z-Image Turbo rank 32/128/256: 0.410/0.394/0.354 (expected int4-bf16 0.40/0.38/0.37, limit x1.15 = 0.46/0.437/0.426). Ranks 32 and 128 are above the bare expected value and within the limit.
+  - Both Sana example scripts (`sana1.6b-int4.png` inspected: the ink-drawing panda).
+
+  The previous gfx1100 round at 8aa04e7 (with the math-SDPA workaround): 0.157/0.222/0.393/0.387/0.371. **Z-Image run-to-run control**, because the kernel outputs above are bit-identical between 8aa04e7 and 75e2528 while Z-Image moved: `pytest -v -s tests/v1/z_image` twice per build on this GPU (Z-Image regenerates its INT4 images every run; 6 passed each time). LPIPS rank 32/128/256:
+
+  | build | run 1 | run 2 |
+  |---|---|---|
+  | 8aa04e7 default | 0.375 / 0.371 / 0.376 | 0.404 / 0.376 / 0.362 |
+  | 75e2528 default | 0.410 / 0.394 / 0.354 (full set above) | 0.403 / 0.379 / 0.351 |
+
+  The same build moves by up to 0.029 (8aa04e7 rank 32) between runs, and the two builds' ranges overlap at every rank, so the shift is the end-to-end nondeterminism the gfx1201 run also saw (float-atomic `lora_act_out` and torch-side kernels are the obvious suspects; not investigated, it is outside the 75e2528 delta), not 75e2528.
+- Not run, as in the earlier rounds: FLUX.1 and Qwen-Image tests (gated models, no Hugging Face token), `test_device_id.py` (one GPU), speed tests.
+
+### Speed (recorded, not gated)
+
+W7800, ms, `speed.py` (`notes-rdna-scripts.md`, unchanged), two alternating runs per build, 8aa04e7 default -> 75e2528 default; the previous gfx1100 round's 8aa04e7 numbers on the same card model in the last column:
+
+| kernel | 8aa04e7 | 75e2528 | previous round, 8aa04e7 |
+|---|---|---|---|
+| W4A4 GEMM 4096x3072x3072 fp16 LoRA rank 32 | 7.84-7.90 | 7.79-7.85 | 7.73 |
+| same, fp16 rank 128 | 8.22-8.41 | 8.28-8.38 | 8.10 |
+| same, bf16 rank 32 | 5.21-5.27 | 5.16-5.26 | 5.20 |
+| same, bf16 rank 128 | 5.76-5.80 | 5.75-5.76 | 5.73 |
+| AWQ GEMM 512x4096x4096 fp16 | 3.66 | 3.62-3.66 | 3.57 |
+| AWQ GEMM 512x4096x4096 bf16 | 3.82 | 3.75-3.80 | 3.68 |
+| attention_fp16 24 heads x 4608 tokens | 58.2-59.1 | 58.1-58.4 | 56.7 |
+
+No change from 75e2528 (every pair within 1%, 75e2528 not slower anywhere). The reference build's long compile ran on the CPU during these timings, which may explain the 1-3% gap to the previous round. fp16 W4A4 is still 1.5x slower than bf16 on gfx1100, the register-pressure item already recorded.
+
+### Scripts
+
+`mma_dump.py` is in this file; `test.hip` (one include changed as stated), `f16_dump.py`, `reldiff.py` and `speed.py` are in `notes-rdna-scripts.md`; `fp4_refuse.py` is in the gfx942 75e2528 run above. All were checked byte-identical to the recorded copies before use. No new script.
+
+### What this leaves
+
+Both wave32 reruns at 75e2528 are now done (gfx1201 above, gfx1100 here), so the "wave32 reruns" item of the gfx950 round is closed. Still owed from that list: the gfx1250 run, jeff's ruling on the gfx90a f16 MFMA subnormal flush, Windows gfx1151 last. Surface accounting was not edited (evidence run, notes only).
