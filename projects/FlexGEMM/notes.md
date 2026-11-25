@@ -417,6 +417,8 @@ CUDA allows 2^31-1 blocks in x regardless of block size, so the config is legal 
 
 ## Lesson for cuda-to-rocm: HIP rejects a launch of 2^32 or more work-items per grid dimension
 
+Promoted to cuda-to-rocm/references/platform-limits.md in 0bd85094.
+
 Belongs in `platform-limits.md`. (Rewritten in porting round 2 after review finding 4; the first version advised folding the grid into 2D without the CUDA caveat.)
 
 Symptom: a kernel that runs on CUDA fails to launch on AMD only at large sizes; Triton reports `Triton Error [HIP]: Code: 1, Messsage: invalid argument` (often from inside autotuning, sometimes wrapped as `SystemError: <built-in method __reversed__ of list object ...> returned a result with an exception set`); `hipLaunchKernel` returns `hipErrorInvalidConfiguration`, `hipModuleLaunchKernel` `hipErrorInvalidValue`, and nothing runs.
@@ -1044,6 +1046,8 @@ torch's fp16 matmul is accurate here (0.4 per mille relative to max |r|, K up to
 - `python3 utils/jargon.py --port FlexGEMM`: clean (needed local `main`/`moat-port` branches in the fork clone).
 
 ## Lesson for cuda-to-rocm: Triton on AMD accepts input_precision='tf32' only on gfx942
+
+Promoted to cuda-to-rocm/references/platform-limits.md in 0bd85094.
 
 Belongs where Triton porting faults are listed. Symptom: a Triton kernel that runs on CUDA and on MI300X fails to compile on every other AMD GPU (MI200, MI355, every RDNA part) with `CompilationError: ... input_precision must be one of ('ieee', 'bf16x3', 'bf16x6'). Got tf32`. It is raised from inside autotuning, which does not catch it, and it happens even when the `tl.dot` operands are fp16. Cause: Triton's AMD backend (3.9; `backends/amd/compiler.py`, "Enable XF32 (TF32) for CDNA3 GPUs") adds `'tf32'` to the allowed dot precisions only when the target arch is `gfx942`. A project that exposes an `allow_tf32` switch and passes `input_precision='tf32' if allow_tf32 else 'ieee'` breaks wherever a user, a benchmark script or a default turns the switch on, so validating only on MI300X hides it. Fix: choose the precision from the target, for example `'tf32'` only off HIP or when `triton.runtime.driver.active.get_current_target().arch == 'gfx942'`, and `'ieee'` otherwise; do not rely on the default alone. Better than naming gfx942: ask Triton for the target's accepted set once on the host, `'tf32' in triton.compiler.make_backend(triton.runtime.driver.active.get_current_target()).parse_options({}).allowed_dot_input_precisions`, which follows Triton's own per-target rule (and honours `TRITON_OVERRIDE_ARCH`), and pass the result into the kernels as a module-level `tl.constexpr`. Triton's deprecated `tl.dot(allow_tf32=...)` makes the same choice in-kernel, but `TRITON_F32_DEFAULT` overrides it, which would change the CUDA path. (FlexGEMM)
 
