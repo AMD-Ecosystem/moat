@@ -69,3 +69,5 @@
 {"kind":"phase","ts":"2026-11-25T18:39:32Z","phase":"compile","seconds":28.601,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300c-20261125-102252-fix7-autoware-cuda-prompt/scripts/build_ws.sh"}
 {"kind":"phase","ts":"2026-11-25T18:58:13Z","phase":"compile","seconds":28.922,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300c-20261125-102252-fix7-autoware-cuda-prompt/scripts/build_ws.sh"}
 {"kind":"phase","ts":"2026-11-25T19:03:22Z","phase":"test","seconds":309.355,"exit":0,"cmd":"timeout 3600 bash /var/lib/jenkins/fleet/jobs/mi300c-20261125-102252-fix7-autoware-cuda-prompt/scripts/test_ws.sh"}
+{"kind":"session","ts":"2026-11-25T19:13:06Z","epoch":1795633986.136665,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-25T19:25:26Z","epoch":1795634726.682296,"event":"end","platform":"linux-gfx942"}
