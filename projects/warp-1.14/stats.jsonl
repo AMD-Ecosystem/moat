@@ -610,3 +610,4 @@
 {"kind":"phase","ts":"2026-11-25T21:34:29Z","phase":"test","seconds":267.173,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300-20261125-130612-warp114-relwheel-suite/scripts/run.sh debugtile --warp-debug -s autodetect -p test_tile*.py"}
 {"kind":"phase","ts":"2026-11-25T21:40:26Z","phase":"test","seconds":1329.972,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261125-130615-warp114-relwheel-suite/rw/run.sh full -s autodetect"}
 {"kind":"phase","ts":"2026-11-25T21:47:30Z","phase":"test","seconds":414.31,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261125-130615-warp114-relwheel-suite/rw/run.sh debugtile -s autodetect --warp-debug -p test_tile*.py"}
+{"kind":"phase","ts":"2026-11-25T23:30:27Z","phase":"compile","seconds":799.492,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/release-1.14/build.sh"}
