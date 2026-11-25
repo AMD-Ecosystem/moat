@@ -6272,3 +6272,50 @@ ls <src>/gpu4pyscf/scf/tests/test_*.py <src>/gpu4pyscf/dft/tests/test_*.py | xar
 1. The README wording (draft line above), now that 10.2 is broken on all three GPU families tested, each differently.
 2. Whether to check the 10.3 nightly compiler on gfx1201 before saying 10.3 fixes it (the MI300X job ran the 10.3-compiled build on the 10.2 runtime because CuPy 14.2.0 cannot JIT on the 10.3 runtime; the same recipe would work here), and whether gfx1100 needs a 10.2 run.
 3. The deferred `rocm-10-2-machinelicm-wrong-gradient-jk` describes the MI300X symptom only; the gfx1201 `rys_k_1111` fault (and the gfx90a hang) are further 10.2 machine-LICM symptoms, which may matter if an upstream ROCm report is filed.
+
+## ROCm 10.2 on the Radeon W7800 (gfx1100) (2026-11-24)
+
+Fleet job requested by jeff, evidence only (not a pipeline round): which ROCm releases the README known issue must name for the Radeon W7800. No stage, platform record, lock, `moat-port` or README branch touched; nothing pushed to the fork. **Result: on gfx1100 no build shows any defect. Plain ROCm 10.2.0, ROCm 10.2.0 with `-mllvm=-disable-machine-licm`, and plain ROCm 10.1.0 all give the correct RHF water/def2-svp energy, pass the seven tests that fail on the MI300X 10.2 plain build, and give the identical scf + dft result (347 passed / 1 failed for the missing d-aug-cc-pvdz basis / 23 skipped), with no fault or hang. The four files that fault on the R9700 (gfx1201) with plain 10.2 pass here. So the W7800 is affected by neither release, and the README should not list gfx1100 for 10.1 or 10.2.**
+
+### Environment
+AMD Radeon PRO W7800 (`gcnArchName` gfx1100), `HIP_VISIBLE_DEVICES=0` from the dispatcher (all four cards idle at start, `gpu_busy_percent` 0), every GPU run under `ulimit -c 0` and `timeout`. Upstream master c9eea22a, one worktree and install prefix per build. Python 3.11.17 venvs `$FLEET_VENV/v102` and `$FLEET_VENV/v101` (`/usr/bin/python3.11 -m venv`) with numpy 2.2.6, scipy 1.17.1, cupy-rocm-7-0 14.2.0, pyscf 2.14.0, pyscf-dispersion 1.7.0, geometric 1.1.1, MCFun 0.2.6, pytest 9.2.0, pytest-timeout 2.4.0, cmake 3.31.6.
+- **ROCm 10.2.0**: `$FLEET_VENV/v102/bin/pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ 'rocm[libraries,devel,device-gfx1100]==10.2.0'`. The requested `device-gfx110X` extra does not exist in 10.2.0 (pip: `rocm 10.2.0 does not provide the extra 'device-gfx110x'`, as for gfx120X on the R9700), so the per-target `device-gfx1100` was used. rocm, rocm-sdk-core, -devel, -libraries, -device-gfx1100 all 10.2.0; HIP 7.17.26434 (`hipconfig --version`; CuPy `runtimeGetVersion()` 71726434); `AMD clang version 24.0.0git (https://github.com/ROCm/llvm-project.git bdc35841c97ff51400273b91d7bc05c96e19c2d9)`, the same compiler as the MI300X, MI200 and R9700 10.2 runs.
+- **ROCm 10.1.0**: the image's TheRock SDK (`/opt/python-3.11-venv/.../_rocm_sdk_devel`, HIP 7.16.26385, clang d6f6cb691863e9258034ab48c1dfce21689d5606), read-only, as compiler and runtime.
+- Build and run: `PATH=<venv>/bin:<SDK root>/bin:/usr/bin:/bin` (for builds `<job dir>/work/bin/cmake`, a symlink to the cmake wheel's real 3.31.6 binary, first, because the venv's cmake entry point fails inside pip's build), `ROCM_PATH=HIP_PATH=<SDK root>`, `LD_LIBRARY_PATH=<SDK root>/lib`. `/proc/self/maps` of a CuPy + gpu4pyscf process on the 10.2 build: libamdhip64, libhsa-runtime64, libamd_comgr, librocblas, libhipblas, libhipblaslt, librocsolver all from the 10.2 SDK in `$FLEET_VENV/v102`; on the 10.1 build from `/opt/python-3.11-venv`.
+
+### Builds (README command; `--prefix`, logging and a job cap added; HIP_ARCHITECTURES unset, native detection)
+```
+cd <worktree at c9eea22a>
+GPU4PYSCF_BACKEND=hip CMAKE_BUILD_ARGS="--verbose -j 10" pip install -v --no-deps --prefix <prefix> .
+GPU4PYSCF_BACKEND=hip CMAKE_CONFIGURE_ARGS="-DCMAKE_HIP_FLAGS=-mllvm=-disable-machine-licm" CMAKE_BUILD_ARGS="--verbose -j 10" pip install -v --no-deps --prefix <prefix> .
+```
+The three builds (10.2 plain, 10.2 flag, 10.1 plain) ran side by side at `-j 10` each (`MAX_JOBS` 32): 118 s, 107 s, 121 s, all exit 0, `gpu4pyscf-rocm7x 1.9.1`, 11 libraries. Verbose logs: `CMAKE_HIP_COMPILER` is `$FLEET_VENV/v102/.../_rocm_sdk_devel/llvm/bin/clang++` in both 10.2 builds and the image SDK's in the 10.1 build; 96 HIP compile lines and 11 `--hip-link` lines each, `--offload-arch=gfx1100` only (107/107); `disable-machine-licm` on 107/107 in the flag build, 0 in the others. Producer (`llvm-objcopy --dump-section=.hip_fatbin=...` of libgvhf_rys.so, `clang-offload-bundler --type=o --unbundle --targets=hipv4-amdgcn-amd-amdhsa--gfx1100`, `llvm-readelf -p .comment`): both 10.2 builds `AMD clang version 24.0.0git (... bdc35841...)` and `AMD LLD 24.0.0 (... bdc35841...)`; the 10.1 build `d6f6cb69...` for both.
+
+### Runs
+RHF one-liner from #1055's description, from an empty directory with `PYTHONPATH=<prefix>/lib/python3.11/site-packages` (checked: `gpu4pyscf.__file__` is the install), `OMP_NUM_THREADS=4`:
+```
+timeout -k 10 300 python -c "from pyscf import gto; from gpu4pyscf import scf; mol = gto.M(atom='O 0 0 0; H 0 -0.757 0.587; H 0 0.757 0.587', basis='def2-svp'); print(scf.RHF(mol).kernel())"
+```
+The seven tests as exact node ids (`test_scf_jk.py::test_jk_energy_per_atom`, `test_fermi_smearing.py::KnownValues::test_gradient`, `test_diffuse_orbital.py::KnownValues::{test_rhf,test_rhf_lowmem,test_rhf_soscf,test_rks_lowmem,test_uhf_solvent}`), three pytest processes per repetition, `timeout -k 10 300 pytest --import-mode=importlib -p no:xdist -p no:cacheprovider -q -rfE <ids>`, two repetitions per build. scf + dft: one process per file, four at a time:
+```
+ls <src>/gpu4pyscf/scf/tests/test_*.py <src>/gpu4pyscf/dft/tests/test_*.py | xargs -P 4 -I{} \
+  timeout -k 30 1800 pytest --import-mode=importlib -p no:xdist -p no:cacheprovider -rfE \
+    -m "not slow and not benchmark and not special" -k "not _high_cost" {}
+```
+
+| build (compiler = runtime) | RHF water/def2-svp | the seven tests | scf + dft, CI selection |
+|---|---|---|---|
+| 10.2.0 plain | -75.96097516696528, rc 0 | 7/7 pass, 2/2 repetitions | **347 passed / 1 failed / 23 skipped / 0 errors** in 161 s (scf 211/1/14, dft 136/0/9), no fault, every file rc 0 or 1 |
+| 10.2.0 + `-mllvm=-disable-machine-licm` | -75.96097516696523, rc 0 | 7/7 pass, 2/2 | 347 / 1 / 23 / 0 in 141 s (scf 211/1/14, dft 136/0/9) |
+| 10.1.0 plain (image SDK) | -75.96097516696523, rc 0 | 7/7 pass, 2/2 | 347 / 1 / 23 / 0 in 160 s (scf 211/1/14, dft 136/0/9); run beyond the request, it costs under 3 min |
+
+- The one failure in all three is test_diffuse_orbital.py::test_rhf_df_against_qchem (`BasisNotFoundError` d-aug-cc-pvdz, pyscf 2.14; environment, as in every earlier round).
+- The four files that fault in `rys_k_1111` with plain 10.2 on the R9700 (test_rhf, test_uhf, test_scf_jk, test_scf_j_engine) were rerun serially on the 10.2 plain build with nothing else on the GPU (`timeout -k 30 600`, CI selection): 23 passed; 11 passed / 3 skipped; 29 passed / 3 skipped; 8 passed. No fault.
+- Not checked: whether the 10.2 plain gfx1100 code differs from the flag build in the kernels that miscompile elsewhere (no static diff was made; the request was the run result). Correct results here do not prove the gfx1100 code is free of the LICM defect, only that it does not show in the scf/dft CI selection, the seven gradient tests or the README example.
+
+### What this means for the README
+- Radeon PRO W7800 (gfx1100): neither ROCm 10.1 nor 10.2 shows the problem; the workaround changes nothing observable. The 10.1 sentence "Radeon GPUs did not show it" stays true for gfx1100.
+- Across the four GPUs run with 10.2.0 plain: MI300X (gfx942) wrong nuclear gradients with no error, MI200 (gfx90a) a hang in the d-shell gradient J/K, R9700 (gfx1201) a memory fault in J/K with larger basis sets, W7800 (gfx1100) correct. A 10.2 README line should list gfx90a, gfx942 and gfx1201 and not gfx1100; any wording such as "all Radeon GPUs" for 10.2 would be false for the W7800, and "Radeon GPUs are not affected" would be false for the R9700.
+
+### For jeff
+1. README wording for 10.2: name MI200, MI300 series and the Radeon AI PRO R9700 (gfx90a, gfx942, gfx1201); gfx1100 was run and is not affected.
