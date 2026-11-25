@@ -67,8 +67,9 @@ NVIDIA a 32-thread block fills its warp exactly, so a reduction such as
 lanes. On wave64 the same block is half a wavefront: `warpSize / 2` is 32, lane 0 reads lane
 32, and lanes 32-63 hold no thread, so the value returned is undefined and is added in. A
 minimal kernel (each thread contributes 1, 4096 blocks) gives the right sum for 64-thread
-blocks and a wrong sum in every block at 32 threads (gfx942). Where the launch can change, the block floor above fixes this too. Where the block
-width is fixed by the algorithm, add only lanes that hold a thread
+blocks and a wrong sum in every block at 32 threads (gfx942). Where the launch can change, the
+block floor above fixes this too. Where the block width is fixed by the algorithm, add only
+lanes that hold a thread
 (`if (lane + off < warpSize && (mask >> (lane + off)) & 1) v += other;`, with the mask built
 from the block size), or start the loop at the block width when the block is smaller than a
 wavefront. Sweep every block size the code can launch, including 32 and below.

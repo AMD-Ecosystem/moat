@@ -370,7 +370,7 @@ Two defects in `cuda/std/__atomic/functions/atomic_hip_generated.h`, present in 
 (`amd-develop` at `832dc407f`, gfx942):
 - The block- and device-scope `__atomic_compare_exchange_cuda` ignores its weak flag and always
   calls `__hip_atomic_compare_exchange_weak`. A 1- or 2-byte CAS is a 32-bit CAS on the
-  containing word, so the weak form also fails when a NEIGHBOURING byte changes. With each
+  containing word, so the weak form also fails when a NEIGHBORING byte changes. With each
   thread flipping only its own byte, `compare_exchange_strong` failed 75% (1 byte) and 50%
   (2 bytes) of the time, while the raw strong builtin failed 0 times. Code that reads a failed CAS
   on an empty slot as "taken" loses or duplicates keys (cuCollections: 11 failing
@@ -378,8 +378,10 @@ Two defects in `cuda/std/__atomic/functions/atomic_hip_generated.h`, present in 
 - `atomic_ref<T>` on an 8-byte type with 4-byte `alignof` (`struct {int a, b;}`, aligned to 8
   by the caller as `atomic_ref` requires) fails to build with `unsupported cmpxchg: instruction
   alignment 4 is smaller than the required 8-byte alignment`. NVIDIA's libcu++ compiles it.
-Both fixes are small header patches: honour the weak flag, and view the object through a
-`sizeof(T)`-aligned typedef. Carry them in the port and tell the user. Validate 1-, 2- and 8-byte
+Both fixes are small: honor the weak flag, and view the object through a `sizeof(T)`-aligned
+typedef. The header is generated, so an upstream fix belongs in its generator,
+`codegen/generators/hip_intrinsics.h`; a port can patch the installed header. Carry the patch in
+the port and tell the user. Validate 1-, 2- and 8-byte
 atomic paths explicitly, because 4-byte tests pass either way. (cuCollections)
 
 ## CuPy on ROCm

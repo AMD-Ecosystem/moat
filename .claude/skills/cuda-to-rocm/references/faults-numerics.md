@@ -103,7 +103,7 @@ Two lines, and it applies to any hand-rolled replacement for a library decomposi
 
 ## Host math under the HIP compiler
 
-**Host `min`/`max` on floating-point or unsigned values truncate to int under hipcc.** CUDA
+**Host `min`/`max` on non-`int` values truncate to int under hipcc.** CUDA
 declares host `min`/`max` for int, unsigned, long, long long, float and double. HIP's
 `__clang_hip_math.h` declares only `min`/`max(int, int)` on the host by default. So host code in a
 `.cu` file such as `max(0.25, min(100.0, fwhm))` or `max(atan(a), atan(b))` compiles

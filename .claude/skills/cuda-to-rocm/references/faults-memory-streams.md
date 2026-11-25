@@ -100,13 +100,6 @@ claims. The same mechanism with a different symptom, a counter that advances by 
 times the real count, is in faults-wavefront.md ("A leader-only write broadcast by shuffle
 must be initialised on every lane"). (symforce, colmap)
 
-## Handle and object lifetime
-
-**Rule-of-five on resource handles.** CUDA tolerates a default-constructed or
-double-destroyed texture/stream/event handle; AMD faults. Give RAII wrappers explicit
-default init (`handle = 0`), move-only semantics, and a guarded destructor. (colmap
-CuTexObj.)
-
 **Host code reading a `__device__` variable through a pointer gets HIP's host shadow, not
 the value.** CUDA code often keeps lookup tables as `__device__ static constexpr` arrays so that
 both sides can use them, and reaches them through a `__host__ __device__ constexpr` helper that
@@ -119,6 +112,13 @@ silently skipped bias correction (Spark-parity test 79 vs. 81). Fix on HIP: drop
 keep a plain `static constexpr` array, which clang makes usable from device code as well (verified
 on both sides). nvcc rejects that spelling in device code, so keep `__device__` on the CUDA branch.
 (cuCollections)
+
+## Handle and object lifetime
+
+**Rule-of-five on resource handles.** CUDA tolerates a default-constructed or
+double-destroyed texture/stream/event handle; AMD faults. Give RAII wrappers explicit
+default init (`handle = 0`), move-only semantics, and a guarded destructor. (colmap
+CuTexObj.)
 
 **A functor returning a reference to a by-value or forwarded parameter** binds to a
 temporary that expires at the return. nvcc and CUB happen to keep the value live in
@@ -340,8 +340,8 @@ on Linux gfx950/gfx1201.)
 A common CUDA pattern computes per-block partial results, writes them to global memory, bumps a
 completion counter with `atomicInc`/`atomicAdd`, and lets whichever block sees the final count
 read every partial and finish the reduction. CUDA's memory model requires a device-scope fence
-between the partial-sum stores and the counter (and before the last block reads), which is what
-CUDA's own threadFenceReduction sample does. Code that leaves the fences out usually works on an
+between the partial-sum stores and the counter, which is what CUDA's own threadFenceReduction
+sample does. Code that leaves the fences out usually works on an
 NVIDIA GPU, whose single L2 makes other blocks' stores visible in time. MI300X (gfx942) is
 built from eight XCDs, each with its own L2, and a plain store from a block on one XCD is not
 guaranteed to be visible to a block on another without a release/acquire: the last block reads

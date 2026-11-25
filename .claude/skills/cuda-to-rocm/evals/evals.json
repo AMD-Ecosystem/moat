@@ -76,12 +76,12 @@
       "skill_should_trigger": true,
       "prompt": "Our open-addressing set works on CUDA. For AMD we build it against libhipcxx (the copy that ships with ROCm 10.1) and target MI300X. Tests with 32-bit keys pass, but int8_t and int16_t key tests sometimes report fewer unique keys than were inserted. Review the insert path and write review.md. Don't build or run anything.\n\n```cpp\n#include <cuda/atomic>\ntemplate <class Key>\n__device__ bool insert(Key* slots, size_t capacity, Key key, Key empty) {\n  size_t i = hash(key) % capacity;\n  for (size_t probe = 0; probe < capacity; ++probe) {\n    cuda::atomic_ref<Key, cuda::thread_scope_device> slot(slots[i]);\n    Key expected = empty;\n    if (slot.compare_exchange_strong(expected, key, cuda::memory_order_relaxed)) return true;  // claimed\n    if (expected == key) return false;                                                         // duplicate\n    i = (i + 1) % capacity;                                                                    // taken: probe on\n  }\n  return false;\n}\n```",
       "expected_behavior": [
-        "Identify that libhipcxx's compare_exchange_strong at device/block scope is implemented with the weak HIP builtin, so for 1- and 2-byte keys (emulated with a 32-bit CAS on the containing word) it can fail spuriously when a neighbouring slot in the same word changes, even though the slot still holds `empty`",
+        "Identify that libhipcxx's compare_exchange_strong at device/block scope is implemented with the weak HIP builtin, so for 1- and 2-byte keys (emulated with a 32-bit CAS on the containing word) it can fail spuriously when a neighboring slot in the same word changes, even though the slot still holds `empty`",
         "Explain that the insert treats that spurious failure as 'slot taken' and probes on, so the same key can be inserted twice or the slot left empty, matching the reported symptom, and recommend patching libhipcxx to use the strong builtin or retrying while `expected == empty`"
       ],
       "unexpected_behavior": [
         "Say compare_exchange_strong cannot fail spuriously and look only for bugs in the hashing or probing logic",
-        "Present the weak-CAS behaviour only as an unconfirmed possibility to check (e.g. 'if libhipcxx's emulation behaves like a weak CAS'), or rank another cause first, instead of identifying the libhipcxx defect as the cause"
+        "Present the weak-CAS behavior only as an unconfirmed possibility to check (e.g. 'if libhipcxx's emulation behaves like a weak CAS'), or rank another cause first, instead of identifying the libhipcxx defect as the cause"
       ],
       "files_exist": [
         "review.md"

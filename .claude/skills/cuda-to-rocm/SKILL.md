@@ -185,8 +185,8 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - `atomicInc(p, val)` is a WRAPPING increment, so the bounded-slot idiom ...
 - Fresh device allocations are NOT zero on ROCm
 - An uninitialised local passed by value lets clang delete a padding-lane guard, and the ...
-- Rule-of-five on resource handles
 - Host code reading a `__device__` variable through a pointer gets HIP's host shadow, not ...
+- Rule-of-five on resource handles
 - A functor returning a reference to a by-value or forwarded parameter
 - Querying an event after its recording stream was destroyed is a use-after-free on HIP
 - Using a stream after `hipDeviceReset` corrupts the heap (Windows shows it)
@@ -236,7 +236,7 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - Device `cuda::min`/`cuda::max` NaN-selection can differ from host `std::min`/`std::max`
 - An exact float-equality branch fed by approximate division can HANG, not just drift
 - A hand-written Jacobi/eigenvalue sweep replacing a library solver must normalize first
-- Host `min`/`max` on floating-point or unsigned values truncate to int under hipcc
+- Host `min`/`max` on non-`int` values truncate to int under hipcc
 - A HIP workaround in shared host code must not change CUDA's numbers
 - Converting a NEGATIVE float to an UNSIGNED integer diverges silently between the back ends
 - PTX carry-chain arithmetic (multi-word integers)
