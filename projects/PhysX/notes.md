@@ -172,9 +172,13 @@ The `__syncwarp` fence has no teeth test: lockstep wavefronts make the missing f
 
 ## Lesson for cuda-to-rocm: masks and counters that rely on a 32-bit shift by 32 being 0
 
+Promoted to cuda-to-rocm/references/faults-numerics.md in 9d8549ee.
+
 Belongs in `references/faults-numerics.md`, beside the 64-bit shift entry (and cross-referenced from the 32-bit mask entry in `faults-wavefront.md`). Two forms in PhysX that are not lane-index masks: (1) a data-derived shift amount in packed counters, `1u << ((radix - first) << 4)` for radix values outside the current group, where the code relies on the result being 0 (NVIDIA's `shl` clamps the count, AMD uses its low five bits); on ROCm the counters picked up bogus increments and the ranks ran past the buffers (memory fault on the first GPU frame); (2) a lane mask from a count that can be exactly 32, `(1 << n) - 1` with `n` the number of children of a 32-wide BVH node: NVIDIA gives all 32 lanes, AMD gives 0. Grep for `<<` and `>>` whose count is computed from data or from a count that can reach the word width, not only from a lane index, and spell out the intended result (`n < 32 ? (1u << n) - 1 : ~0u`). Form (2) can be silent: in PhysX it fed a bounding-box reduction over no lanes, and the downstream GJK happened to report overlap on the resulting infinite box.
 
 ## Lesson for cuda-to-rocm: a library that interposes the HIP registration entry points must bind them locally
+
+Promoted to cuda-to-rocm/references/build-cmake-link.md in 9d8549ee.
 
 Belongs in `references/build-cmake-link.md`. A shared library that defines `__hipRegisterFatBinary`/`__hipRegisterFunction`/`__hipRegisterVar`/`__hipUnregisterFatBinary` to capture its own code objects (for a driver-API module table) and forwards to the runtime with `dlsym(RTLD_NEXT)` works only while nothing else made `libamdhip64` global first: with default visibility its module constructors' calls are resolved through the global scope at load time, so in a host process that already uses HIP (or under `LD_PRELOAD=libamdhip64.so`), the runtime's definitions win and the library's table stays empty. Give the wrappers `__attribute__((visibility("protected")))` so the static linker binds the calls inside the library; `readelf -rW lib.so | grep __hipRegister` should then show no relocations. Test it by running once with the runtime preloaded. (PhysX: every kernel lookup failed under the preload until the wrappers were protected.)
 
@@ -384,12 +388,16 @@ Line numbers are at 064e809b:
 
 ## Lesson for cuda-to-rocm: clang's strict aliasing and noundef rules miscompile CUDA code that nvcc accepts
 
+Promoted to cuda-to-rocm/references/faults-memory-streams.md in 9d8549ee (the noundef half was already covered there and in faults-wavefront.md).
+
 Belongs in `references/faults-numerics.md` (or a compiler-semantics entry in `diagnosis.md`), with a pointer from the symptom index ("works with printf", "kernel output silently zero"). CUDA code that nvcc compiles as intended often contains two kinds of undefined behaviour. nvcc does not exploit them, but clang's HIP compile does, so the same source that works on NVIDIA miscompiles on AMD:
 1. **Type punning.** Code reads a struct as `uint` words to copy it lane by lane (`reinterpret_cast<const uint*>(&s)[lane]`). With type-based alias analysis, clang may treat the float stores into that struct as dead, so the copy writes zeros or garbage. In PhysX the triangle-mesh midphase emitted an all-zero transform, and every sphere and capsule fell through meshes.
 2. **Undefined values passed to calls.** The pattern `T x; if (lane == 0) x = atomicAdd(...); x = __shfl_sync(mask, x, 0);` leaves `x` undefined on the other lanes. Clang marks call arguments `noundef`, so LLVM may delete the branch edge that carries the undefined value: the lane-0-only atomic then runs on every lane. In PhysX the contact counter advanced 32 times too fast.
 Signs: the result changes when a `printf` is added in the kernel, and the device asm lacks the `s_and_saveexec` guard around a lane-0 atomic. Test with `-fno-strict-aliasing` and `-Xclang -no-enable-noundef-analysis` on the HIP sources. When the codebase uses either pattern widely, add both flags to the HIP compile (HIP sources only) rather than patching sites. To find the culprit, read device buffers back on the host instead of printing on the device, which perturbs code generation.
 
 ## Lesson for cuda-to-rocm: addendum to "masks and counters that rely on a 32-bit shift by 32 being 0"
+
+Promoted to cuda-to-rocm/references/faults-numerics.md in 9d8549ee.
 
 As the reviewer asked: the first sweep in this port grepped for mask expressions and missed sites in the same file (`RadixSort.cuh`, eight more shifts) and elsewhere. The best examples of form (2) are the solver's last-sub-warp mask `(1 << ((subWarpIndex + 1) * numThreadsPerBody)) - 1`, whose count is exactly 32 for the last sub-warp of every warp at any slab count: AMD gives that body a mask with lane 0's bit added, and once the scene-wide slab count makes `numThreadsPerBody` 32 (more than 128 partitions on one body at the default `gpuMaxNumPartitions` of 8) every body's mask is empty. A second example is the contact-count mask after polygon clipping in `cudaGJKEPA.cu`, where the clipper keeps counting past its buffer, so the count can exceed 32. A sweep that would have caught them: list every shift whose count is not a literal, then classify each count's range. A script that strips comments and takes the right operand up to the first lower-precedence operator is enough; PhysX had 280 such sites.
 
@@ -906,6 +914,8 @@ Environment: Radeon AI PRO R9700 (gfx1201), TheRock ROCm 10.2.0 wheels `10.2.0a2
 - Integrity: `git -C projects/PhysX/src status --porcelain` shows only untracked build output; the diagnostic patch (`agent_space/diag-stale.patch`) was reverted before the commits.
 
 ## Lesson for cuda-to-rocm: a GPU-written host flag can arrive before an earlier small device-to-host copy (belongs in `faults-memory-streams.md`)
+
+Promoted to cuda-to-rocm/references/faults-memory-streams.md in 9d8549ee.
 CUDA code often reads results back without a runtime synchronization: async device-to-host copies on a stream, then a tiny kernel (or a stream write-value) that sets a flag in mapped host memory, and the host spins on the flag and reads the copied data. CUDA's stream order makes the copied bytes land in host memory before the next stream operation runs. HIP (seen on ROCm 10.2, gfx1201) runs copies of 16 KiB or less that touch host memory as a copy kernel whose writes are released only at device scope, so they can still be in the GPU L2 cache when the flag reaches host memory: the host reads stale data, rarely with a kernel-written flag (about 1 in 10,000) and almost always with `hipStreamWriteValue32`. Host-memory coherence flags make no difference. Symptoms are timing-dependent wrong results that vanish with any `hipStreamSynchronize`, with `AMD_SERIALIZE_COPY`, or with `GPU_FORCE_BLIT_COPY_SIZE=0` (forces SDMA); unoptimized device code tends to expose it. Fix in the port: `__threadfence_system()` in the signalling kernel before the flag store (or record a default-flag event between the copies and the signal). Find candidates by searching for host spin loops on `volatile` pinned memory and for `cuStreamWriteValue`. Evidence: "Porter round 2026-11-24, ordering race diagnosis" above.
 
 ## Review 2026-11-24, delta 886c3529...42d4c033 (linux-gfx942, reviewer, headless fleet job mi300c-20261124-130700-review2-physx-prompt)
