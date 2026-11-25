@@ -8722,3 +8722,34 @@ Cause of the glibc 2.38 requirement: this host's toolchain, not the fork. packma
 - torch: 34 test_torch tests ran and passed. `test_mesh_query_point`: 9 of 9 OK (usd-core installed).
 - Debug tile skips (15): 8 MathDx support, 1 `MathDx is not enabled`, 1 no-MathDx tolerance, five 64 KiB; same as 66ba4ffb.
 - Known harmless noise only: the one `Failed to configure kernel dynamic shared memory ... test_tile_load_scoped_kernel_cf796b16_cuda_kernel_backward ... 65536 bytes` warning (kernel never launched, test passes), 3 CPU-path `Compilation with PCH failed` retries, 5 `sem_unlink` `FileNotFoundError` tracebacks and `resource_tracker` warnings at runner teardown.
+
+## Release wheel suite (linux-gfx950), 0402fdef
+
+2026-11-25, AMD Instinct MI355X (gfx950:sramecc+:xnack-, wave64, 288 GiB), requested by jeff. The wheel tested is the exact file for the GitHub Release: built from the fork's `release/1.14.0.amd0` at `66ba4ffb31bce1bd822943cfc764c34eb21a8eef` in upstream's manylinux_2_28 build container, `/var/lib/jenkins/fleet/shared/warp114-release/warp_lang-1.14.0+rocm10.2.0-py3-none-manylinux_2_28_x86_64.whl`. It was not copied, rebuilt or modified. Release evidence at an already-validated head: no lock taken, no platform state changed. Dispatcher pin `HIP_VISIBLE_DEVICES=1` kept, `ulimit -c 0` for every run, no process stopped.
+
+**Result: pass. No failure, no error, so nothing needed a rerun alone. No `Warp CUDA error` line, no error 700, no `test_async` failure (2373 of 2373 ran OK in the full suite).**
+
+### sha256 and install
+
+- `sha256sum <wheel>` = `0402fdef420959474d564ed15c8852ae1847ca86516df0e53fd07b96797f21a0`, matching the expected value (37,348,070 bytes).
+- `$FLEET_VENV` (Python 3.11.17) had no warp-lang. `"$FLEET_VENV/bin/python" -m pip install <wheel> --extra-index-url https://stable.repo.amd.com/rocm/whl-next/` installed `rocm-10.2.0 rocm-sdk-core-10.2.0 warp-lang-1.14.0+rocm10.2.0` (numpy 1.26.4 already there).
+- Same extras as the 66ba4ffb gfx950 validation: `"$FLEET_VENV/bin/python" -m pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple "torch[device-gfx950]==2.15.0+rocm10.2.0" numpy==1.26.4 usd-core` installed torch 2.15.0+rocm10.2.0, rocm-sdk-libraries 10.2.0, rocm-sdk-device-gfx950 10.2.0, usd-core 26.11 (warnings only about leftover 10.1.0 `rocm-sdk-device-*` from the image). torch ran a GPU op on the MI355X; `from pxr import Usd` ok.
+- `warp.__file__` = `$FLEET_VENV/lib/python3.11/site-packages/warp/__init__.py` (asserted again before every run).
+- Installed `warp/bin/warp.so` sha256 `54f6fccc688775cbdcc11c4242226f82956bf1fa4dfae251e45987b3ee8cb7ef` = the wheel member (`unzip -p <wheel> warp/bin/warp.so | sha256sum`); `warp-clang.so` `af0256e4cc5888343db065830c2cd2abd5febcb4c2d1f85f849cec25379d83a7` = the wheel member.
+- Banner: `Warp 1.14.0+rocm10.2.0 initialized: ROCm 10.2, HIP runtime 7.17`, `"cuda:0" : "AMD Instinct MI355X" (288 GiB, gfx950:sramecc+:xnack-, mempool enabled)`. A file-based kernel smoke test wrote the expected values.
+
+### Runs
+
+`<job>/scripts/run.sh <label> <args>`: `ulimit -c 0`, `HIP_VISIBLE_DEVICES=1`, a new empty `WARP_CACHE_PATH` per run, cwd `<job>/run` (outside any warp checkout; none exists in the job), asserts `warp.__file__` is in site-packages, then `"$FLEET_VENV/bin/python" -m warp.tests <args>`. Each run wrapped as `utils/timeit.sh warp-1.14 test -- <job>/scripts/run.sh ...`.
+
+`amd-smi process -g 1`: "No running processes detected" before the full suite (21:15 UTC) and before the debug tile run. Load average 2.8 at the start, 8 to 11 during the suite.
+
+| run | result |
+|---|---|
+| `python -m warp.tests -s autodetect` (201 suites, 8 processes) | **Ran 7608 tests in 537.5 s, OK (skipped=80)**, rc 0: 0 failures, 0 errors |
+| `python -m warp.tests --warp-debug -s autodetect -p "test_tile*.py"` | **Ran 602 tests in 161.4 s, OK (skipped=10)**, rc 0; no device assertion, no error 700 |
+
+- Same test count (7608) and skip count (80) as the 66ba4ffb gfx950 validation with torch and usd-core. Skips by reason: no suitable devices 24, conditional graph nodes 16, MathDx 8 + `MathDx is not enabled` 1 + no-MathDx tolerance 1, two CUDA devices 7, mempool 5 + 1 without + 1 with module-load, peer access 3 + 1 without + 1 with module-load, `cuda:0 cannot access CPU memory` 2, NVRTC two archs 2, multi-GPU 2, rmm 1, memory-usage flakiness 1, `Requires CUDA` 1, NVRTC not available 1, HIP stream priorities 1. No usd-core or torch skips.
+- test_torch 34 OK; `test_mesh_query_point` 9 of 9 OK; test_diagnostics passed (13 ok markers on their own lines, as in the 66ba4ffb run).
+- Debug tile: 602 tests against 599 in the earlier release-build run, which had no torch. Skips (10): 8 MathDx support, 1 `MathDx is not enabled`, 1 no-MathDx tolerance.
+- Noise only: 3 CPU-path `Compilation with PCH failed` retries (known upstream CPU behavior).

@@ -600,3 +600,5 @@
 {"kind":"phase","ts":"2026-11-25T20:13:29Z","phase":"test","seconds":162.563,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi355-20261125-114653-warp114-release-wheel-linux/scripts/run.sh dbgtile --warp-debug -s autodetect -p test_tile*.py"}
 {"kind":"phase","ts":"2026-11-25T21:21:40Z","phase":"test","seconds":756.484,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/gfx1201-20261125-130623-warp114-relwheel-suite/rw/run.sh full -s autodetect"}
 {"kind":"phase","ts":"2026-11-25T21:25:13Z","phase":"test","seconds":199.799,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/gfx1201-20261125-130623-warp114-relwheel-suite/rw/run.sh debugtile -s autodetect --warp-debug -p test_tile*.py"}
+{"kind":"phase","ts":"2026-11-25T21:24:11Z","phase":"test","seconds":544.619,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi355-20261125-130539-warp114-relwheel-suite/scripts/run.sh full -s autodetect"}
+{"kind":"phase","ts":"2026-11-25T21:27:08Z","phase":"test","seconds":165.066,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi355-20261125-130539-warp114-relwheel-suite/scripts/run.sh debugtile --warp-debug -s autodetect -p test_tile*.py"}
