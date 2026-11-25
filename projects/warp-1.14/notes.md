@@ -8810,3 +8810,41 @@ Request from jeff: run the full suite on gfx942 from the exact Linux release whe
 - Warp lines: `Warp CUDA error` 0 in every run. There is one `Warp UserWarning` about dynamic shared memory for `test_tile_load_scoped_kernel_..._backward` (65536 of 65536) in the full suite and one in the debug tiles; this is the known harmless one, since that kernel is never launched. There are 3 CPU-only `Compilation with PCH failed, retrying without precompiled headers` retries, the known upstream CPU-path behavior.
 - Full-suite skips, 85: no suitable devices 24, conditional graph nodes 16, not built with MathDx 8 + `MathDx is not enabled` 1 + MathDx tolerance gate 1, two CUDA devices 7, mempool access 5 + 1 without + 1 with module-load, peer access 3 + 1 without + 1 with module-load, `cuda:0 cannot access CPU memory` 2, NVRTC two archs 2, multi-GPU 2, rmm 1, memory-usage flakiness 1, `Requires CUDA` 1, NVRTC not available 1, stream priority 1, and the port's 64 KiB shared-memory skips 5 (67,584 x2, 66,688 x2, 66,816 x1). This is the same set and count as the `1c94e68b` gfx942 validation. No usd-core or torch skips.
 - Debug-tile skips, 15: not built with MathDx 8, `MathDx is not enabled` 1, MathDx tolerance gate 1, shared memory 5.
+## Release wheel suite (linux-gfx90a), 0402fdef (2026-11-25, MI250X, evidence only)
+
+Request from jeff: validate the exact Linux release wheel for the GitHub Release on gfx90a. It was built from fork `release/1.14.0.amd0` at `66ba4ffb31bce1bd822943cfc764c34eb21a8eef` in upstream's manylinux_2_28 build container. No lock was taken and no platform state changed. I kept the dispatcher pin `HIP_VISIBLE_DEVICES=2` (one MI250X GCD) and used `ulimit -c 0` for every GPU run. No process was stopped. **Verdict: pass, no release blocker.** The full suite and the debug tile tests were OK with no failures, so nothing needed a rerun alone. The counts match this arch's `66ba4ffb` validation exactly (7610 / 82 skipped; 602 / 15 skipped).
+
+### Wheel and install
+- `sha256sum /var/lib/jenkins/fleet/shared/warp114-release/warp_lang-1.14.0+rocm10.2.0-py3-none-manylinux_2_28_x86_64.whl` = `0402fdef420959474d564ed15c8852ae1847ca86516df0e53fd07b96797f21a0`, the expected value. The file was used in place: not copied, rebuilt or modified.
+- `"$FLEET_VENV/bin/python" -m pip uninstall -y warp-lang` (none installed), then `"$FLEET_VENV/bin/python" -m pip install <wheel> --extra-index-url https://stable.repo.amd.com/rocm/whl-next/`. Result: "Successfully installed rocm-10.2.0 rocm-sdk-core-10.2.0 warp-lang-1.14.0+rocm10.2.0". `rocm` 10.2.0 came as an sdist that pip built locally. The venv started with TheRock 10.1.0 packages.
+- Then, as in this arch's earlier validation: `"$FLEET_VENV/bin/python" -m pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple "rocm[device-gfx90a]==10.2.0" "torch[device-gfx90a]==2.15.0+rocm10.2.0" numpy==1.26.4 usd-core`. This installed torch 2.15.0+rocm10.2.0 (`amd-torch-device-gfx90a`), rocm-sdk-libraries 10.2.0, rocm-sdk-device-gfx90a 10.2.0 and usd-core 26.11, and left warp-lang alone. pip warned only about the stale `rocm-sdk-device-*==10.1.0` pins.
+- `warp.__file__` = `<job>/venv/lib/python3.11/site-packages/warp/__init__.py`, the venv's purelib. The installed `warp/bin/warp.so` sha256 is `54f6fccc688775cbdcc11c4242226f82956bf1fa4dfae251e45987b3ee8cb7ef`, the same as the wheel member's. `warp-clang.so` also matches its member (`af0256e4...`).
+- Banner: "Warp 1.14.0+rocm10.2.0 initialized: ROCm 10.2, HIP runtime 7.17 ... "cuda:0" : "AMD Instinct MI250X / MI250" (64 GiB, gfx90a:sramecc+:xnack-, mempool enabled)". torch sees the same device.
+
+### Runs (`<job>/rw/run.sh <label> <args>` under `utils/timeit.sh warp-1.14 test`)
+What `run.sh` does: `ulimit -c 0`, cwd `<job>/rw/run` (outside any warp checkout), `rm -rf` then a fresh `WARP_CACHE_PATH=<job>/rw/run/cache_<label>`, `amd-smi process -g 2` logged, `warp.__file__` asserted in the venv's site-packages, then `"$FLEET_VENV/bin/python" -m warp.tests <args>`.
+
+`amd-smi process -g 2` before the full suite and again before the debug run: "No running processes detected". Load average was 0.90 at the start and 1.53 at the end.
+
+| run | command | result |
+|---|---|---|
+| full suite (201 suites, 8 processes) | `python -m warp.tests -s autodetect` | **Ran 7610 tests in 1317.3 s, OK (skipped=82)** |
+| tile tests, debug (22 suites) | `python -m warp.tests -s autodetect --warp-debug -p "test_tile*.py"` | **Ran 602 tests in 407.9 s, OK (skipped=15)** |
+
+- Failures: none in either run, so nothing was rerun alone. **`test_async`: 2373 of 2373 ok** in the full suite. The rocm-systems#16355 pool-off copy failure did not occur.
+- `Warp CUDA error` lines: 0 in both logs. No error 700 and no device assertion in debug mode.
+- Named modules: `test_torch` 34 ok, `test_mesh_query_point` 9 ok, `test_diagnostics` 14 ok (`test_print_diagnostics_cuda_device_structure` included). No torch or usd-core skip.
+- Other output, the known lines only: one `test_tile_load_scoped` backward-kernel "Failed to configure kernel dynamic shared memory ... 65536 bytes, but maximum available is 65536" UserWarning in each run (the test passes). 3 CPU "Compilation with PCH failed" retries in the full suite. `(error)` module loads from expected-rejection tests: 190 in the full suite and 26 in debug, matching the earlier run.
+- Full-suite skips (82), the same set as the `66ba4ffb` gfx90a validation:
+  - No suitable devices: 21.
+  - Conditional graph nodes: 16.
+  - MathDx support: 8.
+  - Two CUDA devices: 7.
+  - Mempool access: 5.
+  - 64 KiB shared memory: 5.
+  - Peer access: 3.
+  - `cuda:0 cannot access CPU memory`: 2.
+  - NVRTC two archs: 2.
+  - Multi-GPU: 2.
+  - One each: rmm, MathDx tolerance, memory-usage flakiness, without peer access, without mempool access, peer + module-load, mempool + module-load, `Requires CUDA`, NVRTC not available, `MathDx is not enabled`, HIP stream priority.
+- Debug tile skips (15): MathDx support (8), MathDx tolerance (1), `MathDx is not enabled` (1), and the shared-memory skips at 67,584 bytes (2), 66,688 (2) and 66,816 (1).
