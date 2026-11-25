@@ -891,3 +891,7 @@ Setting `GPU_MAX_HW_QUEUES` in the tests is not a fix: users run the library in 
 - **CUDA compile gate: not run here; this host has no CUDA toolkit.** No CUDA compile at 4033ed6 is recorded yet; it covers `include/merlin/memory_pool.cuh` (the round-3 review predicts identical SASS and host objects differing only in `__LINE__` constants).
 
 Logs (container-local, not committed): `agent_space/val/` (`build.log`, `bazel.log`, `suite/`, `rk/`, `single/`, `loop900/` (pair 1 and the VRAM samples `mem.txt`), `conc/` (pair 2), `diag/` (pair 3 `plain-*`, `q2-*`), `lp/` (pair 4 dispatch lines), `rg/` (the wedged rocgdb pair), `bench/`).
+
+## Ruling on the two-process hang (Jeff Daily, 2026-11-25)
+
+Option (c) of "Validation 2026-11-25 (linux-gfx1201 ...)": both a HIP-only workaround in the library (in `group_shared_mutex`, so a lock kernel never spins on an unlock kernel queued in another queue) and a ROCm issue draft for Jeff. Jeff expects the workaround may cost a lot of performance: measure it, do not assume; the measurement decides whether it ships. Porter round on linux-gfx1201 (Radeon AI PRO R9700), confirming the cause first with more than one run.
