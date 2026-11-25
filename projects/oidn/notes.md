@@ -440,3 +440,47 @@ A project that vendors or pins Composable Kernel older than tag rocm-7.2.0 and r
 ## Correspondence 2026-11-25: PR 302 author agrees to our commits on their branch
 
 Jeff contacted the author of RenderKit/oidn#302 (`wensongc`, AMD) on Teams. Their reply (2026-11-25, relayed by Jeff): we may push to their PR branch; nobody at Intel has responded to them and they do not know the timeline; the oidn owner does not seem very active. PR state checked read-only the same day: open, head `wensongc:hip-gfx950`, `maintainerCanModify` true, last updated 2026-11-06, no reviews. Delivery route per the Q1 ruling: our commits go onto their branch (a push Jeff approves and runs himself), not a competing PR. Nothing pushed yet; the port's gates (wave32 at gfx1100 failing on the stale Composable Kernel pin, Windows) are not met.
+
+## Ruling (Jeff Daily, 2026-11-25): CK bump inside PR 302
+
+Option 1 of "For Jeff: options": bump `external/composable_kernel` in the fork to CK tag `rocm-7.2.4`. No separate upstream issue (the draft above is not to be filed); the fix ships inside PR 302 as one more commit on top of `moat-port`, with PR 302's own commit left as its author wrote it.
+
+## Porter (linux-gfx1100, 2026-11-25): CK submodule to rocm-7.2.4, fork moat-port 130cb6d
+
+One new commit on `moat-port`, no amend, rebase or force-push: **130cb6d** `[ROCm] HIP: update Composable Kernel to rocm-7.2.4 to fix RDNA3 output` on top of 06bdc4c. It changes only the `external/composable_kernel` gitlink, 3e6d21ad -> **a7ed94f71cb412178ad034c98c05724c37083efa** (the commit the annotated tag `rocm-7.2.4`, tag object 3fdb9b30, names). `git merge-base --is-ancestor 331273b47 a7ed94f71` true (the `block_sync_lds` fix is in); `git merge-base --is-ancestor 3e6d21ad a7ed94f71` also true (the old pin is an ancestor, 799 commits; `include/` diff 677 files). No OIDN source change was needed: the build is clean as is. CK's `include/ck/config.h.in` gained only `CK_USE_WMMA_FP8` (left undefined by OIDN's `configure_file`, like `CK_USE_WMMA`). Message: gfx11 cause in three sentences with CK commit 331273b and ROCm/composable_kernel#3103, AI disclosure in prose, Test Plan with literal commands, no trailer; `prose.py` clean, ASCII; `jargon.py --port oidn` clean; `audit-commits` reports only the four known findings on 75bc1d9 (P3), none on 130cb6d. Pushed `06bdc4c..130cb6d moat-port`; `advance-head oidn 130cb6d`.
+
+### Toolchain (job directory only, one GPU `HIP_VISIBLE_DEVICES=2` = W7800 PCI 0000:23:00.0, idle at start)
+- ROCm 10.2.0 TheRock wheels into the job venv: `$FLEET_VENV/bin/python -m pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple "rocm[libraries,devel,device-gfx1100,device-gfx1030,device-gfx1200,device-gfx1201,device-gfx90a,device-gfx942,device-gfx950]==10.2.0"`. `rocm-sdk path --root` = `$FLEET_VENV/lib/python3.11/site-packages/_rocm_sdk_devel`; `rocm-sdk version` 10.2.0; `hipconfig --version` 7.17.26434. `$FLEET_VENV/bin` first on PATH, then `$ROCM_PATH/bin:$ROCM_PATH/lib/llvm/bin`; `LD_LIBRARY_PATH=$ROCM_PATH/lib`.
+- **Compiler the builds actually invoke** (from the caches): `OIDN_DEVICE_HIP_COMPILER` = HIP sub-build `CMAKE_CXX_COMPILER` = `$ROCM_PATH/llvm/bin/clang++` (symlink to `lib/llvm/bin/clang++`), **AMD clang version 24.0.0git (ROCm/llvm-project bdc35841c97f)**. Host parts `/usr/bin/c++`.
+- ISPC v1.32.0 Linux release tarball under the job directory; oneTBB from the image. Weights per the Q4 ruling (URL override, `GIT_LFS_SKIP_SMUDGE=1 git submodule update --init --recursive external/composable_kernel weights`, `git lfs install --local --skip-repo && git lfs pull` in `weights/`; rt_alb.tza 1830792 bytes); `.gitmodules` untouched.
+
+### Build with ROCm 10.2 (default target list, i.e. every RDNA/APU target plus gfx90a/gfx942/gfx950)
+```
+cmake -G Ninja -S projects/oidn/src -B projects/oidn/src/build -DCMAKE_BUILD_TYPE=Release -DOIDN_DEVICE_HIP=ON -DOIDN_DEVICE_CPU=ON \
+      -DROCM_PATH=$ROCM_PATH -DHIP_CLANG_NUM_PARALLEL_JOBS=4 -DISPC_EXECUTABLE=<ispc>
+cmake --build projects/oidn/src/build -j 16
+```
+112 s, 132 steps, **0 warnings**. Code objects (`objcopy --dump-section .hip_fatbin` + `clang-offload-bundler --list`): `ck_conv_mfma.cpp.o` = gfx90a, gfx942, gfx950 only; `ck_conv_wmma.cpp.o` and `ck_conv_dl.cpp.o` = the 19 RDNA/APU targets (gfx1030-1036, gfx1100-1103, gfx1150-1152, gfx1200, gfx1201, gfx902/909/90c). So the **RDNA2 (gfx1030), RDNA4 (gfx1200/gfx1201) and CDNA (gfx90a/gfx942/gfx950) code paths all compile** against CK rocm-7.2.4 in this one build.
+- ISA: gfx1100 WMMA code object, 144 `s_barrier`, every one preceded (after its last `ds_*` op) by `s_waitcnt lgkmcnt(0)`; **0** `s_waitcnt vmcnt(48) lgkmcnt(7)` (was 139/144 at the old pin). gfx1201: barriers preceded by `s_wait_dscnt 0x0` (gfx12 branch, unchanged). gfx1030 DL code object: 20 `s_barrier`, all after `s_waitcnt lgkmcnt(0)`.
+
+### Results on gfx1100 (ROCm 10.2 build)
+- `oidnDenoise --ld`: Device 0 "AMD Radeon Pro W7800 48GB", Type HIP, PCI 0000:23:00.0.
+- `timeout 1800 oidnTest --device hip` x3: **All tests passed** each time (2517, 2532, 2535 assertions in 20 test cases; the count varies run to run on every platform, as recorded before).
+- `timeout 3600 oidnTest --device cpu`: All tests passed (1820 assertions in 20 test cases).
+- CPU-reference differential, the same 19 option sets x 3 sizes as every earlier validation (RT hdr, hdr+alb+nrm, ldr+srgb+alb+nrm at -q high/balanced/fast; hdr+alb; hdr+alb+nrm --clean_aux; ldr+alb; RTLightmap hdr and dir; HIP-only -t half, --maxmem 256, --inplace, --buffer device, --buffer managed against the CPU float output of hdr+alb+nrm), fresh deterministic numpy PFM inputs (1920x1080, 1023x577, 257x129, seeds 1234-1236; hdr = albedo x shading x exponential noise, ldr clipped, normals normalized, directional N(0,0.5) clipped to [-1,1]), `oidnDenoise -d cpu -o ref.pfm` then `oidnDenoise -d hip -r ref.pfm`, default maxerror: **57/57 errors=0 in each of three runs**, avgerror 1.59e-4 to 7.8e-3 (RTLightmap dir highest, 6.9e-3 to 7.8e-3; RT hdr+alb+nrm balanced 1920x1080 6.58e-4). **The avgerror of every one of the 57 cases is identical across the three runs.**
+- Determinism: three `oidnDenoise -d hip --hdr --alb --nrm` runs on identical input give bit-identical output (md5) at 257x129, 1023x577 and 1920x1080 (1 distinct of 3 at each size; the old pin gave 3 distinct of 3).
+
+### ROCm 6.4.2 (upstream's stated minimum) against CK rocm-7.2.4: configures, compiles, and passes
+- Packages: `comgr`, `hip-dev`, `hip-runtime-amd`, `hipcc`, `hsa-rocr`, `hsa-rocr-dev`, `rocm-core`, `rocm-device-libs`, `rocm-llvm`, `rocminfo`, `rocprofiler-register`, all `*.60402-120~24.04` from `https://repo.radeon.com/rocm/apt/6.4.2/` (noble), SHA256 of each checked against that repository's `Packages` index, unpacked with `dpkg -x` into `<jobdir>/deps/rocm642` (nothing installed into the image).
+- Build in a clean environment (`env -i`, PATH = venv bin + `<rocm642>/opt/rocm-6.4.2/bin` + `/usr/bin:/bin`, no ROCm 10.2 on any path; `build.ninja` has no `_rocm_sdk` reference):
+  ```
+  cmake -G Ninja -S projects/oidn/src -B <jobdir>/build642 -DCMAKE_BUILD_TYPE=Release -DOIDN_DEVICE_HIP=ON -DOIDN_DEVICE_CPU=OFF \
+        -DROCM_PATH=<rocm642>/opt/rocm-6.4.2 -DHIP_CLANG_NUM_PARALLEL_JOBS=4
+  cmake --build <jobdir>/build642 -j 16 -- -k 0
+  ```
+  Compiler `<rocm642>/opt/rocm-6.4.2/llvm/bin/clang++`, **AMD clang 19.0.0git (roc-6.4.2 25224)**. 103 steps, **0 errors, 0 warnings**; the CDNA probe accepted gfx90a, gfx942 and gfx950. Code objects: MFMA gfx90a/gfx942/gfx950, DL and WMMA the 19 RDNA/APU targets; gfx1100 WMMA 144 barriers, 0 `vmcnt(48) lgkmcnt(7)`.
+- Beyond the compile check, the 6.4.2-built library was run against its own 6.4.2 runtime (`LD_LIBRARY_PATH=<rocm642>/lib`, `ldd` shows its `libamdhip64.so.6` and `libhsa-runtime64.so.1`) on the W7800: `oidnDenoise --ld` lists it, `oidnTest --device hip` **All tests passed (2475 assertions in 20 test cases)**, and the CPU-reference differential (references from the 10.2 build's CPU device; the 6.4.2 build has no CPU device) **57/57 errors=0**.
+- So the bump implies **no new minimum**: ROCm 6.4.2 stays valid; the documented minimum is unchanged.
+
+### Not changed, and why
+- No CHANGELOG line for the CK update (the request was a gitlink-only commit). If upstream wants one, it is a one-line follow-up for whoever talks to the PR 302 author.

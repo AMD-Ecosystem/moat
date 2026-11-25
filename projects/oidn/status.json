@@ -8,8 +8,8 @@
   "ext_type": "cmake",
   "stage": "porting",
   "adopted_at": "2026-11-06T02:27:16Z",
-  "updated_at": "2026-11-25T20:37:04Z",
-  "head_sha": "06bdc4c46ce3be658f25598f5af6db01febc78d8",
+  "updated_at": "2026-11-25T20:50:06Z",
+  "head_sha": "130cb6da9658cee2ea6393f68b1555d3c3e130d1",
   "depends_on": [],
   "waivers": {},
   "platforms": {
