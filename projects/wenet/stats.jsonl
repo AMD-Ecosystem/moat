@@ -109,3 +109,9 @@
 {"kind":"phase","ts":"2026-11-24T19:46:19Z","phase":"misc","seconds":174.158,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300c-20261124-112348-fix4-wenet-prompt/moat/agent_space/real-seq.sh real-base be6ad97"}
 {"kind":"phase","ts":"2026-11-24T19:47:39Z","phase":"compile","seconds":63.346,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300c-20261124-112348-fix4-wenet-prompt/moat/agent_space/build-rocm.sh /var/lib/jenkins/fleet/jobs/mi300c-20261124-112348-fix4-wenet-prompt/work/build-porter porter /var/lib/jenkins/fleet/jobs/mi300c-20261124-112348-fix4-wenet-prompt/deps/torch-724-unpacked/torch"}
 {"kind":"session","ts":"2026-11-24T19:55:45Z","epoch":1795550145.391679,"event":"end","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-25T00:46:59Z","phase":"test","seconds":509.856,"exit":0,"cmd":"bash agent_space/real-seq.sh real-new-331 HEAD"}
+{"kind":"phase","ts":"2026-11-25T00:54:17Z","phase":"test","seconds":389.96,"exit":0,"cmd":"bash agent_space/real-seq.sh real-new-314 HEAD"}
+{"kind":"phase","ts":"2026-11-25T00:59:38Z","phase":"test","seconds":185.158,"exit":0,"cmd":"bash agent_space/real-seq.sh real-base-331 be6ad97"}
+{"kind":"phase","ts":"2026-11-25T01:02:41Z","phase":"test","seconds":180.688,"exit":0,"cmd":"bash agent_space/real-seq.sh real-base-314 be6ad97"}
+{"kind":"phase","ts":"2026-11-25T01:04:09Z","phase":"compile","seconds":64.181,"exit":0,"cmd":"bash agent_space/build-rocm.sh porter worktree"}
+{"kind":"session","ts":"2026-11-25T01:10:37Z","epoch":1795569037.65558,"event":"start","platform":"linux-gfx942"}
