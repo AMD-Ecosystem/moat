@@ -16,3 +16,4 @@
 {"kind":"phase","ts":"2026-11-25T03:07:55Z","phase":"test","seconds":2645.616,"exit":0,"cmd":"agent_space/tiledbg.sh"}
 {"kind":"phase","ts":"2026-11-25T04:41:26Z","phase":"test","seconds":323.346,"exit":0,"cmd":"agent_space/tiledbg.sh"}
 {"kind":"phase","ts":"2026-11-25T04:54:34Z","phase":"test","seconds":760.409,"exit":0,"cmd":"agent_space/suite.sh full3"}
+{"kind":"session","ts":"2026-11-25T04:57:20Z","epoch":1795582640.604448,"event":"end","platform":"linux-gfx942"}
