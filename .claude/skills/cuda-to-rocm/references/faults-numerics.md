@@ -45,6 +45,63 @@ after every functional fix that lands in the same suite. (CV-CUDA: `-ffp-contrac
 removed most planar-versus-interleaved parity failures but regressed the cubic-versus-gold
 case, so `on` was kept and the parity residual documented.)
 
+**When bit-exact tests pin nvcc's results and no global setting is clean, read nvcc's fused
+multiply-adds from the CUDA build and spell them out at each site, on the HIP device pass
+only.** Three rules decide the spelling. (1) nvcc fuses `a * b + c` after inlining, so a
+multiply and an add in different inlined functions still fuse: a vector-operator library's
+`alpha * v + beta` is `operator+(operator*(alpha, v), beta)`, one FMA on nvcc, two roundings
+under clang `-ffp-contract=on`. A helper instantiated for `float` then fuses where its
+`float3` instantiation does not, and planar-versus-interleaved parity tests differ in the last
+bit. A test gold written with `std::fma` is the tell. `fast` fixes those sites and breaks
+others (in one suite about 75 of 183 bit-exact failures flipped and 39 new ones appeared). (2)
+For a sum of two products, `a * b + c * d`, nvcc follows no fixed left or right rule, so read
+its choice per site from the CUDA build's SASS (`cuobjdump -sass`, or `nvdisasm -g -c` on a
+`-lineinfo` build to map instructions to source lines) instead of predicting it. With nvcc
+12.8 the fused product changed with the element type, with the channel of a vector type
+(`uchar3` fused the right product in channel x and the left one in y and z), with the column
+inside one expression, with whether a product was hoisted out of a loop and reused, and with
+a negated factor (`x * c0 + y * (-c1)` became `fma(x, c0, -(y * c1))`, while `x * (-c3) + y *
+c4` in the same kernel became `fma(y, c4, -(x * c3))`). Each choice was fixed for a given
+instantiation, column or channel, so a spelling per site on the HIP side can match it exactly.
+Parity tests between two layouts that share the helper cannot tell the orders apart; a
+temporary test that recomputes the outputs on the host with `std::fma` in nvcc's order shows
+whether the HIP side now matches. (3) Keep host code unfused: `__host__ __device__` functions
+also compile for the host, whose compiler does not contract in the CUDA build, and
+host-evaluated golds expect that. A macro that expands to an explicit per-element fma under
+`__HIP_DEVICE_COMPILE__` and to the original expression, operand order included, everywhere
+else leaves the CUDA build's expression trees unchanged. Find the sites by scanning device
+code for `acc += a * b`, `acc = acc + a * b` and blends written as one expression. (CV-CUDA
+v0.19, gfx90a: 163 bit-exact failures to 0.)
+
+**A test that fails deterministically on some AMD targets only, with an error that scales
+with a sampling step, can be one ulp of contraction landing on a `ceilf`/`floorf` knife
+edge.** Look for `ceilf`, `floorf` or integer casts of float quantities that are exact
+integers in exact arithmetic (a ray length equal to a box dimension, a count derived from
+length over step). LLVM contracts `a*a + b*b + c*c` differently per target: CDNA (gfx90a,
+gfx942) put two squares into one `v_pk_mul_f32` and rounded both, while RDNA (gfx11, gfx12,
+no packed FP32) built an FMA chain. The one-ulp difference becomes a whole extra sample. It
+is not a wavefront-width bug, even when it splits along wave64/wave32 lines. Diagnose by
+printing the integer from the device for one differing element, emulating the expression in
+float32 with each contraction order, and forcing the order with `__fmaf_rn`/`__fmul_rn` in a
+scratch build. The strict-IEEE CPU evaluation is not the reference: nvcc emitted
+`fma(dz, dz, fma(dx, dx, dy*dy))` (PTX `mul.f32` then two `fma.rn.f32`), the order RDNA
+happened to get. Compile the kernel with `nvcc -ptx` (the pip `nvidia-cuda-nvcc` and
+`nvidia-nvvm` wheels are enough, no GPU needed), and if CUDA's order passes, write that order
+with `fmaf` under the HIP guard; it pins the result on every AMD target without touching the
+CUDA path. (TIGRE)
+
+**AMDGPU can fold a float-to-half conversion into the preceding fma, rounding once where the
+source rounds twice.** `__float2half_rn(__fmaf_rn(a, b, c))`, and any float-to-half
+conversion of an fma result including a contracted `a * b + c`, can compile to one
+`v_fma_mixlo_f16`/`v_fma_mixhi_f16`, which rounds straight to half instead of to float and
+then to half. On gfx90a with HIP 7.16 (AMD clang 24), 230 of 4194304 random inputs gave a
+different half, under every `-ffp-contract` setting. Symptom: F16 outputs one half-precision
+unit off between two kernels that compute the same thing (the fold fires in one instantiation
+and not the other), or against a CUDA reference. Check the ISA for `v_fma_mix*`. Workaround,
+on the device pass only: an empty asm on the float result before the conversion (`asm("" :
+"+v"(x));`), which costs nothing and keeps both roundings. (CV-CUDA resize and color
+conversion, F16)
+
 **`-ffast-math` is NOT the HIP translation of nvcc's `--use_fast_math`, and reaching for it
 because the CUDA flags line has one is a real mistranslation.** nvcc's flag swaps single
 precision transcendentals and division for the fast device intrinsics and leaves double
@@ -103,15 +160,19 @@ Two lines, and it applies to any hand-rolled replacement for a library decomposi
 
 ## Host math under the HIP compiler
 
-**Host `min`/`max` on floating-point values truncate to int under hipcc.** CUDA declares
-host `min`/`max` for int, unsigned, long, long long, float and double. HIP's
-`__clang_hip_math.h` declares only `min`/`max(int, int)` on the host. So host code in a
+**Host `min`/`max` on non-`int` values truncate to int under hipcc.** CUDA
+declares host `min`/`max` for int, unsigned, long, long long, float and double. HIP's
+`__clang_hip_math.h` declares only `min`/`max(int, int)` on the host by default. So host code in a
 `.cu` file such as `max(0.25, min(100.0, fwhm))` or `max(atan(a), atan(b))` compiles
 cleanly, converts both arguments to int and returns an int. Device code is unaffected,
 because the device overloads cover float and double. Expect parameters silently rounded
 down, a value below 1 clamped to 0, and geometry decisions taken on a zero angle. The only
 build symptom is `-Wliteral-conversion` on fractional literals ("changes value from 0.25
-to 0"), and only when a literal is involved. Detection: add
+to 0"), and only when a literal is involved; a variable argument, such as `x` in a
+`__host__ __device__ float clamp(float x) { return min(max(x, 0.25f), 3.75f); }`, gets no
+warning for itself. Unsigned and 64-bit arguments are hit too, which "the arguments are
+integers" makes easy to miss: `max(3000000000u, 1u)` converts both to int and returns 1.
+Detection: add
 `-D__HIP_NO_HOST_MIN_MAX_IN_GLOBAL_NAMESPACE__ -include poison.h` to the real hipcc
 command with `--cuda-host-only -fsyntax-only`. `poison.h` redefines the default pair with
 `__attribute__((diagnose_if(true, "HOSTMINMAX", "warning")))`, so every host call that
@@ -123,13 +184,32 @@ overload calls. `crt/math_functions.hpp` implements `min`/`max(double, double)` 
 mixed float/double forms with `fmin`/`fmax`, and `(float, float)` with `fminf`/`fmaxf`.
 Cast a float argument to double where CUDA took a mixed overload, e.g.
 `fmax(0.25, fmin(100.0, double(fwhm)))`. That keeps CUDA's results, NaN handling included,
-on every ROCm and on CUDA, without an `#ifdef`. Leave int calls alone. Do NOT rely on
-`-D__HIP_DEFINE_EXTENDED_HOST_MIN_MAX__=1`. That macro adds the floating-point host
-overloads only from ROCm 7.2.0 (LLVM 0248d277ca), defaults to 0, and does not exist in
-7.1.x and earlier, where the define silently does nothing and the truncation stays. Rerun
-the detection pass with no define: no host call may still land on `(int, int)` with
-non-int arguments. Then confirm that the device code objects did not change (`.text`/`.rodata`
-of the unbundled `.hip_fatbin`; the `__hip_cuid_*` names change with path and flags).
+on every ROCm and on CUDA, without an `#ifdef`. Leave calls whose arguments are both `int`
+alone; give unsigned, `long` and `long long` calls a small typed helper (or `std::min<T>` /
+`std::max<T>` with the type spelled, in a TU no hipify pass rewrites -- see the `std::` note
+below), so nothing reaches `(int, int)`.
+
+`-D__HIP_DEFINE_EXTENDED_HOST_MIN_MAX__=1` is the macro the header offers, and it is a
+supplement to that fix, not a replacement. It defaults to 0 in `__clang_hip_math.h` and, when
+set, adds host overloads for the unsigned and 64-bit integer types and for float, double and
+mixed float-double. Mixed signed/unsigned pairs need a second macro,
+`__HIP_DEFINE_MIXED_HOST_MIN_MAX__`, which is off for a reason the header states (it compares
+unsigned). The macro arrived in ROCm 7.2.0 (LLVM 0248d277ca); in 7.1.x and earlier the define
+silently does nothing and the truncation stays. So a build that only adds the define is
+correct on the ROCm it was tested on and wrong on an older one, with no diagnostic. If a
+project does use it, make the older ROCm fail loudly with a host-pass assertion in the
+compat header:
+
+    #if defined(__HIP_PLATFORM_AMD__) && !defined(__HIP_DEVICE_COMPILE__)
+    #include <type_traits>
+    static_assert(std::is_same<decltype(min(1.0f, 2.0f)), float>::value,
+                  "host min(float,float) resolves to min(int,int): fix the call sites or "
+                  "build with ROCm >= 7.2 and -D__HIP_DEFINE_EXTENDED_HOST_MIN_MAX__=1");
+    #endif
+
+Either way, rerun the detection pass with no define: no host call may still land on
+`(int, int)` with non-int arguments. Then confirm that the device code objects did not change
+(`.text`/`.rodata` of the unbundled `.hip_fatbin`; the `__hip_cuid_*` names change with path and flags).
 (LEAP: bilateral FWHMs truncated, intensity FWHM < 1 gave the identity; the modular-beam
 Joseph backprojector chose its parallel kernel for cone data, failing adjointness and FBP;
 the FBPlowpass window zeroed all but DC.) `std::min`/`std::max` are NOT safe either once a

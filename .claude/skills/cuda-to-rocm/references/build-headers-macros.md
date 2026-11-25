@@ -236,6 +236,20 @@ the launch fails "Cannot find Symbol" at run time. A first audit that looked onl
 missed seven such sites; list every comparison (both operand orders, continuation lines) with its
 HIP resolution rather than sampling. (oneflow)
 
+**A code generator's device-pass guards live in strings, and fail only when a model uses
+them.** A project that generates CUDA at run time (a simulator that turns model equations
+into `.cu` files) can keep its `#if defined(__CUDA_ARCH__)` device/host selections in Python
+string templates, one per generated function. A grep of the headers does not see them as
+code, and each one reaches the compiler only when a user's model calls that function, so a
+HIP port can pass a test set of ordinary models while every model with a lookup table, a
+per-element random draw or a binomial sample fails to compile ("reference to __host__
+variable ... in __global__ function"). Grep the generator's own source for the macro names as
+well as the headers, and make the GPU tests call every function implementation the generator
+can emit, not just representative models. If all the snippets pass through one assembly
+function, widening the condition there only when the HIP backend is selected leaves the CUDA
+output byte-identical, which is easy to prove by generating projects with both trees and
+diffing them. (brian2cuda)
+
 **Audit every macro class that gates a dtype or arch path, not just `__CUDA_ARCH__`.** CUDA
 headers define feature macros that their HIP counterparts do not: `cuda_bf16.h` defines
 `__CUDA_BF16_TYPES_EXIST__`, `hip_bf16.h` does not, so a shim that maps `<cuda_bf16.h>` to
@@ -514,6 +528,23 @@ function declared to return `dim3`. Construct from the members,
 helper that takes a built-in by value, because their copy constructor is deleted. (ESPResSo
 with waLBerla, HIP 7.16)
 
+**HIP's host-side `__half` needs the HIP compiler, and `HIP_vector_type`'s operators hijack
+mixed half arithmetic.** Host code that uses `__half` (integer constructors,
+`__ushort_as_half`, half arithmetic) cannot be built with a plain C++ compiler on ROCm:
+`hip/hip_fp16.h` falls back to `amd_detail/hip_fp16_gcc.h` there, whose `__half` has only
+float and double constructors (`__half(int)` is ambiguous), no arithmetic and no bit-cast
+functions. CUDA's `cuda_fp16.h` gives g++ the full host API, so this shows up only on ROCm.
+Compile those sources as HIP (`LANGUAGE HIP`), then expect two follow-ups: file-scope names
+`min`/`max` collide with the global `min`/`max` HIP declares, and `__half_raw{bits}`
+brace-initializes HIP's `_Float16` union member numerically (use `__ushort_as_half`).
+Separately, `HIP_vector_type`'s `operator OP(U, const vec&)` and `(const vec&, U)` accept any
+`U`, so `half3 - float3` with a project's own `half3` struct resolves to HIP's operator and
+fails inside `make_vector_type`; a concrete overload for the project's half type is more
+specialized and wins. Its member unary `-` and `~` also keep `char`/`short` element types
+where CUDA's promote to `int`; only non-template overloads beat the member templates.
+`__double2half` does not exist in HIP; `__half(static_cast<_Float16>(d))` rounds once, as
+CUDA does. (CV-CUDA)
+
 **A helper whose name the standard library also declares must NOT be guarded on
 `__CUDA_ARCH__`/`__HIP_DEVICE_COMPILE__`.** Those macros answer "am I in the device pass",
 not "is this name already taken", and two standard libraries answer the second question
@@ -529,6 +560,20 @@ helper a name the standard library does not use and define it once, unconditiona
 `__device__ __host__`, so it resolves in both passes on every toolchain. Keep only the
 same-name overloads whose PARAMETER TYPES differ from the standard one (`lerp(float2,...)`
 never conflicted). (faster-gaussian-splatting: the `helper_math.h` scalar `lerp`)
+
+When the maintainer keeps the name and every caller is device code, a second fix exists: on
+HIP only, declare the helper `__device__` (not `__host__ __device__`), unconditionally, not
+keyed on the compile pass. clang's HIP mode treats a `__device__` function and a host function
+of the same signature as distinct overloads, so it coexists with libstdc++'s global `using
+std::lerp;`, and because it is declared in both passes, the host pass with the MSVC STL still
+finds it when parsing device function bodies. With hipcc (HIP 7.16) on a file that includes
+`<math.h>` and calls `lerp(float, float, float)` from device code, `__host__ __device__` fails
+at `-std=c++20` with "declaration conflicts with target of using declaration already in
+scope", while `__device__` compiles at C++17 and C++20, and the device ISA was identical to
+the renamed version. It is not valid when host code also calls the helper. What exposes the
+collision in the first place: PyTorch's headers require C++20 from 2.14 on (`#error C++20 or
+later compatible compiler is required to use PyTorch`; 2.13 and earlier accept C++17), on
+CUDA and ROCm alike. (faster-gaussian-splatting)
 
 **Extend a CUDA guard for HIP; never re-key it.** Upstream's `#ifndef __CUDACC__` around
 host fallbacks for `fminf`/`min`/`max`/`rsqrtf` (CUDA-Samples `helper_math.h` and its
