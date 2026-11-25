@@ -1,0 +1,159 @@
+{
+  "schema_version": 3,
+  "name": "icicle",
+  "upstream_url": "https://github.com/ingonyama-zk/icicle",
+  "fork_url": "https://github.com/AMD-Ecosystem/icicle",
+  "fork_default_branch": "main",
+  "priority": 4.507,
+  "ext_type": "cmake",
+  "adopted_at": "2026-05-30T03:26:35Z",
+  "updated_at": "2026-11-19T23:48:55Z",
+  "head_sha": "1baeec230ebc9e169c822e408333d347140786ad",
+  "porting": null,
+  "waivers": {
+    "windows": {
+      "reason": "Upstream icicle's host framework has no Windows support, and the obstacle is the operating system rather than the GPU. src/runtime.cpp uses POSIX dlopen/dlfcn.h and dirent.h for backend discovery and emits an explicit '#error Unsupported operating system' for anything that is not Linux or macOS; utils.h uses cxxabi.h for demangling, which has no Windows equivalent; test_base.h uses POSIX setenv. Confirmed independently on windows-gfx1151 (at d8e04fd) and on windows-gfx1201/gfx1101. The HIP GPU kernels themselves are correct and validated at head 2609ca44 on linux-gfx90a (wave64) and linux-gfx1100 (wave32); only the POSIX-only backend loader blocks Windows. Porting that loader to LoadLibrary/FindFirstFile is upstream-scope work well beyond this port's minimal footprint. Windows is the only gate not satisfied at head.",
+      "suggested_at": "2026-08-20T07:50:32Z",
+      "approved_by": "jeffdaily",
+      "at": "2026-08-20T20:13:56Z"
+    }
+  },
+  "license_spdx": "MIT",
+  "upstream_repo_id": 611226044,
+  "stage": "review-passed",
+  "platforms": {
+    "windows-gfx1201": {
+      "blocked": true,
+      "blocked_reason": "no-windows-support-in-icicle-host-framework: same blockers as windows-gfx1151 confirmed at d8e04fd -- runtime.cpp uses POSIX dlopen/dlfcn.h/dirent.h and emits #error Unsupported operating system for non-Linux/macOS; utils.h uses cxxabi.h (no Windows equivalent); test_base.h uses POSIX setenv. Upstream icicle framework missing Windows support; HIP-PQC GPU kernels are correct (validated on gfx90a and gfx1100).",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-07T04:36:11Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "1baeec230ebc9e169c822e408333d347140786ad",
+      "started_at": "2026-06-02T03:20:00Z",
+      "completed_at": "2026-11-19T23:36:44Z",
+      "updated_at": "2026-11-19T23:36:44Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 18,
+          "test": 39,
+          "misc": 0
+        },
+        "session_count": 1,
+        "first_session_at": "2026-06-02T03:20:00Z",
+        "last_session_at": "2026-06-02T04:30:00Z"
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "from": "7d1cb0708462b3dfa712e49c524622930f42fe3f",
+        "to": "1baeec230ebc9e169c822e408333d347140786ad",
+        "method": "source-class",
+        "class": "doc-only",
+        "detail": "History rewritten for the pull request with an identical tree (7d1cb07 -> 1baeec2): only commit messages changed, and the vocabulary check that failed on an old commit message is clean at 1baeec2. The",
+        "at": "2026-11-19T23:36:44Z",
+        "after_gate": "jargon"
+      },
+      "failed_sha": "1baeec230ebc9e169c822e408333d347140786ad",
+      "validated_prior": [
+        "2609ca44361c7ebc6c3b8ca5af7985a256b5b79f"
+      ]
+    },
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "1baeec230ebc9e169c822e408333d347140786ad",
+      "started_at": "2026-06-02T02:42:47Z",
+      "completed_at": "2026-11-19T23:36:43Z",
+      "updated_at": "2026-11-19T23:36:43Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 394,
+          "test": 43,
+          "misc": 0
+        },
+        "session_count": 1,
+        "first_session_at": "2026-06-02T02:50:00Z",
+        "last_session_at": "2026-06-02T03:15:00Z"
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "from": "7d1cb0708462b3dfa712e49c524622930f42fe3f",
+        "to": "1baeec230ebc9e169c822e408333d347140786ad",
+        "method": "source-class",
+        "class": "doc-only",
+        "detail": "History rewritten for the pull request with an identical tree (7d1cb07 -> 1baeec2): only commit messages changed, and the vocabulary check that failed on an old commit message is clean at 1baeec2. The",
+        "at": "2026-11-19T23:36:43Z",
+        "after_gate": "jargon"
+      },
+      "failed_sha": "1baeec230ebc9e169c822e408333d347140786ad",
+      "validated_prior": [
+        "2609ca44361c7ebc6c3b8ca5af7985a256b5b79f"
+      ]
+    },
+    "windows-gfx1101": {
+      "blocked": true,
+      "blocked_reason": "Host-wide block, GPU-independent (carried from windows-gfx1201/gfx1151 determination): icicle upstream host framework has no Windows support -- runtime.cpp uses POSIX dlfcn.h/dirent.h/sys/stat.h with an explicit #error 'Unsupported operating system', plus cxxabi.h demangler and setenv(); HIP GPU kernels are fine but the backend loader is POSIX-only. Windows port is upstream-scope. Identical on gfx1101.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-07T04:37:53Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
+  "porting_released": {
+    "arch": "linux-gfx90a",
+    "since": "2026-11-19T21:41:45Z",
+    "at": "2026-11-19T21:43:55Z"
+  },
+  "reviewed_sha": "1baeec230ebc9e169c822e408333d347140786ad",
+  "review_pr": "https://github.com/AMD-Ecosystem/icicle/pull/1",
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-11-19T23:47:28Z",
+    "head_sha": "1baeec230ebc9e169c822e408333d347140786ad",
+    "content_sha256": "731f7f61d08e7438f49406cac4b5cd6ab27601aa844cf95b0c8e5f5c18f96534",
+    "review_pr": "https://github.com/AMD-Ecosystem/icicle/pull/1"
+  },
+  "pr_url": "https://github.com/ingonyama-zk/icicle/pull/1048",
+  "pr_number": 1048,
+  "pr_opened_at": "2026-11-19T23:48:55Z",
+  "pr_state": "open",
+  "published_sha": "1baeec230ebc9e169c822e408333d347140786ad"
+}
