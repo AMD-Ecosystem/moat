@@ -1105,3 +1105,9 @@ All runs above are at 886c3529 as requested. The scratch slowdown of the checked
 
 ### Integrity
 `git -C <job>/work/src status --porcelain`: only untracked `physx/bin/`; HEAD 886c3529d1dadf8353df4f98f1b95df33d0bd6ca. Run logs, interposer, reproducer and scripts are in the job directory only (`<job>/work/runs`, `<job>/work/shim`, `<job>/work/repro`).
+
+## Rulings 2026-11-24 (Jeff Daily): runtime issue, fence lifetime, V100 results
+
+- **Runtime issue:** file the small device-to-host copy visibility issue on ROCm/rocm-systems (labels `bug`, `project: clr`), the draft above with the review's corrections (gfx942 stale=0 in all eight cases, rate "about 1 in 9,000 to 17,000", cause cited at develop `3c589064`). Issue URL to be added here once filed.
+- **Fence:** keep the `__threadfence_system()` in `bpSignalComplete` unconditionally on every AMD architecture until the minimum supported ROCm contains a fix for that issue. On gfx942 it costs about 6 us per signal, three signals per step, with no measurable effect on harness runtime.
+- **NVIDIA comparison (Tesla V100-SXM2-32GB, sm_70, driver 575.57.08, the CUDA harness tarballs built at 42d4c033; 5 release and 5 checked runs in a bounded Slurm allocation):** the three deformable checks vary run to run on CUDA as on gfx942 and gfx1201, so that variation is upstream behavior (order-dependent float atomics), not a port defect. Two checks fail in all 10 V100 runs with identical values: `particles on SDF` lowest particle height -10.9376 m (limit 0.98) and `large-face convex` GPU vs CPU max position difference 0.0193625 m (limit 0.01); every AMD run passes both. Ruling: record as upstream CUDA behavior on Volta; no diagnosis job and no harness change.
