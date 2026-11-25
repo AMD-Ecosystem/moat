@@ -1,0 +1,179 @@
+{
+  "schema_version": 3,
+  "name": "faiss",
+  "upstream_url": "https://github.com/facebookresearch/faiss",
+  "fork_url": "https://github.com/AMD-Ecosystem/faiss",
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "cmake",
+  "adopted_at": "2026-05-31T16:36:35Z",
+  "updated_at": "2026-11-20T21:29:48Z",
+  "head_sha": "708a879bc438e4683689839daedcadd76496e9ca",
+  "depends_on": [],
+  "waivers": {},
+  "license_spdx": "MIT",
+  "upstream_repo_id": 81227005,
+  "stage": "review-passed",
+  "platforms": {
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "ab1dcf71",
+      "started_at": null,
+      "completed_at": "2026-06-19T23:42:18Z",
+      "updated_at": "2026-06-19T23:42:18Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "ab1dcf71",
+      "started_at": null,
+      "completed_at": "2026-06-08T03:45:26Z",
+      "updated_at": "2026-06-08T03:45:26Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "708a879bc438e4683689839daedcadd76496e9ca",
+      "started_at": "2026-05-31T23:40:43Z",
+      "completed_at": "2026-11-05T01:14:23Z",
+      "updated_at": "2026-11-05T01:14:23Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "reviewer"
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "708a879bc438e4683689839daedcadd76496e9ca",
+      "started_at": "2026-06-01T20:49:00Z",
+      "completed_at": "2026-11-20T21:29:48Z",
+      "updated_at": "2026-11-20T21:29:48Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 1,
+        "first_session_at": "2026-06-01T20:49:00Z",
+        "last_session_at": "2026-06-01T21:10:00Z"
+      },
+      "last_agent": "validator",
+      "validated_prior": [
+        "01a09e824b4792d1ef4f14ef5cdb99c37737c353"
+      ]
+    },
+    "windows-gfx1151": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "708a879bc438e4683689839daedcadd76496e9ca",
+      "started_at": null,
+      "completed_at": "2026-11-05T02:47:36Z",
+      "updated_at": "2026-11-05T02:47:36Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "linux-gfx1201": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "708a879bc438e4683689839daedcadd76496e9ca",
+      "failed_sha": null,
+      "started_at": "2026-11-04T23:52:12Z",
+      "completed_at": "2026-11-05T01:26:20Z",
+      "updated_at": "2026-11-05T01:26:20Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "reviewer",
+      "state": "completed"
+    }
+  },
+  "porting_released": {
+    "arch": "linux-gfx1201",
+    "since": "2026-11-05T00:36:08Z",
+    "at": "2026-11-05T00:42:36Z"
+  },
+  "review_pr": "https://github.com/AMD-Ecosystem/faiss/pull/1",
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-11-10T19:36:09Z",
+    "head_sha": "708a879bc438e4683689839daedcadd76496e9ca",
+    "content_sha256": "059a23c735b5a940c2574a966e2e5ecbb23ee40d7546a5797ef5438e6b684e34",
+    "review_pr": "https://github.com/AMD-Ecosystem/faiss/pull/1"
+  },
+  "pr_url": "https://github.com/facebookresearch/faiss/pull/5881",
+  "pr_number": 5881,
+  "pr_opened_at": "2026-11-10T19:44:34Z",
+  "pr_state": "merged",
+  "published_sha": "708a879bc438e4683689839daedcadd76496e9ca",
+  "pr_merged_at": "2026-11-19T01:42:33Z"
+}
