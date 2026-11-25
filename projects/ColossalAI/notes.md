@@ -317,37 +317,55 @@ At `a2c1b5c8`, replace the ROCm branch of `CastFunctor<uint8_t, __nv_bfloat16>` 
 
 ## Lesson for cuda-to-rocm: torch's runtime extension build hipifies only extensions with CUDA sources
 
+Promoted to cuda-to-rocm/references/strategy-b-torch.md in 9d8549ee.
+
 Belongs in strategy-b-torch.md. `torch.utils.cpp_extension.load()` decides `with_cuda` from the source list (any `.cu`/`.cuh`), and hipifies only when it is true, while an ahead-of-time `CUDAExtension` always hipifies. A `CUDAExtension` whose sources are all `.cpp` but include CUDA headers (a CPU optimizer including `cuda_fp16.h`, `cublas_v2.h`) therefore builds with `BUILD_EXT=1` and fails at runtime build with "cublas_v2.h: No such file or directory". Pass `with_cuda=True` to `load()` on ROCm only. Check the runtime build path with nothing prebuilt (a source checkout and a scratch `HOME`), not only the ahead-of-time one. (ColossalAI, torch 2.13)
 
 ## Lesson for cuda-to-rocm: torch renames CUDA to HIP in -D flags only in the ahead-of-time build
+
+Promoted to cuda-to-rocm/references/strategy-b-torch.md in 9d8549ee.
 
 Belongs in strategy-b-torch.md. `BuildExtension._hipify_compile_flags` rewrites the first `CUDA` in every `nvcc` `-D`/`-U` flag (`-DMYLIB_WITH_CUDA` becomes `-DMYLIB_WITH_HIP`, `-U__CUDA_NO_HALF_OPERATORS__` becomes `-U__HIP_NO_HALF_OPERATORS__`), but `load()` passes `extra_cuda_cflags` through untouched. Headers guarded on the CUDA-named macro then compile empty in the ahead-of-time build (the module imports, the kernels are missing), and the runtime build keeps the half-operator undefines ineffective. Translate the flags yourself on ROCm the same way for both paths, and make the guards accept the HIP spelling. (ColossalAI, found by its planner)
 
 ## Lesson for cuda-to-rocm: HIP's OCP fp8 conversions are unusable on gfx942; E5M2 is the top byte of a half
 
+Promoted to cuda-to-rocm/references/faults-numerics.md in 9d8549ee.
+
 Belongs in faults-numerics.md (fp8). `hip_fp8.h`'s `__hip_cvt_*` functions assert "type is unsupported by current target device" for `__HIP_E5M2`/`__HIP_E4M3` when compiled for gfx942, which supports only the FNUZ encodings, so a CUDA kv cache stored as OCP E5M2 cannot use them there. E5M2 is exactly the upper byte of an IEEE half: decode is `half_bits = byte << 8`; encode from half is round-to-nearest-even on the low byte (`(mag + 0x7f + ((mag >> 8) & 1)) >> 8`) with saturation to 0x7b and NaN to 0x7f; from float, rebias the exponent and round the mantissa to 2 bits, with a separate subnormal branch below 2^-14. Bit-identical to `torch.float8_e5m2` over every half and bf16 pattern. An E5M2 value is also exact in bf16 (the upper half of its float bits), which avoids a rounding conversion entirely. (ColossalAI, ROCm 10.2)
 
 ## Lesson for cuda-to-rocm: torch._scaled_mm fp8 types differ by AMD GPU; probe once
+
+Promoted to cuda-to-rocm/references/libraries.md in 9d8549ee.
 
 Belongs in libraries.md (hipBLASLt). `torch._scaled_mm` on MI300-series (gfx942) accepts only `float8_e4m3fnuz`/`float8_e5m2fnuz` and fails `HIPBLAS_STATUS_NOT_SUPPORTED` for the OCP types; gfx950 and gfx12 take OCP; gfx90a and gfx11 have none. Instead of an architecture list, try a 16x16 `_scaled_mm` with the OCP pair, then the FNUZ pair, once per device (cached, excluded from `torch.compile`), and cast to whatever works; a test of the fp8 GEMM should skip on "no pair works", not on the compute-capability number, which on ROCm is an AMD architecture number. Keep fp8 data exchanged between ranks in the OCP formats so it does not depend on the GPU. (ColossalAI)
 
 ## Lesson for cuda-to-rocm: c10::BFloat16 has no conversion from __hip_bfloat16 in an extension
 
+Promoted to cuda-to-rocm/references/strategy-b-torch.md in 9d8549ee.
+
 Belongs in strategy-b-torch.md, next to "A torch API used by a ROCm-only branch is a version floor nobody sees". torch 2.13's `torch/headeronly/util/BFloat16.h` declares `BFloat16(const __hip_bfloat16&)` only under `TORCH_HIP_VERSION >= 702`, and no installed header or `cpp_extension` flag defines `TORCH_HIP_VERSION`, so in an extension the guard is always false. CUDA code that passes a `__nv_bfloat16` (hipified to `__hip_bfloat16`) where an `at::BFloat16` is expected compiles on CUDA and fails on ROCm with "no matching function for call". Add an overload or specialization taking the HIP type under `USE_ROCM`. (ColossalAI, torch 2.13)
 
 ## Lesson for cuda-to-rocm: hipify breaks token pasting onto a kernel launch, and leaves CUB enumerators unrenamed
+
+Promoted to cuda-to-rocm/references/strategy-b-torch.md in 9d8549ee.
 
 Belongs in strategy-b-torch.md ("Headers and functions hipify leaves broken"). (1) A dispatch macro that pastes a prefix onto a launch expression (`general_##__VA_ARGS__` with `kernel<T><<<g, b, 0, s>>>(...)`, choosing `general_kernel`) breaks once hipify rewrites the launch into `hipLaunchKernelGGL((kernel<T>), ...)`: the paste produces `general_hipLaunchKernelGGL`. Define that name under `USE_ROCM` as a forwarder, `#define general_hipLaunchKernelGGL(K, ...) hipLaunchKernelGGL((PASTE K), __VA_ARGS__)` with `#define PASTE(...) general_##__VA_ARGS__`, keeping the parentheses so template commas survive. (2) hipify renames `cub::BlockLoad` to `hipcub::BlockLoad` but not `cub::BLOCK_LOAD_VECTORIZE`; `namespace cub = hipcub;` under `USE_ROCM` fixes all of them. (ColossalAI)
 
 ## Lesson for cuda-to-rocm: Triton num_warps above 16 cannot launch on a 64-wide wavefront
 
+Promoted to cuda-to-rocm/references/platform-limits.md in 9d8549ee.
+
 Belongs in faults-wavefront.md. Triton's `num_warps` counts wavefronts, so 32 warps on CDNA is 2048 threads; the launch fails with `OutOfResources: out of resource: threads, Required: 2048, Hardware limit: 1024`. Heuristics written for NVIDIA (`min(max(N // 256, 8), 32)`) hit it at large N; cap with `1024 // torch.cuda.get_device_properties(dev).warp_size`, which is unchanged on NVIDIA. Tests often never reach the large-N case, so check it directly. (ColossalAI)
 
 ## Lesson for cuda-to-rocm: an LLVM instruction-selection abort on bf16 vector assembly (ROCm 10.2 nightly)
 
+Promoted to cuda-to-rocm/references/diagnosis.md in 9d8549ee.
+
 Belongs in diagnosis.md (compiler crashes). `LLVM ERROR: Cannot select: v4bf16 = scalar_to_vector` during the device LTO link for gfx942 (AMD clang 24.0.0git, ROCm 10.2.0a20261022), triggered by bf16 values produced through `__float2bfloat16(__half2float(x))` and stored as bf16x2 pairs in a large kernel. Rewriting the conversion so it does not go through the rounding `__float2bfloat16` (here it was exact, so the bits could be built directly) avoided it. When a ROCm build aborts in ISel, look for the function name in the crash dump, change how that value is produced, and keep the TU and command for a report. (ColossalAI)
 
 ## Lesson for moat-porting: a job venv with newer TheRock wheels needs its own amdsmi
+
+Promoted to moat-porting/SKILL.md and cuda-to-rocm/references/diagnosis.md in 9d8549ee.
 
 Belongs in the "Fleet hosts" section. Fleet job venvs reach the base env's `amdsmi` through `venv-base-links`. After installing newer TheRock wheels into `$FLEET_VENV` (10.2 over a 10.1 base), `torch.cuda.device_count()` returned 0 while kernels ran, because torch counts devices through the old `amdsmi`; tests that check the device count then skip or fail. A `.pth` in the venv's site-packages putting `$(rocm-sdk path --root)/share/amd_smi` first fixes it. Also put the venv's bin and the SDK's bin first on PATH, or `cpp_extension.ROCM_HOME` resolves to the base env's SDK. (ColossalAI)
 
@@ -565,9 +583,13 @@ The alibi cases' single allocation is the test's float alibi mask (batch x heads
 
 ## Lesson for cuda-to-rocm: TheRock torch device wheels split kernels between a chip wheel and a family wheel
 
+Promoted to cuda-to-rocm/references/strategy-b-torch.md in 9d8549ee.
+
 Belongs in linux-host-setup.md (pip-installed ROCm). With TheRock's per-architecture torch wheels, `amd-torch-device-gfx1100` holds only the torch kernel pack. aotriton's images, which back SDPA's flash and memory-efficient backends, ship in the family wheel `amd-torch-device-gfx110x`. With only the chip wheel, `scaled_dot_product_attention` fails with `hipErrorInvalidImage` ("device kernel image is invalid") on any input that picks those backends, while the math backend works. Install both wheels, or check `torch/lib/aotriton.images/` exists. (ColossalAI, torch 2.13.0+rocm10.2.0a20261022)
 
 ## Lesson for cuda-to-rocm: flash-attn 2.8.3's Triton AMD backward reads dout with out's strides
+
+Promoted to cuda-to-rocm/references/libraries.md in 9d8549ee.
 
 Belongs in libraries.md (FlashAttention on ROCm). In flash-attn 2.8.3.post2's Triton AMD backend (the RDNA path, `FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE`), the backward preprocess indexes `dout` with `out`'s strides. A non-contiguous `dout` with last stride 1 (for example, the gradient of `out.transpose(1, 2)`) passes `maybe_contiguous` and gives wrong dq and dk while dv stays correct. The same backend returns `rng_state=None` without dropout, which breaks `torch.compile` against the op's fake implementation. Both are fixed on flash-attn main, where the backend comes from ROCm/aiter; no release had the fix as of 2026-11. Test an fa2 integration on RDNA with a transposed upstream gradient and under `torch.compile`, not only with a contiguous `dout`. (ColossalAI)
 
