@@ -294,3 +294,7 @@ On CUDA, `wp_texture_software_enabled` also returns true when `wp_cuda_context_g
 The V100/libmathdx runtime list in the porter's handoff (`test_utils.py`, `test_texture.py`, `test_cluster_dim.py` on an sm_90+ GPU for the cluster tests, `test_deterministic_scatter.py`, `test_bvh.py`, `test_tile_oob.py`, `test_graph.py`, `test_tile_struct.py`) needs an NVIDIA GPU and is still owed. The CMake build above did compile the libmathdx path (sm_75 PTX).
 
 Scripts: `agent_space/cuda_pp.sh` (verbatim from warp-1.14 session 19); `agent_space/tokcmp.py` (token-level delta of a 1.15 unit pair minus the 1.14 delta of its counterpart unit). These are container-local.
+
+## Ruling on Q7, floating-point keys with a bit range (jeff, 2026-11-25)
+
+(a): on HIP, map float32/float64 keys to their unsigned radix encoding (sign-flip), sort the requested range as unsigned integers through the corrected comparator, and map back; add float range tests. Also: file a feature request on ROCm/rocm-libraries for rocPRIM to accept bit ranges on floating-point keys as CUB does (draft shown to jeff before filing; registered as a deferred item on warp-1.15).
