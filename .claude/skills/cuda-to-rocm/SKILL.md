@@ -430,6 +430,7 @@ edit by hand). Scan it for your symptom, then open the file for the cause and th
 - Seeded `cupy.random` inputs differ between CUDA and ROCm
 - A hang that depends on inlining: long branches clobber the return address
 - Proving a real miscompile: catch the faulting instruction, then flip one backend pass
+- Before removing a compiler workaround, rerun the whole suite on the new release
 - A fault inside a vendored JIT entry point: rebuild-with-a-forced-throw beats a debugger
 - scikit-learn's KMeans can crash a Python test on a machine with very many cores
 - Failures that appear only when the whole suite runs in one process
