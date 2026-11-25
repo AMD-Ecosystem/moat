@@ -6181,6 +6181,8 @@ Draft pull request title (69 characters): `Document the ROCm 10.1 and 10.2 misco
 
 ## Lesson for cuda-to-rocm: confirm a compiler fix with the full test run, not the original symptom
 
+Promoted to cuda-to-rocm/references/diagnosis.md in ef228038.
+
 Before dropping a compiler workaround (here `-mllvm -disable-machine-licm`) because a newer ROCm contains the upstream LLVM fix, build without it on the new release and run the whole GPU test selection, not just the reproducer. In gpu4pyscf, ROCm 10.2's compiler contained the fix for the 10.1 register clobber, the original crash was gone and a static check of the kernel was clean, yet the same flag was still needed: 10.2 had a different miscompile that produced wrong nuclear gradients with no error, visible only in the gradient tests. Isolate compiler from runtime by running the new-compiler build on the old runtime and vice versa, and by rebuilding with the workaround flag on the new compiler. (gpu4pyscf)
 
 ## ROCm 10.2 on the MI200 (gfx90a) (2026-11-24)
