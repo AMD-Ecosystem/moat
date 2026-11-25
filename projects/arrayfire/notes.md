@@ -3262,7 +3262,7 @@ arrayfire/arrayfire#3741 (base `experimental/hip` 950dcdd02, head `AMD-Ecosystem
 
 ## Sync review PR draft
 
-Title: `[ROCm] Merge upstream master (b11d700) into the HIP backend branch` (66 chars). Branch `moat-sync-b11d700` -> `moat-port`. No `## Upstream reply` section (no maintainer is waiting on anything in this round). `prose.py` clean, `jargon.py -` clean, ASCII. If this body is reused for an `experimental/hip` pull request, drop the compare links and the Delivery paragraph. Updated 2026-11-24 (gfx1201 porter/validator) for head 2f25788dc: before opening the review PR, replace the MI300X line in the Test plan with the gfx942 rerun at 2f25788dc and add the Windows result there (both owed; see the gfx1201 validation entry of 2026-11-24 at 2f25788dc). Updated 2026-11-24 (gfx942 validator): the MI300X line now gives the gfx942 rerun at 2f25788dc; the Windows result is still owed.
+Title: `[ROCm] Merge upstream master (b11d700) into the HIP backend branch` (66 chars). Branch `moat-sync-b11d700` -> `moat-port`. No `## Upstream reply` section (no maintainer is waiting on anything in this round). `prose.py` clean, `jargon.py -` clean, ASCII. If this body is reused for an `experimental/hip` pull request, drop the compare links and the Delivery paragraph. Updated 2026-11-24 (gfx1201 porter/validator) for head 2f25788dc: before opening the review PR, replace the MI300X line in the Test plan with the gfx942 rerun at 2f25788dc and add the Windows result there (both owed; see the gfx1201 validation entry of 2026-11-24 at 2f25788dc). Updated 2026-11-24 (gfx942 validator): the MI300X line now gives the gfx942 rerun at 2f25788dc. Updated 2026-11-24 (checkup): Windows gfx1151 result added.
 
 ~~~markdown
 Merge upstream `master` at b11d70079 (6 commits past 64c88d932, the last upstream commit merged into this branch) into the HIP port branch, plus a comment-only cleanup and a fix for a crash in sparse plus sparse arithmetic on GPUs with a small BAR. Merge, not rebase, so the published commits stay as they are.
@@ -3312,7 +3312,9 @@ Result: 131/132 test binaries pass. The one failure is `confidence_connected` (2
 
 AMD Instinct MI300X (gfx942, wave64, large BAR), ROCm 7.16, at 2f25788dc, with the same commands and `-DCMAKE_HIP_ARCHITECTURES=gfx942`: the same 131/132 with the same single failure, `sparse_arith` 123/123 and `reduce` 1062/1062. On this GPU `sparse_arith` also passed before the fix, because the device memory is CPU-mapped there.
 
-Not tested here: the Windows installer and standalone-install changes, and the CUDA build (no CUDA toolkit on this machine).
+AMD Radeon 8060S (gfx1151, Windows 11, ROCm SDK 7.14), at 2f25788dc, configured with Ninja and the ROCm clang/clang++ for C, C++ and HIP, `-DCMAKE_HIP_ARCHITECTURES=gfx1151` and the same backend options (`-DAF_BUILD_CPU=OFF`, matrix files off), then `ctest -R '_cuda$' -j1 --timeout 900`: 130/131 pass, the same single `confidence_connected` failure. `sparse_arith` passes; before this fix it crashed on Windows machines and was left out of earlier Windows runs.
+
+Not tested here: the Windows installer and standalone-install changes, and the CUDA build (no CUDA toolkit on these machines).
 
 Delivery: arrayfire/arrayfire#3741 (base `experimental/hip`, head this branch's target on the fork) is open and approved at 83be19781 but not merged. Merging this round adds these commits to that pull request.
 ~~~
