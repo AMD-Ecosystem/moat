@@ -143,6 +143,8 @@ CUDA: the flag is `constexpr false`, and sm_80 PTX of the four largest test TUs 
 
 ## Lesson for cuda-to-rocm: a lock-retry loop deadlocks when the holder is in the same wavefront
 
+Promoted to cuda-to-rocm/references/faults-wavefront.md in 9d8549ee.
+
 Belongs in `references/faults-wavefront.md` (next to "Intra-wave barrier divergence").
 
 Symptom: a hash-table or lock-based kernel that passes on CUDA hangs on AMD with the GPU at 100%, often only once there is contention (a full bucket, duplicate keys in a batch). `AMD_LOG_LEVEL=3` shows the last `ShaderName` launched; `AMD_SERIALIZE_KERNEL=3` pins down which of several concurrent kernels never returns.
@@ -156,11 +158,15 @@ Fix: retry through a loop whose latch every lane reaches after finishing its cri
 
 ## Lesson for cuda-to-rocm: tile shuffles of pointers and enums need `__shfl` overloads, declared before the CG header
 
+Promoted to cuda-to-rocm/references/build-headers-macros.md in 9d8549ee.
+
 Belongs in `references/build-headers-macros.md` (near "Count cooperative-groups call sites").
 
 CUDA's `thread_block_tile::shfl` takes any trivially copyable type. HIP's tile `shfl` calls `__shfl(var, src, width)`, which exists only for arithmetic types, so `g.shfl(ptr, lane)` or `g.shfl(enum_value, lane)` fails with "no matching function for call to '__shfl'" deep inside `amd_hip_cooperative_groups.h`. Add template overloads (pointer: round-trip through `unsigned long long`; enum: through `std::underlying_type`). Declare them after `hip/hip_runtime.h` and before `hip/hip_cooperative_groups.h`: for a pointer to a fundamental type there is no associated namespace for argument-dependent lookup, so only declarations visible at the template's definition are found. A HIP tile `ballot()` also returns `unsigned long long` (the tile's own bits, compacted), so `const auto v = g.ballot(...); __ffs(v)` becomes ambiguous; store it in `unsigned int` as the CUDA type was. (HierarchicalKV, ROCm 10.2)
 
 ## Lesson for moat-porting: `pkill -f <pattern>` on a fleet worker kills the worker's own shell
+
+Promoted to moat-porting/SKILL.md in 9d8549ee.
 
 Belongs in the "Fleet hosts" section.
 
