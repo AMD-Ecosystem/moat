@@ -8780,3 +8780,33 @@ Dispatcher pin `HIP_VISIBLE_DEVICES=3` kept. HIP device 3 is PCI bus 0x26 (torch
 - Full-suite skips, 79, the same reasons and counts as the 66ba4ffb gfx1100 validation: no suitable devices 18; conditional graph nodes 16; MathDx 8 + `MathDx is not enabled` 1 + no-MathDx tolerance 1; two CUDA devices 7, multi-GPU 2; mempool access 5 + 1 without + 1 with module-load; peer access 3 + 1 without + 1 with module-load; `cuda:0 cannot access CPU memory` 2; NVRTC two archs 2, NVRTC not available 1, `Requires CUDA` 1; rmm 1; memory-usage flakiness 1; HIP stream priorities 1; the five 64 KiB shared-memory skips (66,816 B 1, 66,688 B 2, 67,584 B 2).
 - Debug tile skips, 15: MathDx 8, `MathDx is not enabled` 1, no-MathDx tolerance 1, the same five 64 KiB skips.
 - Other output, known and not a finding: one `test_tile_load_scoped` "Failed to configure kernel dynamic shared memory" warning and three CPU `Compilation with PCH failed, retrying` lines in the full suite.
+## Release wheel suite (linux-gfx942), 0402fdef (2026-11-25, MI300X, release evidence at the validated head)
+
+Request from jeff: run the full suite on gfx942 from the exact Linux release wheel that goes to the GitHub Release. It was built from `release/1.14.0.amd0` at `66ba4ffb31bce1bd822943cfc764c34eb21a8eef` in upstream's manylinux_2_28 build container. No lock taken, no platform state changed, nothing pushed to the fork. `HIP_VISIBLE_DEVICES=3` (dispatcher pin, kept; "AMD Instinct MI300X HF", gfx942:sramecc+:xnack-, 192 GiB). `ulimit -c 0` for every GPU run, and each run deleted a fresh `WARP_CACHE_PATH` just before using it. `amd-smi process -g 3` reported "No running processes detected" before the full suite and again before the reruns. Load average was 111 at the start of the full suite (other jobs) and 13 to 23 afterwards. No process was killed. My first launch of the full suite was a harness background task that would have hit a 10-minute timeout, so I stopped it after a few seconds. `ps --forest` then showed no leftover `warp.tests` process, and the counted run below is a clean relaunch.
+
+**Verdict: pass, no release blocker.** The full suite had 1 failure, a `test_async` pool-off copy (rocm-systems#16355 signature). It passes alone, and the whole `test_async.py` file passes. The debug tiles are OK. No `Warp CUDA error` line appeared in any run.
+
+### Wheel and install
+
+- `/var/lib/jenkins/fleet/shared/warp114-release/warp_lang-1.14.0+rocm10.2.0-py3-none-manylinux_2_28_x86_64.whl`: `sha256sum` = `0402fdef420959474d564ed15c8852ae1847ca86516df0e53fd07b96797f21a0`, which matches the expected value. The wheel was used in place: not copied, rebuilt or modified.
+- `"$FLEET_VENV/bin/pip" uninstall -y warp-lang` (none installed), then `"$FLEET_VENV/bin/pip" install <wheel> --extra-index-url https://stable.repo.amd.com/rocm/whl-next/`, which installed `rocm-10.2.0 rocm-sdk-core-10.2.0 warp-lang-1.14.0+rocm10.2.0` (the venv had rocm 10.1.0; numpy 1.26.4 already present).
+- Test dependencies, as the earlier gfx942 validators installed them: `"$FLEET_VENV/bin/pip" install --index-url https://stable.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple "torch[device-gfx942]==2.15.0+rocm10.2.0" usd-core numpy==1.26.4`. That gave torch 2.15.0+rocm10.2.0 with `amd-torch-device-gfx942`, `rocm-sdk-libraries` 10.2.0, and usd-core 26.11. pip flags the leftover 10.1.0 `rocm-sdk-device-*` packages as inconsistent, as earlier runs saw. A 256x256 torch matmul on the GPU works.
+- `warp.__file__` = `$FLEET_VENV/lib/python3.11/site-packages/warp/__init__.py`. Installed `warp/bin/warp.so` sha256 `54f6fccc688775cbdcc11c4242226f82956bf1fa4dfae251e45987b3ee8cb7ef` and `warp-clang.so` `af0256e4cc5888343db065830c2cd2abd5febcb4c2d1f85f849cec25379d83a7`: each equals its wheel member. `warp.so.rocm` reads `'\n10.2.0\n'`.
+- Banner: `Warp 1.14.0+rocm10.2.0 initialized: ROCm 10.2, HIP runtime 7.17`, `"cuda:0" : "AMD Instinct MI300X HF" (192 GiB, gfx942:sramecc+:xnack-, mempool enabled)`.
+
+### Runs
+
+`<job>/scripts/run.sh <label> <args>`: `ulimit -c 0`, cwd `<job>/run` (outside any warp checkout), `rm -rf` then `WARP_CACHE_PATH=<job>/run/cache_<label>`, `warp.__file__` asserted in the venv's site-packages, then `$FLEET_VENV/bin/python -m warp.tests <args>`. Each run was wrapped in `utils/timeit.sh warp-1.14 test`.
+
+| run | result |
+|---|---|
+| `python -m warp.tests -s autodetect` (full suite, 8 processes) | **Ran 7608 tests in 951.8 s, FAILED (failures=1, skipped=85)**, 0 errors |
+| `-s autodetect -p test_async.py -k test_copy_i2f_h2d_SrcPoolOff_DstPoolOff_NoStream_NoGrad_NoGraph_AccessNone` | Ran 1, **OK** |
+| `-s autodetect -p test_async.py` | Ran 2373 tests in 125.1 s, **OK** |
+| `--warp-debug -s autodetect -p "test_tile*.py"` | **Ran 602 tests in 262.2 s, OK (skipped=15)** |
+
+- The one failure is `test_copy_i2f_h2d_SrcPoolOff_DstPoolOff_NoStream_NoGrad_NoGraph_AccessNone`: `assert_np_equal(dst.numpy(), src.numpy())` at `test_async.py:434`, `Mismatched elements: 125184 / 1000000 (12.5%)`, `Max absolute difference: 1001377.`, `Max relative difference: 1.` Both pools are off. This is the same lost-writes count as the gfx950 release-wheel run, the rocm-systems#16355 signature. Under jeff's rule it is acceptable: it passes alone and the whole file passes.
+- `test_mesh_query_point.py` 9 of 9 OK. `test_diagnostics.py` 13 of 13 OK (`test_print_diagnostics_cuda_device_structure` included). 34 `interop.test_torch` tests OK.
+- Warp lines: `Warp CUDA error` 0 in every run. There is one `Warp UserWarning` about dynamic shared memory for `test_tile_load_scoped_kernel_..._backward` (65536 of 65536) in the full suite and one in the debug tiles; this is the known harmless one, since that kernel is never launched. There are 3 CPU-only `Compilation with PCH failed, retrying without precompiled headers` retries, the known upstream CPU-path behavior.
+- Full-suite skips, 85: no suitable devices 24, conditional graph nodes 16, not built with MathDx 8 + `MathDx is not enabled` 1 + MathDx tolerance gate 1, two CUDA devices 7, mempool access 5 + 1 without + 1 with module-load, peer access 3 + 1 without + 1 with module-load, `cuda:0 cannot access CPU memory` 2, NVRTC two archs 2, multi-GPU 2, rmm 1, memory-usage flakiness 1, `Requires CUDA` 1, NVRTC not available 1, stream priority 1, and the port's 64 KiB shared-memory skips 5 (67,584 x2, 66,688 x2, 66,816 x1). This is the same set and count as the `1c94e68b` gfx942 validation. No usd-core or torch skips.
+- Debug-tile skips, 15: not built with MathDx 8, `MathDx is not enabled` 1, MathDx tolerance gate 1, shared memory 5.
