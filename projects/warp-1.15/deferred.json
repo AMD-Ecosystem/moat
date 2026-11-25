@@ -13,6 +13,32 @@
       "upstream_issue": null,
       "created_at": "2026-11-25T01:36:24Z",
       "decided": null
+    },
+    {
+      "id": "warp-hip-gfx1250-thread-block-clusters",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "Thread block clusters (cluster_dim) on AMD GPUs that have them (gfx1250: hipLaunchAttributeClusterDimension, hipDeviceProp_t.clusterLaunch, runtime-only hipOccupancyMaxActiveClusters). warp-1.15 treats every AMD GPU as cluster-incapable by ruling Q2 (a): cluster_dim ignored, get_cuda_max_cluster_dim returns 1. Needs a gfx1250 host, a device-intrinsic replacement for the PTX %cluster_ctarank probe in test_cluster_dim, and the cluster launch through hipLaunchKernelExC.",
+      "refs": [
+        "projects/warp-1.15/notes.md#ruling-on-plan-q2"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-25T18:48:36Z",
+      "decided": null
+    },
+    {
+      "id": "warp-hip-cmake-build",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "A HIP branch in Warp's optional CMake build (CMakeLists.txt, tools/cmake/WarpDependencies.cmake), which compiles for NVIDIA GPUs and CPUs only. warp-1.15 stops its configure on ROCm-only hosts with a pointer to build_lib.py, by ruling Q4 (b). Revisit if upstream makes CMake the release build.",
+      "refs": [
+        "projects/warp-1.15/notes.md#ruling-on-plan-q4"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-25T18:48:36Z",
+      "decided": null
     }
   ]
 }

@@ -17,3 +17,8 @@
 {"kind":"phase","ts":"2026-11-25T04:41:26Z","phase":"test","seconds":323.346,"exit":0,"cmd":"agent_space/tiledbg.sh"}
 {"kind":"phase","ts":"2026-11-25T04:54:34Z","phase":"test","seconds":760.409,"exit":0,"cmd":"agent_space/suite.sh full3"}
 {"kind":"session","ts":"2026-11-25T04:57:20Z","epoch":1795582640.604448,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-25T18:27:38Z","epoch":1795631258.192703,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-25T18:33:13Z","phase":"compile","seconds":70.609,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi300-20261124-163755-warp115-porter1/moat/projects/warp-1.15/src && python build_lib.py --rocm-path /var/lib/jenkins/fleet/jobs/mi300-20261124-163755-warp115-porter1/venv/lib/python3.11/site-packages/_rocm_sdk_devel --hip-arch gfx942 -j 32"}
+{"kind":"phase","ts":"2026-11-25T18:45:47Z","phase":"compile","seconds":70.314,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi300-20261124-163755-warp115-porter1/moat/projects/warp-1.15/src && python build_lib.py --rocm-path /var/lib/jenkins/fleet/jobs/mi300-20261124-163755-warp115-porter1/venv/lib/python3.11/site-packages/_rocm_sdk_devel --hip-arch gfx942 -j 32"}
+{"kind":"phase","ts":"2026-11-25T19:07:58Z","phase":"test","seconds":1072.534,"exit":0,"cmd":"agent_space/suitewheel.sh r2full1"}
+{"kind":"phase","ts":"2026-11-25T20:01:54Z","phase":"test","seconds":612.943,"exit":0,"cmd":"agent_space/suitewheel.sh r2full2"}
