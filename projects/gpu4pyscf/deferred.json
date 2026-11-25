@@ -140,14 +140,22 @@
       "id": "rocm-10-2-machinelicm-wrong-gradient-jk",
       "kind": "rocm-bug-report",
       "component": "llvm-project",
-      "summary": "ROCm 10.2.0 SDK clang (AMD clang 24.0.0git bdc35841, which already has the 10.1 fix 8c6e07731faf), gfx942: gpu4pyscf gradient J/K (gvhf-rys ejk_ip1 path, unrolled and generic kernels) returns wrong values with no error (NaN, 1e102, different every run); energies correct. -mllvm -disable-machine-licm on the HIP compile and link lines fixes it, and the 10.3.0a20261124 nightly compiler (424729db) is correct without it. Reproducer: plain GPU4PYSCF_BACKEND=hip pip install . at upstream c9eea22a with the 10.2 SDK, then pytest gpu4pyscf/scf/tests/test_scf_jk.py -k test_jk_energy_per_atom. Not narrowed to an instruction; gfx90a/Radeon unchecked. Choice for a person: file upstream (fixed in the nightly) or not.",
+      "summary": "Machine LICM miscompiles gpu4pyscf's nuclear-gradient J/K kernels (gvhf-rys ejk_ip1 path) with no error. ROCm 10.2.0 compiler (AMD clang 24.0.0git bdc35841, already has the 10.1 fix 8c6e07731faf): wrong gradients on gfx942, GPU hang on gfx90a, memory fault in rys_k_1111 on gfx1201; gfx1100 correct. 10.3.0a20261124 nightly compiler (424729db): correct on gfx942 and gfx1201, still wrong on gfx90a (1e94 to 1e282, wrong from 6-31g on). -mllvm -disable-machine-licm on the HIP compile and link fixes every case. Filed for gfx90a with a verified reproducer (gpu4pyscf c9eea22a, 10.3 compiler, 10.2 runtime, test_jk_energy_per_atom). Not narrowed to an instruction.",
       "refs": [
         "projects/gpu4pyscf/notes.md#rocm-102-check-of-the-readme-known-issue-2026-11-24"
       ],
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-11-24T21:29:57Z",
-      "decided": null
+      "decided": null,
+      "summary_history": [
+        {
+          "summary": "ROCm 10.2.0 SDK clang (AMD clang 24.0.0git bdc35841, which already has the 10.1 fix 8c6e07731faf), gfx942: gpu4pyscf gradient J/K (gvhf-rys ejk_ip1 path, unrolled and generic kernels) returns wrong values with no error (NaN, 1e102, different every run); energies correct. -mllvm -disable-machine-licm on the HIP compile and link lines fixes it, and the 10.3.0a20261124 nightly compiler (424729db) is correct without it. Reproducer: plain GPU4PYSCF_BACKEND=hip pip install . at upstream c9eea22a with the 10.2 SDK, then pytest gpu4pyscf/scf/tests/test_scf_jk.py -k test_jk_energy_per_atom. Not narrowed to an instruction; gfx90a/Radeon unchecked. Choice for a person: file upstream (fixed in the nightly) or not.",
+          "by": "jeffdaily",
+          "at": "2026-11-25T16:44:38Z",
+          "reason": "said the 10.3 nightly is correct; that holds on gfx942 and gfx1201 only, gfx90a is still wrong"
+        }
+      ]
     }
   ]
 }
