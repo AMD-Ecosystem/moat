@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "setuptools-cuda",
   "adopted_at": "2026-06-04T01:07:42Z",
-  "updated_at": "2026-11-25T00:31:16Z",
+  "updated_at": "2026-11-25T01:35:36Z",
   "head_sha": "2132d4e5cdd0bce5dec1250151465f172226546b",
   "depends_on": [],
   "pr_url": "https://github.com/CERN/TIGRE/pull/747",
@@ -44,11 +44,11 @@
     "windows-gfx1151": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "c0151501c2a97922e9afea20007f3d049d0a815a",
+      "validated_sha": "2132d4e5cdd0bce5dec1250151465f172226546b",
       "failed_sha": null,
       "started_at": null,
-      "completed_at": "2026-11-21T04:01:41Z",
-      "updated_at": "2026-11-21T04:01:41Z",
+      "completed_at": "2026-11-25T01:35:36Z",
+      "updated_at": "2026-11-25T01:35:36Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -65,7 +65,8 @@
       "state": "completed",
       "last_agent": "validator",
       "validated_prior": [
-        "f779703298570f752da7c3994db3fc9903b9bf1c"
+        "f779703298570f752da7c3994db3fc9903b9bf1c",
+        "c0151501c2a97922e9afea20007f3d049d0a815a"
       ]
     },
     "windows-gfx1201": {

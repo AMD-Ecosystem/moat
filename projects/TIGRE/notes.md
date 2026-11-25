@@ -2471,3 +2471,28 @@ GPU host: AMD Instinct MI250X / MI250 gfx90a, TheRock ROCm SDK 10.1, `HIP_VISIBL
 - `fmaxf` in `maxdistanceCuboid` stays unguarded shared host code, as published and as the maintainer reviewed it; CUDA behavior and device code are identical.
 - The `build_ext -j` race is not filed upstream. Instead every Windows build serializes when `-j` is passed (2132d4e5, CUDA included); Linux stays parallel.
 - No robust sample count is suggested upstream; deferral `tigre-parallel-interp-sample-count-knife-edge` closed as not-applicable by jeffdaily.
+
+## Validation 2026-11-24 (validator, windows-gfx1151, moat-fix-747 @ 2132d4e5) -- RESULT: COMPLETED
+
+Run by the checkup session on the laptop at jeff's request. GPU: AMD Radeon 8060S (gfx1151, wave32 APU, hardware fp32 linear filtering reported by the self-test), Windows 11, TheRock SDK via `win_rocm_env.sh`, venv `tigre_venv2` (setuptools 84.2.1, no torch), `ulimit -c 0`, one GPU process. Head checked out as a detached worktree of the fork clone (`agent_space/tigre-win4` at 2132d4e5c); tracked tree clean after build and tests (`git status --porcelain`: untracked output only). Nothing pushed.
+
+### Build (documented Windows command, with -j 8 to exercise 2132d4e5)
+```
+utils/timeit.sh TIGRE compile -- bash agent_space/tigre_build_win1151_213.sh
+# TIGRE_BACKEND=hip HIP_ARCH=gfx1151 HIPCC=<rocm>/lib/llvm/bin/clang++.exe, CC/CXX unset
+# python setup.py build_ext --inplace -j 8
+```
+rc 0, 0 errors, 8/8 `.pyd`. Printed `TIGRE: building the hip backend (set by TIGRE_BACKEND).`, `TIGRE: compiling for the AMD GPU architectures gfx1151` and `TIGRE: building the extensions one at a time (build_ext -j is not supported on Windows).` So the guard from a7997d3d/2132d4e5 works on Windows: the same `-j 8` failed at c015150 (GpuIds.obj Permission denied, .cu sent to cl.exe).
+
+### Tests (same script as the c015150 entry; runtime staged with rocm_stage_runtime)
+```
+utils/timeit.sh TIGRE test -- bash agent_space/tigre_run_213.sh
+# pytest -q tests/ ; pytest -q -m extended tests/ ; probe/tigre_gates.py cone|solvers|parallel
+```
+- core: **274 passed, 0 failed**, 25 skipped, 17 deselected (514 s). Skips: torch not installed (8), needs 2 or 4 GPUs (5), CUDA runtime not loadable via ctypes (CUDA-only error tests), as before.
+- `test_forward_is_invariant_to_a_full_turn[parallel-interpolated]`, the one failure at c015150 (2.384e-4), now **passes**: the fma ray-length fix (147a288a) holds on gfx1151 too.
+- extended: **13 passed**, 14 skipped (467 s).
+- gates cone, solvers, parallel: **PASS** each.
+- PyTorch test files: not run (no torch in the Windows venv), as at c015150.
+
+Against c015150 on this host: core 246 passed / 1 failed -> 274 / 0 (master's new tests plus the full-turn fix); extended 12 -> 13.

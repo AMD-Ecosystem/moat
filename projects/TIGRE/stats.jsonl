@@ -294,3 +294,5 @@
 {"kind":"phase","ts":"2026-11-25T00:30:30Z","phase":"compile","seconds":24.8,"exit":0,"cmd":"bash -c cd projects/TIGRE/src && /var/lib/jenkins/fleet/jobs/mi200-20261124-161705-fix-tigre-winj/venv/bin/python setup.py build_ext --inplace -j 16"}
 {"kind":"phase","ts":"2026-11-25T00:31:10Z","phase":"compile","seconds":25.868,"exit":0,"cmd":"bash -c cd projects/TIGRE/src && /var/lib/jenkins/fleet/jobs/mi200-20261124-161705-fix-tigre-winj/venv/bin/python setup.py build_ext --inplace -j 16"}
 {"kind":"session","ts":"2026-11-25T00:32:27Z","epoch":1795566747.538085,"event":"end","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-25T01:14:03Z","phase":"compile","seconds":53.295,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/tigre_build_win1151_213.sh"}
+{"kind":"phase","ts":"2026-11-25T01:35:07Z","phase":"test","seconds":1238.762,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/tigre_run_213.sh"}
