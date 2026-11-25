@@ -124,3 +124,11 @@
 {"kind":"phase","ts":"2026-11-25T01:41:01Z","phase":"test","seconds":34.761,"exit":0,"cmd":"bash agent_space/harness/decode.sh /var/lib/jenkins/fleet/jobs/mi300c-20261124-163116-fix5-wenet-prompt/work/val u2pp-fp32 epoch_19.pt"}
 {"kind":"phase","ts":"2026-11-25T01:43:02Z","phase":"compile","seconds":110.311,"exit":0,"cmd":"bash agent_space/build-rocm.sh val 73d889fe1d3ed4cb16dde1797758fdc92e210a31"}
 {"kind":"session","ts":"2026-11-25T01:56:26Z","epoch":1795571786.446504,"event":"end","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-25T18:43:36Z","phase":"compile","seconds":64.084,"exit":1,"cmd":"bash agent_space/dl.sh base noarch"}
+{"kind":"phase","ts":"2026-11-25T18:43:36Z","phase":"compile","seconds":64.097,"exit":1,"cmd":"bash agent_space/dl.sh head noarch"}
+{"kind":"phase","ts":"2026-11-25T18:45:10Z","phase":"compile","seconds":74.833,"exit":0,"cmd":"bash agent_space/dl.sh base gpu"}
+{"kind":"phase","ts":"2026-11-25T18:45:10Z","phase":"compile","seconds":75.673,"exit":0,"cmd":"bash agent_space/dl.sh head gpu"}
+{"kind":"phase","ts":"2026-11-25T18:47:21Z","phase":"compile","seconds":81.83,"exit":2,"cmd":"bash agent_space/dl.sh head-lp lp -DLIBTORCH_PATH=/var/lib/jenkins/fleet/jobs/mi355-20261125-102402-nvcc-wenet-prompt/deps/torch-cu128-unpacked/torch"}
+{"kind":"phase","ts":"2026-11-25T18:49:34Z","phase":"compile","seconds":56.678,"exit":0,"cmd":"bash agent_space/dl.sh head-lp lp -DLIBTORCH_PATH=/var/lib/jenkins/fleet/jobs/mi355-20261125-102402-nvcc-wenet-prompt/deps/torch-cu128-unpacked/torch"}
+{"kind":"phase","ts":"2026-11-25T18:49:51Z","phase":"compile","seconds":0.039,"exit":1,"cmd":"bash agent_space/unset.sh"}
+{"kind":"phase","ts":"2026-11-25T18:51:38Z","phase":"compile","seconds":97.071,"exit":0,"cmd":"bash agent_space/unset.sh"}
