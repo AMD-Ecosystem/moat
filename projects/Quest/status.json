@@ -7,7 +7,7 @@
   "priority": 3.866,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:50Z",
-  "updated_at": "2026-11-25T22:29:33Z",
+  "updated_at": "2026-11-25T23:08:18Z",
   "head_sha": "2a3e44f0150db42e31b02850cbdb051737ead280",
   "depends_on": [],
   "waivers": {},
@@ -229,5 +229,12 @@
     "at": "2026-11-24T05:14:16Z"
   },
   "reviewed_sha": "2a3e44f0150db42e31b02850cbdb051737ead280",
-  "review_pr": "https://github.com/AMD-Ecosystem/Quest/pull/2"
+  "review_pr": "https://github.com/AMD-Ecosystem/Quest/pull/2",
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-11-25T23:06:16Z",
+    "head_sha": "2a3e44f0150db42e31b02850cbdb051737ead280",
+    "content_sha256": "fee932e6eb813d5e66d750c3cc77076464cda02f7e01fe3af07f48bacc367c8b",
+    "review_pr": "https://github.com/AMD-Ecosystem/Quest/pull/2"
+  }
 }
