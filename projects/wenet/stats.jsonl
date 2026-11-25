@@ -149,3 +149,16 @@
 {"kind":"phase","ts":"2026-11-25T20:37:14Z","phase":"test","seconds":0.428,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/rx7900-20261125-115418-val-wenet-w32-prompt/moat/agent_space/unittests.sh /var/lib/jenkins/fleet/jobs/rx7900-20261125-115418-val-wenet-w32-prompt/work/build-val"}
 {"kind":"phase","ts":"2026-11-25T20:38:45Z","phase":"compile","seconds":79.112,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/rx7900-20261125-115418-val-wenet-w32-prompt/moat/agent_space/build-base-cpu.sh"}
 {"kind":"session","ts":"2026-11-25T20:40:52Z","epoch":1795639252.058328,"event":"end","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-25T22:16:00Z","phase":"test","seconds":0.412,"exit":4,"cmd":"timeout 2400 /d/Develop/moat/agent_space/wenet-win/venv/Scripts/python.exe -m pytest -q -p no:cacheprovider -rfEs test"}
+{"kind":"phase","ts":"2026-11-25T22:16:10Z","phase":"test","seconds":3.916,"exit":2,"cmd":"bash -c cd D:/Develop/moat/agent_space/wt-wenet/projects/wenet/src && timeout 2400 /d/Develop/moat/agent_space/wenet-win/venv/Scripts/python.exe -m pytest -q -p no:cacheprovider -rfEs test"}
+{"kind":"phase","ts":"2026-11-25T22:28:43Z","phase":"test","seconds":596.937,"exit":1,"cmd":"bash -c cd D:/Develop/moat/agent_space/wt-wenet/projects/wenet/src && timeout 2400 /d/Develop/moat/agent_space/wenet-win/venv-r3/Scripts/python.exe -m pytest -q -p no:cacheprovider -rfEs test"}
+{"kind":"phase","ts":"2026-11-25T22:37:28Z","phase":"compile","seconds":164.617,"exit":2,"cmd":"cmd //c D:\\Develop\\moat\\agent_space\\wenet-win\\build-cpu.bat"}
+{"kind":"phase","ts":"2026-11-25T22:37:54Z","phase":"test","seconds":412.0,"exit":1,"cmd":"bash -c cd D:/Develop/moat/agent_space/wt-wenet/projects/wenet/src && timeout 2400 /d/Develop/moat/agent_space/wenet-win/venv-r3/Scripts/python.exe -m pytest -q -p no:cacheprovider -rfEs test"}
+{"kind":"phase","ts":"2026-11-25T22:38:56Z","phase":"compile","seconds":16.27,"exit":2,"cmd":"cmd //c D:\\Develop\\moat\\agent_space\\wenet-win\\build-cpu.bat"}
+{"kind":"phase","ts":"2026-11-25T22:39:11Z","phase":"test","seconds":0.114,"exit":127,"cmd":"bash harness/train.sh conf-fp32 conformer.yaml"}
+{"kind":"phase","ts":"2026-11-25T22:39:20Z","phase":"test","seconds":2.957,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/wenet-win/harness/train.sh conf-fp32 conformer.yaml"}
+{"kind":"phase","ts":"2026-11-25T22:39:41Z","phase":"test","seconds":3.243,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/wenet-win/harness/train.sh conf-fp32 conformer.yaml"}
+{"kind":"phase","ts":"2026-11-25T22:45:36Z","phase":"test","seconds":349.247,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/wenet-win/harness/train.sh conf-fp32 conformer.yaml"}
+{"kind":"phase","ts":"2026-11-25T22:46:05Z","phase":"test","seconds":3.578,"exit":2,"cmd":"bash /d/Develop/moat/agent_space/wenet-win/harness/pytest.sh venv"}
+{"kind":"phase","ts":"2026-11-25T22:46:14Z","phase":"test","seconds":3.276,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/wenet-win/harness/train.sh conf-fp32 conformer.yaml"}
+{"kind":"phase","ts":"2026-11-25T22:53:06Z","phase":"test","seconds":196.396,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/wenet-win/harness/train.sh conf-fp32 conformer.yaml"}
