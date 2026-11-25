@@ -919,3 +919,116 @@ The gfx90a part of `kernel:stage2-cdna-mfma-f16-runs` has its evidence, with the
 ## Lesson for cuda-to-rocm: gfx90a f16 and bf16 MFMA read subnormal inputs as zero
 
 (For `faults-numerics.md`, next to the matrix-instruction accumulator notes.) On gfx90a (MI200), `v_mfma_f32_16x16x4f16` returns 0 for a product whose f16 input is subnormal (|x| < 2^-14): one instruction with A = 2^-20, B = 1 gives 0 in all 1024 outputs, A = 2^-14 is exact. `v_mfma_f32_16x16x4bf16_1k` does the same for bf16 subnormals (below 2^-126, rarely reached). gfx942 and gfx950 do not flush. PyTorch documents the same for MI200 (FP16/BF16 V_DOT2 and MFMA flush input and output denormals), where it only reaches rocBLAS and MIOpen; hand-written MFMA code meets it directly. A port that replaces a CUDA mma.sync f16 product (which keeps f16 subnormals) with the gfx90a MFMA therefore fails a per-product error bound on small-magnitude data (nunchaku's test: 14% of outputs over the bound at data scale 0.01, none at scale 30), while whole-op outputs move only by ulps at near-zero values. Test for it by flushing subnormal f16 inputs in the test data: if the failures vanish, the layout is right and the difference is the hardware. Where it matters, keep f16 on another path on gfx90a or pre-scale the operands; bf16 is safe in practice. Seen 2026-11-24 (nunchaku), ROCm 10.2.
+
+## Evidence run 2026-11-25, gfx1201 RDNA rerun at 75e2528 (linux-gfx1201 fleet job, for jeff)
+
+Not a porter round: no work lock taken, stage untouched (`porting`), nothing changed in or pushed to the fork. Scope: the "wave32 reruns at 75e2528" item of the gfx950 round, for gfx1201 (gfx1100 is still owed), plus the FP4 refusal. **Result: 75e2528 changes nothing observable on gfx1201. Every output of the 75e2528 default build equals the 8aa04e7 default build bit for bit, except the 10 fp32 `lora_act_out` tensors, which differ run to run in every build (float atomics). The 75e2528 reference build equals the 8aa04e7 reference build in the same way. The f16 tolerance table is the gfx12 round's to every printed digit. `tests/ops` gives 38 passed and 14 skipped, the end-to-end set 10 passed, and the FP4 kernels refuse cleanly. Speed is unchanged: the timed kernels are instruction-identical between the two builds.** gfx1201 has no FP4 path at 75e2528, so jeff's ruling leaves `auto` at int4 here; there is nothing to measure.
+
+### Was 75e2528 meant to change RDNA? (read from `git diff 8aa04e7 75e2528`)
+
+No. The four commits (5db74f4, 9ce05de, 01c0f59, 75e2528) touch `mma_rocm.cuh`, `gemm_w4a4.cuh`, `gemm_utils.cuh`, a new FP4 test file and the docs. The RDNA part of the diff:
+- `mma_rocm.cuh`: the new macros `NUNCHAKU_ROCM_MFMA_F16` (gfx90a/gfx942/gfx950), `NUNCHAKU_ROCM_FP4` (gfx950/gfx1250) and `NUNCHAKU_ROCM_WMMA_FP4` (gfx1250) are all undefined on gfx11/gfx12. The `NUNCHAKU_ROCM_WMMA_F16` condition gained `&& !defined(__gfx1250__)`, which is still true on gfx1201. `select4` moved into a shared block. The `mma_m16n16k16_*` helpers keep their WMMA arm under `#ifdef NUNCHAKU_ROCM_WMMA_F16` inside the new `WMMA_F16 || MFMA_F16` condition.
+- `gemm_w4a4.cuh`: `FP4_AVAILABLE` is still false on gfx1201, so `trap_no_fp4()` stays in both FP4 kernels. The ROCm `compute_fp4` and the gfx1250 code are not instantiated on RDNA.
+- `gemm_utils.cuh`: the e2m1/e4m3 conversions replace `trap_unsupported_arch()` in the FP4 quantize helpers on every ROCm target. On gfx1201 they are reached only behind the quantize kernel's `FP4_AVAILABLE` trap.
+
+Code objects confirm this. Each gfx1201 object of the 8aa04e7 and 75e2528 default builds was compared per function: `llvm-objdump -d --no-show-raw-insn --mcpu=gfx1201`, with comments, hex literals, branch targets and the PC-relative `s_getpc`/`s_add*` operands normalized. Result: 14 of 15 objects are identical in every function, including both FP4 launch files. The bf16 INT4 launch file has 3 of 199 functions that differ: the `EpilogueRMSNormRope` + `EpiloguePackQKV` / `EpilogueLoraDown` kernels, with a few instructions of scheduling (22021 vs 22029/22025 and 28074 vs 28061 lines). `mma_dump.py`, `f16_dump.py` and `speed.py` do not run those kernels. The gfx950 round counted 8 differing functions in this file without that normalization. Per-kernel scratch (`.private_segment_fixed_size`) in that file is the same in both builds: 173 kernels, 155324 bytes in total, 1696 at most, 192 VGPRs at most. Matrix instructions in the 75e2528 default build: 21504 `v_wmma_i32_16x16x16_iu4` in each INT4 launch file; `v_wmma_f32_16x16x16_f16` fp16 INT4 launch 3888, attention 64, fasteri2f 64, AWQ 72, fp16 FP4 launch 64 (the trap kernels' LoRA); `..._bf16` bf16 INT4 launch 4320, AWQ 72, bf16 FP4 launch 64. The 8aa04e7 build has the same counts. The gfx12 round's "bf16 INT4 launch 4064" is not what this 8aa04e7 build contains (4320, as the RDNA and gfx950 rounds recorded for gfx1201).
+
+### Environment
+
+- Host gfx1201 (AMD Radeon AI PRO R9700), `HIP_VISIBLE_DEVICES=2` as pinned by the dispatcher (one GPU, kept), `ulimit -c 0`, every GPU run under `timeout`, MAX_JOBS=8 in total (reference 5 + default 3, the default builds one after another).
+- Job venv: `$FLEET_VENV/bin/python -m pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple "rocm[libraries,devel,device-gfx1201]==10.2.0" "torch==2.14.0+rocm10.2.0" "torchvision==0.29.0+rocm10.2.0" "amd-torch-device-gfx1201==2.14.0+rocm10.2.0" "amd-torch-device-gfx12-0==2.14.0+rocm10.2.0"`. The family wheel supplies `torch/lib/aotriton.images`, so SDPA needed no workaround. Then `rocm-sdk path --root` once; it printed `$FLEET_VENV/lib/python3.11/site-packages/_rocm_sdk_devel`, and `torch.utils.cpp_extension.ROCM_HOME` is that directory.
+- **Compiler actually invoked**: every build log has 17 device compile lines running `$FLEET_VENV/lib/python3.11/site-packages/_rocm_sdk_devel/bin/hipcc` (HIP 7.17.26434, AMD clang 24.0.0git bdc35841c97f, ROCm 10.2). None names the image's `/opt/python-3.11-venv`. `test.hip` was compiled with the same `hipcc`.
+- Test dependencies as in the earlier rounds: accelerate 1.9.0, diffusers 0.36.0, transformers 4.55.2, peft 0.17.1, datasets 3.6.0, torchmetrics 1.8.2, huggingface-hub 0.34.6, controlnet-aux 0.0.10, image-gen-aux e08ae3d, pytest 8.4.2, numpy 2.4.6, pandas 3.1.1, matplotlib, lpips 0.1.4, scikit-image 0.26.0, scikit-learn 1.9.1, scipy 1.17.1, PyWavelets 1.9.0. opencv-python-headless was uninstalled and opencv-python 4.11.0.86 force-reinstalled.
+- Fork: `git clone https://github.com/AMD-Ecosystem/nunchaku`, `git checkout 75e2528` (75e25288499066d5f635aac8500ff955d5da63a5), plus detached worktrees at 75e2528 (reference) and 8aa04e7 (default, the "before" build), with submodules. `git status --porcelain --untracked-files=no --ignore-submodules=all` is empty in all three after every run; scripts ran from outside the trees.
+- Builds: `PATH=$FLEET_VENV/bin:$PATH PYTORCH_ROCM_ARCH=gfx1201 MAX_JOBS=<n> $FLEET_VENV/bin/python setup.py build_ext --inplace -v`, one tree each. They ran detached (`setsid nohup`) under `timeit.sh` (in `stats.jsonl`). Default 75e2528: exit 0, 362 s. Default 8aa04e7: exit 0, 366 s. Reference 75e2528 (`NUNCHAKU_ROCM_MMA_REFERENCE=1`; the macro is in its `build.ninja`): exit 0, **7299 s**, almost all of it the single-core device link of the bf16 INT4 launch file (ld.lld, 1.3 GB RSS). 0 errors in any log.
+- Earlier evidence used from the gfx12 round's job directory on this host (same card model, the same wheel set, its 10.2 builds of 8aa04e7): its `mma_*`/`f16_*` dumps (reference 8aa04e7 = `ref102`, default 8aa04e7 = `def102`, two runs each), its 16-bit SDXL and Z-Image reference images, its INT4 SDXL images, and its Hugging Face cache (hard-linked, `HF_HUB_OFFLINE=1`).
+
+### Results (all on the one gfx1201 GPU)
+
+- **Primitive test** (`test.hip` from `notes-rdna-scripts.md`, unchanged). Built as `build.sh` there does: the 75e2528 `mma_rocm.cuh` with `__nv_bfloat162` -> `__hip_bfloat162`, the hipified `common_hip.h`/`utils_hip.cuh` of the built tree, `hipcc -O3 -std=c++20 --offload-arch=gfx1201 ...`. The binary has 2 `v_wmma_f32_16x16x16_f16` + 1 `..._bf16`. `timeout 300 ./test_gfx1201` -> **PASS** in all 9 runs: f32-accumulator f16 WMMA 1.34e-7 to 1.67e-7 (reference 2.28e-7 to 3.04e-7); bf16 WMMA 1.10e-7 to 1.46e-7; f16 accumulator 99.96% to 99.99% bitwise equal to the reference; exact small-integer problem exact (0/256). The printed output is byte-identical to that of the gfx12 round's 8aa04e7 binary run here on the same GPU, and to a second run of this binary.
+- **`mma_dump.py`** (74 outputs over 34 cases):
+  - Default 75e2528 vs the gfx12 round's default 8aa04e7 dumps (`def102`, and its second run `def102b`): **10 differ, exactly the fp32 `lora_act_out` tensors** (8 `fused[3]` + 2 `quantize[2]`, max rel 1.1e-7 to 3.7e-7). Every GEMM output, packed next-layer activation and output scale is bit-identical.
+  - Reference 75e2528 vs the gfx12 round's reference 8aa04e7 (`ref102`): the same 10 only.
+  - Reference 75e2528 vs default 75e2528: **53 differ**, the same set as reference vs default 8aa04e7 in the gfx12 round:
+    - 17 of 20 `gemm[0]` (all 10 fp16, 7 of 10 bf16);
+    - all 12 `fused[0]`;
+    - 5 `fused[1]` (4 fp16, 1 bf16);
+    - 5 `fused[2]` (fp16);
+    - the 12 `fused[3]` and 2 `quantize[2]`.
+
+    These are the f16/bf16 WMMA rounding flips of the LoRA epilogues (8aa04e7 behavior), checked against the tolerance below. As the gfx12 round recorded, a bit-identity check of the iu4 path needs a 5c32be5-style build; it is not affected by 75e2528, whose INT4 output equals 8aa04e7's bit for bit.
+- **`f16_dump.py` / `reldiff.py`** (90 outputs plus 16 float64-error entries), tolerance from the RDNA round (max |new - ref| / max |output| <= 9.8e-4 float16, 7.8e-3 bfloat16):
+  - Default 75e2528 vs default 8aa04e7 (`def102`), and reference 75e2528 vs reference 8aa04e7 (`ref102`): only the 10 `lora_act_out` tensors differ in each pair.
+  - Reference 75e2528 vs default 75e2528: 69 differ, **all within the bound**. The `reldiff` output is the same as the gfx12 round's reference vs default 8aa04e7 on every line, apart from one `lora_act_out` noise digit (2.75e-6 vs 2.77e-6). Worst per kind, float16 / bfloat16:
+    - W4A4 GEMM out: 3.05e-4 / 2.44e-3.
+    - fused GEMM out: 1.77e-4 / 3.26e-4.
+    - fused output scales: 1.15e-4 / identical.
+    - attention_fp16: 5.98e-4 (4608 tokens) / 4.03e-3 (512 tokens, 500 valid).
+    - AWQ GEMM: 5.18e-4 (1024x1024x4096) / 4.00e-3 (512x4096x4096).
+    - quantize kernel outputs and scales: identical.
+- **Determinism**: two runs of the default 75e2528 build differ only in the 10 `lora_act_out` tensors, under both scripts (max rel 4.2e-7 `mma_dump`, 2.9e-7 `f16_dump`). Two runs of the reference 75e2528 build give the same 10.
+- **`pytest tests/ops`**: default 75e2528 **38 passed, 14 skipped** in 33 s; reference 75e2528 38 passed, 14 skipped. The skips are `test_gemm_w4a4_fp4.py` (6 + 4 + 4): "the GPU has no NVFP4 kernels".
+- **FP4: gfx1201 has no FP4 path at 75e2528**: `FP4_AVAILABLE` is false and `ROCM_FP4_ARCHS = ("gfx950", "gfx1250")`. It refuses cleanly (`fp4_refuse.py`, gfx942 run's script, unchanged):
+  - `get_precision("auto")` -> `int4`; `check_hardware_compatibility` accepts int4 and rejects `fp4_e2m1_all` with `ValueError: "fp4" quantization needs an AMD GPU with FP4 matrix instructions (gfx950, gfx1250); please use "int4" quantization on gfx1201.`; `fp4_supported()` -> False.
+  - A direct FP4 GEMM launch and a direct FP4 activation quantize each print `FP4 is not available on this device`. The queue aborts with `HSA_STATUS_ERROR_EXCEPTION ... code: 0x1016` naming `gemm_w4a4_fp4_kernel` / `quantize_w4a4_fuse_lora_kernel<false, true>`. The next `torch.cuda.synchronize()` raises `torch.AcceleratorError: CUDA error: unspecified launch failure` (0.18 s / 0.12 s after the launch), which Python catches. The process exits 0 in 5.5 s / 5.3 s, and a fresh process uses the GPU normally.
+- **End to end on the default 75e2528 build** (in-place, on `PYTHONPATH`): `HF_HOME=<job>/hf NUNCHAKU_TEST_CACHE_ROOT=<job>/test_cache HF_HUB_OFFLINE=1 timeout 7000 python -m pytest -v -s tests/v1/sdxl/test_sdxl.py::test_sdxl_lpips tests/v1/sdxl/test_sdxl_turbo.py::test_sdxl_turbo_lpips tests/sana tests/v1/z_image` -> **10 passed** in 703 s.
+  - SDXL LPIPS 0.148 (expected 0.25).
+  - SDXL-Turbo 0.231 (0.25).
+  - Z-Image Turbo rank 32/128/256: 0.391/0.381/0.357 (expected int4-bf16 0.40/0.38/0.37, limit x1.15).
+  - Both Sana example scripts (`sana1.6b-int4.png` inspected: the ink-drawing panda).
+
+  The gfx12 round at 8aa04e7: 0.156/0.231/0.386/0.387/0.364 (10.2 build) and 0.151/0.224/0.386/0.363/0.358 (10.1 build). The INT4 images are not pixel-identical to that round's (nearly every pixel differs, by up to 241 levels) even though every GEMM, attention and AWQ output above is bit-identical. Its two builds also moved LPIPS by this much. So the end-to-end images are not reproducible bit for bit across runs; the obvious suspects are the float-atomic `lora_act_out` and torch-side nondeterminism. Not investigated: it is outside the 75e2528 delta.
+
+### Speed (recorded, not gated)
+
+R9700, ms, `speed.py`, alternating 8aa04e7 / 75e2528 default builds: 4 runs each for the bf16 W4A4 rows, 2 for the rest.
+
+| kernel | 8aa04e7 | 75e2528 |
+|---|---|---|
+| W4A4 GEMM 4096x3072x3072 fp16 LoRA rank 32 | 6.61-6.68 | 6.60-6.61 |
+| same, fp16 rank 128 | 7.07-7.15 | 7.07-7.08 |
+| same, bf16 rank 32 | 3.47-3.87 | 3.68-3.90 |
+| same, bf16 rank 128 | 3.86-4.23 | 4.06-4.28 |
+| AWQ GEMM 512x4096x4096 fp16 | 2.66-2.68 | 2.66-2.67 |
+| AWQ GEMM 512x4096x4096 bf16 | 2.91-2.93 | 2.91-2.92 |
+| attention_fp16 24 heads x 4608 tokens | 53.74-53.76 | 53.81-53.97 |
+
+The bf16 W4A4 ranges overlap; their medians are about 5% apart in 75e2528's disfavor. The kernels timed are instruction-identical in both builds (above), so this is run-to-run variation of this card, not a code change. The gfx12 round measured 3.53 / 3.92 for these two rows. fp16 W4A4 is still 1.7-1.9x slower than bf16, the register-pressure item already recorded.
+
+### Scripts
+
+`mma_dump.py` is in this file, `test.hip`, `f16_dump.py`, `reldiff.py` and `speed.py` in `notes-rdna-scripts.md`, `fp4_refuse.py` in the gfx942 75e2528 run above, all unchanged. New, `diffsum.py` (which outputs of two dumps differ, with max |diff| / max |a|):
+
+```python
+"""Summarize two dumps (mma_dump or f16_dump): which outputs differ, and max |diff| / max |a| for those."""
+import sys, torch
+a, b = torch.load(sys.argv[1]), torch.load(sys.argv[2])
+same = diff = 0
+for name in a:
+    va, vb = a[name], b[name]
+    if torch.is_tensor(va): va, vb = (va,), (vb,)
+    for i, (x, y) in enumerate(zip(va, vb)):
+        if not torch.is_tensor(x):
+            continue
+        if torch.equal(x.view(torch.uint8) if x.dtype != torch.uint8 else x, y.view(torch.uint8) if y.dtype != torch.uint8 else y) if x.is_contiguous() and y.is_contiguous() else torch.equal(x, y):
+            same += 1
+            continue
+        diff += 1
+        if x.is_floating_point():
+            d = (x.double() - y.double()).abs()
+            fin = torch.isfinite(d)
+            print(f"DIFF {name}[{i}] {x.dtype} n={int((x != y).sum())}/{x.numel()} maxrel {(d[fin].max() / x.double()[fin].abs().max()).item():.3g}")
+        else:
+            print(f"DIFF {name}[{i}] {x.dtype} n={int((x != y).sum())}/{x.numel()}")
+print(f"identical {same}, differ {diff}")
+```
+
+### What this leaves
+
+The gfx1201 half of the wave32 rerun at 75e2528 is done, with no difference from 8aa04e7. Still owed from the gfx950 round's list:
+- the gfx1100 rerun (that card has the gfx11 code paths, and its INT4 launch files had the scheduling differences the gfx950 round found);
+- the gfx1250 run;
+- jeff's ruling on the gfx90a f16 MFMA subnormal flush;
+- Windows gfx1151 last.
+
+Surface accounting was not edited here (evidence run, notes only).
