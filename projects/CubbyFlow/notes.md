@@ -1360,6 +1360,8 @@ the exes:
 
 ## Lesson for cuda-to-rocm: HipCxx23Shim as try_compile, scoped through CMAKE_HIP_FLAGS
 
+Promoted to cuda-to-rocm/references/build-headers-macros.md in 0bd85094.
+
 For `references/build-headers-macros.md` ("HIP + C++23 on an older
 toolchain"). The asset's execute_process probe can also be written as two
 `try_compile(... SOURCE_FROM_CONTENT ... NO_CACHE HIP_STANDARD 23)` calls,
