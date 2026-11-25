@@ -1178,6 +1178,8 @@ for the delta, then a windows-gfx1151 validator run of the same recipe.
 
 ## Lesson for cuda-to-rocm: clang-cl as the HIP compiler needs CMake 4.3, not just 4.x
 
+Promoted to cuda-to-rocm/references/windows.md in 0bd85094.
+
 For references/windows.md, "Keep one clang driver across every CMake
 language, and check the CMake version". It says "CMake 4.x: either works".
 Measured on a 4-line reproducer: clang-cl for C/CXX/HIP fails
@@ -1189,6 +1191,8 @@ read "CMake 4.3 or newer", and the pre-cache workaround credited to Open3D is
 unnecessary once the build uses the GNU driver. (Open3D)
 
 ## Lesson for cuda-to-rocm: bundled Draco breaks the non-MSVC Windows build in two places
+
+Promoted to cuda-to-rocm/references/windows.md in 0bd85094.
 
 For references/windows.md (all-clang Windows builds of bundled third-party
 code). Draco, as bundled by assimp 6.x for glTF Draco, names its static
