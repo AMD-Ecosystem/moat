@@ -8611,3 +8611,8 @@ TdrDelay and TdrDdiDelay are 60 s in the registry (Jeff's change). 61 tests, eac
 - `test_examples.py`, 46 examples (cpu and cuda:0, `example_sph_cuda_0` last): all OK; longest `optim.example_diffray_cuda_0` 51.3 s, `core.example_dem_cuda_0` 31.1 s, `core.example_sph_cuda_0` 29.4 s.
 
 With these, every test file of the suite has passed on this laptop at `66ba4ffb` from the installed wheel (169 files plus the 61 held tests, 7549 + 61 tests, 0 failures). Not recorded completed: the windowed OpenGL run with Jeff present is still to come.
+
+## Ruling on the Windows held tests and the checkout path (jeff, 2026-11-24)
+
+- Held tests: jeff set the Windows GPU timeout (TdrDelay, TdrDdiDelay) to 60 s, which removed the risk they were held for, so all of them ran. All 61 passed at 66ba4ffb (Step 5 above; 16fd395c).
+- Checkout path in three MSVC `__FILE__` strings in `warp.dll`: no fork change. The Windows release wheel is built from the neutral directory `D:\Develop\warp`, so the shipped DLL shows only that path. Check the release DLL's strings for the build path before publishing.
