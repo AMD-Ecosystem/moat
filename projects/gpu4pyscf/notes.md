@@ -6319,3 +6319,57 @@ ls <src>/gpu4pyscf/scf/tests/test_*.py <src>/gpu4pyscf/dft/tests/test_*.py | xar
 
 ### For jeff
 1. README wording for 10.2: name MI200, MI300 series and the Radeon AI PRO R9700 (gfx90a, gfx942, gfx1201); gfx1100 was run and is not affected.
+
+## ROCm 10.3 nightly compiler on the MI200 (gfx90a) (2026-11-24)
+
+Fleet job requested by jeff, evidence only (not a pipeline round): does the 10.3 nightly compiler, which built correct code on the MI300X, also fix the 10.2 machine-LICM miscompile on gfx90a? No stage, platform record, lock, `moat-port` or README branch touched; nothing pushed to the fork. **Result: no. Built by the 10.3.0a20261124 clang (424729db) without `-mllvm=-disable-machine-licm` and run on the 10.2.0 runtime, gpu4pyscf c9eea22a no longer hangs on gfx90a, but the nuclear-gradient J/K (ip1) path returns garbage (1e94 to 1e282) in `test_jk_energy_per_atom` (3/3) and in four diffuse_orbital gradient tests. The same compiler with the flag is correct (scf + dft identical to flagged 10.2). Here the defect hits 6-31g too (s and p shells only), not just d shells.**
+
+### Environment
+MI200 series (gfx90a), `HIP_VISIBLE_DEVICES=1` from the dispatcher, every GPU run under `ulimit -c 0` and `timeout`. Upstream master c9eea22a (fresh clone, one worktree and install prefix per build). Two job-private venvs (`/usr/bin/python3.11 -m venv $FLEET_VENV/v102`, `$FLEET_VENV/v103`), each with numpy 2.2.6, scipy 1.17.1, cupy-rocm-7-0 14.2.0, pyscf 2.14.0, pyscf-dispersion 1.7.0, geometric 1.1.1, MCFun 0.2.6, pytest 9.2.0, pytest-timeout 2.4.0, cmake 3.31.6.
+- **ROCm 10.3.0a20261124** (the exact build is still on the index): `$FLEET_VENV/v103/bin/pip install --pre --index-url https://nightly.repo.amd.com/rocm/whl-next/ 'rocm[libraries,devel,device-gfx90a]==10.3.0a20261124'`; rocm, rocm-sdk-core, -devel, -libraries, -device-gfx90a all 10.3.0a20261124; HIP 7.18.26470; `AMD clang version 24.0.0git (https://github.com/ROCm/llvm-project.git 424729dba65359a5e521ab2e729af131c8a5b0d4)`, the compiler that was correct on the MI300X. (The MI300X section does not spell out the nightly index URL; this is the one the cuda-to-rocm references name.)
+- **ROCm 10.2.0** (runtime for every run, and compiler of the 10.2 control): `$FLEET_VENV/v102/bin/pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ 'rocm[libraries,devel,device-gfx90a]==10.2.0'`; HIP 7.17.26434, clang bdc35841.
+- Builds: `PATH=<venv>/bin:<SDK root>/bin:/usr/bin:/bin`, `ROCM_PATH=HIP_PATH=<SDK root>`, `LD_LIBRARY_PATH=<SDK root>/lib` with the compiler's own SDK (SDK root = `rocm-sdk path --root`). The venv's own cmake worked inside pip's build. Runs: the same with the **10.2** SDK and venv, `PYTHONPATH=<prefix>/lib/python3.11/site-packages`, `OMP_NUM_THREADS=4`, from an empty directory; `gpu4pyscf.__file__` is the install, CuPy `runtimeGetVersion()` 71726434, and `/proc/self/maps` lists libamdhip64, libhsa-runtime64, libamd_comgr, librocblas, libhipblaslt and librocsolver all from the 10.2 SDK in `$FLEET_VENV/v102`. (Per the MI300X section, CuPy 14.2.0 cannot JIT on the 10.3 runtime, so the 10.3 runtime was not tried.)
+
+### Builds (README command; `--prefix` and logging added)
+```
+cd <worktree at c9eea22a>
+GPU4PYSCF_BACKEND=hip CMAKE_BUILD_ARGS="--verbose -j 64" pip install -v --no-deps --prefix <prefix> .
+GPU4PYSCF_BACKEND=hip CMAKE_CONFIGURE_ARGS="-DCMAKE_HIP_FLAGS=-mllvm=-disable-machine-licm" CMAKE_BUILD_ARGS="--verbose -j 64" pip install -v --no-deps --prefix <prefix> .
+```
+- 10.3 plain (the build asked for): exit 0 in 144 s, `gpu4pyscf-rocm7x 1.9.1`, 11 libraries. Configure `-DCMAKE_HIP_COMPILER=$FLEET_VENV/v103/lib/python3.11/site-packages/_rocm_sdk_devel/llvm/bin/clang++`, `The HIP compiler identification is Clang 24.0.0`; **96/96 HIP compile lines and 11/11 `--hip-link` lines run that 10.3 clang++**, `--offload-arch=gfx90a` on 107/107, `licm` 0 times. Producer: `llvm-objcopy --dump-section=.hip_fatbin=fb.bin libgvhf_rys.so`, `clang-offload-bundler --type=o --unbundle --targets=hipv4-amdgcn-amd-amdhsa--gfx90a`, `llvm-readelf -p .comment`: `AMD clang version 24.0.0git (https://github.com/ROCm/llvm-project.git 424729dba65359a5e521ab2e729af131c8a5b0d4)` and `Linker: AMD LLD 24.0.0 (... 424729dba65359a5e521ab2e729af131c8a5b0d4)`.
+- Controls, built side by side at `-j 64` each (`MAX_JOBS` 128): 10.3 + flag and 10.2 + flag, both exit 0; each log has 96/96 compile and 11/11 link lines with its own SDK's clang++ and `disable-machine-licm` on all 107.
+
+### Runs (all on the 10.2.0 runtime)
+```
+timeout -k 10 300 python -c "from pyscf import gto; from gpu4pyscf import scf; mol = gto.M(atom='O 0 0 0; H 0 -0.757 0.587; H 0 0.757 0.587', basis='def2-svp'); print(scf.RHF(mol).kernel())"
+timeout -k 30 180 pytest -p no:cacheprovider -p no:xdist --import-mode=importlib -q <src>/gpu4pyscf/scf/tests/test_scf_jk.py::test_jk_energy_per_atom
+timeout -k 30 600 pytest -p no:cacheprovider -p no:xdist --import-mode=importlib -q -rfE <src>/gpu4pyscf/scf/tests/test_fermi_smearing.py::KnownValues::test_gradient <src>/gpu4pyscf/scf/tests/test_diffuse_orbital.py::KnownValues::{test_rhf,test_rhf_lowmem,test_rhf_soscf,test_rks_lowmem,test_uhf_solvent}
+ls <src>/gpu4pyscf/scf/tests/test_*.py <src>/gpu4pyscf/dft/tests/test_*.py | xargs -P 4 -I{} \
+  timeout -k 30 900 pytest -p no:cacheprovider -p no:xdist --import-mode=importlib -q -rfE \
+    -m "not slow and not benchmark and not special" -k "not _high_cost" {}
+```
+
+| build compiler (runtime 10.2.0) | flag | RHF water/def2-svp | test_jk_energy_per_atom | fermi_smearing::test_gradient + 5 diffuse_orbital | scf + dft, CI selection |
+|---|---|---|---|---|---|
+| 10.3.0a20261124 (424729db) | no | -75.96097516696523, rc 0 | **fails 3/3**, wrong values (9.5e94), 0.9 s, no hang | 6/6 in 4 of 6 serial repetitions; the other 2: 2 failed, then test_rks_lowmem failed (gradient 1.45e238) | **342 passed / 6 failed / 23 skipped / 0 errors** in 249 s (scf 206/6/14, dft 136/0/9), no fault, no hang |
+| 10.3.0a20261124 | yes | not run | pass 3/3 (1.0 s) | 6/6, 3/3 | **347 passed / 1 failed / 23 skipped** in 218 s (scf 211/1/14, dft 136/0/9) |
+| 10.2.0 (bdc35841) | yes | not run here | pass 3/3 | 6/6, 3/3 | (previous section: 347 / 1 / 23) |
+| 10.2.0, previous section | no | -75.96097516696526 | **GPU hang**, 3/3 | 6/6, 3/3 | 346 / 1 / 23 + the hang |
+
+- The plain-10.3 scf failures: test_scf_jk.py::test_jk_energy_per_atom, and test_diffuse_orbital.py test_rhf_lowmem, test_rhf_soscf, test_rks_lowmem, test_uhf_solvent (gradients 6.1e192, 1.9e279, 3.8e280, 3.3e277 against 1e-5), plus test_rhf_df_against_qchem (`BasisNotFoundError` d-aug-cc-pvdz; environment, failed in every build and round). The four diffuse_orbital gradient failures are intermittent: they fail in the four-files-at-a-time full run and in some serial reruns, and never with the flag. These are the MI300X 10.2 symptoms (silently wrong gradients), now on gfx90a with the 10.3 compiler.
+- Probe (`ip1probe.py`, in the job's scratch area, not kept): `_jk_energy_per_atom` on the test's O2 geometry, J-only (`dm.dot(dm.T)`) and K-only (antisymmetric dm, against the CPU `int2e_ip1` contraction the test uses), one process per case, `timeout -k 10 90`:
+
+| basis | 10.3 plain J | 10.3 plain K max error | 10.3 + flag J | 10.3 + flag K max error |
+|---|---|---|---|---|
+| sto-3g | [0.0388, -2.9617, -1.0481] | 3.1e-13 | identical | 3.1e-13 |
+| 6-31g | ~1e252 | 1.6e251 | [-0.442, -26.47, -6.952] | 6.0e-13 |
+| def2-svp | ~1e251 | 7.0e248 | [-7.894, -66.57, -11.23] | 1.6e-12 |
+| cc-pvtz | ~1e282 | 9.2e278 | [233.2, -2624.1, -253.8] | 9.6e-12 |
+
+  No case hung. So on gfx90a the 10.3 compiler changes the 10.2 symptom (a hang once d shells reach the ip1 kernels, with 6-31g still correct) into wrong values that start at 6-31g, which has only s and p shells but more than one shell per angular momentum. sto-3g is correct in every build. Not narrowed to a kernel or instruction.
+
+### What this means
+- The 10.3 nightly compiler (424729db) fixes the machine-LICM gradient miscompile on the MI300X (gfx942, previous section) but not on the MI200 (gfx90a): same compiler, same source, same 10.2 runtime, and the flag alone turns the result correct. So a ROCm report is still needed, and this GPU has a short reproducer: `test_scf_jk.py::test_jk_energy_per_atom` (0.9 s, wrong in 3/3), or the probe with 6-31g K-only against `int2e_ip1`.
+- The deferred `rocm-10-2-machinelicm-wrong-gradient-jk` says the defect is fixed in the 10.3 nightly; that holds for gfx942 only. Not amended here (evidence-only job); the correction is jeff's to make with `deferred.py amend`.
+
+Fixed in the 10.3 nightly on this GPU: no.
