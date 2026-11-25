@@ -439,3 +439,69 @@ A subscriber built with the constructor that takes no stream received 1000 Point
 
 Signed-off-by: Jeff Daily <jeff.daily@amd.com>
 ````
+
+## Validation 2026-11-25 (validator role, linux-gfx942 fleet job, at b76dacbb7b1cade5a54933e809af2caab6cc18ba)
+
+Result: **pass at b76dacbb7b1cade5a54933e809af2caab6cc18ba** (`moat-port`, built in `projects/cuda_blackboard/src`, tracked tree clean). This was the full recipe of the 2026-11-20 gfx942 validation, not a carry-forward.
+
+**Device: one CPX-mode partition of an AMD Instinct MI300X, not a whole MI300X.** This host runs its MI300X GPUs in CPX accelerator partition mode (NPS1 memory). The pinned device (`HIP_VISIBLE_DEVICES=8`) reports `name='AMD Instinct MI300X' arch=gfx942:sramecc+:xnack- CUs=38 mem=24.0 GiB warpSize=64 pciBus=38` (0x26). That is a 38-CU, 24 GiB slice, and `amd-smi list` puts BDF 0000:26:00.0 at GPU 8. wave64.
+
+Environment, build commands and compiler: as in "Porter 2026-11-25" above (TheRock ROCm 10.2.0 wheels in the job venv, HIP 7.17.26434, `rocm-sdk path --root` = `$FLEET_VENV/lib/python3.11/site-packages/_rocm_sdk_devel`; **the compiler invoked is `/usr/bin/c++` = g++ 13.3.0**, and hipcc/amdclang++ are not invoked; ROS 2 Jazzy, Boost 1.83 and OpenCV 4.6.0 built from source in the job directory, with vision_opencv pinned to a56ad9a). Every GPU run was under `ulimit -c 0` and `timeout`.
+
+### Build and gate tests
+
+- `colcon build --event-handlers console_direct+ --packages-up-to cuda_blackboard --cmake-args -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=$ROCM_SDK;<job>/deps/prefix" -DPython3_EXECUTABLE=$FLEET_VENV/bin/python -DCMAKE_VERBOSE_MAKEFILE=ON`: rc 0, 24 s. `-- cuda was not found, building cuda_blackboard with HIP 7.17.26434`, and the "will not be built" warning does not fire. Built: `libcuda_blackboard.so` (NEEDED `libamdhip64.so.7` -> job venv 10.2 SDK), both example component libraries, and all 3 tests. Warnings: only the 11 known `-Wunused-result` sites.
+- `timeout 1800 colcon test --packages-select cuda_blackboard --event-handlers console_direct+ --ctest-args --repeat until-fail:20`, then `colcon test-result --verbose --test-result-base build/cuda_blackboard`: rc 0, `100% tests passed, 0 tests failed out of 3`, 30.1 s. ctest `Passed` lines: test_publish_mailbox 20, test_cuda_blackboard_publisher 20, test_cuda_blackboard_async_publisher 20. gtest: 60 `[  PASSED  ]` blocks (20 x 4 + 20 x 2 + 20 x 1 tests), **0 `[  FAILED  ]`, 0 `[  SKIPPED ]`**. `Summary: 10 tests, 0 errors, 0 failures, 0 skipped`.
+- **Skips: none.** The GPU fixture skips only when no device is visible, and nothing was skipped. Not run, and why: no ament lint test is registered (package.xml has `ament_lint_auto` but no linter `test_depend`, the same as upstream); `test_start_worker_thread` exists only in the `ENABLE_AGNOCAST` build, which is scoped out by Jeff's 2026-11-23 ruling.
+- **On the GPU, not a fallback.** `AMD_LOG_LEVEL=3 timeout 300 ./test_cuda_blackboard_publisher`: 2 tests PASSED; `Enumerated GPU agents = 1`, `Gfx Major/Minor/Stepping: 9/4/2`, `Device ID: 0x74a1`. 62 HIP calls returned `hipSuccess`, with 0 errors. Among them (counted as `Returned hipSuccess` lines): hipMemPoolCreate 1, hipMallocFromPoolAsync 3, hipMemsetAsync 3, hipMemcpyAsync 4, hipEventRecord 8, hipStreamWaitEvent 5, hipFreeAsync 3.
+- **Non-GPU regression baseline.** Upstream tip `e4e1206` (a detached worktree, same environment and command) prints "cuda was not found. the cuda_blackboard package will not be built.", builds only `test_publish_mailbox`, and passes it 20/20 (`Summary: 5 tests, 0 errors, 0 failures, 0 skipped`). The port also passes it 20/20, so there is no regression.
+
+### Extra checks from plan.md (throwaway packages in `agent_space/`, not committed, rewritten for this run)
+
+1. **Example pipeline.** `ros2 launch cuda_blackboard example.launch.py image_path:=in.png` with a generated 64x48 RGB PNG. An rclpy subscriber on `/output_image` received 3 of 3 messages, each `64x48 bgr8 step=192 bytes=9216` and byte-identical to the BGR of the input. The subscriber logged `Received message with resolution: 48 x 64` 5 times. The launch log has no error.
+2. **Probe** (`cbb_probe`, an `ament_cmake_auto` package against the installed cuda_blackboard, `-Wall -Wextra -Wpedantic -Werror -Wno-deprecated-declarations`), every run rc 0 and `probe OK (fails=0)`:
+   - (c) 1 MiB PointCloud2 ROS -> CUDA -> ROS, through the constructor and both TypeAdapter directions: byte-identical. `hipPointerGetAttributes` reports device memory.
+   - (a) R1, a subscriber built through the deprecated stream-less constructor (`cudaStreamLegacy`, the path 9e0fb86 fixes): published 1002, received 1000, 0 mismatches (64 KiB seed-patterned payloads, copied back with `hipMemcpy` on the null stream), 0 non-device payloads, `hipGetLastError` = hipSuccess. The library printed its own expected legacy-stream warning. With a created non-blocking user stream (`hipMemcpyAsync` + `hipStreamSynchronize` in the callback): 1002/1000, 0 mismatches, hipSuccess.
+   - (b) R3 pool. In the full probe (warm), the default threshold reads back 1073741824. 50 x 4 MiB held: used 200 MiB, reserved 256 MiB. After free + `hipStreamSynchronize(free_stream)` + `hipDeviceSynchronize`: reserved 128 MiB, in both rounds. Mean `make_unique` 19.4/19.4 us, then 17.5/17.9 us. Cold process, default threshold: same reservations, mean 100.9 us (first 50) vs 18.4 us (second 50), then 17.6/18.5 us. Cold, `CUDA_BLACKBOARD_MEM_POOL_RELEASE_THRESHOLD_MB=64`: reads back 67108864, reserved after free 0 MiB in both rounds, 101.9/19.5 us then 18.3/17.9 us. This is the same picture as on 2026-11-20 (the pool keeps one 128 MiB chunk instead of up to 1 GiB, per the known `hip-vmheap-unmap-threshold-lost-or-overtrimmed`). It affects performance only.
+   - (d) Every probe run exited 0 (no teardown crash, R4).
+3. **Consumer check.** `cbb_consumer` (`ament_cmake_auto`, `-Wall -Wextra -Wpedantic -Werror`, includes `cuda_blackboard/cuda_adaptation.hpp`, `make_unique<std::uint8_t[]>(16)` and copy back) builds and prints `consumer OK`, rc 0. The configure got the ROCm prefix through `CMAKE_PREFIX_PATH`.
+
+### Other gates
+
+- `python3 utils/jargon.py --port cuda_blackboard`: clean. The README still documents the ROCm build next to the CUDA requirement.
+- `git -C projects/cuda_blackboard/src status --porcelain`: empty.
+- CUDA compile at b76dacb: **not run here** (no CUDA toolkit on this host). It is owed, listed below.
+
+## Owed after this round (at b76dacbb7b1cade5a54933e809af2caab6cc18ba)
+
+### linux-gfx1100: revalidate
+
+The delta from its validated 9e0fb86 classifies `mixed` (`moatlib.py classify`), and the lint commit changes the include order of the subscriber TU. Run the same full recipe as the 2026-11-25 gfx942 validation above, on a wave32 device:
+
+1. Fork clone at `b76dacb`. TheRock 10.2.0 wheels in the job venv: `$FLEET_VENV/bin/pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple 'rocm[devel,device-gfx1100]==10.2.0'`, then `rocm-sdk init`. Record `rocm-sdk path --root`, HIP version and `CMAKE_CXX_COMPILER`.
+2. ROS 2 Jazzy from source per "Porter 2026-11-25". **Pin vision_opencv to `a56ad9a`** (the `rolling` tip no longer builds against Jazzy). Build OpenCV 4.6.0 into the job prefix if the host lacks it, and Boost 1.83 headers likewise.
+3. `colcon build --event-handlers console_direct+ --packages-up-to cuda_blackboard --cmake-args -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=$ROCM_SDK;<job>/deps/prefix" -DPython3_EXECUTABLE=$FLEET_VENV/bin/python`. Confirm the `building cuda_blackboard with HIP` line.
+4. `timeout 1800 colcon test --packages-select cuda_blackboard --event-handlers console_direct+ --ctest-args --repeat until-fail:20` and `colcon test-result --verbose --test-result-base build/cuda_blackboard`. Required: 3/3 tests, 60 `[  PASSED  ]`, 0 failed, 0 skipped.
+5. `AMD_LOG_LEVEL=3 timeout 300 ./test_cuda_blackboard_publisher` (gfx1100 agent, hipSuccess counts).
+6. Upstream `e4e1206` baseline: `test_publish_mailbox` 20/20.
+7. Example pipeline, probe (a)-(d) and consumer check as above. The probe sources are not committed; rewrite them from the item list in plan.md's Test plan.
+8. `jargon.py --port cuda_blackboard`, a clean fork tree, then `set-state cuda_blackboard linux-gfx1100 completed`.
+
+### CUDA compile check (mi355 host, real nvcc)
+
+Repeat the 2026-11-20 "CUDA compile check" recipe (Review 2026-11-20 section) at `b76dacb`, with these changes: pin vision_opencv to `a56ad9a`, and build the baseline at upstream `e4e1206` instead of `a4f330e`. Required evidence:
+
+1. `PATH=/usr/local/cuda/bin:$FLEET_VENV/bin:$PATH colcon build --event-handlers console_direct+ --packages-select cuda_blackboard --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DPython3_EXECUTABLE=$FLEET_VENV/bin/python -DCMAKE_VERBOSE_MAKEFILE=ON`, for the fork at b76dacb and for upstream e4e1206: `Found CUDA ... 12.8`, no HIP line, all TUs compiled with 0 compiler warnings, linked against `libcudart_static.a`.
+2. The installed `share/cuda_blackboard/cmake/` is byte-identical to the baseline, the exported dynamic symbol list of `libcuda_blackboard.so` is identical, and NEEDED has no HIP library.
+3. The consumer TU against the installed headers (`make_unique<std::uint8_t[]>`, `make_host_unique<float[]>`, `make_host_unique<double>`, plus one that includes `cuda_blackboard/cuda_blackboard_subscriber.hpp` first, since the lint commit moved `<cuda_runtime.h>` ahead of rclcpp there) with `g++ -std=c++17` and `-std=c++20 -Wall -Wextra -Wpedantic -Werror -isystem /usr/local/cuda/include`, and as a `.cu` with `nvcc -std=c++17 -Xcompiler -Wall,-Wextra,-Werror`.
+4. Record it in notes.md as "CUDA compile check at b76dacb". The squash message's Test Plan sentence about CUDA 12.8 depends on it.
+
+### Then the PR-prep squash (a person's push, per the 2026-11-25 ruling; not done by any agent job)
+
+Once both items above pass at b76dacb with the head unchanged, build a commit with exactly the validated tree, upstream `e4e1206` as its only parent, and the draft message above (saved to a file):
+
+```
+git -C projects/cuda_blackboard/src commit-tree 'b76dacbb7b1cade5a54933e809af2caab6cc18ba^{tree}' -p e4e1206e30e8f119a833ac8b8d33bc04cfd58e5f -F <message file>
+```
+
+Check `git diff b76dacb <new sha>` is empty. Then Jeff's one authorized forced update of `moat-port` to that sha, followed by `squash-carry-forward`.

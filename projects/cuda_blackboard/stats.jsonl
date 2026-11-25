@@ -27,3 +27,6 @@
 {"kind":"phase","ts":"2026-11-25T21:45:57Z","phase":"compile","seconds":24.136,"exit":0,"cmd":"colcon build --event-handlers console_direct+ --packages-up-to cuda_blackboard --cmake-args -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=/var/lib/jenkins/fleet/jobs/mi300c-20261125-132424-merge-cuda-blackboard-prompt/venv/lib/python3.11/site-packages/_rocm_sdk_devel;/var/lib/jenkins/fleet/jobs/mi300c-20261125-132424-merge-cuda-blackboard-prompt/deps/prefix -DPython3_EXECUTABLE=/var/lib/jenkins/fleet/jobs/mi300c-20261125-132424-merge-cuda-blackboard-prompt/venv/bin/python -DCMAKE_VERBOSE_MAKEFILE=ON"}
 {"kind":"phase","ts":"2026-11-25T21:46:44Z","phase":"compile","seconds":24.707,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300c-20261125-132424-merge-cuda-blackboard-prompt/scripts/build.sh"}
 {"kind":"phase","ts":"2026-11-25T21:47:24Z","phase":"test","seconds":31.809,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi300c-20261125-132424-merge-cuda-blackboard-prompt/scripts/test.sh"}
+{"kind":"phase","ts":"2026-11-25T21:56:02Z","phase":"compile","seconds":24.702,"exit":0,"cmd":"bash ../scripts/build.sh"}
+{"kind":"phase","ts":"2026-11-25T21:56:34Z","phase":"test","seconds":31.499,"exit":0,"cmd":"bash ../scripts/test.sh"}
+{"kind":"session","ts":"2026-11-25T21:59:12Z","epoch":1795643952.109987,"event":"end","platform":"linux-gfx942"}
