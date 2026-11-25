@@ -8,11 +8,16 @@
   "ext_type": "python-torch",
   "stage": "review-passed",
   "adopted_at": "2026-11-06T03:22:49Z",
-  "updated_at": "2026-11-25T20:40:47Z",
+  "updated_at": "2026-11-25T22:58:02Z",
   "head_sha": "73d889fe1d3ed4cb16dde1797758fdc92e210a31",
   "depends_on": [],
   "porting": null,
-  "waivers": {},
+  "waivers": {
+    "windows": {
+      "reason": "Upstream wenet cannot run on any PyTorch that has a Windows ROCm build: it needs torchaudio <= 2.8 (uses torchaudio.info and sox_effects, removed in 2.9; wenet/dataset/processor.py:149,226) and torch < 2.10 (imports Union from torch.nn.modules.conv), while ROCm torch wheels for Windows start at 2.9; deepspeed does not install on Windows and train_utils.py imports it and FSDP unconditionally; upstream's runtime CMake refuses -DGPU=ON on Windows. Evidence: 'Windows validation paused 2026-11-25' in notes.md (gfx1151 laptop run). These are upstream compatibility gaps, not ROCm port defects; upstream's last commits (to 2026-10-26) are docs and small fixes, no torch/torchaudio compatibility work.",
+      "suggested_at": "2026-11-25T22:58:02Z"
+    }
+  },
   "platforms": {
     "windows-gfx1151": {
       "blocked": false,
