@@ -1045,3 +1045,63 @@ Not run here: this host has no nvcc and no conda. **Owed at 42d4c033** on the mi
 - `jargon.py -C projects/PhysX/src --diff 7d6f6ac8..42d4c033` and `--commits 7d6f6ac8..42d4c033`: clean. `jargon.py --port PhysX`: the 14 known hits, all in upstream's `ovphysx/` files (Question A of the first porter round), none in the port's delta.
 - ROCm build documentation: `INSTALL_ROCm.md`; its commands were run as written above.
 - Integrity: `git -C projects/PhysX/src status --porcelain` shows only untracked `physx/bin/` and `physx/lib/`; HEAD 42d4c033. The temporary A/B edit to `broadphase.cu` was reverted with `git checkout` and the library rebuilt identical.
+
+## Evidence run 2026-11-24: race perturbation on gfx942
+
+Requested by Jeff (headless fleet job mi300b-20261124-083659-ev-physx-race-gfx942-prompt). This is not a pipeline role: no lock was taken, no stage or platform record changed, and nothing was pushed to the fork. Question: does the host/GPU ordering race found on gfx1201 (see "Finding: an ordering race between host and GPU work") also exist on gfx942 once host timing is perturbed?
+
+**Answer: the race did not reproduce on gfx942.** 50 release runs alone (10 unperturbed plus 10 for each of 4 interposer modes), 33 release runs with 3 or 8 copies sharing the GPU, and 50 checked runs (10 unperturbed plus 10 for each of the same 4 modes; run with a raised ROCr scratch limit, explained below): **133 of 133 runs pass 48 of 48 checks.** No check failed, no PhysX or HIP error was printed, and none of the gfx1201 failure signatures appeared (missing mesh contacts, articulation 112.9 m, tower top low, `contact overflow` or `many slabs` failing). Since nothing failed, no synchronization bisect was run. On its own that only shows these perturbations do not expose it here in these counts; together with the standalone reproducer below (0 stale on this whole card), it says gfx942 is not affected by the runtime defect the gfx1201 diagnosis found.
+
+**Device: a whole MI300X, not a partition.** The dispatcher's pin `HIP_VISIBLE_DEVICES=2`, one device visible: AMD Instinct MI300X, gfx942:sramecc+:xnack-, **304 CUs, 192.0 GiB** (`hipGetDeviceProperties`, `hipMemGetInfo`), PCI 0000:46:00; `amd-smi static -g 2`: `ACCELERATOR_PARTITION: SPX`, `MEMORY_PARTITION: NPS1`, `NUM_COMPUTE_UNITS: 304`, VRAM 196592 MB. (The 2026-11-24 gfx942 validation ran on a 38-CU CPX slice on another host.)
+
+### Toolchain and builds
+- `$FLEET_VENV/bin/python -m pip install --index-url https://nightly.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple "rocm[libraries,devel]==10.2.0a20261022" "rocm-sdk-device-gfx942==10.2.0a20261022"`; `rocm-sdk path --root` (run once) = `<job>/venv/lib/python3.11/site-packages/_rocm_sdk_devel`, `.info/version` 10.2.0, `hipconfig --version` 7.17.26422.
+- **Compiler the builds invoked:** `CMAKE_HIP_COMPILER=<root>/lib/llvm/bin/amdclang++` (AMD clang 24.0.0git, `2792f8ceeb5a`) in all four `compiler/linux-gcc-rocm-*/CMakeCache.txt`, found with `ROCM_PATH`/`HIP_PATH` unset; in both `compile_commands.json` all 61 `.cu` entries start with that path and carry `--offload-arch=gfx942`. Host `/usr/bin/c++` (gcc 13.3.0), CMake 3.31.6 from the job venv. `ldd libPhysXGpu_64.so` resolves `libamdhip64.so.7` from the same root.
+- Fresh clone of `moat-port` (`GIT_LFS_SKIP_SMUDGE=1`), checked out at **886c3529** exactly; afterwards `git status --porcelain` shows only untracked `physx/bin/`. Snippet dependencies built from source into `<job>/work/deps/prefix`: libglvnd v1.7.0, GLU glu-9.0.3, freeglut v3.6.0 (options as in the gfx1201 validation). `$FLEET_VENV/bin` first on PATH, `MAX_JOBS=192` (the exported value), `ulimit -c 0`, `timeout` around every GPU run.
+```
+cd physx
+PM_PACKAGES_ROOT=<job>/work/deps/packman-repo CMAKE_PREFIX_PATH=<job>/work/deps/prefix ./generate_projects.sh linux-gcc-rocm
+make -C compiler/linux-gcc-rocm-release -j192   # exit 0, 2421 warning lines
+make -C compiler/linux-gcc-rocm-checked -j192   # exit 0, 2396 warning lines
+```
+The parity harness runs headless as built (it does not render), so no relink was needed.
+
+### Interposer
+`syncshim.cpp` (job directory only), rewritten from the gfx1201 description: it forwards `hipMemcpyHtoDAsync`, `hipMemcpyDtoHAsync`, `hipMemcpyDtoDAsync`, `hipMemcpyAsync`, `hipMemcpyPeerAsync`, `hipMemsetAsync`, `hipMemsetD8/D16/D32Async` and `hipModuleLaunchKernel` through `dlsym(RTLD_NEXT)`. Build: `g++ -O2 -fPIC -shared -I<root>/include syncshim.cpp -o libsyncshim.so -L<root>/lib -Wl,-rpath,<root>/lib -lamdhip64 -ldl -lpthread`. Modes (environment): `SHIM_STATS=1` counts and prints at exit; `SHIM_PTRATTR=1` adds `hipPointerGetAttributes` on each async copy's host pointer; `SHIM_YIELD=1` adds `sched_yield()` after every launch; `SHIM_SLEEP_US=10` adds `usleep(10)` after every launch; `SHIM_SYNC=htod,dtoh,dtod,peer,memset,launch` (the bisect, unused since nothing failed); `SHIM_WATCH=<s>` dumps the last 256 launches and their streams' state after `s` idle seconds (a hang diagnostic). It interposes: in a release run it counted htod 31,808, dtoh 22,704, dtod 6,725, memset 34,815, launches 536,096, and 54,512 `hipPointerGetAttributes` calls (54,492 on registered host memory, 0 errors); a checked run gives the same counts within 15. Of the async calls `libPhysXGpu_64.so` imports, only `hipMemcpyPeerAsync` was never called. The sleep mode lengthened a release run from 11 s to 43-45 s; a checked run, whose host mostly waits on the GPU, not at all.
+
+### Results (SnippetGpuParity, 48 checks)
+| Build | Mode | Runs | Result | Time per run |
+|---|---|---|---|---|
+| release | unperturbed | 10 | 48 / 0 each | 10-12 s |
+| release | count | 10 | 48 / 0 each | 11-12 s |
+| release | count + `hipPointerGetAttributes` | 10 | 48 / 0 each | 11-12 s |
+| release | count + `sched_yield` after launches | 10 | 48 / 0 each | 11-12 s |
+| release | count + `usleep(10)` after launches | 10 | 48 / 0 each | 43-45 s |
+| release | 3 copies at once, 3 rounds | 9 | 48 / 0 each | |
+| release | 8 copies at once, 3 rounds | 24 | 48 / 0 each | |
+| checked (4 GiB scratch limit) | unperturbed | 10 | 48 / 0 each | 397-425 s |
+| checked (4 GiB scratch limit) | count | 10 | 48 / 0 each | 409-424 s |
+| checked (4 GiB scratch limit) | count + `hipPointerGetAttributes` | 10 | 48 / 0 each | 397-419 s |
+| checked (4 GiB scratch limit) | count + `sched_yield` | 10 | 48 / 0 each | 407-430 s |
+| checked (4 GiB scratch limit) | count + `usleep(10)` | 10 | 48 / 0 each | 402-417 s |
+| checked (default environment) | unperturbed | 1 | timed out at 3000 s in the deformable scene; the 22 checks it reached all passed | |
+
+Value by value (a comparison script over all passing runs): **45 of 48 checks print the same value in every run, alone or perturbed, release and checked alike, and release and checked print the same 45 values.** Only the three deformable checks recorded before vary: over the 50 release-alone runs, lowest vertex -6.74554e-08 to -6.74263e-08 m (5 distinct), lever bend 0.190290 to 0.190885 rad (49 distinct), load height 0.840209 to 0.843123 m (48 distinct); over the 50 checked runs, lowest vertex -6.74554e-08 to -6.74336e-08 m (4 distinct), bend 0.190145 to 0.190864 rad (49 distinct), load height 0.840515 to 0.843703 m (50 distinct). The perturbed runs stay in the same band as the unperturbed ones (release unperturbed: bend 0.190290 to 0.190745, load 0.840778 to 0.843123; the widest spread in any mode is 0.4% of the bend and 3.2 mm of the load height), the same band as the earlier gfx942 and gfx1201 runs.
+
+One new observation, under concurrency only: the three `particles on SDF` checks take one of two exact value sets, the usual (lowest 1.08333, highest 2.23371, mean 1.65427 m) or a second one (1.09418, 2.23391, 1.65502 m), in 1 of 9 runs with 3 copies and 11 of 24 with 8 copies; never in a run alone. Both pass with wide margin (lowest > 0.98). That the alternative is a single exact set, not a spread, suggests an order or timing dependence in the particle path (for example a frame boundary or a contact-order tie) that GPU sharing triggers; it is not the gfx1201 failure, and it was not investigated further.
+
+### Checked on a whole MI300X needs a raised ROCr scratch limit (not the race; for the porter)
+With the default environment, a checked run here is too slow to complete: the first one was still in the 3-link articulation scene after more than 20 minutes, with the GPU at 100% GFX activity and one host thread spinning, and the run was stopped by its 3000 s timeout in the deformable scene (22 checks reached, all passed). The validation on a 38-CU CPX slice ran the whole checked harness in about 330 s, and gfx1201 in 223 to 380 s. Cause, as far as it was traced: the checked device code is built at -O0 (see "Checked device code is compiled at -O0" in the gfx1201 validation) and its kernels need far more scratch than release: from the code-object notes of all 61 objects, 488 of 488 checked kernels use scratch and 409 have a dynamic stack, largest `.private_segment_fixed_size` `artiSolveInternalConstraintsTGS1T` 49,152 bytes per lane, `artiSolveInternalConstraints1T` 29,720, `computeUnconstrainedSpatialInertiaLaunch1T` 25,304, `artiPropagateRigidImpulsesAndSolveSelfConstraintsTGS1T` 23,800; release has 77 kernels with scratch, 7 with a dynamic stack, largest 4,800 bytes. Raising ROCr's per-dispatch scratch limit changes the behaviour, which points at ROCr's handling of dispatches above that limit on the 304-CU device:
+- `HSA_SCRATCH_SINGLE_LIMIT=HSA_SCRATCH_SINGLE_LIMIT_ASYNC=4294967296` (4 GiB): past the articulation scene in seconds, full run 397 to 430 s, no error. **Every checked run in the table used it.**
+- 16 GiB: still in the articulation scene after 280 s (stopped by its timeout).
+- 64 GiB: `HSA_STATUS_ERROR_OUT_OF_RESOURCES` in `computeUnconstrainedSpatialInertiaLaunch1T` ("Available Free mem : 147284 MB"), then PhysX error 701 and failed pinned allocations; this run ran alongside the default-environment one, and its `articulation 0.798607 m` failure is a consequence of the abort, not the race.
+
+What this means for the race question: the checked series here ran with the scratch limit changed, so it is not the exact environment gfx1201 failed in, but it is the one where checked runs at a speed comparable to the CPX slice and gfx1201. Giving the HIP checked config `-O3`, as CUDA's checked device code is, should remove the scratch demand; 42d4c033 does that (below).
+
+### Standalone reproducer on the whole card, and how this fits the diagnosis
+While this job ran, "Porter round 2026-11-24, ordering race diagnosis" (gfx1201) traced the race to a HIP runtime defect: an async device-to-host copy of 16 KiB or less runs as a copy kernel whose writes are released only at device scope, so a later kernel's store to a mapped host flag can reach the host before the copied bytes; 42d4c033 adds a `__threadfence_system()` workaround and `-O3` for the HIP checked config. Its review ran the issue draft's `d2h_visibility.cpp` on a gfx942 CPX slice: 0 stale. The same program (extracted from the draft unchanged, `hipcc -O2 --offload-arch=gfx942`) on this **whole SPX MI300X**, 200,000 iterations per case: **stale=0 in all 8 cases** (kernel and writevalue signal; 512 B, 4 KiB, 16 KiB, 64 KiB), and stale=0 in each of 8 copies run at once for kernel and for writevalue at 512 B (16 more runs of 200,000). So neither the partition mode nor GPU sharing exposes the defect on gfx942, which agrees with the harness results above and with the diagnosis: what failed on gfx1201 is that runtime path on RDNA4, not a PhysX ordering bug that gfx942 merely hides by timing.
+
+All runs above are at 886c3529 as requested. The scratch slowdown of the checked build should be gone at 42d4c033, whose checked device code is `-O3`; that was not measured here.
+
+### Integrity
+`git -C <job>/work/src status --porcelain`: only untracked `physx/bin/`; HEAD 886c3529d1dadf8353df4f98f1b95df33d0bd6ca. Run logs, interposer, reproducer and scripts are in the job directory only (`<job>/work/runs`, `<job>/work/shim`, `<job>/work/repro`).
