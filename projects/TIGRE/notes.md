@@ -2429,3 +2429,21 @@ State: `set-state TIGRE linux-gfx90a porting` (no warning), `fix-branch TIGRE` -
 - `jargon.py --port TIGRE`: clean. `prose.py` on the message: clean. ASCII. Title 45 chars. AI line "Authored with Claude."; no Co-Authored-By. Test Plan commands are the ones run above (with `<rocm>` and `<that directory>` placeholders); it says Windows was not run.
 - Integrity: `git -C projects/TIGRE/src status --porcelain`: untracked build output only.
 - Pushed only `moat-fix-747` (719b396..2132d4e, plain push); `git ls-remote`: moat-port still f779703. `advance-head TIGRE 2132d4e5cdd0bce5dec1250151465f172226546b`; `classify 719b396f 2132d4e5`: `mixed (token count differs)`, not inert. `set-state TIGRE linux-gfx90a ported`.
+
+## Review 2026-11-25 (reviewer, linux-gfx90a, delta 719b396f..2132d4e5 -> review-passed)
+
+pr-review skill, local-branch mode, `git diff 719b396f..2132d4e5` (setup.py, 2 lines). This job also wrote the commit, so the review went to an independent read-only child agent (setup.py's whole `BuildExtension`, `win_wrap_compile`, `unix_wrap_compile`, the Extension list, docs, changelog, pyproject), and its result was re-checked here.
+
+Verdict: **review-passed**; no finding. The guard sits after both compile patches are installed and `win_wrap_compile` is installed whenever `compiler_type == "msvc"`, whatever the backend, so it now covers the CUDA Windows build; `IS_WINDOWS = sys.platform == "win32"` (setup.py:30) keeps Linux unchanged. The comment above (setup.py:508-510) names no backend and is true for both. `IS_HIP` is still used (setup.py:118-120, 240, 348, 418), so nothing is orphaned. Both new lines are CRLF like the rest of the file (733/733 lines).
+
+Commit message statements, each checked against the code:
+- threads share one compiler object; `win_wrap_compile` swaps call/spawn for a whole `compile()` and restores it in `finally` (setup.py:478-500): yes.
+- "call (spawn before setuptools 84)": matches the code comment (setup.py:478-479) and the `getattr` fallback; setuptools 79.0.1 in the job venv has only `spawn` (`_distutils/compilers/C/base.py:1155`, no `call`). The exact 84 boundary is inherited from a7997d3d and was not re-derived offline.
+- shared sources: `TIGRE_common.cpp` and `GpuIds.cpp` in 7 of 8 extensions (all but `_gpuUtils`), `gpuUtils.cu` in all 8: yes.
+- "the guard added in a7997d3": a7997d3d is that commit.
+- "A serial build is what the documented Windows commands (pip install .) already do": docs/install/python.md:92, 110, 153 use `pip install .`; no setup.cfg, and pyproject.toml configures no `build_ext`/`parallel` (cibuildwheel sections included), so setuptools' default `parallel=None` applies.
+- "Linux is unchanged and still builds in parallel": the guard is gated on `IS_WINDOWS`; the porter's `-j 16` log shows no message and parallel extension starts.
+- Test Plan: 8 entries in `ext_modules` (setup.py:727); `--inplace` puts the modules in `Python/` (pyproject `where=["Python"]`); `TIGRE_BACKEND`, `HIP_ARCH`, `ROCM_PATH`, `CUDA_HOME`, `TIGRE_CUDA_ARCH` exist and act as implied; with `CUDA_HOME` set and `version.txt`/`include`/`lib64` present and `TIGRE_CUDA_ARCH` non-empty, nvcc is first invoked inside the compile, after the guard's message, as the plan states. The Windows message in the plan matches setup.py:512 exactly. Title 45 chars, no `[ROCm]` (shared code; the added lines name no HIP/ROCm/AMD target), "Authored with Claude.", no Co-Authored-By, ASCII.
+- Docs/changelog: none mention `build_ext` or `-j`; nothing to update.
+
+Outside this delta, already recorded (not a finding): the Linux `-j` path keeps the theoretical shared-`.obj`/`compiler_so` hazard; jeff ruled Linux stays parallel.
