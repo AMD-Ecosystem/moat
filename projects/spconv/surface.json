@@ -1,0 +1,240 @@
+{
+ "generated_by": "utils/surface.py",
+ "source_sha": "263d6b47425e",
+ "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+ "cuda": {
+  "files": [
+   "example/libspconv/main.cu"
+  ],
+  "markers": {},
+  "libraries": {
+   "cublas": 2
+  }
+ },
+ "components": [
+  {
+   "id": "example:main",
+   "kind": "example",
+   "where": "example/libspconv/CMakeLists.txt"
+  },
+  {
+   "id": "build:hip-target",
+   "kind": "build",
+   "where": "setup.py, spconv/build.py, pyproject.toml",
+   "doc": "core_cc built through cumm's HIP route (.cu -> clang++ bound to amdclang++, ccimport unmodified), prebuilt and JIT, Linux and Windows"
+  },
+  {
+   "id": "build:wheel",
+   "kind": "packaging",
+   "where": "setup.py, tools/build-wheels-rocm.sh, README.md",
+   "doc": "spconv-rocm<major> name, cumm-rocm<major> runtime pin, ROCm wheel script, README ROCm build section"
+  },
+  {
+   "id": "build:libspconv-gencode",
+   "kind": "build",
+   "where": "spconv/gencode/__main__.py, example/libspconv/CMakeLists.txt, example/libspconv/spconv/CMakeLists.txt, example/libspconv/run_build.sh",
+   "doc": "libspconv C++ library: gencode HIP CMake fragment, HIP branch of the example CMake; the route spconv_cpp consumes"
+  },
+  {
+   "id": "descriptors:simt",
+   "kind": "kernels",
+   "where": "spconv/core.py SHUFFLE_SIMT_PARAMS, IMPLGEMM_SIMT_PARAMS",
+   "doc": "SIMT f32/f16 Native and implicit-GEMM kernels, prebuilt and hipRTC"
+  },
+  {
+   "id": "descriptors:amd-mfma",
+   "kind": "kernels",
+   "where": "spconv/core.py (new HIP lists)",
+   "doc": "cumm MFMA family f16 descriptors, Native + MaskImplicitGemm + MaskSplitImplicitGemm, fwd/dgrad/wgrad (CDNA, wave64)"
+  },
+  {
+   "id": "descriptors:amd-wmma",
+   "kind": "kernels",
+   "where": "spconv/core.py (new HIP lists)",
+   "doc": "cumm WMMA family f16 descriptors, same coverage (RDNA gfx11 and gfx12, wave32)"
+  },
+  {
+   "id": "descriptors:int8-simtdp4a",
+   "kind": "kernels",
+   "where": "spconv/core.py (new HIP lists)",
+   "doc": "int8-inference forward conv on cumm's SimtDP4A family (upstream's int8 lists are tensor-op only)"
+  },
+  {
+   "id": "descriptors:nvidia-tensorop",
+   "kind": "kernels",
+   "where": "spconv/core.py SHUFFLE_VOLTA/TURING/AMPERE, IMPLGEMM_VOLTA/TURING/AMPERE",
+   "doc": "Volta/Turing/Ampere tensor-op descriptors (f16, tf32, int8)"
+  },
+  {
+   "id": "selection:algo-filter",
+   "kind": "host",
+   "where": "spconv/algo.py SimpleGemm/SimpleConv.get_all_available, spconv/csrc/sparse/convops.py GemmTunerSimple/ConvTunerSimple.get_all_available + get_available_algo_str_from_arch",
+   "doc": "descriptor admission by device family on HIP instead of CC tuples"
+  },
+  {
+   "id": "rtc:hiprtc-descriptors",
+   "kind": "runtime-compile",
+   "where": "spconv/algo.py _compile_nvrtc_module/cached_get_nvrtc_params, convops.py cached_get_nvrtc_params",
+   "doc": "descriptors not prebuilt (is_nvrtc or missing) compiled through cumm's hipRTC path, ConstantMemory mode"
+  },
+  {
+   "id": "feature:dynamic-parallelism",
+   "kind": "feature",
+   "where": "spconv/algo.py NVRTCMode.DynamicParallism branches",
+   "doc": "device-side launch mode needing libcudadevrt"
+  },
+  {
+   "id": "kernels:indices",
+   "kind": "kernels",
+   "where": "spconv/csrc/sparse/indices.py",
+   "doc": "21 pair-generation/mask kernels (atomicAggInc, atomicOr)"
+  },
+  {
+   "id": "kernels:thrust",
+   "kind": "library",
+   "where": "spconv/csrc/sparse/all.py, spconv/csrc/sparse/indices.py",
+   "doc": "thrust sort/sort_by_key/stable_sort_by_key/unique with custom allocator: thrust::cuda::par -> thrust::hip::par (rocThrust)"
+  },
+  {
+   "id": "kernels:maxpool",
+   "kind": "kernels",
+   "where": "spconv/csrc/sparse/maxpool.py",
+   "doc": "7 pooling kernels, f32/f64/f16/bf16/int8"
+  },
+  {
+   "id": "kernels:pointops",
+   "kind": "kernels",
+   "where": "spconv/csrc/sparse/pointops.py",
+   "doc": "Point2Voxel GPU kernels (5)"
+  },
+  {
+   "id": "kernels:inference",
+   "kind": "kernels",
+   "where": "spconv/csrc/sparse/inference.py",
+   "doc": "3 fused bias/activation kernels"
+  },
+  {
+   "id": "kernels:gather",
+   "kind": "kernels",
+   "where": "spconv/csrc/sparse/gather.py",
+   "doc": "gather/scatter-add via tv::kernel_1d"
+  },
+  {
+   "id": "kernels:hash",
+   "kind": "kernels",
+   "where": "spconv/csrc/hash/core.py",
+   "doc": "GPU linear hash table (64-bit CAS)"
+  },
+  {
+   "id": "kernels:alloc",
+   "kind": "kernels",
+   "where": "spconv/csrc/sparse/alloc.py",
+   "doc": "static allocator fill kernels"
+  },
+  {
+   "id": "kernels:count-bits",
+   "kind": "kernels",
+   "where": "spconv/csrc/sparse/all.py count_bits_kernel",
+   "doc": "__popc mask popcount"
+  },
+  {
+   "id": "lib:hipblaslt-matmul",
+   "kind": "library",
+   "where": "spconv/csrc/sparse/convops.py SimpleExternalSpconvMatmul",
+   "doc": "cuBLASLt debug/bias matmul used by libspconv and the JIT build -> hipBLASLt"
+  },
+  {
+   "id": "python:pytorch-layer",
+   "kind": "python",
+   "where": "spconv/pytorch/**",
+   "doc": "torch.cuda usage on ROCm PyTorch (no change expected), including quantization"
+  },
+  {
+   "id": "cpu:operators",
+   "kind": "cpu",
+   "where": "spconv/csrc/sparse/cpu_core.py, Point2VoxelCPU, SpconvIndicesCPU, GatherCPU, IndiceMaxPoolCPU, csrc/utils (BoxOps, PointCloudCompress)",
+   "doc": "CPU-only build and CPU operators; must not regress"
+  },
+  {
+   "id": "test:test_conv",
+   "kind": "test",
+   "where": "test/test_conv.py",
+   "doc": "fp32 conv/deconv/maxpool vs dense torch, 3 algorithms"
+  },
+  {
+   "id": "test:test_multi_impl",
+   "kind": "test",
+   "where": "test/test_multi_impl.py",
+   "doc": "fp32/fp16 networks, algorithms cross-checked and vs stored data"
+  },
+  {
+   "id": "test:test_all_algo",
+   "kind": "test",
+   "where": "test/test_all_algo.py",
+   "doc": "upstream int8 sweep plus the port's fp32/fp16 descriptor, native and hipRTC sweeps"
+  },
+  {
+   "id": "test:hip-harness",
+   "kind": "test",
+   "where": "test/test_hip_selection.py, test/test_point2voxel.py, test/test_hash.py (new)",
+   "doc": "selection lands on the matrix family; Point2Voxel GPU vs CPU; hash table vs dict"
+  },
+  {
+   "id": "example:mnist",
+   "kind": "example",
+   "where": "example/mnist/mnist_sparse.py",
+   "doc": "fp16 training example from test_before_push.sh"
+  },
+  {
+   "id": "example:python",
+   "kind": "example",
+   "where": "example/voxel_gen.py, example/simple_hash.py, example/pc_compress.py, example/fuse_bn_act.py",
+   "doc": "Python examples"
+  },
+  {
+   "id": "example:mnist-quant",
+   "kind": "example",
+   "where": "example/mnist/mnist_qat.py, example/mnist/mnist_ptq.py, example/mnist/mnist_net_transform.py",
+   "doc": "int8 quantization examples (QAT, PTQ, net transform)"
+  },
+  {
+   "id": "bench:benchmark",
+   "kind": "benchmark",
+   "where": "test/benchmark.py, spconv/benchmark/",
+   "doc": "performance record SIMT vs matrix family"
+  },
+  {
+   "id": "tool:dev-scripts",
+   "kind": "tool",
+   "where": "test/debug/, test/develop/, test/apps/, test/fake_train.py, test/fake_dist_train.py, test/bench_build_time.py, spconv/csrc/sparse/devleop/",
+   "doc": "developer scripts without assertions"
+  },
+  {
+   "id": "example:fx2trt",
+   "kind": "example",
+   "where": "example/mnist/custom_fx2trt.py",
+   "doc": "exports a quantized model to TensorRT"
+  }
+ ],
+ "covered": [],
+ "scoped_out": [
+  {
+   "id": "descriptors:nvidia-tensorop",
+   "reason": "NVIDIA-only instructions (mma.sync, ldmatrix, cp.async) that cumm does not generate on HIP; replaced on HIP by descriptors:amd-mfma, descriptors:amd-wmma and descriptors:int8-simtdp4a; the CUDA path keeps them unchanged"
+  },
+  {
+   "id": "feature:dynamic-parallelism",
+   "reason": "HIP has no device runtime; spconv never selects the mode (SPCONV_NVRTC_MODE is ConstantMemory) and cumm refuses it on HIP with a clear error"
+  },
+  {
+   "id": "tool:dev-scripts",
+   "reason": "print-only or author-local developer scripts (hard-coded /home paths), not part of the test suite; their coverage is in the shipped tests"
+  },
+  {
+   "id": "example:fx2trt",
+   "reason": "TensorRT is an NVIDIA-only runtime with no ROCm build; the example is CUDA-only by purpose and stays unchanged"
+  }
+ ],
+ "owed": [],
+ "removed_from_floor": []
+}

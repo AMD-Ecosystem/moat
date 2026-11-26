@@ -118,3 +118,35 @@ The intake queue issue was not published from this job (a GitHub write outside i
 limits). Open questions jeff is ruling on separately (recorded in cumm's and ccimport's
 notes): cumm licence clearance, whether ccimport gets a fork, the ZJLi2013 effort, and
 whether a SIMT-only port is complete.
+
+## Planning -- 2026-11-26, linux-gfx90a (fleet job, headless)
+
+Plan written to `plan.md`; surface accounting in `surface.json` (`surface.py check spconv` clean; the regex census sees one `.cu` file because all device code is generated from Python, so 33 components were added by hand and 4 scoped out with reasons). `set-ext-type spconv pccm`. Read-only analysis of upstream `263d6b474`, built on cumm's plan (`port/cumm` `1614d936`) and read against cumm `d971d02a0`, pccm `860790f`, ccimport `f5af43d`, cloned into the job's `agent_space`; nothing built, fork untouched.
+
+Decisions in the plan:
+- Same HIP build route as cumm, taken from cumm: ccimport unmodified, `.cu` mapped to logical `clang++` via `build_pybind(suffix_to_compiler=...)`, `clang++` bound to `amdclang++` via `CCIMPORT_COMPILER_LINKER_MAP`, HIP flags in cumm's `clang++` bucket; `setup.py` gets a `build_ext` on HIP because `PCCMExtension` cannot forward `suffix_to_compiler`.
+- Option B in spconv: HIP descriptor lists for cumm's MFMA (CDNA) and WMMA (RDNA) families, f16 in / f32 accumulate, mirroring the Turing f16 coverage; NVIDIA tensor-op lists not generated on HIP; `ALL_NATIVE_PARAMS`/`ALL_IMPGEMM_PARAMS` become backend-selected and are used by `setup.py`, `build.py` and `gencode` (CUDA output unchanged).
+- Selection by device family, not CC tuple, at the four filter sites (Python `SimpleGemm`/`SimpleConv`, C++ `GemmTunerSimple`/`ConvTunerSimple`, the C++ one being the default path). Today fp16 on gfx9 skips SIMT at "CC >= 7.0" and picks Turing descriptors: the study's fp16 wall.
+- int8 kept, on cumm's SimtDP4A family: upstream's int8-inference descriptors are tensor-op only, and upstream's own `test/test_all_algo.py` runs only int8 and asserts descriptors exist, so leaving int8 without kernels would fail upstream's test and cut a feature.
+- rocThrust has no `thrust::cuda::par` (checked in the ROCm 10.1 SDK headers on this host: `thrust/system/hip/detail/par.h` defines `thrust::hip::par`; `thrust/system/cuda` is the CUDA-only CCCL copy). Seven live sites branch to `thrust::hip::par`. This also settles cumm's open rocThrust question.
+- libspconv: pccm's `gen_cmake` emits CUDA-language CMake only (`pccm/core/__init__.py:2386-2490`); on HIP `spconv.gencode` adds a CMake fragment setting `LANGUAGE HIP` on the generated `.cu` sources and cumm's HIP options, and the example CMake gets a HIP branch. spconv_cpp's planner should build on this route.
+- cumm version: spconv pins `cumm<0.8.0`, but cumm's 0.8.0 bump was a CI gcc/ABI change ("change version to 0.8.0 to avoid break spconv", cumm `e6a95bd`), not an API change; the HIP release pins `cumm-rocm<major>` at the cumm port's version. CUDA pins unchanged.
+
+Dependencies: `depends_on` stays `[cumm, ccimport]` (ccimport dispositioned already supported). No new hard dependency; pccm is a PyPI build requirement and ROCm PyTorch a runtime environment requirement, neither a MOAT project. ROCm components: amdhip64, hipRTC, rocThrust (via cumm), hipBLASLt (`SimpleExternalSpconvMatmul`, JIT build and libspconv only). Optional, not hard: Boost (`BOOST_ROOT`, `BoxOps` rotated-box ops), tqdm and pytest (tests), torchvision (mnist examples), TensorRT (`custom_fx2trt.py`, scoped out). The selector currently reports spconv dep-blocked on cumm (adopted, no arch started); that clears when cumm completes on a platform of the host's OS.
+
+### Interface spconv needs from the cumm port
+
+For the cumm porter, so the names are exposed once (spconv's porter consumes them; neither project's plan is changed by this list):
+1. One helper returning the HIP `build_pybind` kwargs and environment (cumm plan's `get_hip_build_kwargs()`), and preferably the HIP `build_ext` class, importable from `setup.py` at build time.
+2. A Python HIP-build constant beside `CUMM_CPU_ONLY_BUILD`, and the ROCm version used for `cumm-rocm<major>` naming.
+3. Device family availability keyed by gcnArchName, callable from Python and from generated C++ (spconv's C++ tuners run inside `core_cc` and libspconv), plus a device-arch-name binding.
+4. The AMD `GemmAlgo` values and exported tuned parameter sets for gemm shuffle (gather A/C, scatter) and conv (fwd, dgrad, wgrad; mask_sparse, increment_k_first, access_per_vector 0/1, dynamic mask, split-K).
+5. SimtDP4A implicit-GEMM conv with the `int8_inference` epilogue working on HIP (cumm's own SimtDP4A conv lists are commented out upstream, so this combination is untested there).
+6. hipRTC for `ConstantMemory` mode with `CummNVRTCModule`, and `CompileInfo.arch_is_compiled_gemm`/`arch_is_compatible` semantics on HIP (spconv calls them with the CC tuple).
+7. The HIP compile options as a list a CMake consumer can read (for spconv's gencode fragment).
+
+### Questions for jeff (none blocks the porter; none is a scope cut)
+
+1. int8 on HIP. Planned: cumm's SimtDP4A kernels (correct, slower), which keeps upstream's int8 quantized inference and its test working. Alternative: extend cumm's AMD families to int8 (MFMA i8, WMMA iu8; cumm question 1) and use AMD int8 descriptors instead.
+2. bf16. Upstream spconv has no bf16 GEMM or conv descriptors on any backend (bf16 only in gather/pooling/inference). Planned: upstream parity, no HIP-only bf16 descriptors. Your Option B ruling names fp16 and bf16 for the matrix families; say if spconv should gain bf16 conv on HIP (a feature CUDA users do not have).
+3. Wheel name, venue and gfx list for `spconv-rocm7`, after the port is complete (same decision as cumm's).

@@ -5,20 +5,16 @@
   "fork_url": "https://github.com/AMD-Ecosystem/spconv",
   "fork_default_branch": "master",
   "priority": 0.0,
-  "ext_type": "unknown",
-  "stage": "planning",
+  "ext_type": "pccm",
+  "stage": "planned",
   "adopted_at": "2026-11-23T17:18:16Z",
-  "updated_at": "2026-11-26T00:19:48Z",
+  "updated_at": "2026-11-26T00:30:15Z",
   "head_sha": null,
   "depends_on": [
     "cumm",
     "ccimport"
   ],
-  "porting": {
-    "arch": "linux-gfx90a",
-    "since": "2026-11-26T00:19:48Z",
-    "holder": "7c86bbfafd1c"
-  },
+  "porting": null,
   "waivers": {},
   "platforms": {
     "linux-gfx942": {
@@ -51,7 +47,7 @@
       "failed_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-11-26T00:19:48Z",
+      "updated_at": "2026-11-26T00:30:15Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -84,5 +80,10 @@
     "viable": true,
     "summary": "Sparse convolution library (adopted by jeff 2026-11-20); HIP port via a cumm backend, fp32 SubM/SparseConv3d already match CPU on gfx942 in the study; fp16 needs tensor-op descriptors gated off; upstream dormant",
     "at": "2026-11-23T17:18:59Z"
+  },
+  "porting_released": {
+    "arch": "linux-gfx90a",
+    "since": "2026-11-26T00:19:48Z",
+    "at": "2026-11-26T00:30:15Z"
   }
 }
