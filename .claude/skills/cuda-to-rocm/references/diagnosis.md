@@ -109,6 +109,18 @@ and stop. (popsift)
 
 **To close an "it might silently fall back" risk, trace it; then bound it from the code, not from the trace.** A dispatch count (validation.md, "A green result does not prove a GPU test ran") proves which backend ran on the run you measured. When the worry is that some ORDER of events could flip a global backend flag ("if the fallback initializes first, the compute flag is cleared and the suite still goes green"), a Release build with no debug info is enough for a trace: statics like `Foo::_UseBackend` and ordinary member functions are in the symbol table, so gdb can breakpoint the decision function (`break *0x<addr>` with `commands` / `silent` / `printf "decide(arg=%d) flag=%d\n", (int)$rdi, *(int*)0x<addr of flag>` / `continue` / `end`), breakpoint each backend's constructor, and `watch *(int*)0x<addr of flag>`. The counts answer outright: how often the decision function was entered and with what argument, how often each backend was constructed, and every value the flag took. In colmap that turned "did not materialise on the machine we happened to use" into "the clearing line did not run once in this binary, and the flag was written exactly once, `0 -> 1`". Then be careful what you claim, because this is where a trace gets oversold: it covers the paths the binary took with the options it ran with, so it is evidence for "not reached in this configuration" and never for "unreachable". colmap's first write-up made that jump ("the clearing line is unreachable, because the only caller always requests the compute backend") and review disproved it with one probe: a public option (`darkness_adaptivity`, with the default negative GPU index) makes the caller omit the flag that selects the compute backend, and the supposedly dead line runs. Upgrading "not reached here" to "cannot happen" takes an argument from the CODE; the one that held was that the API re-asserts the flag on every freshly constructed object that requests the compute backend, so no earlier user can leave it cleared for a later one. When such an argument holds, ask what ELSE the failing path wrote: the initialization that clears flag A usually sets siblings in the same function. In colmap the failed GLSL init also zeroes a second global meaning "this process has no usable GL"; it is sticky (the init returns immediately once it is 0 and never retries), and every later extractor, the compute ones included, early-returns on it and is constructed as a null: a hard failure with nothing extracted, not the silent degrade the risk was written about, and still a live defect. Enumerate every write on the failure path, and for each ask who resets it and who reads it later; sticky-on-failure, process-wide and consulted by a user that would otherwise have worked is the shape that bites. Two traps each produce a confidently wrong answer. Reading a global AFTER the inferior exits gives the ELF initial value, not the last live value: gdb falls back to the executable's `.data`/`.bss` image and prints it without complaint (in colmap, exactly the cleared-flag state the reviewer had predicted, from a run where the flag was never cleared), so read the flag at a breakpoint inside the live process, or watch it. And `LD_PRELOAD` on a GL or driver entry point does not intercept a Qt (or any `GetProcAddress`-style) caller: Qt resolves GL through `QOpenGLFunctions`/`eglGetProcAddress`, so the preloaded symbol is bypassed while a directly-linked caller in the same process IS intercepted; prove a preload shim fires with a positive control first. (colmap)
 
+**`torch.cuda.device_count()` returns 0 while `torch.cuda.is_available()` is True: a
+mismatched `amdsmi`.** `torch._C._cuda_getDeviceCount()` says 1, `torch.cuda.device_count()` 0,
+then `AssertionError: Invalid device id` on the first device query, or device-count checks in
+tests skip while kernels run. On ROCm torch counts devices through `amdsmi` when it can import
+it, and that count wins over HIP's; an `amdsmi` Python binding from a different ROCm release
+than the one torch loaded returns no processor handles in torch's process. Make the importable
+`amdsmi` the one from the same ROCm (with TheRock's packages, `$(rocm-sdk path
+--root)/share/amd_smi` of the matching SDK, put first through a `.pth` file), or remove the
+stray one from the path. Seen with a ROCm 10.1 `amdsmi` beside a 7.12 torch, and with newer
+TheRock wheels installed into an environment that inherited an older SDK's `amdsmi`. (wenet,
+ColossalAI)
+
 **A once-per-suite host crash that stress reruns never reproduce: widen the suspected race window instead of rerunning.** If the stack sits in runtime code the port does not touch (`git diff` empty there), read it for a publish-before-register ordering, insert a temporary sleep between the two steps, rebuild, and run a tiny loop. A crash that becomes deterministic, and also happens with CPU-only work, is an upstream race that a fast GPU merely exposes; revert, rebuild and record it. oneflow's `LaunchLazyJob` pushed a graph's SourceTick before `EnqueueNNGraph`, so a tiny graph's finish callback could pop an empty queue: 1 crash in ~550 suite files on two arches, 0 in 70 stress reruns, 5 of 5 with a 20 ms sleep (CPU graphs included). (oneflow)
 
 **ROCm 10.1 `AMD_LOG_MASK` takes decimal only, and graph replays are invisible to it.** A hex value such as `0x60000` is silently read as nothing (level 4 then prints one banner line), so check a mask on a tiny HIP program before trusting a quiet log. Bits on that runtime: 1 = API calls, 131072 = memory, 2097152 = `ShaderName` per dispatch. A graph's kernel nodes log `ShaderName` once, at `hipGraphInstantiate`, never on replay, and an illegal access logs `Memory Fault Error` with no address at any level (and `dmesg` is usually not readable in a container), so neither logging nor `AMD_SERIALIZE_KERNEL=3` names the kernel that faults inside a graph replay. Varying the replay order changes how often such a fault shows (oneflow: 0 of 12 to 7 of 8 at one commit), so an apparent regression between two commits can be the order hiding it.
@@ -140,6 +152,20 @@ Limiting inlining does not help when the out-of-line device function is large by
 ### Proving a real miscompile: catch the faulting instruction, then flip one backend pass
 
 An `HSA_STATUS_ERROR_MEMORY_APERTURE_VIOLATION` is reported imprecisely. Run the process under `rocgdb -batch -ex 'set amdgpu precise-memory on' -ex run -ex 'x/12i $pc-40' -ex 'p/x $v20'` (rocgdb ships in TheRock's `bin/`) to stop on the exact instruction and read its registers per lane. In gpu4pyscf the faulting op was `global_atomic_add v1, v20, v1, s[20:21]` (the persistent-kernel `atomicAdd(head, 1)`). Its zero offset register v20 held garbage in lane 0 only, and `llvm-objdump -d` of the extracted code object showed v20 set to 0 once and then reused as the destination of a predicated `global_load_dwordx2 v[20:21]` inside the loop. Rebuilding with `-mllvm -disable-machine-licm` in `CMAKE_HIP_FLAGS` made results match the CPU reference to 1e-13. `-O1` did not help. The defect was TheRock ROCm 10.1 (AMD clang 24.0.0git) MachineLICM, and the same pattern appears in gfx90a code from that compiler, so it is a toolchain fault, not an architecture fault. It does not reproduce on every target, though: the same compiler and committed flags ran correctly on gfx1100, so before adding the flag, test whether each arch shows the fault with one run of the failing case (a d-shell calculation there). Under `-fgpu-rdc` device codegen runs at link time, and CMake's HIP link rule reuses `CMAKE_HIP_FLAGS`, so that one setting reaches both; a copy in `CMAKE_SHARED_LINKER_FLAGS` can be silently overwritten by the project (gpu4pyscf's own `set(CMAKE_SHARED_LINKER_FLAGS ...)` did) and protects nothing, so confirm with a verbose build that every compile and link line carries the flag. Whether a port carries a compiler workaround is for the people who own the port to decide; once decided, put it under the HIP build only with a comment naming the compiler version and the arches affected, and the condition for removing it. (gpu4pyscf)
+
+### Before removing a compiler workaround, rerun the whole suite on the new release
+
+**A newer ROCm that contains the upstream fix for a miscompile does not prove the workaround can go.** Build without the flag on the new release and run the full GPU test selection, not only the reproducer or the case that first crashed. In gpu4pyscf, ROCm 10.2's compiler contained the LLVM fix for 10.1's MachineLICM register clobber (previous entry): the original aperture violation was gone and a static check of the kernel was clean, yet `-mllvm -disable-machine-licm` was still needed. 10.2 had a different miscompile in the same kernels, which gave wrong nuclear gradients with no error on gfx942 (only the gradient tests saw it) and hung the GPU in the same J/K gradient path on gfx90a. To tell compiler from runtime, run the new compiler's build on the old runtime and the old compiler's build on the new runtime, and rebuild with the workaround flag on the new compiler: if the flag alone restores the results, the fault is still in codegen. (gpu4pyscf)
+
+### An instruction-selection abort: change how the value is produced
+
+`LLVM ERROR: Cannot select: v4bf16 = scalar_to_vector` during the device LTO link for gfx942
+(AMD clang 24.0.0git, ROCm 10.2.0a20261022) came from bf16 values produced through
+`__float2bfloat16(__half2float(x))` and stored as bf16x2 pairs in a large kernel. Producing the
+value without the rounding `__float2bfloat16` (the conversion was exact there, so the bits could
+be built directly) avoided it. When a ROCm build aborts in instruction selection, find the
+function named in the crash dump, change how that value is produced, and keep the translation
+unit and command line for a report. (ColossalAI)
 
 ### A fault inside a vendored JIT entry point: rebuild-with-a-forced-throw beats a debugger
 
@@ -200,6 +226,12 @@ Windows runners do), and neither is a port defect:
   suites that precede it with `--gtest_filter` to find the one that leaves the state
   behind, and check that the port does not touch either file before you record it.
 
+### A sync-bound GPU test that passes alone can time out under `ctest -jN`
+
+Processes that submit to one GPU at the same time slow each other down more than linearly, so a test that synchronizes every step can pass alone and hit its timeout in a parallel run with no hang and no port fault. On a Radeon gfx1201 (ROCm 10.1), a loop of small kernels plus a small synchronous device-to-host copy took 30 us per iteration in one process and 135-139 us per iteration in each of two or four concurrent processes; an idle second context cost nothing, only concurrent submission did. ESPResSo's `lb_pressure_tensor` (10000 sample steps, each synchronized) passed in 77-147 s alone and timed out at 1200 s under `ctest -L gpu -j 8`.
+
+Before treating such a timeout as a hang, rerun the test alone, then run two copies at once. A pass alone plus a superlinear slowdown with two copies is GPU sharing. The fix is to run the GPU tests serially (`ctest -j1` for the GPU label, or a `RESOURCE_LOCK` test property shared by the GPU tests), not a longer timeout or a code change. A test that is stuck rather than slow under `ctest -jN` is a different case (linux-host-setup.md, "A GPU test that hangs only under `ctest -jN` is usually the software GL stack"), and so is one that is too slow even alone (platform-limits.md, "A low-CU integrated GPU can outrun a fixed upstream test timeout without any fault"). (ESPResSo)
+
 ## Memory measurements
 
 ### A free-memory leak check measures the whole GPU, not your process
@@ -221,6 +253,34 @@ free memory before an allocation and asserts it comes back afterwards can then f
 fixed amount on its first run in a process and pass on repeats. Check with
 `--gtest_repeat=3` in one process before calling it a leak: a leak grows each
 repetition, a first-use cost appears once. (LichtFeld-Studio)
+
+### A fixed "leak" after the first launch of a spilling kernel is the scratch allocation growing
+
+A "no leak over N calls" test can fail on one AMD architecture by a fixed amount (25.75 MB in
+one case) that does not change with problem size, while each operation warmed up on its own
+shows zero drift. The first launch of a kernel that needs more private (scratch) memory per
+lane than any kernel before it makes the HIP runtime grow the queue's scratch allocation,
+sized per lane times the maximum number of resident waves, and keep it. Kernels tuned for
+NVIDIA's 255 registers per thread (a fully unrolled column of 8 accumulators) can exceed the
+128 VGPRs clang allows on gfx90a for a kernel without `__launch_bounds__` and spill hundreds
+of registers (platform-limits.md, "A kernel launched with fewer than 1024 threads needs
+`__launch_bounds__` on HIP to get its registers"). Separate the first call from the steady
+state, and read `.private_segment_fixed_size`, `.vgpr_count` and `.vgpr_spill_count` for each
+kernel from `hipcc --cuda-device-only -S`. Remove the spill rather than the test: a smaller
+unroll (4 voxels per thread instead of 8 was also about 2x faster on MI250X) or
+`__launch_bounds__` with the real block size (no spill, but slower there). Wave32 RDNA did
+not spill on the same kernel. (TIGRE cone backprojectors)
+
+### O_DIRECT I/O fails with EINVAL on a container's overlay filesystem
+
+A storage test that opens its files with `O_DIRECT` in a directory under the test's working
+directory can fail with `pwrite ... errno=22 (Invalid argument)` when that directory is on a
+container's overlay root, and pass on the same host from tmpfs or a real ext4/xfs mount. It
+looks like a GPU or pinned-buffer fault because the write source is a staged device buffer.
+Rerun the failing cases from a tmpfs working directory (`cd /dev/shm/<dir> && <test binary>
+--gtest_filter=...`), and check whether the project's CPU-only (simulated-device) build fails
+the same cases on the same filesystem. If both point at the filesystem, it is the host
+environment, not the port. (unified-cache-management)
 
 ## Multi-GPU hosts
 

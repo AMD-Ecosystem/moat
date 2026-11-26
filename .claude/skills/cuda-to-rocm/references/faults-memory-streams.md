@@ -100,6 +100,30 @@ claims. The same mechanism with a different symptom, a counter that advances by 
 times the real count, is in faults-wavefront.md ("A leader-only write broadcast by shuffle
 must be initialised on every lane"). (symforce, colmap)
 
+**Type punning through a word pointer lets clang drop the stores it reads.** Code that copies
+a struct lane by lane as `uint` words (`reinterpret_cast<const uint*>(&s)[lane]`) is undefined
+behavior that nvcc does not exploit; with type-based alias analysis clang may treat the float
+stores into the struct as dead, so the copy writes zeros or garbage (in PhysX a midphase emitted
+an all-zero transform, and every sphere and capsule fell through meshes). It is the alias-analysis
+cousin of the `noundef` entries (previous entry; faults-wavefront.md, the warp-aggregated atomic).
+Signs: the result changes when a `printf` is added to the kernel, so read device buffers back on
+the host instead of printing on the device. Test with `-fno-strict-aliasing` and `-Xclang
+-no-enable-noundef-analysis` on the HIP sources; where a codebase uses either pattern widely, add
+both to the HIP compile (HIP sources only) rather than patching every site. (PhysX)
+
+**Host code reading a `__device__` variable through a pointer gets HIP's host shadow, not
+the value.** CUDA code often keeps lookup tables as `__device__ static constexpr` arrays so that
+both sides can use them, and reaches them through a `__host__ __device__ constexpr` helper that
+returns `table.data()`. Under nvcc the host side reads the real values. Under HIP, a `__device__`
+variable's host-side symbol is a shadow that only the runtime registration uses, so once the host
+takes its address it reads zeros (or garbage at -O2) where nvcc reads the table. Reading
+`table[i]` directly with a constant index can still constant-fold and look right, which hides
+the problem in small tests. Nothing faults: in cuCollections the HyperLogLog++ host finalizer
+silently skipped bias correction (Spark-parity test 79 vs. 81). Fix on HIP: drop `__device__` and
+keep a plain `static constexpr` array, which clang makes usable from device code as well (verified
+on both sides). nvcc rejects that spelling in device code, so keep `__device__` on the CUDA branch.
+(cuCollections)
+
 ## Handle and object lifetime
 
 **Rule-of-five on resource handles.** CUDA tolerates a default-constructed or
@@ -323,6 +347,37 @@ Bisect with a sync on each side: only the one AFTER the copy fixes it. (TornadoV
 `NativeCommandQueue.mapOnDeviceMemoryNDRegion`, deterministic on Windows gfx1151, passing
 on Linux gfx950/gfx1201.)
 
+**A "last block reduces" kernel needs `__threadfence()`, and MI300X is where its absence shows.**
+A common CUDA pattern computes per-block partial results, writes them to global memory, bumps a
+completion counter with `atomicInc`/`atomicAdd`, and lets whichever block sees the final count
+read every partial and finish the reduction. CUDA's memory model requires a device-scope fence
+between the partial-sum stores and the counter, which is what CUDA's own threadFenceReduction
+sample does. Code that leaves the fences out usually works on an
+NVIDIA GPU, whose single L2 makes other blocks' stores visible in time. MI300X (gfx942) is
+built from eight XCDs, each with its own L2, and a plain store from a block on one XCD is not
+guaranteed to be visible to a block on another without a release/acquire: the last block reads
+stale partials. The result is wrong or run-to-run nondeterministic, with no fault. Add
+`__threadfence()` after the partial stores (before the atomic) and again in the last block before
+it reads the partials; it is correct on CUDA too and costs one fence per block. Grep for
+`atomicInc`, a `gridDim.x - 1` comparison against an atomic's return value, and "last block"
+comments. Without the fences, llm.c's `layernorm_backward_kernel10` failed the project's
+determinism check on every run on gfx942; with them, every test configuration passed. (llm.c)
+
+**A GPU-written host flag can arrive before an earlier small device-to-host copy.** CUDA code
+often reads results back without synchronizing: async device-to-host copies on a stream, then a
+tiny kernel (or a stream write-value) that sets a flag in mapped host memory, and the host spins
+on the flag and reads the copied data. CUDA's stream order makes the copied bytes land first.
+HIP (ROCm 10.2, gfx1201) runs copies of 16 KiB or less that touch host memory as a copy kernel
+whose writes are released only at device scope, so they can still be in the GPU L2 when the
+flag reaches host memory: the host reads stale data, rarely with a kernel-written flag (about 1
+in 10,000) and almost always with `hipStreamWriteValue32`. Host-memory coherence flags make no
+difference. Symptoms are timing-dependent wrong results that vanish with any
+`hipStreamSynchronize`, with `AMD_SERIALIZE_COPY`, or with `GPU_FORCE_BLIT_COPY_SIZE=0` (which
+forces SDMA); unoptimized device code tends to expose it. Fix: `__threadfence_system()` in the
+signalling kernel before the flag store, or record an event between the copies and the signal.
+Find candidates by searching for host spin loops on `volatile` pinned memory and for
+`cuStreamWriteValue`. (PhysX)
+
 **`hipFree` is synchronizing** (`hipFreeAsync` is not), so an explicit
 `hipDeviceSynchronize()` before it is redundant. (anari-visionaray)
 
@@ -342,6 +397,15 @@ change to its own `CompositePdf` (#384) on those grounds. Treat it as hygiene wo
 passing, not as a bug to chase when your numbers are wrong. (GooFit)
 
 **A copy kind that disagrees with the pointers is `hipErrorInvalidValue`.** HIP checks the explicit kind: `hipMemcpyAsync(dst, src, n, hipMemcpyDeviceToHost, s)` with a pageable `malloc` source returns `invalid argument` (gfx942, ROCm 7.16). `hipMemcpyDefault` lets HIP pick the direction from the pointers and copies correctly. Tests that stand in host buffers for device addresses hit this first; check whether upstream ever runs them on a real GPU (a project whose CI uses a simulated host-memory backend may never have). CUDA documents a mismatched `cudaMemcpyKind` as undefined, so do not claim the HIP failure diverges from CUDA without a CUDA run; describe only what HIP did. Do not fix this by mapping `cudaMemcpy{HostToDevice,DeviceToHost,DeviceToDevice}` to `hipMemcpyDefault` in a compat header: the shim must honour the caller's kind, as CUDA's API contract says, and the tests stay as upstream wrote them. If upstream runs them only on a simulated backend, record them as simulated-backend tests and run them in that build (e.g. `-DRUNTIME_ENVIRONMENT=simu`), where they pass; on the GPU they are expected failures. (unified-cache-management: cache2 `DumpThenLoad*` integration tests; a remap tried there was dropped.)
+
+**`hipMemcpyToSymbol` rejects `hipMemcpyDefault`.** CUDA documents `cudaMemcpyDefault` as
+accepted for `cudaMemcpyToSymbol`/`cudaMemcpyToSymbolAsync`; HIP 7.17 (ROCm 10.2) returns
+`hipErrorInvalidMemcpyDirection` for it on `hipMemcpyToSymbol`, `hipMemcpyToSymbolAsync` and
+`hipMemcpyFromSymbol`, while the explicit directions work. The call compiles, so a port that
+only builds never sees it, and an error-check macro turns it into an abort at first use. Grep for
+`MemcpyToSymbol`/`MemcpyFromSymbol` with `Default` and change the kind at the call site to the
+real direction, which is behavior-preserving on CUDA; do not remap `cudaMemcpyDefault` in a
+compat header, because other copies rely on it. (autoware_universe)
 
 ## Host callbacks and fork
 

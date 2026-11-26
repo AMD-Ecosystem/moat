@@ -21,8 +21,11 @@ Contents:
   `hipGetDeviceProperties(&prop, dev); prop.warpSize`, or `hipDeviceAttributeWarpSize`.
   PyTorch exposes `at::cuda::warp_size()`.
 - Device code uses a compile-time per-arch constant. `__GFX9__` is defined only during
-  device compilation; there is no `__AMDGCN_WAVEFRONT_SIZE__` in ROCm 7.2.x or 7.14, so the
-  `__GFX*__` guards are the supported selector:
+  device compilation; there is no `__AMDGCN_WAVEFRONT_SIZE__` in ROCm 7.2.x or 7.14, and
+  ROCm 10.1's clang no longer defines `__AMDGCN_WAVEFRONT_SIZE` either, so code that picks a
+  width from it at preprocessing time falls to its non-AMD default (check with `amdclang++
+  -x hip --offload-arch=gfx90a --cuda-device-only -nogpulib -dM -E`). The `__GFX*__` guards
+  are the supported selector:
 
         #if defined(__GFX8__) || defined(__GFX9__)
         static constexpr int kWarpSize = 64;   // CDNA: gfx90a, gfx94x
@@ -60,6 +63,20 @@ from a host-side runtime query (`hipDeviceAttributeWarpSize`), so a wave32 devic
 launch it had and a wave64 device gets a whole wavefront. Any launch whose block size is
 computed from a data size, rather than being a fixed 128 or 256, is a candidate. (CV-CUDA:
 OpFindHomography refinement, reachable at 16 or fewer point pairs.)
+
+**The shuffles themselves read lanes that hold no thread, whatever the count says.** On
+NVIDIA a 32-thread block fills its warp exactly, so a reduction such as
+`for (off = warpSize / 2; off > 0; off /= 2) v += __shfl_down(v, off);` only ever reads live
+lanes. On wave64 the same block is half a wavefront: `warpSize / 2` is 32, lane 0 reads lane
+32, and lanes 32-63 hold no thread, so the value returned is undefined and is added in. A
+minimal kernel (each thread contributes 1, 4096 blocks) gives the right sum for 64-thread
+blocks and a wrong sum in every block at 32 threads (gfx942). Where the launch can change, the
+block floor above fixes this too. Where the block width is fixed by the algorithm, add only
+lanes that hold a thread
+(`if (lane + off < warpSize && (mask >> (lane + off)) & 1) v += other;`, with the mask built
+from the block size), or start the loop at the block width when the block is smaller than a
+wavefront. Sweep every block size the code can launch, including 32 and below.
+(cuda-samples `reduction` `reduce7`/`warpReduceSum`.)
 
 **Warp-tiled dispatch tables written for 32 lanes break when `kWarpSize` becomes 64.**
 Making the warp-size constant arch-correct is not the end of it; audit what is built FROM
@@ -209,6 +226,11 @@ a compat-header macro that is the identity for CUDA. Also pass the tile width ex
 `__shfl_sync(m, v, 0)` defaults to `warpSize`, so on wave64 lane 0 of the first tile is
 broadcast to both. (LichtFeld-Studio: fastgs/gsplat 32-lane tile macros, nn
 softmax/norm block reductions, `block_reduce_min4`; GPUMD: NEP-spin.)
+Code written for the native wavefront traps the same way wherever part of the wavefront is
+inactive: a block narrower than 64 threads on a wave64 GPU, the last wavefront of a block that
+is not a whole number of wavefronts, or a branch on a 32-thread group. Pass `__activemask()` on
+HIP, keeping a constant only where code compares a mask against "all lanes" to choose a fast
+path; release machine code does not change. (warp-1.14)
 
 ## Shuffles and logical warps
 
@@ -239,6 +261,13 @@ mask of the debug-trap entry above; what breaks is relying on their defaults.) W
 layer as functions under project-owned names, not as macros named after the intrinsics
 (build-headers-macros.md, "Do not name compat macros after the warp functions ROCm
 declares"). (GPU_IPC)
+Which calls break shows where to look first: scans and xor/down reductions guarded by `lane %
+32` mostly survive the full-wavefront default, because their reads stay inside a 32-lane half,
+while a call that names an ABSOLUTE source lane (`__shfl_sync(~0, v, lane / 2)`, a lane-0
+broadcast of per-warp data) silently reads the lower half on wave64. A layer whose ballot
+already returns the caller's 32-bit half can default its shuffles to 32 through wrappers with
+a default argument (`T shfl(T v, int src, int w = 32)`), so explicit widths still pass
+through. (cuSZ: LC-framework output outside its error bound on gfx90a only.)
 
 **A fixed-cluster warp reduction is wavefront-safe exactly when the cluster size equals the
 pinned shuffle width AND the clusters are aligned to it: check that, do not restructure the
@@ -307,6 +336,26 @@ computes the expected active-lane mask from the block layout and asserts
 `__ballot(1) == expected` first. It does not false-positive on a legitimately partial final
 wave. If device code is compiled by explicit hipcc command lines, mirror the release
 `-DNDEBUG` yourself or the asserts stay on in release. (lc0)
+
+**A lock-retry loop deadlocks when the lock holder is in the same wavefront.** A hash-table or
+lock-based kernel that passes on CUDA hangs on AMD with the GPU at 100%, often only under
+contention (a full bucket, duplicate keys in a batch). A lane that leaves a loop waits at the
+loop's exit until every lane of the wavefront has left; CUDA's independent thread scheduling
+(Volta and later) lets a lock holder run ahead, AMD does not. Any retry loop that spins while a
+slot is locked deadlocks when the holder is another lane or tile of the same wavefront that
+already left the loop and does its copy and unlock after it. Three shapes were seen: a helper
+that spins in place (`while (load == LOCKED) {}`, or a ballot-and-`continue` loop) with the
+critical section after the call; a caller retrying in `do { ... } while (result == CONTINUE)`
+with the critical section after the loop; and a critical section inside the do-while whose loop
+condition is statically false once the lock is taken, so the compiler may move it to the loop
+exit, where it runs after the other lanes (putting the unlock "inside the loop" is not enough).
+Retry through a loop whose latch every lane reaches after finishing its critical section, with
+a condition the compiler cannot decide on that path: in a grid-stride kernel re-run the same
+index from the top (`t -= stride; continue;`), or exit uniformly (`while (__any(!done))`). Or
+never wait on a held slot: when choosing an eviction victim, skip locked slots and retry if none
+is left. `AMD_LOG_LEVEL=3` names the last kernel launched and `AMD_SERIALIZE_KERNEL=3` pins down
+which of several concurrent kernels never returns. Gate the change so the CUDA path stays
+identical, and check that with a PTX diff. (HierarchicalKV, ROCm 10.2, gfx942)
 
 **`cub`/`hipCUB` block collectives race on a 64-thread block without an explicit
 `__syncthreads()`.** At wave64 a 64-thread block is a single wavefront, so a `BlockReduce`

@@ -670,6 +670,19 @@
     "reason": "cant-port",
     "repo_id": 1614410
   },
+  "finddefinition/ccimport": {
+    "by": "Jeff Daily",
+    "decided": "2026-11-23T18:52:51Z",
+    "disposition": "skip",
+    "full_name": "FindDefinition/ccimport",
+    "note": "Ruled 2026-11-23: decline as already supported, no fork. ccimport is a pure-Python build helper with no CUDA code (MIT AND Apache-2.0, full intake scan on port/ccimport 42585f3f); cumm and spconv install it from PyPI unchanged.",
+    "reason": "already-supported",
+    "recorded_as": {
+      "gh_host": "github.com",
+      "login": "jeffdaily"
+    },
+    "repo_id": 309310122
+  },
   "flamegpu/flamegpu2": {
     "by": "jeffdaily",
     "decided": "2026-11-19T05:27:44Z",
