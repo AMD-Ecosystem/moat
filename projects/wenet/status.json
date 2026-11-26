@@ -8,8 +8,8 @@
   "ext_type": "python-torch",
   "stage": "porting",
   "adopted_at": "2026-11-06T03:22:49Z",
-  "updated_at": "2026-11-25T23:43:27Z",
-  "head_sha": "73d889fe1d3ed4cb16dde1797758fdc92e210a31",
+  "updated_at": "2026-11-26T00:24:49Z",
+  "head_sha": "0b85ef26d6af5488e9ad405449f78f79f8bc42e5",
   "depends_on": [],
   "porting": {
     "arch": "linux-gfx942",

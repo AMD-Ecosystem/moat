@@ -877,3 +877,153 @@ Paused at Jeff's request (laptop needed elsewhere). windows-gfx1151 is NOT recor
 
 ### Where things are
 `D:/Develop/moat/agent_space/wenet-win`: `venv-r4` (use this), `venv`, `venv-r3`, `shim/`, `harness/` (prep.py, mkconf.py, train.sh, decode.sh, pytest.sh), `data/` (train/cv lists, lang_char.txt, global_cmvn, conformer.yaml, u2pp.yaml), `exp/conf-fp32/` (20 checkpoints, about 3.6 GB; keep epoch_19.pt only if short of space), `tree/` (git archive of 73d889f with fc_base deps), `build-cpu/` (partial Ninja build), `build-cpu.bat`, `logs/`, `ffmpeg/`, `pip/` cache. Total about 26 GB (cap 30): delete `venv-r3` and `venv` first if space is needed. Source worktree: `D:/Develop/moat/agent_space/wt-wenet` (fork clone clean at 73d889f).
+
+## Ruling: modernize wenet for current PyTorch (Jeff Daily, 2026-11-25)
+
+Upstream wenet is stuck at torch/torchaudio 2.8, which is an upstream problem. Modernize wenet to work with current PyTorch as a change that goes upstream as its own PR (Jeff opens it later; nothing is posted now) and that is also carried on `moat-port` as separate commits, in the hope that it unlocks Windows. Scope: (1) torchaudio 2.9+: replace the removed `torchaudio.info`, `torchaudio.sox_effects` (speed perturbation) and the TorchCodec-routed `load`/`save` where they break, with maintained equivalents, measuring speed perturbation against sox on real audio; (2) torch 2.10+: the `Union` import from `torch.nn.modules.conv` and any other import newer torch broke; (3) import deepspeed and FSDP only where used, so a machine without deepspeed (Windows) can train with the default DDP/single-GPU path; (4) the C++ runtime under MSVC gets C++17 as Linux already does; (5) `requirements.txt` floors and pins match what was verified. Not ROCm-specific, so no `[ROCm]` prefix; as small as correctness allows; keep 2.8 working and say which oldest versions were verified. The windows waiver suggestion stays pending, untouched.
+
+## Porter round 7 (2026-11-26, linux-gfx942 fleet job `mi300c-20261125-154115-port-wenet-modernize-prompt`, MI300X CPX slice, HIP_VISIBLE_DEVICES=16): the modernization
+
+### Branches and commits (all pushed to AMD-Ecosystem/wenet; no amend, no rebase, no force)
+
+`modernize-torch`, cut from upstream `main` be6ad97 (still upstream's tip on 2026-11-26), the branch for Jeff's upstream PR, head **7f23460**:
+
+- `9704b70` Read audio with soundfile and speed-perturb with soxr (scope 1, plus `soundfile`/`soxr` in requirements.txt and setup.py)
+- `dff87bc` Import typing names from typing in squeezeformer conv2d (scope 2)
+- `777257a` Import DeepSpeed and FSDP only when their train engine is used (scope 3, plus `deepspeed>=0.14.0; platform_system != "Windows"` in requirements.txt)
+- `7f23460` runtime: compile with /std:c++17 under MSVC (scope 4)
+
+`moat-port` 73d889f..**0b85ef2** (plain fast-forward push): the same four as cherry-picks with unchanged content (`a1f07cd`, `06bcd23`, `e2a671e`, `832dbb8`; checked: `git diff modernize-torch 832dbb8` equals `git diff be6ad97 73d889f`), then one ROCm docs commit that is not part of the upstream modernization PR:
+
+- `0b85ef2` [ROCm] docs: drop the note that torchaudio 2.8 is required (the README AMD section said torchaudio 2.8 is the last release with every API wenet uses, which these commits make false; the install commands are unchanged and were re-run verbatim, below)
+
+`head_sha` advanced to 0b85ef2. `jargon.py --port wenet` clean, `jargon.py --commits/--diff be6ad97..modernize-torch` clean, `prose.py` clean on all five messages and on the PR draft, `audit-commits wenet` OK, flake8 7.2.0 and isort 5.12.0 (the versions upstream's pre-commit lint uses, run on every changed file) clean, fork clone `git status --porcelain` empty.
+
+### What changed, call site by call site
+
+- New `wenet/utils/audio_utils.py`: `load_audio(file, frame_offset=0, num_frames=-1)` (soundfile `read(dtype='float32', always_2d=True)`, transposed to torchaudio's (channels, frames) layout; on a libsndfile error, `torchaudio.load` for formats libsndfile cannot read such as m4a/wma, which on torchaudio >= 2.9 needs torchcodec), `audio_sample_rate(file)` (soundfile `info`, restores a file object's position), `save_audio(file, waveform, sr, format)` (PCM_16 for int16 tensors, 32-bit FLOAT otherwise: torchaudio.save's wav defaults).
+- `wenet/dataset/processor.py`: `decode_wav` (path, bytes, segments with start/end) on the helpers; `speed_perturb` resamples with `soxr.resample(x, sr * speed, sr, quality='HQ')`. `torchaudio.compliance.kaldi` and `torchaudio.transforms.Resample` stay: both exist in torchaudio 2.11.1, as do `functional.rnnt_loss`, `functional.forced_align`, `functional.resample` (checked with `hasattr` on 2.11.1+rocm10.2.0).
+- `wenet/dataset/wav_distortion.py` (`__main__` helper) and tools: `compute_cmvn_stats.py` (README route stage 1), `make_shard_list.py` (stage 3, shard data), `compute_fbank_feats.py`, `compute_shard_cmvn_stats.py`, `wav2dur.py`, `extract_shard_data.py`, `analyze_dataset.py`, `latency_metrics.py`. No example script and nothing under `wenet/cli` calls torchaudio I/O directly (the CLI goes through `processor.decode_wav`).
+- Tests: `test_processor.py` (`test_compute_fbank` reads int16 with soundfile; new `test_speed_perturb[0.9, 1.1]` checks dtype, length `round(N / speed)` and rate), `test_whisper.py`, `test_make_shard.py` (`test_save_load_consistently` on the helpers, its no-op `torch.allclose` now asserted; `test_sox_set_buffer` skipped when `torchaudio.utils` has no `sox_utils`).
+- Not changed: `wenet/dataset/deprecated/processor.py` (still calls `torchaudio.utils.sox_utils.set_buffer_size` at import, `torchaudio.info`, `sox_effects`). Nothing imports it except `wenet/dataset/deprecated/dataset.py`, which nothing imports; left alone as pre-existing dead code.
+- `wenet/models/squeezeformer/conv2d.py`: `Optional`, `Union` from typing, `Tensor` from torch, `_size_2_t` from `torch.nn.common_types`, `_pair` from `torch.nn.modules.utils`; `_ConvNd` still from `torch.nn.modules.conv`. A scan of every `from torch... import` in `wenet/` and `tools/` found no other import that newer torch broke; `torch.utils.data.datapipes` (used by `wenet/dataset/datapipes.py`) is deprecated upstream but still present in 2.15.
+- `wenet/utils/train_utils.py`: deepspeed imports moved into `add_deepspeed_args` (on ImportError it adds `--deepspeed` and `--deepspeed_config` itself, since every `run.sh` passes `--deepspeed_config`), `init_distributed`, `wrap_cuda_model`, `init_optimizer_and_scheduler`, `save_model`; FSDP (`CPUOffload`, `FullyShardedDataParallel`, `MixedPrecision`, `ShardingStrategy`, `sharded_grad_scaler`, `wenet.utils.fsdp_utils`) into the torch_fsdp branches. No other module imports deepspeed or fsdp at top level.
+- `runtime/libtorch/CMakeLists.txt`: `/std:c++17` in the MSVC branch. `runtime/onnxruntime/CMakeLists.txt` and `runtime/raspberrypi/CMakeLists.txt` are symlinks to this file, so they get it too.
+- `requirements.txt`: `soundfile`, `soxr` added; deepspeed skipped on Windows; the torch/torchaudio floor (`>=2.1.2`) is unchanged because 2.1.2 was verified (below). `setup.py`: `soundfile`, `soxr` added; the Windows-only `PySoundFile` entry (and its now-unused `import platform`) removed, since soundfile is now needed everywhere.
+
+### Speed perturbation against sox (`agent_space/speed/compare.py`, log `<job>/logs/speed-compare-28.log`)
+
+Reference: torchaudio 2.8.0+rocm6.4 `sox_effects.apply_effects_tensor(w, sr, [['speed', s], ['rate', sr]])` with the job's SoX 14.4.2 build. Inputs: the two in-tree real recordings (`aishell-BAC009S0724W0121.wav`, 4.3 s Mandarin; `librispeech-1995-1837-0001.wav`, 8.7 s English) at 16 kHz and resampled to 8 and 44.1 kHz; speeds 0.9 and 1.1 (24 cases per method). Metrics: output length, SNR of (candidate - sox) relative to sox, max abs difference, and the difference of 80-bin kaldi fbank features.
+
+| method | length vs sox | SNR at 8/16 kHz (dB) | SNR at 44.1 kHz (dB) | max abs diff | fbank mean abs diff |
+|---|---|---|---|---|---|
+| soxr HQ (chosen) | identical in all 24 | 87.1 to 98.3 | 122.1 to 126.6 | <= 4.3e-5 | 1.2e-4 to 0.19 |
+| soxr VHQ | identical | 59.4 to 73.8 | 111.3 to 114.6 | <= 1.1e-3 | |
+| torchaudio resample, Kaiser best (width 64) | +1 sample in 2 of 24 | 43.1 to 56.6 | 104.8 to 106.9 | <= 5.7e-3 | |
+| torchaudio resample, default Hann (width 6) | +1 sample in 2 of 24 | 32.2 to 42.3 | 65.6 to 67.1 | <= 3.2e-2 | |
+
+soxr HQ is the closest because sox's `rate` effect at its default quality (`-h`) is the algorithm libsoxr was split out of. The larger fbank max differences (up to about 5 in a log-energy bin, all methods alike at speed 0.9) sit in near-silent bins where log energy amplifies tiny differences; the means are small. Time per call (CPU, 5-call mean): soxr HQ 0.3 to 2.7 ms for 4 to 10 s clips, about the same as torchaudio's resample. Not measured: utterances longer than 9 s or other recordings (the tree has only these two).
+
+### Environments (all under the job directory; nothing in the image's shared Python)
+
+- **(a) TheRock ROCm 10.2**, `<job>/venv-a` (Python 3.12.3 via `uv venv --seed`, since the system 3.12 lacks ensurepip): `"${FLEET_VENV}-a"/bin/python -m pip install --index-url https://stable.repo.amd.com/rocm/whl-next/ --extra-index-url https://pypi.org/simple 'rocm[libraries,devel]==10.2.*' 'torch==2.15.0+rocm10.2.0' 'amd-torch-device-gfx942==2.15.0+rocm10.2.0' 'torchaudio==2.11.1+rocm10.2.0'` (2.15.0 is the newest torch on that index; torchaudio 2.11.1 the newest there). `rocm-sdk path --root`, run once: `<job>/venv-a/lib/python3.12/site-packages/_rocm_sdk_devel`; `rocm-sdk version` 10.2.0; its `bin/hipcc`: HIP 7.17.26434, AMD clang 24.0.0git (llvm-project bdc35841). torch reports HIP 7.17.26434 and loads `libamdhip64`/`libhsa-runtime64` from the `_rocm_sdk_core` wheel. Device: `AMD Instinct MI300X`, `gfx942:sramecc+:xnack-`, 38 CUs, 24.0 GiB (CPX partition slice).
+- **(b) torch 2.8**, `<job>/venv-28` (Python 3.11.17): `torch==2.8.0+rocm6.4 torchaudio==2.8.0+rocm6.4` from download.pytorch.org; libsox from the SoX 14.4.2 build (copied from the previous job, `<job>/deps/sox-install`) on `LD_LIBRARY_PATH`.
+- Requirements for both (`agent_space/reqs.sh`): the README AMD route's steps with the installed torch pinned by a constraints file (requirements minus whisper, `setuptools<82`, whisper `--no-deps --no-build-isolation`, `more-itertools numba tiktoken`), plus `transformers==4.40.1 matplotlib jieba soundfile` so no test pip-installs anything. deepspeed 0.20.1, soundfile 0.14.0, soxr 1.1.0, numpy 2.5.5 (a) / 2.4.6 (b), librosa 1.0.1 (a) / 0.11.0 (b). `pip check`: only whisper's triton requirement (as before).
+- **CPU only**: `<job>/venv-cpu` (Python 3.12, `torch==2.15.0+cpu torchaudio==2.11.1+cpu` from download.pytorch.org/whl/cpu, deepspeed uninstalled afterwards) and `<job>/venv-cpu212` (Python 3.11, `torch==2.1.2+cpu torchaudio==2.1.2+cpu`, numpy 1.26.4, deepspeed 0.20.1 installed).
+- **README route as written**: `<job>/venv-readme`, a fresh Python 3.11 venv running the moat-port README's six AMD commands verbatim (`agent_space/readme-main.sh`, log `<job>/logs/readme-main-28.log`): all rc 0; torch 2.8.0+rocm6.4, pytorch-triton-rocm 3.4.0, setuptools 79.0.1, deepspeed 0.20.1, soundfile 0.14.0, soxr 1.1.0 (now pulled in by requirements.txt).
+- Lint: `<job>/venv-lint`, flake8 7.2.0 and isort 5.12.0.
+- **What the builds invoke**: the only compiled code this round is the CPU LibTorch runtime check below, built by `/usr/bin/c++` and `/usr/bin/cc` (GNU 13.3.0-6ubuntu2~24.04.1); no `link.txt` or `flags.make` names hipcc or clang. The TheRock 10.2 SDK compilers are installed but not invoked by any build; the SDK serves only as torch 2.15's runtime.
+- All GPU commands under `ulimit -c 0` and `timeout` (train 3600 s, decode 1800 s, CLI 900 s), the dispatcher's pin `HIP_VISIBLE_DEVICES=16` kept.
+
+### Results
+
+Upstream pytest (`python -m pytest -q -p no:cacheprovider -rfEs test`, `PYTHONPATH=<src>`, `agent_space/pytest.sh`, logs `<job>/logs/pytest-*.log`):
+
+| torch / torchaudio | be6ad97 (upstream) | modernize-torch 7f23460 | moat-port 0b85ef2 |
+|---|---|---|---|
+| (a) 2.15.0 / 2.11.1 ROCm 10.2, GPU host | **6 collection errors** (5 x `cannot import name 'Union'`, 1 x `cannot import name 'torchaudio' from 'torchaudio._extension'`) | 79 passed, 1 skipped, 1 failed | 79 passed, 1 skipped, 1 failed |
+| (b) 2.8.0 / 2.8.0 ROCm 6.4 | 78 passed, 1 failed | 80 passed, 1 failed | 80 passed, 1 failed (README venv) |
+| 2.15.0+cpu / 2.11.1+cpu, no deepspeed | 6 collection errors | 79 passed, 1 skipped, 1 failed | |
+| 2.1.2+cpu / 2.1.2+cpu | 78 passed, 1 failed | 80 passed, 1 failed | |
+
+The failure everywhere is `test/wenet/utils/test_init_model.py:55` `NotImplementedError` (pre-existing since round 1). The skip is `test_sox_set_buffer` (torchaudio 2.11 has no `sox_utils`). +2 tests are the new `test_speed_perturb`. The CPU-only runs show nothing in the suite needs a GPU or deepspeed.
+
+GPU training (harness from the previous jobs: `agent_space/harness/prep.py` toy set of 64 + 64 train / 8 + 8 cv copies of the two in-tree wavs, 23 units, `speed_perturb` on, batch 8, 20 epochs = 320 steps, warmup 100, lr 1e-3; `train.sh` torch_ddp 1 process RCCL static rendezvous, now also passing `--deepspeed_config ... --deepspeed.save_states model_only` as run.sh does; `agent_space/train4.sh`). The 2.8 + sox column is the gfx942 validation of 73d889f (logs copied to `<job>/logs/baseline-28/`); the toy data and CMVN are the same (data.list identical; `global_cmvn` recomputed through `load_audio`, frame count 83008 identical, stats within 2.2e-7 relative). cv_loss epoch 0 -> 19 and cv acc at epoch 19, no tracebacks anywhere:
+
+| run | 2.8 + sox (73d889f) | (b) 2.8 + soxr | (a) 2.15 + soxr |
+|---|---|---|---|
+| conformer fp32 | 27.59 -> 0.930, 0.96 | 27.59 -> 0.552, 1.00 | 27.59 -> 0.883, 0.96 |
+| conformer `--use_amp` fp16 | 29.02 -> 1.31, 0.96 | 29.02 -> 1.26, 0.96 | 29.03 -> 0.158, 1.00 |
+| conformer `--dtype bf16` | 27.59 -> 0.732, 0.96 | 27.59 -> 1.03, 0.96 | 27.59 -> 0.915, 0.96 |
+| u2++ conformer fp32 | 97.05 -> 7.12, 0.92 | 97.06 -> 7.21, 0.92 | 97.06 -> 7.21, 0.92 |
+
+Differences, all recorded: (1) fp32, bf16 and u2++ follow the old curves to 2 to 3 digits for the first 6 or 7 epochs on both torch versions (e.g. fp32 27.6 15.5 13.1 9.26 9.1 7.95 then 7.07/6.94 vs 6.98), then wander; the toy set is 128 utterances of two clips, so later epochs are noise-dominated (the gfx1100 record showed the same spread across hosts). (2) u2++ on 2.8 and 2.15 agree to 3 digits through all 20 epochs (7.214 vs 7.211), so the u2++ shift from 7.12 comes from the speed perturbation output (differences around 1e-5 per sample), not from torch. (3) fp16 AMP on 2.8 + soxr reproduces the old curve's epoch-3/4 spike (65.0, 55.8 vs 65.1, 55.7); on 2.15 the AMP curve departs from epoch 1 (16.4 vs 16.3, then 13.9 vs 12.7) and ends lower; GradScaler `NaN or Inf found` warnings: 8 (old), 7 (b), 5 (a). (4) Per-epoch lists: `agent_space/curves.py` on the logs.
+
+Recognition (`agent_space/harness/decode.sh`, `recognize.py --device cuda --gpu 0` vs `--device cpu --gpu -1`, 16 cv utterances, beam 10, `epoch_19.pt`): **identical hypotheses on cuda and cpu for all 8 combinations on both (a) and (b)** (conformer and u2++, ctc_greedy_search, ctc_prefix_beam_search, attention, attention_rescoring). Aishell clip: (b) conformer gives `广州市房地产中介协会分析` in all four modes; (a) conformer gives it with attention and attention_rescoring and `广州市房地产介协会分析` with the CTC modes (the gfx942 2.8 record had this same pattern); u2++ toy model as before (attention exact, other modes English fragments `HELL`, `H州ELL`), identical across devices.
+
+wenet CLI (`python -m wenet.cli.transcribe test/resources/aishell-BAC009S0724W0121.wav --device cuda|cpu`, WenetSpeech u2++ model downloaded by wenet's hub into `<job>/home/.wenet`, 978 MB): `广州市房地产中介协会分析` (the reference) on (a) cuda, (a) cpu, (b) cuda, (b) cpu, and CPU torch 2.15. Upstream be6ad97 on torch 2.15 fails at import (`Union`).
+
+Bit-level checks against upstream on torchaudio 2.8 (`agent_space/decode_wav_check.py`, `tools-check.sh`):
+- `decode_wav` output for a path, raw bytes and a path segment (1.25 to 3.5 s): **bit-identical** to be6ad97 + torchaudio 2.8, on both (a) and (b).
+- A segment of raw bytes (0.5 to 2.0 s, the shard-with-segments case): **be6ad97 fails** on torchaudio 2.8 with `LibsndfileError ... Format not recognised` (torchaudio.info reads the BytesIO to its end, then torchaudio.load reads from there); the new code returns exactly the samples of the same segment read from the path. An upstream bug fixed in passing, stated in 9704b70's body.
+- `tools/make_shard_list.py` (8 utterances, 4 per shard): the 16 tar members written by the new code on CPU torch 2.15 are **byte-identical** to those written by be6ad97 on torch 2.8. `extract_shard_data.py ... audio` returns audio identical to the source (as 32-bit float wav, which is also what torchaudio.save wrote for a float tensor); `wav2dur.py`, `compute_fbank_feats.py`, `compute_shard_cmvn_stats.py` and `compute_cmvn_stats.py` run; shard and scp CMVN agree (5188 frames, 1.9e-7 relative). Same on CPU 2.15, (b) 2.8 and CPU 2.1.2.
+
+Without deepspeed (CPU torch 2.15, deepspeed uninstalled): `train.py --help` lists `--deepspeed`, `--deepspeed_config`, `--deepspeed.save_states` as with deepspeed; 2 epochs of torch_ddp CPU training with gloo and `--deepspeed_config` passed: cv_loss 27.66, 15.57 (log `train-cpu-nodeepspeed.log`). Torch 2.1.2 CPU, same run: 27.66, 15.57.
+
+C++ runtime (scope 4 on Linux): `runtime/libtorch` built from `git archive` of be6ad97 and of the change (CPU, the default LibTorch 2.2.0 download route, deps copied from the previous job's `fc_base`, WeTextProcessing pinned at fd9026c, `-DFETCHCONTENT_FULLY_DISCONNECTED=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON`, CMake 3.31.6): both rc 0, **the 82 compile commands identical**, the five binaries built; `utils_test` 1/1, `feature_pipeline_test` 2/2, `ctc_prefix_beam_search_test` 1/1 pass and `post_processor_test` fails the same two cases in both (pre-existing). **Not built with MSVC** (no Windows here).
+
+### Oldest versions verified
+
+torch/torchaudio **2.1.2** (CPU: unit tests, 2-epoch training, data tools) and **2.8.0** (ROCm 6.4, MI300X: everything above). That matches `requirements.txt`'s unchanged floor `torch>=2.1.2`, `torchaudio>=2.1.2`. Newest verified: torch 2.15.0 with torchaudio 2.11.1 (ROCm 10.2 GPU and CPU). `setup.py` still says `torch>=1.13.0`, `torchaudio>=0.13.0`; not verified and not changed (pre-existing).
+
+### For jeff (decisions and facts; nobody could answer during the job)
+
+- **7f23460 (MSVC C++17) is unverified on MSVC.** Its body says so ("No MSVC build was run with this change"). The Windows run below must build the CPU runtime with it; if MSVC needs more than `/std:c++17`, that is a new commit on both branches. Whether to open the upstream PR before that run is your call.
+- **FSDP and DeepSpeed training are still broken on torch >= 2.8, outside this scope.** `wenet_join` passes `group_join.options._timeout`; `ProcessGroup` has no `options` attribute in torch 2.8.0 or 2.15.0 (checked on a 1-rank gloo group here), so every non-DDP engine fails after the first batch (deferral `wenet-processgroup-options-removed`, still open). A small fix would read the timeout from the arguments (e.g. `configs['timeout'] = args.timeout` and `datetime.timedelta(seconds=info_dict['timeout'])`). Not added because it is not in the five items and the deferral is yours to rule; it fits this PR if you want it.
+- **Windows facts for the laptop run.** TheRock's Windows wheel `torch-2.15.0+rocm10.2.0-cp312-cp312-win_amd64.whl` (downloaded and inspected here, not run) contains `torch/lib/uv.dll`, and `torch_cpu.dll`/`torch_python.dll` carry `ProcessGroupGloo`, `TCPStore` and `_c10d_init`, so this build appears to have `torch.distributed` with gloo, unlike the 2.9.1/2.11 wheels the paused run found without it. If `torch.distributed.is_available()` is True there, wenet's default path (`--train_engine torch_ddp --ddp.dist_backend gloo`, 1 process) should run with no stand-ins; whether gloo handles the HIP tensors DDP broadcasts at construction is not known. A matching `torchaudio-2.11.1+rocm10.2.0-py3-none-win_amd64.whl` exists. soundfile and soxr ship Windows wheels.
+- **Upstream README still asks for sox** (`conda install conda-forge::sox` and a sox FAQ). After 9704b70 the main data pipeline no longer needs it (only the deprecated dataset does). Left unchanged to keep the PR small; a one-line README edit is possible.
+- **moat-port docs still name the torch 2.8 ROCm 6.4 wheels.** With these commits, newer ROCm wheels (download.pytorch.org's newer ROCm builds, or TheRock 10.2 as validated here as stack (a)) would work, but the README route was re-validated only as written. Whether to document a newer wheel is your call.
+- **Deferral `wenet-torchaudio-29-removed-apis`** is what modernize-torch fixes; left `open` until the upstream PR exists (`deferred.py set-status wenet-torchaudio-29-removed-apis filed --upstream <PR URL>` then).
+- The windows waiver suggestion is unchanged (still pending).
+
+### Draft upstream PR (for Jeff to open from `AMD-Ecosystem/wenet:modernize-torch` into `wenet-e2e/wenet:main`; nothing posted)
+
+Title: `Support torchaudio 2.9+ and torch 2.10+ (drop sox and torchaudio I/O)`
+
+Body:
+
+> Current PyTorch breaks WeNet in three places. torchaudio 2.9 removed `torchaudio.info` and `torchaudio.sox_effects` and moved `torchaudio.load`/`save` to TorchCodec, so the data pipeline (segment reads, speed perturbation), the CLI and the data tools fail. torch 2.10 no longer re-exports `Union` from `torch.nn.modules.conv`, so `import wenet` fails. And `train_utils.py` imports DeepSpeed unconditionally, so training needs DeepSpeed even with the default `torch_ddp` engine, which blocks Windows, where DeepSpeed does not install.
+>
+> Changes, one commit each:
+> - Audio I/O through soundfile (`wenet/utils/audio_utils.py`, falling back to `torchaudio.load` for formats libsndfile cannot read), and speed perturbation with soxr, the resampler behind sox's `rate` effect. Against sox's `speed` on the test wavs (8, 16, 44.1 kHz; speeds 0.9, 1.1) the output has the same length and an SNR of 87 to 126 dB. Decoded waveforms and the wavs `tools/make_shard_list.py` writes are bit-identical to before. soundfile and soxr were already installed through librosa and are now listed directly.
+> - Import `Optional`, `Union`, `Tensor`, `_size_2_t` and `_pair` from where they are defined in `squeezeformer/conv2d.py`.
+> - Import DeepSpeed and FSDP only in the code paths of their engines; without DeepSpeed, `--deepspeed_config` is still accepted so `run.sh` works unchanged. `requirements.txt` skips deepspeed on Windows.
+> - `runtime/libtorch` (and the runtimes that share its CMakeLists.txt) compile with `/std:c++17` under MSVC, as GCC and Clang already do; LibTorch 2.x headers need it.
+>
+> torch/torchaudio 2.1.2 (the `requirements.txt` floor) and 2.8 keep working; nothing changes for them except that sox is no longer needed for speed perturbation.
+>
+> Testing:
+> - `pytest test`: same results before and after on torch 2.8, and on 2.1.2 (CPU); on 2.15 + torchaudio 2.11 (CPU, and ROCm on an AMD Instinct MI300X), collection failed before and now 79 pass, 1 is skipped (`test_sox_set_buffer`, no sox in torchaudio 2.11). `test_init_model` fails before and after on every version (`NotImplementedError` for one example config).
+> - Training on GPU, 320 steps on a toy set from the test wavs with `speed_perturb` on: conformer fp32 / fp16 AMP / bf16 and u2++ on torch 2.15 and 2.8, compared with the same runs before the change; `recognize.py` gives identical hypotheses on cuda and cpu in all four decoding modes; `wenet` CLI transcribes the test wav correctly on cuda and cpu.
+> - CPU training without DeepSpeed installed; the data tools on torch 2.15, 2.8 and 2.1.2.
+> - (Windows result to be added after the Windows run.)
+>
+> This PR was prepared with the help of an AI coding agent (Claude).
+
+(The quote marks only delimit the draft here; the body is posted unquoted. Per the posting rules it needs your approval of the exact text first, and the Windows line filled in or dropped.)
+
+### What each next step must run (delta 73d889f..0b85ef2)
+
+1. **Reviewer** (linux, any host): `pr-review` on `git diff 73d889f 0b85ef2` in the fork (the four modernization commits plus the README commit), and separately on `be6ad97..modernize-torch` (7f23460) as the upstream PR's own diff with the draft title/body above. Check: every torchaudio I/O call site (grep `torchaudio\.(load|save|info|sox_effects)` outside `wenet/dataset/deprecated/`), `load_audio`'s fallback and file-position handling, `speed_perturb` dtype/shape, the deepspeed fallback arguments against `deepspeed.add_config_arguments`, that no FSDP/deepspeed name is used outside the branches that import it, the requirements marker, the MSVC line, the isort-only reorderings, and that each commit body's Test Plan matches the logs named above. Lessons below for promotion review.
+2. **gfx942 revalidation** at 0b85ef2 (not this job; this porter's runs are not validation): README AMD route verbatim in a fresh Python 3.11 venv (torch 2.8.0+rocm6.4) with SoX on `LD_LIBRARY_PATH`; upstream pytest (expect 80 passed, 1 failed `test_init_model`); the four training runs and `decode.sh` cuda vs cpu (expect identical hypotheses); the C++ runtime on the ROCm route with `LIBTORCH_PATH` as in the 73d889f validation (the runtime delta is only the MSVC line, so expect the same build and `decoder_main` results); plus the wenet CLI cuda vs cpu. Recommended in addition: pytest and one conformer fp32 run on TheRock 10.2 torch 2.15 (Python 3.12), since that is what the modernization is for.
+3. **gfx1100 revalidation** at 0b85ef2: the same set as 2 on the wave32 host (`amd-torch-device-gfx1100`, the chip wheel, if TheRock 10.2 is used).
+4. **nvcc/CUDA check** (mi355 host): the Python changes are vendor-neutral and the runtime change is MSVC-only, so: (a) `runtime/libtorch` CUDA configure + build at 0b85ef2 vs 73d889f, `-DGPU=ON` download route and the `LIBTORCH_PATH` cu128 route, compile commands identical (as in the 73d889f CUDA record); (b) in a venv with the CUDA torch wheel (e.g. `torch==2.15.0+cu128`-class newest and `torchaudio` to match, CPU execution is enough on a host with no NVIDIA GPU): `python -c "import wenet, wenet.utils.train_utils, wenet.models.squeezeformer.conv2d"` and the upstream pytest (expect 79 passed, 1 skipped, 1 failed); (c) `export_onnx_gpu.py` provider selection unchanged (`torch.version.hip = None` reload, as before).
+5. **Windows laptop run** (gfx1151, last): resume from "Windows validation paused 2026-11-25" with moat-port 0b85ef2 and **no shim**: new venv (Python 3.12) with `torch==2.15.0+rocm10.2.0`, `torchaudio==2.11.1+rocm10.2.0` and `[device-gfx1151]` (chip wheel) from `https://stable.repo.amd.com/rocm/whl-next/`; requirements via the README steps (deepspeed is skipped by the marker) plus `soundfile soxr`; check `torch.distributed.is_available()` and `torch.distributed.is_gloo_available()`. Then: (i) upstream pytest with `PYTHONUTF8=1` (record counts against Linux: 79/1 skipped/1 failed); (ii) `train.py --train_engine torch_ddp --device cuda --ddp.dist_backend gloo` 1 process with `speed_perturb` **on**, conformer fp32, `--use_amp`, `--dtype bf16`, u2++ (320 steps each, compare with the Linux tables above); if gloo cannot run DDP on HIP tensors, record the exact error (that is a torch Windows gap, not wenet); (iii) `decode.sh` cuda vs cpu, four modes; (iv) the wenet CLI cuda vs cpu; (v) CPU runtime with MSVC at 0b85ef2: `cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DFETCHCONTENT_SOURCE_DIR_WETEXTPROCESSING=<fd9026c copy inside the tree>` then build, which verifies 7f23460 (the earlier failure was `c10/util/Exception.h` needing `std::variant`), then the four unit tests and `decoder_main` on CPU; also confirm be6ad97 fails the same build without the change. Not applicable on Windows, to record: DeepSpeed, FSDP, multi-GPU, GPU runtime (`GPU` refused off Linux by upstream), ONNX MIGraphX.
+
+### Where things are (container-local, gone when the job ends)
+
+`<job>/venv-a`, `venv-28`, `venv-cpu`, `venv-cpu212`, `venv-readme`, `venv-lint`; logs `<job>/logs/` (pytest-*, train-{a,b28}-*, decode-{a,b28}-*, cli-*, tools-*, speed-compare-28.log, rt-{base,new}-*, readme-main-28.log, baseline-28/); scripts `moat/agent_space/` (env.sh, envA.sh, reqs.sh, pytest.sh, readme-main.sh, train4.sh, curves.py, tools-check.sh, decode_wav_check.py, speed/compare.py, harness/, msg1-5.txt, pr-body.md); toy data and last checkpoints `<job>/work/toy`; upstream worktree `<job>/work/base`; runtime trees `<job>/work/rt-{base,new}`; the inspected Windows wheel `<job>/deps/win-wheel`.
+
+## Lesson for cuda-to-rocm: torchaudio 2.9 dropped info, sox_effects and its own load/save (libraries.md or linux-host-setup.md, where torchaudio's ROCm gaps are)
+
+**A speech project that must run on current PyTorch (the only torch with ROCm wheels for Windows and for newer GPUs) has to stop using `torchaudio.info`, `torchaudio.sox_effects` and torchaudio's I/O.** Symptom: `AttributeError: module 'torchaudio' has no attribute 'info'` / `'sox_effects'`, or `torchaudio.load` asking for TorchCodec, as soon as torchaudio >= 2.9 is installed; older code pinned to torchaudio 2.8 cannot pair with torch >= 2.9. Replacements that keep results identical: soundfile for reading and writing (`soundfile.read(f, dtype='float32', always_2d=True)` transposed gives torchaudio.load's default (channels, frames) float tensor bit for bit for PCM wav; `soundfile.info(f).samplerate` for info; restore a file object's position between the two, which torchaudio.info did not do either), and soxr for sox's `speed` effect: `soxr.resample(x, sr * speed, sr, quality='HQ')` matches `apply_effects_tensor(x, sr, [['speed', s], ['rate', sr]])` in length and to 87 to 126 dB SNR, because sox's `rate` at its default quality is the algorithm libsoxr came from; torchaudio's own `functional.resample` reaches only 32 to 57 dB at 8 to 16 kHz. `torchaudio.compliance.kaldi`, `transforms.Resample`, `functional.rnnt_loss` and `forced_align` are still there in 2.11. Seen porting wenet to torch 2.15 / torchaudio 2.11 (ROCm 10.2), 2026-11. (wenet)
