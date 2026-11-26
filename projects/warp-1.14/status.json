@@ -8,7 +8,7 @@
   "ext_type": "python-build-nvrtc",
   "stage": "review-passed",
   "adopted_at": "2026-11-18T17:38:39Z",
-  "updated_at": "2026-11-26T01:01:14Z",
+  "updated_at": "2026-11-26T01:01:41Z",
   "head_sha": "66ba4ffb31bce1bd822943cfc764c34eb21a8eef",
   "depends_on": [],
   "waivers": {},
@@ -223,5 +223,15 @@
     "head_sha": "66ba4ffb31bce1bd822943cfc764c34eb21a8eef",
     "content_sha256": "2a49093624be1de82f7aa25ad3b5f2ea0db5641b5d5f8c7c213b2ac80dd17120",
     "review_pr": "https://github.com/AMD-Ecosystem/warp/pull/39"
-  }
+  },
+  "release": {
+    "tag": "v1.14.0+rocm10.2.0",
+    "sha": "66ba4ffb31bce1bd822943cfc764c34eb21a8eef",
+    "review_pr": "https://github.com/AMD-Ecosystem/warp/pull/39",
+    "approved_by": "jeffdaily",
+    "at": "2026-11-26T01:01:41Z",
+    "version": "1.14.0",
+    "rev": 0
+  },
+  "published_sha": "66ba4ffb31bce1bd822943cfc764c34eb21a8eef"
 }
