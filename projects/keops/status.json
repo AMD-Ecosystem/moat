@@ -8,8 +8,8 @@
   "ext_type": "nvrtc-driver-api",
   "stage": "review-passed",
   "adopted_at": "2026-11-12T18:32:39Z",
-  "updated_at": "2026-11-20T23:10:19Z",
-  "head_sha": "2980874acefdc7e905b3733141c8765d770180ed",
+  "updated_at": "2026-11-26T00:43:08Z",
+  "head_sha": "4da01c34d4ee424e010ea8a0a1fff4c329aa32d6",
   "depends_on": [],
   "waivers": {
     "windows": {
@@ -45,11 +45,11 @@
     "linux-gfx90a": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "2980874acefdc7e905b3733141c8765d770180ed",
+      "validated_sha": "4da01c34d4ee424e010ea8a0a1fff4c329aa32d6",
       "failed_sha": null,
       "started_at": null,
       "completed_at": "2026-11-20T22:42:37Z",
-      "updated_at": "2026-11-20T22:42:37Z",
+      "updated_at": "2026-11-26T00:43:08Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -64,16 +64,26 @@
         "last_session_at": null
       },
       "last_agent": "planner",
-      "state": "completed"
+      "state": "completed",
+      "validated_prior": [
+        "2980874acefdc7e905b3733141c8765d770180ed"
+      ],
+      "carry_forward": {
+        "from": "2980874acefdc7e905b3733141c8765d770180ed",
+        "to": "4da01c34d4ee424e010ea8a0a1fff4c329aa32d6",
+        "method": "squash",
+        "detail": "tree-identical squash of the validated head",
+        "at": "2026-11-26T00:43:08Z"
+      }
     },
     "linux-gfx950": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "2980874acefdc7e905b3733141c8765d770180ed",
+      "validated_sha": "4da01c34d4ee424e010ea8a0a1fff4c329aa32d6",
       "failed_sha": null,
       "started_at": "2026-11-20T21:36:44Z",
       "completed_at": "2026-11-20T22:21:11Z",
-      "updated_at": "2026-11-20T22:21:11Z",
+      "updated_at": "2026-11-26T00:43:08Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -88,16 +98,26 @@
         "last_session_at": null
       },
       "last_agent": "reviewer",
-      "state": "completed"
+      "state": "completed",
+      "validated_prior": [
+        "2980874acefdc7e905b3733141c8765d770180ed"
+      ],
+      "carry_forward": {
+        "from": "2980874acefdc7e905b3733141c8765d770180ed",
+        "to": "4da01c34d4ee424e010ea8a0a1fff4c329aa32d6",
+        "method": "squash",
+        "detail": "tree-identical squash of the validated head",
+        "at": "2026-11-26T00:43:08Z"
+      }
     },
     "linux-gfx1100": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "2980874acefdc7e905b3733141c8765d770180ed",
+      "validated_sha": "4da01c34d4ee424e010ea8a0a1fff4c329aa32d6",
       "failed_sha": null,
       "started_at": null,
       "completed_at": "2026-11-20T23:10:19Z",
-      "updated_at": "2026-11-20T23:10:19Z",
+      "updated_at": "2026-11-26T00:43:08Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -111,7 +131,17 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "state": "completed"
+      "state": "completed",
+      "validated_prior": [
+        "2980874acefdc7e905b3733141c8765d770180ed"
+      ],
+      "carry_forward": {
+        "from": "2980874acefdc7e905b3733141c8765d770180ed",
+        "to": "4da01c34d4ee424e010ea8a0a1fff4c329aa32d6",
+        "method": "squash",
+        "detail": "tree-identical squash of the validated head",
+        "at": "2026-11-26T00:43:08Z"
+      }
     }
   },
   "license_spdx": "MIT",
@@ -136,5 +166,5 @@
     "since": "2026-11-20T22:11:01Z",
     "at": "2026-11-20T22:13:04Z"
   },
-  "reviewed_sha": "2980874acefdc7e905b3733141c8765d770180ed"
+  "reviewed_sha": "4da01c34d4ee424e010ea8a0a1fff4c329aa32d6"
 }

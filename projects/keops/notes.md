@@ -460,3 +460,7 @@ So CUDA KeOps and CUDA torch disagree at a tie exactly as HIP KeOps and ROCm tor
 For the pull request text: the one failing test is a property of the test's device-generated data, not of the HIP backend; a tie-free bound or CPU-generated data would make it pass on both. Whether to propose that test change upstream is a person's decision.
 
 Scripts (primary host, not in the repo): `agent_space/pn/v100-keops-clamp.sh`, `agent_space/pn/v100-keops-tie.py`.
+
+## PR preparation 2026-11-25 (checkup session)
+
+The "Correction for the final history" was applied: `moat-port` 2980874a was replaced, by jeff's push with a lease (`agent_space/push-keops-final.sh`), with the tree-identical history 01f4b937 + 4da01c34 (`git diff 2980874a 4da01c34` empty; `git range-diff` shows only the clamp sentence of the first commit's Test Plan changed to the exact replacement recorded above; authors and author dates kept). Validations carried with `squash-carry-forward keops 4da01c34`. Review page title and body: `agent_space/pr-prep/keops/{title.txt,body.md}` (prose, jargon clean, ASCII), approved by jeff before the push.
