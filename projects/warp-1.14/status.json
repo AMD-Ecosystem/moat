@@ -8,7 +8,7 @@
   "ext_type": "python-build-nvrtc",
   "stage": "review-passed",
   "adopted_at": "2026-11-18T17:38:39Z",
-  "updated_at": "2026-11-26T01:01:41Z",
+  "updated_at": "2026-11-26T01:02:06Z",
   "head_sha": "66ba4ffb31bce1bd822943cfc764c34eb21a8eef",
   "depends_on": [],
   "waivers": {},
@@ -231,7 +231,8 @@
     "approved_by": "jeffdaily",
     "at": "2026-11-26T01:01:41Z",
     "version": "1.14.0",
-    "rev": 0
+    "rev": 0,
+    "review_closed_at": "2026-11-26T01:02:06Z"
   },
   "published_sha": "66ba4ffb31bce1bd822943cfc764c34eb21a8eef"
 }
