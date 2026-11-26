@@ -537,3 +537,7 @@ a7ed94f7 contains 331273b, is the commit tags rocm-7.2.0 through rocm-7.2.4 name
 - **nvcc check (mi355 host, nvcc 12.8), once at the final head.** Same procedure as the 2026-11-23 CUDA section (`cmake -G Ninja -B <build> -DCMAKE_BUILD_TYPE=Release -DOIDN_DEVICE_CUDA=ON -DOIDN_DEVICE_CPU=OFF -DCUDAToolkit_ROOT=/usr/local/cuda-12.8`, `cmake --build <build> -v`), compared against master 6602ee2: configure and build exit 0, 0 warnings, identical `ninja -t commands` in `devices/cuda/build`. The delta touches no CUDA file, and the CK submodule is not part of a CUDA build (it uses `external/cutlass`), so a no-op result is expected; the gate is per head.
 - **gfx1201 / gfx1030 (optional, no fleet requirement):** the gfx12 WMMA and gfx10 DL kernels changed scheduling at the new CK. If an RDNA4 or RDNA2 host is available: oidnTest 3x plus the differential.
 - **Windows (wave32/windows gate):** still queued last per the standing ruling, at the final head.
+
+## Ruling 2026-11-25 (Jeff Daily): CK-bump review
+
+(a) Drop `#define warpSize 64` (dead at CK rocm-7.2.4; identical code objects without it), reduce the comment to the wave64-only rule the `#error` enforces, and add a CHANGELOG bullet for the RDNA 3/3.5 fix, in a new commit on top (PR 302's commit stays untouched). gfx1100 then carries forward as binary-equiv; gfx90a, gfx942, gfx950 revalidate in full; nvcc follows. Queued until the token budget resets.
