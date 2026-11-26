@@ -52,6 +52,43 @@
       "upstream_issue": "https://github.com/ROCm/rocm-libraries/issues/16762",
       "created_at": "2026-11-25T20:48:08Z",
       "decided": null
+    },
+    {
+      "id": "warp-hip-event-external-same-stream-capture-crash",
+      "kind": "other",
+      "component": null,
+      "summary": "Windows gfx1151 (warp 1.14 release wheel, ROCm 10.2): wp.record_event(e, external=True) then wp.wait_event(e, external=True) on the same stream inside a ScopedCapture crashes with an access violation 10/10 (in wait_event or later in capture_launch); upstream warp 1.14.0 on V100 passes. Test from AMD-Ecosystem/warp PR #21 commit d03ac24a (test_event_external_same_stream). Linux result pending (gfx942 short checks). jeff 2026-11-25: fix in 1.15 at the earliest; not a 1.14 blocker.",
+      "refs": [
+        "agent_space/release-1.14/short/report.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-26T00:52:11Z",
+      "decided": null
+    },
+    {
+      "id": "warp-hip-readback-in-capture-no-error",
+      "kind": "other",
+      "component": null,
+      "summary": "Windows gfx1151 (warp 1.14 release wheel): a.numpy() inside a ScopedCapture does not raise and returns stale data, and the D2H copy is recorded into the graph; on CUDA (V100, upstream 1.14.0) it raises Warp CUDA error 906 in wp_memcpy_d2h. wp.copy to a CPU array inside a capture is recorded on both. jeff 2026-11-25: address in 1.15 at the earliest.",
+      "refs": [],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-26T00:52:12Z",
+      "decided": null
+    },
+    {
+      "id": "warp-tiled-bvh-query-stack-overflow-gh2181",
+      "kind": "other",
+      "component": null,
+      "summary": "Upstream NVIDIA/warp GH-2181 (tiled BVH/mesh query shared-stack overflow, wrong results or error 700 at large block_dim), fixed upstream only in release-1.20 (079c6defe2); present in our 1.14 and 1.15. AMD-Ecosystem/warp#6 reports wrong tiled AABB results at block_dim 128/256 on MI300X with the other port; upstream 1.14.0 benchmark_mesh.py passes at every block_dim on V100; gfx942 result on our port pending. jeff 2026-11-25: address in 1.15 at the earliest.",
+      "refs": [
+        "https://github.com/AMD-Ecosystem/warp/issues/6"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-26T00:52:13Z",
+      "decided": null
     }
   ]
 }

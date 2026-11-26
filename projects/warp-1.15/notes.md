@@ -715,3 +715,7 @@ int main() {
     return 0;
 }
 ```
+
+## Ruling on three findings from the AMD-Ecosystem/warp issue and PR review (jeff, 2026-11-25)
+
+"These three issues, let's address them in warp 1.15 at the earliest. I want warp 1.14 out. Those problems seem niche." The three: the same-stream external event wait crash in a capture on Windows (deferred `warp-hip-event-external-same-stream-capture-crash`), host readback inside a capture not raising on gfx1151 (`warp-hip-readback-in-capture-no-error`), and GH-2181 tiled BVH query stack overflow (`warp-tiled-bvh-query-stack-overflow-gh2181`). PR #21's conditional-graph emulation was evaluated and not recommended (host-synced Python loop, not a graph mechanism; ROCm 10.2 has no conditional node API).
