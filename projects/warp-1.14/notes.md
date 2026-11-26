@@ -8882,3 +8882,66 @@ Built 2026-11-25 on windows-gfx1151 from the neutral directory `D:\Develop\warp`
 ## Ruling on validating the Windows release wheel (jeff, 2026-11-25)
 
 (b): the Windows release wheel (sha256 00cfcc8e86eb7b8d5a3645e378226dc85f27a154a8f2ebaba1740afa225c8db5, built in D:\Develop\warp at 66ba4ffb) ships on its smoke test plus the full Windows round at the same commit from a wheel built the same way in a different directory; no second full suite. The Linux release wheel (sha256 0402fdef420959474d564ed15c8852ae1847ca86516df0e53fd07b96797f21a0, manylinux_2_28 container) passed the full suite from the exact file on gfx950, gfx942, gfx90a, gfx1100 and gfx1201.
+
+## Short checks from AMD-Ecosystem/warp issues and PR #21 (linux-gfx942)
+
+Requested by Jeff Daily; evidence only (fleet job, no lock taken, no project state changed, nothing pushed to the fork). 2026-11-26, MI300X (gfx942:sramecc+:xnack-), `HIP_VISIBLE_DEVICES=3` (dispatcher pin; `amd-smi process -g 3` showed no process before, between and after the runs), `ulimit -c 0`. Wheel: the release wheel `warp_lang-1.14.0+rocm10.2.0-py3-none-manylinux_2_28_x86_64.whl` (sha256 0402fdef420959474d564ed15c8852ae1847ca86516df0e53fd07b96797f21a0, checked), installed into the job venv with `--extra-index-url https://stable.repo.amd.com/rocm/whl-next/`; banner "ROCm 10.2, HIP runtime 7.17", mempool enabled; `rocm-sdk-core 10.2.0`. Private kernel cache (`WARP_CACHE_PATH`) for checks 3 and 5, because `benchmark_mesh.py` calls `wp.clear_kernel_cache()`. Scripts in `notes-shortchecks-gfx942-scripts.md`.
+
+| check | result | evidence |
+|---|---|---|
+| 1. rocPRIM scan / RLE on freshly mapped pool memory | **no hang, no wrong result, no error** | 2,000 iterations alone (6.1 s) and 2 x 2,000 concurrently on the same GPU (15.0 s, 13.1 s); 0 errors |
+| 2. external-flag same-stream event wait in a capture | **reproduces: 19/20 segfault, 1/20 spurious error** | segfault in `hipStreamWaitEvent` from `wp_cuda_stream_wait_event`; the one non-crashing run: `Warp CUDA error 1: invalid argument (in function get_graph_leaf_nodes, warp/native/cuda_util.cpp:1023)` |
+| 3a. `benchmark_mesh.py` (20,000-triangle grid, 128 queries) | **tiled matches single-thread at BLOCK_DIM 32, 64, 128, 256** | "AABB results verified (avg hits: 235.8)" for each |
+| 3b. tiled BVH/mesh AABB query, 59,168-triangle UV sphere, SAH, leaf_size 1 | **block_dim 256 undercounts (GH-2181 present); 64 and 128 correct; no error 700, no hang** | per run of 512 queries, bd=256 wrong: BVH 1, 2, 4, 1, 0; mesh 2, 2, 3, 4, 1; bd=64/128: 0 in all 5 runs |
+| 4. `copy_flake2 40000`, 8 loads, fragment allocator on/off | **HSA_DISABLE_FRAGMENT_ALLOCATOR=1 does not remove the lost writes on gfx942** | wrong: default 10, 7; disabled 9, 11 (of 40,000 each) |
+| 5. `test_cuda_graph_topo_alloc_side_stream_independent*` | **run, not skipped, pass** | `_independent_cuda_0` and `_independent_free_cuda_0` ok, 6 runs each |
+
+### 1. Scan and run-length encode on fresh pool memory
+
+`c1_scan_rle.py <iters> <seed> <tag>`: mempool enabled, `wp.set_mempool_release_threshold(dev, 0)` so the pool releases its memory at each synchronize and the next allocation is freshly mapped. Each iteration: size log-uniform in [1e5, 2e7], dtype alternating int32/float32, inclusive/exclusive alternating every two iterations; fresh `wp.array` input (H2D) and `wp.empty` output, `wp.utils.array_scan`, then a fresh int32 run-structured array (runs of 1-8) through `wp.utils.runlength_encode` into fresh outputs; every 50th iteration both compared with numpy (int32 exactly, float32 at rtol 1e-4 against a float64 cumsum; RLE count, values and lengths exactly); `del` and `wp.synchronize()`. A watchdog thread aborts if one iteration exceeds 60 s.
+
+- Alone (seed 1): `DONE iters=2000 errors=0 elapsed=6.1s`.
+- Two processes at once on GPU 3 (seeds 2 and 3, PIDs 1488632 and 1488633): `DONE iters=2000 errors=0 elapsed=15.0s` and `elapsed=13.1s`.
+
+No hang, wrong result, or error. The look-back hang that PR #21 describes did not appear on gfx942 under these conditions.
+
+### 2. External record and external wait on one stream in one capture
+
+`test_event_external_same_stream` from tomasthoresen/warp at 51764a81b3 (added by d03ac24a, in `warp/tests/cuda/test_streams.py`, not `warp/tests/test_streams.py`), with its kernels `inc` and `inc_new`, run as `c2_event_external_same_stream.py` with `StdErrCapture`/`assert_np_equal` from the wheel's `warp.tests.unittest_utils`; 20 fresh processes, timeout 120 s each.
+
+- 19 of 20: SIGSEGV (rc 139). Under gdb: `hipStreamWaitEvent` (libamdhip64.so.7 from `_rocm_sdk_core`) called from `wp_cuda_stream_wait_event` (warp.so), i.e. the `wp.wait_event(event, external=True)` inside the capture. No Python output, because the crash happens while the test redirects stderr.
+- 1 of 20: no crash, test FAIL on the stderr assertion: `Warp CUDA error 1: invalid argument (in function get_graph_leaf_nodes, warp/native/cuda_util.cpp:1023)`.
+- 0 passes. The wheel does not carry d03ac24a's same-stream skip, so this is the defect PR #21 describes, reproduced on gfx942.
+
+### 3. GH-2181 (tiled BVH/mesh query shared stack)
+
+`benchmark_mesh.py` from the installed wheel (`warp/examples/benchmarks/`, unmodified): mesh 100x100 grid (20,000 triangles), 128 queries; for BLOCK_DIM 32, 64, 128, 256 the tiled counts matched the single-thread counts ("AABB results verified (avg hits: 235.8)" each). Timings: single 3.19 ms; tiled 0.110, 0.100, 0.102, 0.091 ms. These queries are too small (about 236 hits) to overflow the stack.
+
+`c3_tile_query.py <seed>`: UV sphere of 172 slices x 173 stacks (59,168 triangles, unit radius), `wp.Bvh(triangle AABBs, constructor="sah", leaf_size=1)` and `wp.Mesh(..., bvh_constructor="sah", bvh_leaf_size=1)`; 512 query boxes per run, centers uniform in [-1, 1]^3, half-extents uniform in [0.3, 1.5] (mean 16,600-17,700 hits, up to all 59,168). Thread-level `bvh_query_aabb`/`mesh_query_aabb` counts matched a numpy brute force (triangle AABB overlap) in all 5 runs (0/512 wrong). Tiled `tile_bvh_query_aabb`/`tile_mesh_query_aabb` with `atomic_add` counting, compared with the thread-level counts:
+
+| seed | BVH bd=64 | BVH bd=128 | BVH bd=256 | mesh bd=64 | mesh bd=128 | mesh bd=256 |
+|---|---|---|---|---|---|---|
+| 1 | 0 | 0 | 1 (q346: 54,533 vs 54,536) | 0 | 0 | 2 (q336: 51,761 vs 51,840) |
+| 2 | 0 | 0 | 2 (q102: 54,722 vs 54,774) | 0 | 0 | 2 (q159: 44,450 vs 44,460) |
+| 3 | 0 | 0 | 4 (q242: 48,019 vs 48,024) | 0 | 0 | 3 (q235: 56,526 vs 56,530) |
+| 4 | 0 | 0 | 1 (q199: 40,759 vs 40,764) | 0 | 0 | 4 (q36: 27,609 vs 27,623) |
+| 5 | 0 | 0 | 0 | 0 | 0 | 1 (q449: 55,502 vs 55,506) |
+
+Wrong queries out of 512; examples are tile vs thread counts. Every wrong tiled count is low (results dropped, never extra), only at block_dim 256, on large boxes; no error 700, no hang, all runs rc 0. That fits the GH-2181 shared-stack overflow (fixed upstream only in release-1.20, NVIDIA/warp 079c6defe2), which the 1.14 wheel does not carry.
+
+### 4. Lost writes with the fragment allocator disabled
+
+`copy_flake2.hip` extracted verbatim from "Evidence session 2 (2026-11-20, linux-gfx942)" (md5 ab7bc9af7ddb1f35fede7eb8f9bb4a1f, the same as the gfx950 session's extraction) and `copy_flake.hip` from `notes-session21-scripts.md` (115 lines, md5 c558feea55d9269ca6c59727d8faa894); both built with `hipcc --offload-arch=gfx942 -O2` from the venv's ROCm SDK (`rocm-sdk-devel 10.1.0`, hipcc "HIP version: 7.16.26385") and run with `LD_LIBRARY_PATH` set to the venv's `_rocm_sdk_core/lib` (10.2.0, HIP runtime 7.17, the runtime the wheel uses). Driver `run_cf2.sh <label> 8 40000 [fragoff]`: 8 x `copy_flake load 1200 4` on the same GPU (PIDs recorded, all 8 alive at start and end, killed by PID), then `copy_flake2 40000` (timeout 900 s); `fragoff` exports `HSA_DISABLE_FRAGMENT_ALLOCATOR=1` before starting both the loads and `copy_flake2`. Smoke runs alone: `copy_flake2 300` 0 wrong, `copy_flake check 20` 0 wrong.
+
+| run | HSA_DISABLE_FRAGMENT_ALLOCATOR | wrong of 40,000 | D at A's address | time |
+|---|---|---|---|---|
+| def1 | unset | **10** | 40,000 | 210 s |
+| frag1 | 1 | **9** | 39,999 | 218 s |
+| def2 | unset | **7** | 40,000 | 190 s |
+| frag2 | 1 | **11** | 39,999 | 196 s |
+
+Default 17 / 80,000, disabled 20 / 80,000: the setting does not remove (or measurably reduce) the gfx942 lost writes, and the destination still lands at the just-freed source address in nearly every iteration. The rate matches session 2 on gfx942 (8 and 10 / 40,000) and the gfx950 session (10 and 9). The failure ends in the known signature in every run (after 1 s exactly one mod-8 class, 124,928 or 125,184 floats, stays zero, e.g. frag1 iter 311 class 1, iter 4096 class 4), but the first read-back here often shows more: other classes partly wrong as well (def1 iter 3420: read1 249,920 wrong `[0 2112 0 2048 124928 95072 23712 2048]`, after 1 s 124,928 `[0 0 0 0 124928 0 0 0]`), and one frag1 failure (iter 8928) lost only part of a class (70,656 floats in class 6). So what PR #21 saw on single-die gfx1151 (lost writes removed by `HSA_DISABLE_FRAGMENT_ALLOCATOR=1`) is not the same mechanism as the 8-XCD gfx942 defect, or the variable does not reach it here.
+
+### 5. `test_cuda_graph_topo_alloc_side_stream_independent*`
+
+Fresh run from the installed wheel: `python -m unittest -v -k topo_alloc_side_stream warp.tests.test_graph` ran `test_cuda_graph_topo_alloc_side_stream_independent_cuda_0`, `..._independent_free_cuda_0` and `..._joined_cuda_0`: all ok, "Ran 3 tests in 0.060s, OK". Repeated 5 times with `-k side_stream_independent`: "Ran 2 tests, OK" each time. Not skipped on gfx942 (the tests have no skip decorator; the topology tests are registered for every CUDA device).
