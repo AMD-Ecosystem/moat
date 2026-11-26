@@ -314,6 +314,16 @@ artifact is present, never that it is the whole difference. Only the same-direct
 LLVM tools under `<sdk>/lib/llvm/bin` and no `/opt/rocm`. (TurboFNO, gfx90a, a ROCm 7.14
 TheRock nightly, 2026-08)
 
+The CUDA side has its own traps. nvcc's device code can differ between identical compiles:
+cicc (CUDA 12.8) gave 4 distinct PTX outputs from 6 identical invocations on one preprocessed
+file (an Eigen eigensolver kernel file; register numbering, and one pair of scalar loads
+against a vector load). So a PTX or cubin difference before and after a change is not proof
+that the device code changed. Compare the preprocessed input first (`nvcc --keep`, the
+`.cpp1.ii`); if it matches, or differs only by unused code, run cicc several times on each
+input and see whether the output sets overlap. Build both trees at the same absolute path
+here too: nvcc's internal-linkage symbol names hash the path and the file content, so every
+such symbol differs otherwise. (GPU_IPC)
+
 ## What a pass does not prove
 
 ### A passing assertion COUNT is not a list of what was tested
@@ -373,6 +383,18 @@ a real one; the dispatch count was right both times. Three follow-ons:
   identical kernel-for-kernel, count-for-count table. An exact match is stronger
   corroboration than a second "it is nonzero"; a mismatch with no code difference between
   the two runs is a signal worth chasing. (colmap)
+
+### An onnxruntime GPU provider that fails at session creation falls back to the CPU silently
+
+A script that asks for `MIGraphXExecutionProvider` (or any GPU provider) can run, return correct
+numbers and be slow: onnxruntime's Python API retries on `CPUExecutionProvider` when the
+requested provider fails to initialize, and the `EP Error ... Falling back to
+['CPUExecutionProvider'] and retrying` block is easy to miss in a long log. Assert that
+`session.get_providers()[0]` is the GPU provider in validation runs, and look for the provider's
+own compile log (`[MIGraphX EP] ... Model Compile: Begin`). A MIGraphX built from an older tag
+than the SDK can also fail its run-time kernel compiles with `-Werror,-Wdeprecated-attributes`
+under a newer clang; MIGraphX appends `MIGRAPHX_GPU_HIP_FLAGS` to that compile
+(`-Wno-deprecated-attributes`). (wenet, onnxruntime-migraphx 1.27.1)
 
 ### Read what the project's own cross-backend checker actually compares
 

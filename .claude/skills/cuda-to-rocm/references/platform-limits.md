@@ -7,6 +7,7 @@ Contents:
 
 - Device queries and counters
 - Runtime-compiled kernels
+- Triton kernels
 - Integrated APUs
 <!-- toc:end -->
 
@@ -30,6 +31,13 @@ its own table a generic build rather than a hard error. In CMake, `CMAKE_HIP_ARC
 from native detection lists one entry per GPU (`gfx90a;gfx90a;gfx90a;gfx90a` on a four-GPU
 host): `list(REMOVE_DUPLICATES)` before creating per-arch targets (strategy-a-cmake.md).
 (MMseqs2: libmarv's per-arch AMD aligner tables.)
+
+**`rocminfo` prints pool sizes as `N (0xH) KB`, with a space.** A launcher that scrapes
+`rocminfo` for VRAM with a regex written against `25163776(0x17ff800) KB` (`(\d+)\(0x`) finds
+nothing on ROCm 10.1 and 10.2, which print `Size: 25163776 (0x17ff800) KB`. Allow the whitespace
+(`(\d+)\s*\(0x[0-9a-fA-F]+\)\s*KB`), or ask the HIP runtime (`hipMemGetInfo`) instead.
+rocminfo also ignores `HIP_VISIBLE_DEVICES` and lists every agent, so it is a poor source for
+the devices a process will see. (koboldcpp)
 
 **A query HIP reports as unsupported leaves a sticky error that the NEXT check reports.**
 Reading or setting `cudaLimitPrintfFifoSize` (`cudaDeviceGetLimit`/`cudaDeviceSetLimit`) maps
@@ -81,6 +89,29 @@ CTC decoder) and leaves the CUDA sources untouched. Check each candidate block s
 separately, because static shared memory (block-reduce scratch) grows with it. Sweep widths
 past 64 KiB/element-size on an RDNA card. Sweeping to 8192 only catches the
 8-byte-per-column backward kernels. (oneflow, gfx1100)
+
+**Dynamic shared memory is not 16-byte aligned on AMDGPU unless declared so.** CUDA starts a
+kernel's dynamic shared memory (`extern __shared__ char buf[];`) 16-byte aligned, and code that
+carves vector-typed tiles out of it relies on that. AMDGPU places the dynamic window right after
+the kernel's static `__shared__` variables, at the alignment declared on the `extern` array (1
+byte for `char`), so where it starts depends on the kernel's static shared size. Release builds
+usually run anyway (the hardware tolerates the misaligned LDS vector access); an alignment
+assertion in a debug build, or a static shared size that is not a multiple of 16 (read
+`.group_segment_fixed_size` with `llvm-readelf --notes`), shows it. Fix on HIP: `extern
+__shared__ char buf[] __attribute__((aligned(16)));` (an `alignas` after `__shared__` is a
+syntax error). (warp-1.14)
+
+**Launch geometry computed from device properties can overshoot a bound sized for NVIDIA.**
+MI300X reports `multiProcessorCount` 304 and `maxThreadsPerMultiProcessor` 2048, against 132 and
+2048 on an H100, so a grid sized "enough blocks to fill the GPU" comes out more than twice as large.
+Code that later reduces those blocks in a fixed-size second pass (one 1024-thread block, a
+`__shared__` array of 1024, a scratch buffer sized by a constant) was correct on every NVIDIA
+part it met and breaks here. llm.c's `global_norm.cuh` computes
+`maxThreadsPerMultiProcessor * multiProcessorCount / 512` = 1216 blocks and asserts
+`gx * gy < 1024`, which tripped on the first MI300X test run. Cap the derived count at the bound
+it feeds (a no-op wherever the old assumption held, so the CUDA path keeps its numbers), and grep
+for every `multiProcessorCount` and `maxThreadsPerMultiProcessor` product. Related but separate:
+`__smid()` exceeding `multiProcessorCount` (faults-wavefront.md). (llm.c, gfx942.)
 
 **`__launch_bounds__(1024)` changes nothing on HIP and something on CUDA.** HIP-clang
 already gives every kernel `amdgpu-flat-work-group-size="1,1024"` (`.max_flat_workgroup_size:
@@ -137,6 +168,21 @@ CUDA translation unit stays identical. In gpu4pyscf's ECP derivative kernels the
 bit-identical results and, at a few hundred tasks or more, ran in 0.6x the time of the LDS-heavy
 kernel, because its smaller LDS footprint keeps more blocks resident. (gpu4pyscf)
 
+**A refused shared-memory opt-in trips the last-error check placed before the project's own
+fallback.** Projects that already handle a refused opt-in usually write `status =
+cudaFuncSetAttribute(...); cudaCheck(cudaGetLastError()); if (status == cudaSuccess) big_kernel
+else fallback`. On gfx942 (MI300X) `hipDeviceAttributeSharedMemPerBlockOptin`,
+`sharedMemPerBlock` and `maxSharedMemoryPerMultiProcessor` are all 65536, and an opt-in of
+64 KiB succeeds while 65 KiB and above returns `hipErrorInvalidValue`. The
+next `hipGetLastError()` returns that error once and clears it, as on CUDA (the unsupported-query
+entry above), so the check aborts before the fallback is reached. This is a latent upstream bug,
+invisible on NVIDIA parts where the request never fails. Clear the error after a refused opt-in
+(one discarded `cudaGetLastError()`) or test the status before any last-error check; the existing
+fallback then runs on AMD and the CUDA path is unchanged. llm.c (upstream `f1e2ace`)
+`layernorm_forward` requests `(2 + 8) * C * sizeof(floatX)` bytes: 30,720 B at the C=768 its tests
+use, but more than 64 KiB from C >= 1639 in FP32 (C >= 3277 in BF16), where a direct call
+aborts at that check instead of falling back. (llm.c, gfx942)
+
 **AMD's 64 KB LDS breaks "half the per-SM shared memory" tile heuristics, and the dispatcher may
 then launch nothing.** FlashInfer-derived dispatchers size tiles from
 `cudaDevAttrMaxSharedMemoryPerMultiprocessor / 2` (two blocks per SM). MI300X reports 64 KB per CU
@@ -161,6 +207,31 @@ https://github.com/ROCm/rocm-libraries/issues/10551), while `hipModuleLaunchKern
 own that needs more than 65536 work-groups in y or z must fold them into x. A library kernel can hit
 it too: rocBLAS complex GEMM does (libraries.md, "On gfx12, rocBLAS complex GEMM with n > 2^21
 leaves columns unwritten"). (gpu4pyscf)
+
+**HIP limits each grid dimension to fewer than 2^32 work-items, not to 2^31 - 1 blocks.**
+CUDA counts blocks (2^31 - 1 in x, 65,535 in y and z); HIP counts `gridDim * blockDim` per
+dimension, which must stay below 2^32. A launch that runs on CUDA then fails on AMD only at
+large sizes and nothing runs: `hipLaunchKernel` returns `hipErrorInvalidConfiguration`,
+`hipModuleLaunchKernel` `hipErrorInvalidValue`, and Triton reports `Triton Error [HIP]: Code:
+1, Messsage: invalid argument`, often from inside autotuning and sometimes wrapped as
+`SystemError: <built-in method __reversed__ of list object ...> returned a result with an
+exception set`. Measured on ROCm 10.2: on MI300X grid 33,554,431 x block 128 runs and
+33,554,432 x 128 is rejected, with both launch APIs; on MI355X `grid=(1,4194303) x
+block=(1,1024)` runs and `(1,4194304) x (1,1024)` is rejected, while `grid=(1,33554432) x
+(128,1)` runs, so y is not capped at the 65,535 blocks `maxGridSize` reports (on gfx9; gfx12
+is, previous entry). A launch whose total across dimensions exceeds 2^32 is fine. Flat 1D
+grids with small tiles and an extra multiplier (a neighbor count, a batch) reach the limit
+first. Fix: keep the large program count on axis 0, at most `(2^32 - 1) / blockDim.x` there,
+put the overflow on a second axis whose block dimension is 1, compute the program index as
+`pid0 + pid1 * num_programs0`, and mask the programs that overrun the last row. Do this only
+on HIP, or keep the axis-1 count at or below 65,535: moving the large count itself to axis 1
+trades the HIP failure for a CUDA one. A capped grid with a grid-stride loop is the other
+option, and the usual one in HIP C++. In Triton the grid callable sees only the kernel
+arguments, not `num_warps`, so size axis 0 for the largest work-group (1024 work-items).
+Pruning autotune configs does not fix it: past some size every config is too large. Code
+that caps a grid-stride launch at CUDA's 2^31 - 1 blocks hits it only above about 4.3 billion
+elements, which tests rarely reach; cap at `0xFFFFFFFF / blockDim.x` on HIP. (FlexGEMM;
+warp-1.14)
 
 ## Runtime-compiled kernels
 
@@ -190,6 +261,10 @@ by their HIP enum values, which differ from CUDA's. HIP's context API is depreca
 around primary contexts can stand the device in for the context and make it current with
 `hipSetDevice`. clang contracts `a * b + c` by default as NVRTC does; `-ffp-contract=off` is the
 `--fmad=false` equivalent (faults-numerics.md has where the two compilers still differ). (TornadoVM: Java FFM bindings, TC-generated HIP C++.)
+NVRTC's `--include-path=<dir>` spelling does not carry over: hipRTC hands options to clang,
+which reads it as the prefix-matched `--include` (force-include a file) followed by
+`-path=<dir>`, and the compile fails with `fatal error: '-path=<dir>' file not found` from
+`<built-in>`. Pass `-I<dir>`, which NVRTC also accepts, so one spelling serves both. (keops)
 
 ### Runtime-compiled kernels inherit nothing from the host build
 
@@ -272,6 +347,44 @@ working directory. Before concluding that a cache-clearing test cleared
 anything, find the `.bin` files.
 
 (diff-surfel-tracing: OptiX to HIP RT, gfx942.)
+
+## Triton kernels
+
+Triton compiles kernels at run time, so its AMD faults appear on first use, often from inside
+autotuning, and only on the architectures a kernel was never run on.
+
+### Triton on AMD accepts `input_precision='tf32'` only on gfx942
+
+A kernel that runs on CUDA and on MI300X fails to compile on every other AMD GPU (MI200,
+MI355, every RDNA part) with `CompilationError: ... input_precision must be one of ('ieee',
+'bf16x3', 'bf16x6'). Got tf32`, even when the `tl.dot` operands are fp16. Triton's AMD backend
+(3.9, `backends/amd/compiler.py`) adds `'tf32'` to the allowed dot precisions only for
+gfx942. A project with an `allow_tf32` switch that passes `input_precision='tf32' if
+allow_tf32 else 'ieee'` breaks wherever a user, a benchmark or a default turns the switch on,
+and validating only on MI300X hides it. Ask Triton for the target's accepted set once on the
+host, `'tf32' in triton.compiler.make_backend(triton.runtime.driver.active.get_current_target()).parse_options({}).allowed_dot_input_precisions`,
+which follows Triton's own per-target rule (and honors `TRITON_OVERRIDE_ARCH`), and pass the
+result into the kernels as a `tl.constexpr`. The deprecated `tl.dot(allow_tf32=...)` makes the
+same choice in the kernel, but `TRITON_F32_DEFAULT` overrides it, which would change the CUDA
+path. (FlexGEMM)
+
+### Triton `num_warps` above 16 cannot launch on a 64-wide wavefront
+
+Triton's `num_warps` counts wavefronts, so 32 warps on CDNA is 2048 threads, and the launch
+fails with `OutOfResources: out of resource: threads, Required: 2048, Hardware limit: 1024`.
+Heuristics written for NVIDIA (`min(max(N // 256, 8), 32)`) hit it at large N. Cap with `1024
+// torch.cuda.get_device_properties(dev).warp_size`, which changes nothing on NVIDIA. Tests
+often never reach the large-N case, so check it directly. (ColossalAI)
+
+### CUDA-namespaced libdevice calls and hard-coded FP8 types
+
+Triton's AMD backend refuses `tl.extra.cuda.libdevice.*` ("Implicit conversion of CUDA
+__nv_tanhf device function has been dropped"). `triton.language.extra.libdevice` dispatches per
+backend and compiles to the same PTX on NVIDIA. Likewise, an FP8 quantizer that casts to the
+literal `tl.float8e4nv` with 448 clamps cannot emit gfx942's FNUZ format: cast to
+`y_ptr.dtype.element_ty` and pass the format's maximum as a `tl.constexpr`, so the host-side
+tensor dtype decides. The NVIDIA build then compiles to identical PTX (compare with the debug
+sections stripped). (Matrix-Game)
 
 ## Integrated APUs
 

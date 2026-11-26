@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "mmseqs2-windows-support",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "Windows support for libmarv (DLL build, 7c39308d) and the mmseqs CLI (54edbc78 guards plus a Windows replacement for memory-mapped file reading); split from the AMD GPU coverage PR by jeff 2026-11-13",
+      "refs": [
+        "projects/MMseqs2/notes.md#windows-split-out-as-a-separate-feature-jeff-2026-11-13"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-13T05:20:28Z",
+      "decided": {
+        "choice": "defer",
+        "by": "jeffdaily",
+        "at": "2026-11-13T05:21:14Z",
+        "note": "jeff: Windows support of libmarv and mmseqs is a second feature, separate from the gfx tuning"
+      }
+    }
+  ]
+}

@@ -33,6 +33,7 @@ exists. A row marked "not verified" states what the library is, not what a port 
 | cuSOLVER | hipSOLVER (rocSOLVER) | partly; not verified | hipSOLVER has a cuSOLVER-style dense API (`hipsolverDn*`). None of the ports behind this file exercised more than handle creation, so check every routine you call against hipSOLVER's function list, and its workspace-size and `info` conventions, before assuming a rename is enough. One gap is known: the low-level sparse factorization interface (`cusolverSpXcsrqr*` and `csrchol*`, with analysis, setup, factor and solve as separate calls), `csrlsvluHost` and `csrsymrcm` have no hipSOLVER counterpart (requested in ROCm/hipSOLVER issue 443), and cuDSS has none either; a sparse direct solve needs another library (RXMesh) |
 | cuDNN | MIOpen | NO | a different API (descriptors, find-then-run instead of fixed algorithm enums): the call layer is rewritten, and whole operations are missing ("MIOpen" below) |
 | Thrust, CUB | rocThrust, hipCUB (rocPRIM) | yes | `thrust/system/cuda/error.h`, temp-storage sizes, segmented `ArgMax` ("rocThrust, hipCUB and rocPRIM" below) |
+| libcu++ | libhipcxx | yes | `cuda::` spelling kept; ROCm 10.1 and later bundle CCCL 3.0.2 as `hipccl`; 1- and 2-byte CAS, under-aligned 8-byte `atomic_ref` ("rocThrust, hipCUB and rocPRIM" below) |
 | NCCL | RCCL | yes | same `nccl*` API under another soname (`librccl.so.1`); validation needs several GPUs ("RCCL" below) |
 | nvCOMP | hipCOMP (ROCm-DS) | not verified | ships inside the `amd-libhipdf` wheel; hipDF 3.0's Parquet writer still reports no Zstandard compressor, so do not assume codec parity |
 | NPP | RPP (`rpp.h`) | NO; not verified | AMD's image primitives have their own API, so calls are rewritten rather than renamed; coverage against NPP was not measured. `rpp.h` collides with `miopen.h` ("MIOpen" below) |
@@ -98,6 +99,14 @@ rejects `HIPBLAS_COMPUTE_16F` and hipSPARSE rejects `HIP_R_16F` as an SpMM compu
 both call sites kept passing `half` scalars, and the hipBLASLt one survived review and three
 platform validations because the assertion that would have caught it was never reached.)
 
+**`hipblasGemmEx` rejects `HIPBLAS_COMPUTE_32F_FAST_16F` for FP16 inputs.** A shim that maps
+`CUBLAS_COMPUTE_32F_FAST_16F` to `HIPBLAS_COMPUTE_32F_FAST_16F` (the natural spelling since
+`hipblasComputeType_t` arrived) gets `HIPBLAS_STATUS_NOT_SUPPORTED` (7) on an FP16 x FP16 -> FP32
+GEMM. hipBLAS documents FAST_16F as "32-bit input can use 16-bit compute", and the rocBLAS
+backend does not take it with 16-bit inputs. Map it to `HIPBLAS_COMPUTE_32F` for those GEMMs
+(older shims mapped to `HIPBLAS_R_32F`, which is why they worked), and check every compute-type
+enum a shim maps, not only the ones the main path uses. (koboldcpp, ROCm 10.2, gfx942)
+
 **hipBLASLt epilogues are not cuBLASLt's, per type and per format.** On gfx90a with hipBLASLt
 1.4, DEFAULT/BIAS/RELU/RELU_BIAS exist for f32/f16/bf16 but double has only DEFAULT, and the
 AUX/DRELU/BGRAD epilogues exist only for f16. cuBLASLt's ReLU auxiliary output is a 1-bit mask
@@ -107,6 +116,27 @@ sized for a mask. Probe availability with `hipblasLtMatmulAlgoGetHeuristic` per 
 back to a plain GEMM plus a small kernel. hipBLASLt cannot read a layout's TYPE back
 (`hipblasLtMatrixLayoutGetAttribute` returns invalid attribute) and fixes the compute type at
 descriptor creation, so a shim has to remember both. (oneflow)
+
+**PyTorch's ROCm MX GEMM wants unswizzled scales, M, N and K in multiples of 32, and no
+bias.** `torch.nn.functional.scaled_mm(..., ScalingType.BlockWise1x32, ...)` on ROCm (gfx950,
+hipBLASLt rocRoller, torch 2.12) rejects cuBLAS's `SWIZZLE_32_4_4` scale layout; it needs
+`NO_SWIZZLE` with plain row-major `[M, K/32]` e8m0 scales (transposed scales run but return
+garbage). M, N and K must all be multiples of 32: pad the activation rows with zeros, not only
+the scales. A `bias=` argument fails at the heuristic query (`HIPBLAS_STATUS_INVALID_VALUE`),
+and the output must be BF16 or FP16. So a CUDA MXFP8 linear ports as: quantize to row-major
+scales, pad rows to 32, GEMM without bias, slice, add the bias. Per-tensor FP8 `_scaled_mm`
+takes `float8_e4m3fnuz` (max 240) on gfx942 and only `float8_e4m3fn` (max 448) on gfx950 and
+gfx12, so pick the e4m3 type per device (as PyTorch's own tests do with `e4m3_type`) instead
+of hard-coding either. (Matrix-Game)
+
+**Probe `torch._scaled_mm`'s fp8 types once per device instead of listing architectures.** On
+gfx942 it accepts only `float8_e4m3fnuz`/`float8_e5m2fnuz` and fails `HIPBLAS_STATUS_NOT_SUPPORTED`
+for the OCP types; gfx950 and gfx12 take OCP; gfx90a and gfx11 have none. Try a 16x16
+`_scaled_mm` with the OCP pair, then the FNUZ pair, once per device (cached, and excluded from
+`torch.compile`), and cast to whatever works. A test of the fp8 GEMM should skip on "no pair
+works", not on the compute-capability number, which on ROCm is an AMD architecture number.
+Keep fp8 data exchanged between ranks in the OCP formats so it does not depend on the GPU.
+(ColossalAI)
 
 **Generic GEMM on CK device operations.** For CUTLASS-style row-major GEMMs with fused
 epilogues: `DeviceGemmMultipleD_Xdl_CShuffle` on CDNA (FP16/BF16/FP32),
@@ -119,6 +149,27 @@ vectors). The DL operation has no K padding (needs M, N, K tile multiples) and i
 epilogue gave wrong results on gfx950: run it on zero-padded copies and combine `beta * C` in
 a small store kernel. CK's `ck/config.h` is generated: `configure_file` its `config.h.in` with
 `CK_ENABLE_FP16/BF16/FP32`, `CK_ENABLE_DL_KERNELS`, `CK_USE_XDL`, `CK_USE_WMMA`. (TornadoVM)
+
+One XDL instance can serve every CDNA generation. An instance taken from a gfx950 example
+(K1=16, sized for the double-rate MFMA) looks gfx950-only, but CK picks the MFMA instruction
+per offload target at compile time (`xdlops_gemm.hpp`, `GetMfma<half_t,32,32>`:
+`mfma_f32_32x32x16f16` under `__gfx950__`, `mfma_f32_32x32x8f16` otherwise; KPack only has to
+be a multiple of `k_per_blk`), and `IsSupportedArgument` checks only `is_xdl_supported()` plus
+layout and vector conditions. Compile the same instance for every CDNA target and confirm it
+from the code objects (disassemble per target; check `.wavefront_size`, LDS and scratch)
+before adding a K1=8 tile, which is a tuning choice, not a correctness need. (oidn, CK
+3e6d21ad, ROCm 10.2)
+
+**Composable Kernel older than tag rocm-7.2.0 races on gfx11 LDS barriers.** A project that
+vendors or pins such a CK and runs its WMMA (or any LDS-staged) kernels on RDNA3/RDNA3.5
+(gfx11xx) can get wrong, nondeterministic results, while the same code is correct on gfx10,
+gfx12 and CDNA. `ck::block_sync_lds()` there emits `__builtin_amdgcn_s_waitcnt(0xc07f)`, the
+gfx9/gfx10 encoding of `lgkmcnt(0)`, which on gfx11 decodes to `vmcnt(48) lgkmcnt(7)`, so
+`s_barrier` does not wait for LDS operations. Disassemble the gfx11 code object and look for
+`s_waitcnt vmcnt(48) lgkmcnt(7)` right before `s_barrier`; the symptoms also go away at device
+`-O0`. Fixed in CK #3103 (331273b, in rocm-7.2.0); moving the pin to a 7.2.x tag is enough.
+Hand-written `s_waitcnt` immediates are architecture-specific in general: gfx9/10, gfx11 and
+gfx12 each encode the counters differently. (oidn)
 
 **Fused FP16 attention (cuDNN SDPA, flash attention): MIOpen has no path, CK's FMHA does.**
 MIOpen's find-2.0 MHA problem (`miopenCreateMhaProblem`, ROCm 10.1 SDK) offers only the
@@ -136,6 +187,26 @@ define `USE_NEW_UNIFIED_FRAMEWORK=0` (CK develop's unified framework needs a sin
 target, and `CK_CMAKE_GPU_TARGET_IDS` takes the first for every pass, failing the gfx11
 device pass). 139 FP16 inference instances for
 nine architectures build in about 2.5 minutes at 128 jobs. (TornadoVM)
+
+**PyTorch's fused SDPA on gfx1100 fails at head dims 257 to 512 with an unrelated HIP error.**
+On gfx1100 with torch 2.12 (ROCm 10.2), `F.scaled_dot_product_attention` takes the AOTriton
+flash or memory-efficient kernel for those head dims, and the launch fails with `CUDA error:
+profiler is not initialized` (`hipErrorProfilerNotInitialized`), after which the context is
+unusable. Head dims up to 256 are fine; above 512 the dispatcher finds no kernel and falls back
+to the math path. VAEs with single-head spatial attention over the full channel count (head
+dim 512) hit it. Rerun the call under `with sdpa_kernel([SDPBackend.MATH])` to tell it from a
+real fault, and route such calls to the math path, chunked if the [L, L] matrix is large.
+(Matrix-Game)
+
+**flash-attn 2.8.3's Triton AMD backward reads `dout` with `out`'s strides.** In flash-attn
+2.8.3.post2's Triton AMD backend (the RDNA path, `FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE`), the
+backward preprocess indexes `dout` with `out`'s strides. A non-contiguous `dout` whose last
+stride is 1 (the gradient of `out.transpose(1, 2)`) passes `maybe_contiguous` and gives wrong
+dq and dk while dv stays correct. The same backend returns `rng_state=None` without dropout,
+which breaks `torch.compile` against the op's fake implementation. Both are fixed on flash-attn
+main, where the backend comes from ROCm/aiter; no release had the fix as of 2026-11. Test an
+FA2 integration on RDNA with a transposed upstream gradient and under `torch.compile`, not only
+with a contiguous `dout`. (ColossalAI)
 
 **rocBLAS `gemv` over more than 65535 batches returns wrong entries, and `cupy.einsum` reaches it.**
 Root cause (https://github.com/ROCm/rocm-libraries/issues/14819): for transA=N and m < 2n, rocBLAS
@@ -198,6 +269,20 @@ result cost 1.5x, the outermost-axis split costs 1.1x to 1.5x at 3.5M to 6.9M co
 the regression tests so CI on any GPU checks the split. (gpu4pyscf)
 
 ## MIOpen
+
+**Some MIOpen convolution solvers are not run-to-run reproducible; establish the noise floor
+before comparing two code paths.** A video model that repeated bit-exactly on gfx950 and
+gfx1100 gave a different output on every run on gfx942 (about 34 dB PSNR between identical
+runs), which made every A/B comparison there ambiguous. MIOpen (PyTorch's `cudnn` backend on
+ROCm) chose `ConvAsmImplicitGemmGTCDynamicFwdXdlopsNHWC` for some bf16 convolutions on gfx942:
+a batch-1 3x3 512->256 conv differed on every call, by up to one bf16 ulp, while the same conv
+at batch 12, or as 1x1, was exact. To find the layer, register forward hooks on every leaf
+module, run the same input twice in one process and report the first module whose output
+differs; then repeat that layer alone at the observed shape. `MIOPEN_ENABLE_LOGGING=1
+MIOPEN_LOG_LEVEL=6` prints the chosen solver. `torch.backends.cudnn.deterministic = True`
+makes MIOpen choose a deterministic solver (`GemmFwdRest` there) at no measurable cost in that
+model; set it for A/B validation, and run the reference twice before reading any difference as
+real. (Matrix-Game)
 
 **A "find the best algorithm" call WRITES to the tensor named as its output.** MIOpen's
 `miopenFindConvolution{Forward,BackwardData,BackwardWeights}Algorithm` benchmark by running
@@ -276,6 +361,17 @@ algorithm analyses on first use
 queried size is 0 returns `INVALID_VALUE` once descriptors are reused. Create descriptors
 before capture and cache them per operand set, use `HIPSPARSE_SPMV_CSR_ALG2`, and pass a null
 buffer when the size is 0. `AMD_LOG_LEVEL=3` shows the call that broke the capture. (TornadoVM)
+
+**A device pointer passed while the handle is in host pointer mode crashes only on some
+hosts.** An output argument that CUDA code passes as device memory under host pointer mode
+(hipSPARSE `csrgeam2Nnz`'s `nnzTotalDevHostPtr`, which cuSPARSE tolerates) is dereferenced on
+the CPU by rocSPARSE. It works where the runtime can CPU-map `hipMalloc` memory, as on a
+Linux discrete card with a large (resizable) BAR, and segfaults in host code inside the
+library elsewhere, for example with a 256 MiB BAR; Windows machines, an integrated APU
+included, crashed in the same call (the cause there was not measured). It looks like an OS-
+or arch-specific library bug. Check the BAR size (`/sys/bus/pci/devices/<bdf>/resource`) and
+repeat the call with a host pointer or with `hipsparseSetPointerMode(DEVICE)`. The fix is a
+host variable, or device pointer mode with device scalars. (arrayfire)
 
 ## rocThrust, hipCUB and rocPRIM
 
@@ -361,7 +457,47 @@ written, sentinels included, before narrowing; otherwise sort the full width, wh
 whenever no caller depends on the order of keys equal in the selected bits (a 5-12% cost at up to
 2^20 64-bit keys on MI355X). (cuBQL)
 
+**libcu++ -> libhipcxx, and two atomic defects in it.** `ROCm/libhipcxx` keeps the
+`cuda::`/`cuda::std::` spelling, so CCCL-heavy code (`cuda::atomic_ref`, `cuda::stream_ref`,
+`cuda::std::span`) ports without renames. ROCm 10.1 and later bundle CCCL 3.0.2 as
+`/opt/rocm/core-<ver>/include/hipccl`; newer CCCL levels come from the `amd-develop` branch.
+Two defects in `cuda/std/__atomic/functions/atomic_hip_generated.h`, present in both
+(`amd-develop` at `832dc407f`, gfx942):
+- The block- and device-scope `__atomic_compare_exchange_cuda` ignores its weak flag and always
+  calls `__hip_atomic_compare_exchange_weak`. A 1- or 2-byte CAS is a 32-bit CAS on the
+  containing word, so the weak form also fails when a NEIGHBORING byte changes. With each
+  thread flipping only its own byte, `compare_exchange_strong` failed 75% (1 byte) and 50%
+  (2 bytes) of the time, while the raw strong builtin failed 0 times. Code that reads a failed CAS
+  on an empty slot as "taken" loses or duplicates keys (cuCollections: 11 failing
+  `static_set<int8_t/int16_t>` cases).
+- `atomic_ref<T>` on an 8-byte type with 4-byte `alignof` (`struct {int a, b;}`, aligned to 8
+  by the caller as `atomic_ref` requires) fails to build with `unsupported cmpxchg: instruction
+  alignment 4 is smaller than the required 8-byte alignment`. NVIDIA's libcu++ compiles it.
+Both fixes are small: honor the weak flag, and view the object through a `sizeof(T)`-aligned
+typedef. The header is generated, so an upstream fix belongs in its generator,
+`codegen/generators/hip_intrinsics.h`; a port can patch the installed header. Carry the patch in
+the port and tell the user. Validate 1-, 2- and 8-byte
+atomic paths explicitly, because 4-byte tests pass either way. (cuCollections)
+
 ## CuPy on ROCm
+
+libhipcxx's headers, unlike libcu++'s under g++, do not compile with a plain host compiler
+(`'__host__' does not name a type`). It is found with `find_package(libhipcxx)` (target
+`libhipcxx::libhipcxx`, headers under `include/hipccl`, with the `cuda/std/...` spellings). A
+host `.cpp` that includes a header exposing `cuda::std` types must therefore be compiled as HIP
+too, or those types' ABI differs between translation units. A `namespace cuda::std = ::std`
+shim does not substitute in device code: libstdc++'s `std::optional::value()` calls a host-only
+throw helper that hip-clang rejects. Include `<cuda/std/cmath>` and `<cuda/std/functional>`
+explicitly where the sources relied on CCCL including them transitively (`cuda::std::abs(float)`
+is otherwise ambiguous). (autoware_universe)
+
+**torchaudio's RNN-T loss and CTC forced alignment run only on the CPU in ROCm builds.**
+`NotImplementedError: Could not run 'torchaudio::rnnt_loss' with arguments from the 'CUDA'
+backend` (likewise `torchaudio::forced_align`) as soon as the inputs are on an AMD GPU:
+torchaudio compiles those kernels only for CUDA, and `libtorchaudio.so` in the ROCm wheels has
+no HIP code (checked 2.8.0+rocm6.4, 2.8.0a0+rocm7.12.0, 2.11.0+rocm7.2). Move the inputs to the
+CPU for these two calls, or use k2's RNN-T losses, which have a HIP build. Check before porting
+a speech project whether its default loss is torchaudio's. (wenet)
 
 **CuPy-ROCm gaps a CuPy-based port meets at run time.** `cupy.cuda.runtime.deviceSetLimit` is a stub
 that always raises hipErrorUnknown (`cupy_backends/hip/cupy_hip_runtime.h`); call

@@ -1,0 +1,16 @@
+2026-11-13T16:53:03Z generic load: 84.18 35.88 29.52
+generic rc=0 wall=18.189833622 s rows=200000 md5sorted=ac1fd287aa41b7fc5d860d1c61fa7934
+2026-11-13T16:53:21Z tuned load: 78.45 37.52 30.18
+tuned rc=0 wall=12.662113997 s rows=200000 md5sorted=ac1fd287aa41b7fc5d860d1c61fa7934
+2026-11-13T16:53:48Z tuned load: 64.14 37.19 30.25
+tuned rc=0 wall=13.056156758 s rows=200000 md5sorted=ac1fd287aa41b7fc5d860d1c61fa7934
+2026-11-13T16:54:02Z generic load: 79.68 41.95 31.92
+generic rc=0 wall=17.023944859 s rows=200000 md5sorted=ac1fd287aa41b7fc5d860d1c61fa7934
+2026-11-13T16:54:19Z tuned load: 94.19 47.70 34.03
+tuned rc=0 wall=13.008996464 s rows=200000 md5sorted=ac1fd287aa41b7fc5d860d1c61fa7934
+2026-11-13T16:54:33Z generic load: 99.99 50.47 35.08
+generic rc=0 wall=16.985291937 s rows=200000 md5sorted=ac1fd287aa41b7fc5d860d1c61fa7934
+2026-11-13T17:01:02Z generic load: 9.46 44.31 41.59
+generic rc=0 wall=16.661605812 s rows=200000 md5sorted=ac1fd287aa41b7fc5d860d1c61fa7934
+2026-11-13T17:01:19Z tuned load: 7.68 41.65 40.77
+tuned rc=0 wall=12.646017118 s rows=200000 md5sorted=ac1fd287aa41b7fc5d860d1c61fa7934

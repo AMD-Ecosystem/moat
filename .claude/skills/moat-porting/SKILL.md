@@ -79,9 +79,14 @@ what passes and what does not).
   decline.
 - A dependency that already has a ROCm port (`spconv-triton`, pyg-rocm-build wheels,
   `amd_gsplat`) is consumed through the `_deps/` mechanism as environment, not adopted as a
-  deliverable. (This list used to name `spconv_rocm`; the GitHub repository of that name
-  is empty, checked 2026-11 by the Pointcept port. `cuda-to-rocm`'s strategy-b-torch.md
-  has the details.)
+  deliverable. `ZJLi2013/spconv_rocm` is not in that list on purpose: its default branch
+  is an unmodified spconv mirror and the work is on branch `rocm` (as is its cumm
+  counterpart `ZJLi2013/cumm-rocm`), a FlyDSL rewrite for gfx942 inference, not a ROCm
+  build of spconv as published. It can serve as environment where that is enough; it does
+  not make spconv or cumm `already-supported`, and MOAT's own cumm and spconv ports
+  proceed independently of it (recorded in the cumm notes). The repository that is empty
+  is the unrelated `jiaqiwang969/spconv-rocm`. `cuda-to-rocm`'s strategy-b-torch.md has
+  the details.
 - Generated CUDA belongs to its generator. colmap vendors Caspar kernels that SymForce
   generates; a colmap deferral placed the fix in colmap's `caspar_generate.py`, which
   contains no CUDA, while the templates and runtime were already ported in MOAT's own
@@ -308,6 +313,11 @@ This is a docs, diff, and review checkout, not a build checkout -- a compile nee
   literally in the query: a write whose target it cannot read is refused, and so are
   gh aliases and extensions. `python3 utils/gh_guard.py --explain -- <gh arguments>`
   says how a call would be judged without making it.
+- `git lfs install --local` in a fork clone stops with "Hook already exists: pre-push"
+  once `protect-fork` has installed the freeze hook, and a submodule update that needs LFS
+  then leaves pointer files. Run `GIT_LFS_SKIP_SMUDGE=1 git submodule update --init ...`,
+  then inside the LFS submodule `git lfs install --local --skip-repo && git lfs pull`.
+  Never `git lfs update --force`, which replaces the freeze hook. (oidn)
 - A `moatlib.py` refusal is one line starting `moatlib:` and exit 1. It is an answer,
   not a crash; `MOAT_TRACEBACK=1` shows the traceback when it is one.
 - `timeit.sh` and `session.sh` refuse a `projects/<name>` that does not exist (exit
@@ -325,6 +335,37 @@ This is a docs, diff, and review checkout, not a build checkout -- a compile nee
   write an exit marker, and wait on the marker in foreground polls of under 10 minutes.
   Keep whatever makes the work resumable outside the process (there, a persistent
   `TRITON_CACHE_DIR`, so the killed run's compiles were not lost). (Pointcept)
+- Installing TheRock wheels into a job: the ROCm 10.x releases are on
+  `https://stable.repo.amd.com/rocm/whl-next/`, installed into `$FLEET_VENV` only
+  (`$FLEET_VENV/bin/python -m pip install --index-url ... "rocm[libraries,devel]==10.2.0"
+  "rocm-sdk-device-<gfx>==10.2.0"`). The job guard refuses an install outside it, and any
+  command whose text merely contains the two words of a pip install, even in a grep pattern
+  or a heredoc of notes; write notes with the editor tool. (koboldcpp, wenet)
+- Job venvs reach the base env's `amdsmi` through the base links, so after newer TheRock
+  wheels go into `$FLEET_VENV` (10.2 over a 10.1 base) `torch.cuda.device_count()` reads 0:
+  add a `.pth` putting `$(rocm-sdk path --root)/share/amd_smi` first (cuda-to-rocm
+  diagnosis.md has the general case), and put the venv's and the SDK's `bin` first on PATH,
+  or `cpp_extension.ROCM_HOME` resolves to the base env's SDK. (ColossalAI)
+- Run a project's tests with `PATH=$FLEET_VENV/bin:$PATH`: a test that `pip install`s a missing
+  module through `os.system` (wenet's tokenizer test) otherwise writes into the shared base env.
+  Pre-install what tests install for themselves. (wenet)
+- `pkill -f <pattern>` kills the worker's own shell, whose command line contains the whole
+  command text (exit 144, nothing reported). Collect PIDs with `ps -eo pid,args | grep
+  <pattern> | grep -v grep` into a file in one call and kill them in the next. (HierarchicalKV)
+- ROS 2 without root (the container blocks user-namespace mounts): a private apt
+  (`APT_CONFIG` with lists and cache in the job directory, `Dir::State::status
+  "/var/lib/dpkg/status"`, `Debug::NoLocking`), `apt-get install --download-only`,
+  `dpkg-deb -x` into `<job>/root`, then rewrite `/opt/ros/<distro>` and job-only `/usr/...`
+  paths (including `PACKAGE_PREFIX_DIR` in CMakePackageConfigHelpers configs and Qt5's
+  `"/usr/lib/x86_64-linux-gnu/../../"`), repoint dangling dev symlinks, and symlink in missing
+  host entries, but not the host's top-level `include/*.h` or
+  `c++`/`sys`/`linux`/`asm-generic` (FindCUDA turns them into `-I` ahead of libstdc++'s
+  wrappers) and not the host's Ubuntu ROCm runtime (`libhsa-runtime64.so.1`,
+  `libamdhip64.so.5`), and put `$ROCM_SDK/lib` first in `LD_LIBRARY_PATH`. Delete released packages the build replaces
+  from source when their headers are unscoped. colcon hangs with `CMAKE_VERBOSE_MAKEFILE=ON`
+  (one output line exceeds asyncio's 64 KiB reader limit). Fast DDS drops best-effort messages
+  over about 500 KB on localhost (512 KB shared-memory segment): give it a profile with a
+  64 MiB SHM `segment_size`. The cppcheck deb cannot run relocated. (autoware_universe)
 - Host and toolchain diagnostics specific to MOAT's machines (the gfx1151 laptop's System32
   runtime, TheRock layouts per host) belong in project notes or memory, not in
   `cuda-to-rocm`. Its `windows.md`, `linux-host-setup.md` and `platform-limits.md` are

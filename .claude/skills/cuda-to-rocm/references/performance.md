@@ -85,6 +85,18 @@ faster, and a different RDNA table did no better. Time the real workload against
 existing configs before keeping a tuned table, and keep the raw tuner output so the
 comparison can be checked. (MMseqs2)
 
+### Compare kernel variants warmed up, interleaved, against a noise floor
+
+On a shared multi-GPU board (other jobs at 100% on sibling GPUs), the same code's kernel times
+varied 4-18x between short processes, and per-process profiler runs starting from an idle GPU
+compared different clock states: a change looked 15-48% faster in 11 of 12 cells that way and
+was 0-54% slower when timed after a warm-up. What held up: warm up inside the process and time
+many launches; interleave the two builds in rounds (A, B, A, B) and take the median of per-run
+medians; include in the same rounds a metric whose code is identical in both builds, as the
+noise floor; and for functional regressions that show only as speed (a degenerate but valid
+acceleration structure passes correctness tests), add a query or throughput check of what was
+built. (warp-1.14)
+
 ### What did not matter: RDC layout and maskless shuffles
 
 A SHARED library with `-fgpu-rdc` versus a static library with CMake's device link: the same

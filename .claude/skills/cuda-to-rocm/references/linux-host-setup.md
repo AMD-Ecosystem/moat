@@ -9,6 +9,7 @@ Contents:
 - Headless Vulkan on a Linux GPU host: Xvfb plus Mesa's software WSI
 - Driving a compute demo whose only entry point is an interactive GL window
 - A GPU test that hangs only under `ctest -jN` is usually the software GL stack
+- Headless EGL on an Instinct host lists every GPU before the software device
 - HIP and Vulkan in one process can oops the kernel on an old amdgpu-dkms
 <!-- toc:end -->
 
@@ -109,6 +110,26 @@ colmap it was the latter). The reliable workaround is lowering `-j`: colmap ran 
 evidence -- the suite is not slow, one test is stuck. ctest reports the hang as `Timeout`
 against its default 1500 s cap, which reads like a slow test rather than a deadlock: a suite
 wall time sitting exactly at the cap with one test blamed is the tell. (colmap)
+
+A test with no GL in it that times out only in a parallel run may simply be slow: processes
+sharing one GPU slow each other down (diagnosis.md, "A sync-bound GPU test that passes alone
+can time out under `ctest -jN`").
+
+### Headless EGL on an Instinct host lists every GPU before the software device
+
+A CUDA project that renders offscreen through `EGL_EXT_platform_device` (enumerate with
+`eglQueryDevicesEXT`, take the first device `eglInitialize` accepts) assumes the NVIDIA EGL
+device is the GL device. On a Linux host with AMD Instinct GPUs (gfx942, gfx950), Mesa lists
+one EGL device per DRM node, including the per-partition nodes, so a host with 8 GPUs can
+expose dozens, and the software (llvmpipe) device comes last. Instinct parts have no graphics
+pipeline, so radeonsi rejects each of them, and a loop capped at 16 devices never reaches
+llvmpipe and fails with "no EGL device initialized". The same loop also opens the DRM nodes of
+GPUs that belong to other jobs. Neither `LIBGL_ALWAYS_SOFTWARE=1` nor `EGL_PLATFORM=surfaceless`
+changes the device list (Mesa 25.2). To get llvmpipe without editing the project, run only the
+rendering process with an `LD_PRELOAD` shim that returns 0 from `drmGetDevices2` (and, as a
+guard, refuses opens under `/dev/dri`); Mesa then offers exactly one device,
+`EGL_MESA_device_software`. Do not apply the shim to the compute process: HIP needs its render
+node. (Matrix-Game)
 
 ### HIP and Vulkan in one process can oops the kernel on an old amdgpu-dkms
 
