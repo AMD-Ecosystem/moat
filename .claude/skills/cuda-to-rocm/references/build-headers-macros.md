@@ -361,7 +361,9 @@ the `#else`. strategy-b-torch.md ("Headers and functions hipify leaves broken") 
 and how to prove the fallback against real 7.2.x headers. Dropping the include outright is
 right only when the code uses just `this_grid()`, `this_thread_block()` and `thread_rank()` --
 grep for `cg::reduce`, `reduce_update_async` and `plus<>` first. (diff-surfel-rasterizations,
-faster-gaussian-splatting)
+faster-gaussian-splatting) A shim that also defines `cg::plus`, `cg::less` or `cg::greater` needs
+the same gate, because they arrived in the same change: unconditional, they fail with `error:
+redefinition of 'plus'` on the newer release. (llm.c)
 
 **Tile shuffles of pointers and enums need `__shfl` overloads, declared before the
 cooperative-groups header.** CUDA's `thread_block_tile::shfl` takes any trivially copyable type.
