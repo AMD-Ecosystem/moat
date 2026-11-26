@@ -8,7 +8,7 @@
   "ext_type": "nvrtc-driver-api",
   "stage": "review-passed",
   "adopted_at": "2026-11-12T18:32:39Z",
-  "updated_at": "2026-11-26T00:49:17Z",
+  "updated_at": "2026-11-26T00:49:42Z",
   "head_sha": "4da01c34d4ee424e010ea8a0a1fff4c329aa32d6",
   "depends_on": [],
   "waivers": {
@@ -174,5 +174,10 @@
     "head_sha": "4da01c34d4ee424e010ea8a0a1fff4c329aa32d6",
     "content_sha256": "7dd386eae750b54810f86348514ae3741ee00b863eec62a4c8331e5b03a0601d",
     "review_pr": "https://github.com/AMD-Ecosystem/keops/pull/1"
-  }
+  },
+  "pr_url": "https://github.com/getkeops/keops/pull/454",
+  "pr_number": 454,
+  "pr_opened_at": "2026-11-26T00:49:42Z",
+  "pr_state": "open",
+  "published_sha": "4da01c34d4ee424e010ea8a0a1fff4c329aa32d6"
 }
