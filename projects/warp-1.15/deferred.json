@@ -64,7 +64,12 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-11-26T00:52:11Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-11-26T00:52:47Z",
+        "note": "2026-11-25: address in warp 1.15 at the earliest; not a 1.14 blocker ('I want warp 1.14 out. Those problems seem niche.')"
+      }
     },
     {
       "id": "warp-hip-readback-in-capture-no-error",
@@ -75,7 +80,12 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-11-26T00:52:12Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-11-26T00:52:48Z",
+        "note": "2026-11-25: address in warp 1.15 at the earliest; not a 1.14 blocker ('I want warp 1.14 out. Those problems seem niche.')"
+      }
     },
     {
       "id": "warp-tiled-bvh-query-stack-overflow-gh2181",
@@ -88,7 +98,12 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-11-26T00:52:13Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-11-26T00:52:48Z",
+        "note": "2026-11-25: address in warp 1.15 at the earliest; not a 1.14 blocker ('I want warp 1.14 out. Those problems seem niche.')"
+      }
     }
   ]
 }
