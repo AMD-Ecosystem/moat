@@ -5,20 +5,16 @@
   "fork_url": "https://github.com/AMD-Ecosystem/spconv_cpp",
   "fork_default_branch": "main",
   "priority": 0.0,
-  "ext_type": "unknown",
-  "stage": "planning",
+  "ext_type": "cmake",
+  "stage": "planned",
   "adopted_at": "2026-11-23T21:19:35Z",
-  "updated_at": "2026-11-26T00:19:53Z",
+  "updated_at": "2026-11-26T00:30:41Z",
   "head_sha": null,
   "depends_on": [
     "spconv",
     "cumm"
   ],
-  "porting": {
-    "arch": "linux-gfx90a",
-    "since": "2026-11-26T00:19:53Z",
-    "holder": "61c3c2d60865"
-  },
+  "porting": null,
   "waivers": {},
   "platforms": {
     "linux-gfx942": {
@@ -51,7 +47,7 @@
       "failed_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-11-26T00:19:53Z",
+      "updated_at": "2026-11-26T00:30:41Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -84,5 +80,10 @@
     "viable": true,
     "summary": "Autoware's pre-generated C++ snapshot of spconv 2.3.8 + cumm (22k generated CUDA files); regenerate with the HIP cumm/spconv generators, so it waits on MOAT spconv and cumm; tier 3 only via cumm's GPL-with-exception headers",
     "at": "2026-11-23T21:22:39Z"
+  },
+  "porting_released": {
+    "arch": "linux-gfx90a",
+    "since": "2026-11-26T00:19:53Z",
+    "at": "2026-11-26T00:30:41Z"
   }
 }
