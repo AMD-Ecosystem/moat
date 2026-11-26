@@ -549,6 +549,18 @@
     {
       "id": "platform:windows",
       "evidence": "Phase 6, porting sessions 13-14 on windows-gfx1151; validators revalidate at head (laptop runs last)"
+    },
+    {
+      "id": "feature:gl-interop",
+      "evidence": "windows-gfx1151 validation 2026-11-24 at 66ba4ffb (notes: Validation in progress, step 6): wp.RegisteredGLBuffer registered on a pyglet GL 4.6 context (AMD Radeon 8060S), Warp-writes/GL-reads and GL-writes/Warp-reads both exact, no copy fallback; windowed OpenGLRenderer ran example_apic_fluid 600 frames, frame not blank, confirmed by eye. Linux: gfx1201 evidence session 2 (GLX buffers, 0 mismatches). wp.GLTextureResource unsupported, release-noted (ROCm/rocm-systems#15971)."
+    },
+    {
+      "id": "packaging:wheel-windows",
+      "evidence": "Windows release wheel built 2026-11-25 at 66ba4ffb in D:\\Develop\\warp: warp_lang-1.14.0+rocm10.2.0-py3-none-win_amd64.whl, 30,203,077 bytes, sha256 00cfcc8e86eb7b8d5a3645e378226dc85f27a154a8f2ebaba1740afa225c8db5; packaging checks clean (notes: Release wheel (Windows), 66ba4ffb); the Windows round's full suite ran from a wheel built the same way (7549 + 61 tests, 0 failures); release-wheel validation ruled by jeff 2026-11-25 (b)."
+    },
+    {
+      "id": "test:wheel-install",
+      "evidence": "Linux: release wheel sha256 0402fdef420959474d564ed15c8852ae1847ca86516df0e53fd07b96797f21a0 (manylinux_2_28 container build) installed into a clean venv in an Ubuntu 22.04 container (glibc 2.35) on gfx950, pip pulled rocm 10.2.0 itself, kernel exact; full suite from that exact file on gfx950, gfx942, gfx90a, gfx1100, gfx1201 (notes: Release wheel suite (<platform>), 0402fdef). Windows: release wheel installed into a brand-new venv, rocm 10.2.0 pulled by pip, HIP DLLs from the venv, kernel exact (notes: Release wheel (Windows), 66ba4ffb)."
     }
   ],
   "scoped_out": [
@@ -561,20 +573,7 @@
       "reason": "Q7 ruled by Jeff Daily 2026-11-18: not ported in this line, both switches fail clearly on HIP; deferred item warp-hip-clang-jit"
     }
   ],
-  "owed": [
-    {
-      "id": "feature:gl-interop",
-      "reason": "cuGraphicsGL* map to hipGraphicsGLRegisterBuffer/Image (cuda_util.cpp) but no session exercised them: the fleet hosts have no display or GL context"
-    },
-    {
-      "id": "packaging:wheel-windows",
-      "reason": "the Windows wheel has not been built yet (packaging path written in session 19, untested); it comes with the Windows validation, which runs last"
-    },
-    {
-      "id": "test:wheel-install",
-      "reason": "Linux: the installed-wheel suite passed (session 27) but in the job venv, because the fleet guard refuses pip for any other environment, so not a clean venv; Windows: not run yet"
-    }
-  ],
+  "owed": [],
   "removed_from_floor": [
     {
       "id": "library:cuBQL_${device}_${T}${D}",
